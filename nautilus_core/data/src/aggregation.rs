@@ -564,13 +564,15 @@ where
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
 
-        self.clock.set_timer_ns(
-            &self.timer_name,
-            self.interval_ns.as_u64(),
-            start_time_ns,
-            None,
-            Some(callback.into()),
-        );
+        self.clock
+            .set_timer_ns(
+                &self.timer_name,
+                self.interval_ns.as_u64(),
+                start_time_ns,
+                None,
+                Some(callback.into()),
+            )
+            .expect(FAILED);
 
         log::debug!("Started timer {}", self.timer_name);
         Ok(())

@@ -26,14 +26,16 @@ use std::{
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
-    correctness::{check_positive_u64, check_predicate_true, check_valid_string, FAILED},
+    correctness::{check_positive_u64, check_predicate_true, check_valid_string},
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
 use tokio::sync::Mutex;
 use ustr::Ustr;
 
-use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
+use crate::timer::{
+    create_valid_interval, LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
+};
 
 /// Represents a type of clock.
 ///
@@ -80,7 +82,7 @@ pub trait Clock {
         name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<TimeEventCallback>,
-    );
+    ) -> anyhow::Result<()>;
 
     /// Set a `Timer` to start alerting at every interval
     /// between start and stop time. Optional callback gets
@@ -92,7 +94,7 @@ pub trait Clock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
-    );
+    ) -> anyhow::Result<()>;
 
     /// Returns the time interval in which the timer `name` is triggered.
     ///
@@ -294,13 +296,12 @@ impl Clock for TestClock {
         name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<TimeEventCallback>,
-    ) {
-        check_valid_string(name, stringify!(name)).expect(FAILED);
+    ) -> anyhow::Result<()> {
+        check_valid_string(name, stringify!(name))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
-            "All Python callbacks were `None`",
-        )
-        .expect(FAILED);
+            "No callbacks provided",
+        )?;
 
         let name_ustr = Ustr::from(name);
         match callback {
@@ -308,14 +309,13 @@ impl Clock for TestClock {
             None => None,
         };
 
-        let time_ns = self.time.get_time_ns();
-        let timer = TestTimer::new(
-            name,
-            (alert_time_ns - time_ns).into(),
-            time_ns,
-            Some(alert_time_ns),
-        );
+        let ts_now = self.time.get_time_ns();
+        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
+        let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
+        let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns));
         self.timers.insert(name_ustr, timer);
+
+        Ok(())
     }
 
     fn set_timer_ns(
@@ -325,14 +325,13 @@ impl Clock for TestClock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
-    ) {
-        check_valid_string(name, "name").expect(FAILED);
-        check_positive_u64(interval_ns, stringify!(interval_ns)).expect(FAILED);
+    ) -> anyhow::Result<()> {
+        check_valid_string(name, stringify!(name))?;
+        check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
-            "All Python callbacks were `None`",
-        )
-        .expect(FAILED);
+            "No callbacks provided",
+        )?;
 
         let name_ustr = Ustr::from(name);
         match callback {
@@ -340,8 +339,11 @@ impl Clock for TestClock {
             None => None,
         };
 
+        let interval_ns = create_valid_interval(interval_ns);
         let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
         self.timers.insert(name_ustr, timer);
+
+        Ok(())
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {
@@ -484,12 +486,12 @@ impl Clock for LiveClock {
         name: &str,
         mut alert_time_ns: UnixNanos,
         callback: Option<TimeEventCallback>,
-    ) {
-        check_valid_string(name, stringify!(name)).expect(FAILED);
-        assert!(
+    ) -> anyhow::Result<()> {
+        check_valid_string(name, stringify!(name))?;
+        check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "No callbacks provided",
-        );
+        )?;
 
         let callback = match callback {
             Some(callback) => callback,
@@ -504,7 +506,8 @@ impl Clock for LiveClock {
 
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
-        let interval_ns = (alert_time_ns - ts_now).into();
+        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
+        let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
@@ -522,6 +525,8 @@ impl Clock for LiveClock {
 
         self.clear_expired_timers();
         self.timers.insert(Ustr::from(name), timer);
+
+        Ok(())
     }
 
     fn set_timer_ns(
@@ -531,14 +536,13 @@ impl Clock for LiveClock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
-    ) {
-        check_valid_string(name, stringify!(name)).expect(FAILED);
-        check_positive_u64(interval_ns, stringify!(interval_ns)).expect(FAILED);
+    ) -> anyhow::Result<()> {
+        check_valid_string(name, stringify!(name))?;
+        check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "No callbacks provided",
-        )
-        .expect(FAILED);
+        )?;
 
         let callback = match callback {
             Some(callback) => callback,
@@ -550,6 +554,9 @@ impl Clock for LiveClock {
             let name = Ustr::from(name);
             self.callbacks.insert(name, callback.clone());
         }
+
+        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
+        let interval_ns = create_valid_interval(interval_ns);
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
@@ -566,6 +573,8 @@ impl Clock for LiveClock {
 
         self.clear_expired_timers();
         self.timers.insert(Ustr::from(name), timer);
+
+        Ok(())
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {
@@ -673,11 +682,13 @@ mod tests {
 
     #[rstest]
     fn test_timer_registration(mut test_clock: TestClock) {
-        test_clock.set_time_alert_ns(
-            "test_timer",
-            (*test_clock.timestamp_ns() + 1000).into(),
-            None,
-        );
+        test_clock
+            .set_time_alert_ns(
+                "test_timer",
+                (*test_clock.timestamp_ns() + 1000).into(),
+                None,
+            )
+            .unwrap();
         assert_eq!(test_clock.timer_count(), 1);
         assert_eq!(test_clock.timer_names(), vec!["test_timer"]);
     }
@@ -685,7 +696,9 @@ mod tests {
     #[rstest]
     fn test_timer_expiration(mut test_clock: TestClock) {
         let alert_time = (*test_clock.timestamp_ns() + 1000).into();
-        test_clock.set_time_alert_ns("test_timer", alert_time, None);
+        test_clock
+            .set_time_alert_ns("test_timer", alert_time, None)
+            .unwrap();
         let events = test_clock.advance_time(alert_time, true);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].name.as_str(), "test_timer");
@@ -693,11 +706,13 @@ mod tests {
 
     #[rstest]
     fn test_timer_cancellation(mut test_clock: TestClock) {
-        test_clock.set_time_alert_ns(
-            "test_timer",
-            (*test_clock.timestamp_ns() + 1000).into(),
-            None,
-        );
+        test_clock
+            .set_time_alert_ns(
+                "test_timer",
+                (*test_clock.timestamp_ns() + 1000).into(),
+                None,
+            )
+            .unwrap();
         assert_eq!(test_clock.timer_count(), 1);
         test_clock.cancel_timer("test_timer");
         assert_eq!(test_clock.timer_count(), 0);
@@ -706,7 +721,9 @@ mod tests {
     #[rstest]
     fn test_time_advancement(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        test_clock.set_timer_ns("test_timer", 1000, start_time, None, None);
+        test_clock
+            .set_timer_ns("test_timer", 1000, start_time, None, None)
+            .unwrap();
         let events = test_clock.advance_time((*start_time + 2500).into(), true);
         assert_eq!(events.len(), 2);
         assert_eq!(*events[0].ts_event, *start_time + 1000);
@@ -723,12 +740,16 @@ mod tests {
         let custom_callback = TestCallback::new(Rc::clone(&custom_called));
 
         clock.register_default_handler(TimeEventCallback::from(default_callback));
-        clock.set_time_alert_ns("default_timer", (*clock.timestamp_ns() + 1000).into(), None);
-        clock.set_time_alert_ns(
-            "custom_timer",
-            (*clock.timestamp_ns() + 1000).into(),
-            Some(TimeEventCallback::from(custom_callback)),
-        );
+        clock
+            .set_time_alert_ns("default_timer", (*clock.timestamp_ns() + 1000).into(), None)
+            .unwrap();
+        clock
+            .set_time_alert_ns(
+                "custom_timer",
+                (*clock.timestamp_ns() + 1000).into(),
+                Some(TimeEventCallback::from(custom_callback)),
+            )
+            .unwrap();
 
         let events = clock.advance_time((*clock.timestamp_ns() + 1000).into(), true);
         let handlers = clock.match_handlers(events);
@@ -744,8 +765,12 @@ mod tests {
     #[rstest]
     fn test_multiple_timers(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        test_clock.set_timer_ns("timer1", 1000, start_time, None, None);
-        test_clock.set_timer_ns("timer2", 2000, start_time, None, None);
+        test_clock
+            .set_timer_ns("timer1", 1000, start_time, None, None)
+            .unwrap();
+        test_clock
+            .set_timer_ns("timer2", 2000, start_time, None, None)
+            .unwrap();
         let events = test_clock.advance_time((*start_time + 2000).into(), true);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].name.as_str(), "timer1");
