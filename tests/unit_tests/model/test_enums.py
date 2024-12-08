@@ -346,7 +346,7 @@ class TestBookAction:
         [
             [BookAction.ADD, "ADD"],
             [BookAction.UPDATE, "UPDATE"],
-            [BookAction.REMOVE, "DELETE"],
+            [BookAction.REMOVE, "REMOVE"],
             [BookAction.CLEAR, "CLEAR"],
         ],
     )
@@ -362,7 +362,7 @@ class TestBookAction:
         [
             ["ADD", BookAction.ADD],
             ["UPDATE", BookAction.UPDATE],
-            ["DELETE", BookAction.REMOVE],
+            ["REMOVE", BookAction.REMOVE],
             ["CLEAR", BookAction.CLEAR],
         ],
     )
