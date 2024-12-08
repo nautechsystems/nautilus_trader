@@ -196,9 +196,6 @@ jobs:
       RUST_BACKTRACE: 1
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "${{ env.SCCACHE_PATH }}"
-      CMAKE_C_COMPILER_LAUNCHER: "${{ env.SCCACHE_PATH }}"
-      CMAKE_CXX_COMPILER_LAUNCHER: "${{ env.SCCACHE_PATH }}"
 
     steps:
       - name: Checkout repository
@@ -206,6 +203,20 @@ jobs:
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Set sccache-cache env vars (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "CC=sccache clang" >> $GITHUB_ENV
+          echo "CXX=sccache clang" >> $GITHUB_ENV
+
+      - name: Set sccache-cache env vars (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
 
       - name: Free disk space (Windows)
         run: |

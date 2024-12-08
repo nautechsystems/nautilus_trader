@@ -53,6 +53,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
       - name: Set sccache-cache env vars (non-Windows)
         if: runner.os != 'Windows'
         run: |
@@ -66,9 +69,6 @@ jobs:
           echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Set up Rust toolchain
         run: |
@@ -338,6 +338,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
       - name: Set sccache-cache env vars (non-Windows)
         if: runner.os != 'Windows'
         run: |
@@ -351,9 +354,6 @@ jobs:
           echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Set up Rust toolchain
         run: |
