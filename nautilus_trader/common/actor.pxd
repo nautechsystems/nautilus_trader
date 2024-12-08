@@ -183,6 +183,7 @@ cdef class Actor(Component):
         DataType data_type,
         ClientId client_id,
         callback=*,
+        bint update_catalog=*,
         dict params=*,
     )
     cpdef UUID4 request_instrument(

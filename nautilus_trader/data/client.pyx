@@ -110,7 +110,7 @@ cdef class DataClient(Component):
         """
         return sorted(list(self._subscriptions_generic))
 
-    cpdef void subscribe(self, DataType data_type):
+    cpdef void subscribe(self, DataType data_type, dict[str, object] params = None):
         """
         Subscribe to data for the given data type.
 
@@ -125,7 +125,7 @@ cdef class DataClient(Component):
             f"You can implement by overriding the `subscribe` method for this client",
         )
 
-    cpdef void unsubscribe(self, DataType data_type):
+    cpdef void unsubscribe(self, DataType data_type, dict[str, object] params = None):
         """
         Unsubscribe from data for the given data type.
 
@@ -152,7 +152,7 @@ cdef class DataClient(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id):
+    cpdef void request(self, DataType data_type, UUID4 correlation_id, dict[str, object] params = None):
         """
         Request data for the given data type.
 
@@ -353,7 +353,7 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_instrument_close))
 
-    cpdef void subscribe(self, DataType data_type):
+    cpdef void subscribe(self, DataType data_type, dict[str, object] params = None):
         """
         Subscribe to data for the given data type.
 
@@ -535,7 +535,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_bars` must be implemented in the subclass")
 
-    cpdef void unsubscribe(self, DataType data_type):
+    cpdef void unsubscribe(self, DataType data_type, dict[str, object] params = None):
         """
         Unsubscribe from data for the given data type.
 
