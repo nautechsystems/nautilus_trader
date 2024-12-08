@@ -442,7 +442,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
                 delta = OrderBookDelta(
                     instrument_id=instrument_id,
-                    action=BookAction.DELETE,
+                    action=BookAction.REMOVE,
                     order=BookOrder(
                         side=OrderSide.SELL,
                         price=ask_price,
@@ -475,7 +475,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
                 delta = OrderBookDelta(
                     instrument_id=instrument_id,
-                    action=BookAction.DELETE,
+                    action=BookAction.REMOVE,
                     order=BookOrder(
                         side=OrderSide.BUY,
                         price=bid_price,
@@ -492,7 +492,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 # Remove bid price level and ask price level
                 delta = OrderBookDelta(
                     instrument_id=instrument_id,
-                    action=BookAction.DELETE,
+                    action=BookAction.REMOVE,
                     order=BookOrder(
                         side=OrderSide.BUY,
                         price=bid_price,
@@ -508,7 +508,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
                 delta = OrderBookDelta(
                     instrument_id=instrument_id,
-                    action=BookAction.DELETE,
+                    action=BookAction.REMOVE,
                     order=BookOrder(
                         side=OrderSide.SELL,
                         price=ask_price,

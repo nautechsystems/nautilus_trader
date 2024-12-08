@@ -59,7 +59,6 @@ from nautilus_trader.core.rust.model cimport orderbook_clear
 from nautilus_trader.core.rust.model cimport orderbook_clear_asks
 from nautilus_trader.core.rust.model cimport orderbook_clear_bids
 from nautilus_trader.core.rust.model cimport orderbook_count
-from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_drop
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
@@ -69,6 +68,7 @@ from nautilus_trader.core.rust.model cimport orderbook_instrument_id
 from nautilus_trader.core.rust.model cimport orderbook_midpoint
 from nautilus_trader.core.rust.model cimport orderbook_new
 from nautilus_trader.core.rust.model cimport orderbook_pprint_to_cstr
+from nautilus_trader.core.rust.model cimport orderbook_remove
 from nautilus_trader.core.rust.model cimport orderbook_reset
 from nautilus_trader.core.rust.model cimport orderbook_sequence
 from nautilus_trader.core.rust.model cimport orderbook_simulate_fills
@@ -287,7 +287,7 @@ cdef class OrderBook(Data):
 
         orderbook_update(&self._mem, order._mem, flags, sequence, ts_event)
 
-    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
+    cpdef void remove(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Cancel the given order in the book.
 
@@ -305,7 +305,7 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(order, "order")
 
-        orderbook_delete(&self._mem, order._mem, flags, sequence, ts_event)
+        orderbook_remove(&self._mem, order._mem, flags, sequence, ts_event)
 
     cpdef void clear(self, uint64_t ts_event, uint64_t sequence=0):
         """

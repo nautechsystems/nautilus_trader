@@ -32,7 +32,7 @@ from nautilus_trader.model.identifiers import TradeId
 MKT_DEPTH_OPERATIONS = {
     0: BookAction.ADD,
     1: BookAction.UPDATE,
-    2: BookAction.DELETE,
+    2: BookAction.REMOVE,
 }
 
 IB_SIDE = {1: OrderSide.BUY, 0: OrderSide.SELL}

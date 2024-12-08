@@ -333,8 +333,8 @@ pub enum BookAction {
     Add = 1,
     /// An existing order in the book is updated/modified.
     Update = 2,
-    /// An existing order in the book is deleted/canceled.
-    Delete = 3,
+    /// An existing order in the book is deleted/removed/canceled.
+    Remove = 3,
     /// The state of the order book is cleared.
     Clear = 4,
 }
@@ -344,7 +344,7 @@ impl FromU8 for BookAction {
         match value {
             1 => Some(Self::Add),
             2 => Some(Self::Update),
-            3 => Some(Self::Delete),
+            3 => Some(Self::Remove),
             4 => Some(Self::Clear),
             _ => None,
         }

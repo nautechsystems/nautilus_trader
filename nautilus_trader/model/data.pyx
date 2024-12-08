@@ -1830,7 +1830,7 @@ cdef class OrderBookDelta(Data):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the book.
-    action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
+    action : BookAction {``ADD``, ``UPDATE``, ``REMOVE``, ``CLEAR``}
         The order book delta action.
     order : BookOrder or ``None``
         The book order for the delta.
@@ -1945,7 +1945,7 @@ cdef class OrderBookDelta(Data):
     @property
     def action(self) -> BookAction:
         """
-        Return the deltas book action {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
+        Return the deltas book action {``ADD``, ``UPDATE``, ``REMOVE``, ``CLEAR``}
 
         Returns
         -------
@@ -1979,16 +1979,16 @@ cdef class OrderBookDelta(Data):
         return <BookAction>self._mem.action == BookAction.UPDATE
 
     @property
-    def is_delete(self) -> BookAction:
+    def is_remove(self) -> BookAction:
         """
-        If the deltas book action is a ``DELETE``.
+        If the deltas book action is a ``REMOVE``.
 
         Returns
         -------
         bool
 
         """
-        return <BookAction>self._mem.action == BookAction.DELETE
+        return <BookAction>self._mem.action == BookAction.REMOVE
 
     @property
     def is_clear(self) -> BookAction:
@@ -2228,7 +2228,7 @@ cdef class OrderBookDelta(Data):
         ----------
         instrument_id : InstrumentId
             The trade instrument ID.
-        action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
+        action : BookAction {``ADD``, ``UPDATE``, ``REMOVE``, ``CLEAR``}
             The order book delta action.
         side : OrderSide {``BUY``, ``SELL``}
             The order side.

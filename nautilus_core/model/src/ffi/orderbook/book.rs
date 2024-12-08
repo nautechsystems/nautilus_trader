@@ -121,14 +121,14 @@ pub extern "C" fn orderbook_update(
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_delete(
+pub extern "C" fn orderbook_remove(
     book: &mut OrderBook_API,
     order: BookOrder,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.delete(order, flags, sequence, ts_event.into());
+    book.remove(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]

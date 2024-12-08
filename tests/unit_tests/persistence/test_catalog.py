@@ -89,7 +89,7 @@ def test_catalog_query_custom_filtered(
     catalog_betfair: ParquetDataCatalog,
 ) -> None:
     filtered_deltas = catalog_betfair.order_book_deltas(
-        where=f"action = '{BookAction.DELETE.value}'",
+        where=f"action = '{BookAction.REMOVE.value}'",
     )
     assert len(filtered_deltas) == 351
 
@@ -220,7 +220,7 @@ def test_catalog_filter(
 
     # Act
     filtered_deltas = catalog_betfair.order_book_deltas(
-        where=f"Action = {BookAction.DELETE.value}",
+        where=f"Action = {BookAction.REMOVE.value}",
     )
 
     # Assert

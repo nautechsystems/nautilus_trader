@@ -371,7 +371,7 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
 
         return OrderBookDelta(
             instrument_id=instrument_id,
-            action=BookAction.UPDATE if size > 0 else BookAction.DELETE,
+            action=BookAction.UPDATE if size > 0 else BookAction.REMOVE,
             order=order,
             flags=flags,
             sequence=sequence,

@@ -150,12 +150,8 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
     assert result == expected
 
     # Assert - Check orderbook prices
-    orderbook_calls = [
-        call.args[0] for call in mock_calls if isinstance(call.args[0], OrderBookDeltas)
-    ]
-    set_result = {
-        delta.order.price.as_double() for deltas in orderbook_calls for delta in deltas.deltas
-    }
+    orderbook_calls = [call.args[0] for call in mock_calls if isinstance(call.args[0], OrderBookDeltas)]
+    set_result = {delta.order.price.as_double() for deltas in orderbook_calls for delta in deltas.deltas}
     set_expected = {
         0.0,
         1.8,
@@ -182,7 +178,7 @@ def test_market_update(data_client, mock_data_engine_process):
     # Assert
     book_deltas = mock_data_engine_process.call_args_list[0].args[0]
     assert isinstance(book_deltas, OrderBookDeltas)
-    assert {d.action for d in book_deltas.deltas} == {BookAction.UPDATE, BookAction.DELETE}
+    assert {d.action for d in book_deltas.deltas} == {BookAction.UPDATE, BookAction.REMOVE}
     assert book_deltas.deltas[0].order.price == betfair_float_to_price(4.7)
 
 
@@ -234,11 +230,7 @@ def test_market_bsp(data_client, mock_data_engine_process):
     assert dict(result) == expected
 
     # Assert - Count of custom data messages
-    sp_deltas = [
-        data
-        for data in mock_call_args
-        if isinstance(data, CustomData) and isinstance(data.data, BSPOrderBookDelta)
-    ]
+    sp_deltas = [data for data in mock_call_args if isinstance(data, CustomData) and isinstance(data.data, BSPOrderBookDelta)]
     assert len(sp_deltas) == 30
 
 
@@ -308,12 +300,7 @@ def test_instrument_opening_events(data_client, parser):
 
 
 def test_instrument_in_play_events(data_client, parser):
-    events = [
-        msg
-        for update in BetfairDataProvider.market_updates()
-        for msg in parser.parse(update)
-        if isinstance(msg, InstrumentStatus)
-    ]
+    events = [msg for update in BetfairDataProvider.market_updates() for msg in parser.parse(update) if isinstance(msg, InstrumentStatus)]
     assert len(events) == 14
     result = [ev.action for ev in events]
     expected = [
@@ -404,12 +391,8 @@ def test_betfair_ticker_sp(data_client, mock_data_engine_process):
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
     custom_data = [data.data for data in mock_call_args if isinstance(data, CustomData)]
-    starting_prices_near = [
-        data for data in custom_data if isinstance(data, BetfairTicker) if data.starting_price_near
-    ]
-    starting_prices_far = [
-        data for data in custom_data if isinstance(data, BetfairTicker) and data.starting_price_far
-    ]
+    starting_prices_near = [data for data in custom_data if isinstance(data, BetfairTicker) if data.starting_price_near]
+    starting_prices_far = [data for data in custom_data if isinstance(data, BetfairTicker) and data.starting_price_far]
     assert len(starting_prices_near) == 1739
     assert len(starting_prices_far) == 1182
 

@@ -91,8 +91,8 @@ cdef extern from "../includes/model.h":
         ADD # = 1,
         # An existing order in the book is updated/modified.
         UPDATE # = 2,
-        # An existing order in the book is deleted/canceled.
-        DELETE # = 3,
+        # An existing order in the book is deleted/removed/canceled.
+        REMOVE # = 3,
         # The state of the order book is cleared.
         CLEAR # = 4,
 
@@ -1616,7 +1616,7 @@ cdef extern from "../includes/model.h":
                           uint64_t sequence,
                           uint64_t ts_event);
 
-    void orderbook_delete(OrderBook_API *book,
+    void orderbook_remove(OrderBook_API *book,
                           BookOrder_t order,
                           uint8_t flags,
                           uint64_t sequence,

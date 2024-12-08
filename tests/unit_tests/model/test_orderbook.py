@@ -368,7 +368,7 @@ class TestOrderBook:
         book.update(order, 0)
 
         # Act
-        book.delete(order, 0)
+        book.remove(order, 0)
 
         # Assert
         assert len(book.bids()) == 0

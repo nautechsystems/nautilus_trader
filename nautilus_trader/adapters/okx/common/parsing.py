@@ -53,7 +53,7 @@ def parse_okx_ws_delta(  #  for websocket "books5-l2-tbt" channel
     if is_snapshot:
         action = BookAction.ADD
     else:
-        action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+        action = BookAction.REMOVE if size == 0 else BookAction.UPDATE
 
     return OrderBookDelta(
         instrument_id=instrument_id,

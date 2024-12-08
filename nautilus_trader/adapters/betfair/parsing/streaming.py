@@ -338,7 +338,7 @@ def runner_change_to_order_book_snapshot(
             book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
             delta = OrderBookDelta(
                 instrument_id,
-                BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
+                BookAction.UPDATE if bid.volume > 0.0 else BookAction.REMOVE,
                 book_order,
                 flags=0,
                 sequence=0,
@@ -353,7 +353,7 @@ def runner_change_to_order_book_snapshot(
             book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
             delta = OrderBookDelta(
                 instrument_id,
-                BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
+                BookAction.UPDATE if ask.volume > 0.0 else BookAction.REMOVE,
                 book_order,
                 flags=0,
                 sequence=0,
@@ -421,7 +421,7 @@ def runner_change_to_order_book_deltas(
             book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
             delta = OrderBookDelta(
                 instrument_id,
-                BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
+                BookAction.UPDATE if bid.volume > 0.0 else BookAction.REMOVE,
                 book_order,
                 flags=0,
                 sequence=0,
@@ -437,7 +437,7 @@ def runner_change_to_order_book_deltas(
 
             delta = OrderBookDelta(
                 instrument_id,
-                BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
+                BookAction.UPDATE if ask.volume > 0.0 else BookAction.REMOVE,
                 book_order,
                 flags=0,
                 sequence=0,
@@ -499,7 +499,7 @@ def runner_change_to_bsp_order_book_deltas(
             book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
             delta = BSPOrderBookDelta(
                 instrument_id,
-                BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
+                BookAction.REMOVE if spb.volume == 0.0 else BookAction.UPDATE,
                 book_order,
                 flags=0,
                 sequence=0,
@@ -513,7 +513,7 @@ def runner_change_to_bsp_order_book_deltas(
             book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
             delta = BSPOrderBookDelta(
                 instrument_id,
-                BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
+                BookAction.REMOVE if spl.volume == 0.0 else BookAction.UPDATE,
                 book_order,
                 flags=0,
                 sequence=0,

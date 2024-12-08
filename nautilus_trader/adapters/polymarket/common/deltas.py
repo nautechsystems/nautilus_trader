@@ -161,7 +161,7 @@ def compute_effective_deltas(
         deltas.append(
             OrderBookDelta(
                 instrument_id=instrument_id,
-                action=BookAction.DELETE,
+                action=BookAction.REMOVE,
                 order=order,
                 flags=0,
                 sequence=0,
@@ -181,7 +181,7 @@ def compute_effective_deltas(
         deltas.append(
             OrderBookDelta(
                 instrument_id=instrument_id,
-                action=BookAction.DELETE,
+                action=BookAction.REMOVE,
                 order=order,
                 flags=0,
                 sequence=0,
