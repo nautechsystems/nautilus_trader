@@ -60,6 +60,7 @@ impl DerefMut for Level_API {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> Level_API {
     let CVec { ptr, len, cap } = orders;
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
@@ -83,6 +84,7 @@ pub extern "C" fn level_clone(level: &Level_API) -> Level_API {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_price(level: &Level_API) -> Price {
     level.price.value
 }

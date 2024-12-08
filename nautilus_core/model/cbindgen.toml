@@ -47,6 +47,7 @@ exclude = [
 "OrderListId" = "OrderListId_t"
 "PositionId" = "PositionId_t"
 "Price" = "Price_t"
+"PriceRaw" = "int128_t"
 "Quantity" = "Quantity_t"
 "QuoteTick" = "QuoteTick_t"
 "StrategyId" = "StrategyId_t"

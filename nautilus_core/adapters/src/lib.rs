@@ -33,7 +33,8 @@
 //! - `python`: Enables Python bindings from `pyo3`.
 //! - `tardis`: Includes the Tardis integration adapter.
 
-#[cfg(feature = "databento")]
+// TODO: turn off databento while it does not support high precision
+#[cfg(all(feature = "databento", not(feature = "high_precision")))]
 pub mod databento;
 
 #[cfg(feature = "tardis")]

@@ -35,7 +35,10 @@ use crate::{
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
-    types::{price::Price, quantity::Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::Quantity,
+    },
 };
 
 impl OrderBookDelta {
@@ -65,7 +68,7 @@ impl OrderBookDelta {
             let side = OrderSide::from_u8(side_u8).unwrap();
 
             let price_py: Bound<'_, PyAny> = order_pyobject.getattr("price")?;
-            let price_raw: i64 = price_py.getattr("raw")?.extract()?;
+            let price_raw: PriceRaw = price_py.getattr("raw")?.extract()?;
             let price_prec: u8 = price_py.getattr("precision")?.extract()?;
             let price = Price::from_raw(price_raw, price_prec);
 

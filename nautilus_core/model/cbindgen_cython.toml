@@ -16,6 +16,7 @@ header = '"../includes/model.h"'
     "uint64_t",
     "uintptr_t",
     "int64_t",
+    "int128_t",
 ]
 
 "nautilus_trader.core.rust.core" = [
