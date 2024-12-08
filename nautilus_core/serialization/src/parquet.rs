@@ -20,7 +20,16 @@ use parquet::{arrow::ArrowWriter, basic::ZstdLevel, file::properties::WriterProp
 
 /// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
 pub fn write_batch_to_parquet(
-    batch: &RecordBatch,
+    batch: RecordBatch,
+    filepath: &Path,
+    compression: Option<parquet::basic::Compression>,
+) -> Result<(), Box<dyn Error>> {
+    write_batches_to_parquet(&[batch], filepath, compression)
+}
+
+/// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
+pub fn write_batches_to_parquet(
+    batches: &[RecordBatch],
     filepath: &Path,
     compression: Option<parquet::basic::Compression>,
 ) -> Result<(), Box<dyn Error>> {
@@ -37,8 +46,10 @@ pub fn write_batch_to_parquet(
         .set_compression(compression.unwrap_or(default_compression))
         .build();
 
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(writer_props))?;
-    writer.write(batch)?;
+    let mut writer = ArrowWriter::try_new(file, batches[0].schema(), Some(writer_props))?;
+    for batch in batches {
+        writer.write(batch)?;
+    }
     writer.close()?;
 
     Ok(())

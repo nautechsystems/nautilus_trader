@@ -115,6 +115,14 @@ impl EncodeToRecordBatch for QuoteTick {
             ],
         )
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        QuoteTick::get_metadata(
+            &self.instrument_id,
+            self.bid_price.precision,
+            self.bid_size.precision,
+        )
+    }
 }
 
 impl DecodeFromRecordBatch for QuoteTick {

@@ -117,6 +117,10 @@ impl EncodeToRecordBatch for Bar {
             ],
         )
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        Bar::get_metadata(&self.bar_type, self.open.precision, self.volume.precision)
+    }
 }
 
 impl DecodeFromRecordBatch for Bar {

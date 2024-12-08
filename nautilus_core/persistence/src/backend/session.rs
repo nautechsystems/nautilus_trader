@@ -20,7 +20,7 @@ use datafusion::{
     error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
 };
 use futures::StreamExt;
-use nautilus_core::ffi::cvec::CVec;
+use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
 use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
@@ -175,6 +175,44 @@ impl DataBackendSession {
 
 // Note: Intended to be used on a single Python thread
 unsafe impl Send for DataBackendSession {}
+
+pub fn build_query(
+    table: &str,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+    where_clause: Option<&str>,
+) -> String {
+    let mut conditions = Vec::new();
+
+    // Add where clause if provided
+    if let Some(clause) = where_clause {
+        conditions.push(clause.to_string());
+    }
+
+    // Add start condition if provided
+    if let Some(start_ts) = start {
+        conditions.push(format!("ts_init >= {}", start_ts));
+    }
+
+    // Add end condition if provided
+    if let Some(end_ts) = end {
+        conditions.push(format!("ts_init <= {}", end_ts));
+    }
+
+    // Build base query
+    let mut query = format!("SELECT * FROM {}", table);
+
+    // Add WHERE clause if there are conditions
+    if !conditions.is_empty() {
+        query.push_str(" WHERE ");
+        query.push_str(&conditions.join(" AND "));
+    }
+
+    // Add ORDER BY clause
+    query.push_str(" ORDER BY ts_init");
+
+    query
+}
 
 #[cfg_attr(
     feature = "python",
