@@ -196,9 +196,9 @@ jobs:
       RUST_BACKTRACE: 1
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CMAKE_C_COMPILER_LAUNCHER: "sccache"
-      CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+      RUSTC_WRAPPER: "${{ env.SCCACHE_PATH }}"
+      CMAKE_C_COMPILER_LAUNCHER: "${{ env.SCCACHE_PATH }}"
+      CMAKE_CXX_COMPILER_LAUNCHER: "${{ env.SCCACHE_PATH }}"
 
     steps:
       - name: Checkout repository
