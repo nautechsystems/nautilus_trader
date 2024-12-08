@@ -276,7 +276,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
@@ -299,7 +299,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 f"Cannot subscribe to {data_type.type} (not implemented)",
             )
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(

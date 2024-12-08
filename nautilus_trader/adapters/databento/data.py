@@ -374,7 +374,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         if data_type.type == DatabentoImbalance:
             await self._subscribe_imbalance(data_type)
         elif data_type.type == DatabentoStatistics:
@@ -677,7 +677,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_bars` was canceled while still pending")
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
         )
@@ -757,7 +757,12 @@ class DatabentoDataClient(LiveMarketDataClient):
             "unsubscribing not supported by Databento.",
         )
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if data_type.type == InstrumentStatus:
             await self._request_instrument_status(data_type, correlation_id)
         elif data_type.type == DatabentoImbalance:
