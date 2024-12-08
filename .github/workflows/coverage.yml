@@ -17,6 +17,7 @@ jobs:
     env:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang"

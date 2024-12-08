@@ -26,6 +26,7 @@ jobs:
     env:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -104,6 +105,7 @@ jobs:
     env:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang"
@@ -204,6 +206,7 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang"
@@ -311,6 +314,7 @@ jobs:
       BUILD_MODE: release
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
 
     steps:
       - name: Free disk space (Ubuntu)
