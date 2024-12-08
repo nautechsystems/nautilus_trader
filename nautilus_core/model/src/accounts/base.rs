@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -133,6 +133,18 @@ impl BaseAccount {
                 self.balances.insert(balance.currency, balance);
             }
         }
+    }
+
+    pub fn update_commissions(&mut self, commission: Money) {
+        if commission.as_decimal() == Decimal::ZERO {
+            return;
+        }
+
+        let currency = commission.currency;
+        let total_commissions = self.commissions.get(&currency).unwrap_or(&0.0);
+
+        self.commissions
+            .insert(currency, total_commissions + commission.as_f64());
     }
 
     pub fn base_apply(&mut self, event: AccountState) {

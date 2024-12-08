@@ -1,22 +1,63 @@
-# NautilusTrader 1.207.0 Beta
+# NautilusTrader 1.208.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
+- Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083), thanks @faysou
+- Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
+
+### Internal Improvements
+- Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
+- Upgraded `tokio` crate to v1.42.0
+
+### Breaking Changes
 None
+
+### Fixes
+- Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
+- Fixed `BEST_EFFORT_CANCELED` order status report for dYdX (#2082), thanks @davidsblom
+- Fixed specifying price for market orders on dYdX (#2088), thanks @davidsblom
+- Fixed interest rate curve custom data and interpolation (#2090), thanks @gcheshkov
+
+---
+
+# NautilusTrader 1.207.0 Beta
+
+Released on 29th November 2024 (UTC).
+
+### Enhancements
+- Implemented mixed catalog data requests with catalog update (#2043), thanks @faysou
+- Added Databento symbology support for Interactive Brokers (#2073), thanks @rsmb7z
+- Added `metadata` parameter for data requests (#2043), thanks @faysou
+- Added `STOP_MARKET` and `STOP_LIMIT` order support for dYdX (#2066), thanks @davidsblom
+- Added `max_reconnection_tries` to data client config for dYdX (#2066), thanks @davidsblom
+- Added wallet subscription for Bybit (#2076), thanks @sunlei
+- Added docs clarity on loading historical bars (#2078), thanks @dodofarm
+- Added `price_precision` optional parameter for `DatabentoDataLoader` methods
 - Improved `Cache` behavior when adding more recent quotes, trades, or bars (now adds to cache)
 
 ### Internal Improvements
+- Ported `Portfolio` and `AccountManager` to Rust (#2058), thanks @Pushkarm029
+- Implemented `AsRef<str>` for `Price`, `Money`, and `Currency`
+- Improved expired timer cleanup in clocks (#2064), thanks @twitu
 - Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
 - Improved symbol normalization for Tardis
+- Improved historical bar request performance for Tardis
+- Improved `TradeId` Debug implementation to display value as proper UTF-8 string
 - Refined `HttpClient` for use directly from Rust
+- Refined Databento decoder (removed currency hard coding and use of `unsafe`)
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 
 ### Breaking Changes
-- Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE`
+- Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE` (more conventional terminology)
 
 ### Fixes
 - Fixed missing venue -> exchange mappings for Tardis integration
+- Fixed account balance and order status parsing for dYdX (#2067), thanks @davidsblom
+- Fixed parsing best effort opened order status for dYdX (#2068), thanks @davidsblom
+- Fixed occasionally incorrect `price_precision`, `multiplier` and `lot_size` decoding for Databento instruments
+- Fixed missing Arrow schemas for instrument deserialization
+- Reconcile order book for dYdX when inconsistent (#2077), thanks @davidsblom
 
 ---
 

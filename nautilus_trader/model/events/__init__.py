@@ -43,8 +43,8 @@ from nautilus_trader.model.events.position import PositionOpened
 __all__ = [
     "AccountState",
     "OrderAccepted",
-    "OrderCanceled",
     "OrderCancelRejected",
+    "OrderCanceled",
     "OrderDenied",
     "OrderEmulated",
     "OrderEvent",

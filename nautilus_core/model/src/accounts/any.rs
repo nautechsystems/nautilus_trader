@@ -13,15 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
     enums::AccountType,
-    events::account::state::AccountState,
+    events::{account::state::AccountState, order::OrderFilled},
     identifiers::AccountId,
+    instruments::any::InstrumentAny,
+    position::Position,
+    types::{balance::AccountBalance, currency::Currency, money::Money},
 };
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AccountAny {
     Margin(MarginAccount),
@@ -58,6 +62,27 @@ impl AccountAny {
         }
     }
 
+    pub fn balances(&self) -> HashMap<Currency, AccountBalance> {
+        match self {
+            AccountAny::Margin(margin) => margin.balances(),
+            AccountAny::Cash(cash) => cash.balances(),
+        }
+    }
+
+    pub fn balances_locked(&self) -> HashMap<Currency, Money> {
+        match self {
+            AccountAny::Margin(margin) => margin.balances_locked(),
+            AccountAny::Cash(cash) => cash.balances_locked(),
+        }
+    }
+
+    pub fn base_currency(&self) -> Option<Currency> {
+        match self {
+            AccountAny::Margin(margin) => margin.base_currency(),
+            AccountAny::Cash(cash) => cash.base_currency(),
+        }
+    }
+
     pub fn from_events(events: Vec<AccountState>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create `AccountAny`");
@@ -69,6 +94,18 @@ impl AccountAny {
             account.apply(event.clone());
         }
         Ok(account)
+    }
+
+    pub fn calculate_pnls(
+        &self,
+        instrument: InstrumentAny,
+        fill: OrderFilled,
+        position: Option<Position>,
+    ) -> anyhow::Result<Vec<Money>> {
+        match self {
+            AccountAny::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
+            AccountAny::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
+        }
     }
 }
 

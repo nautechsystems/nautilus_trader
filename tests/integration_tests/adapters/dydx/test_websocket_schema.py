@@ -27,6 +27,8 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderType
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightChannelData
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
@@ -95,6 +97,8 @@ from nautilus_trader.model.objects import Quantity
         "tests/test_data/dydx/websocket/v4_accounts_fills.json",
         "tests/test_data/dydx/websocket/v4_markets_subscribed.json",
         "tests/test_data/dydx/websocket/v4_markets_channel_data.json",
+        "tests/test_data/dydx/websocket/v4_block_height_subscribed.json",
+        "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
     ],
 )
 def test_general_messsage(file_path: str) -> None:
@@ -110,6 +114,40 @@ def test_general_messsage(file_path: str) -> None:
 
     # Assert
     assert msg.type is not None
+
+
+def test_block_height_subscribed_message() -> None:
+    """
+    Test parsing the block height subscribed message.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsBlockHeightSubscribedData)
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/websocket/v4_block_height_subscribed.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Assert
+    assert msg.channel == "v4_block_height"
+
+
+def test_block_height_channel_data_message() -> None:
+    """
+    Test parsing the block height channel data message.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsBlockHeightChannelData)
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Assert
+    assert msg.channel == "v4_block_height"
 
 
 def test_account_subscribed_message() -> None:
@@ -205,8 +243,8 @@ def test_account_parse_to_account_balances() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("10.00590000"), Currency.from_str("USDC")),
-            free=Money(Decimal("1.61742500"), Currency.from_str("USDC")),
+            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
 
@@ -228,8 +266,8 @@ def test_account_parse_to_account_balances_order_best_effort_canceled() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("10.00590000"), Currency.from_str("USDC")),
-            free=Money(Decimal("1.61742500"), Currency.from_str("USDC")),
+            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
 
@@ -511,7 +549,7 @@ def test_account_channel_data_new_order_opened() -> None:
         order_side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.IOC,
-        order_status=OrderStatus.SUBMITTED,
+        order_status=OrderStatus.ACCEPTED,
         price=Price(2791.6, 4),
         quantity=Quantity(0.002, 5),
         filled_qty=Quantity(0, 5),
@@ -660,7 +698,7 @@ def test_account_channel_data_order_best_effort_canceled() -> None:
         order_side=OrderSide.SELL,
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.IOC,
-        order_status=OrderStatus.PENDING_CANCEL,
+        order_status=OrderStatus.CANCELED,
         price=Price(2519.4, 4),
         quantity=Quantity(0.003, 5),
         filled_qty=Quantity(0, 5),

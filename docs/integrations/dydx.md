@@ -104,6 +104,29 @@ order: LimitOrder = self.order_factory.limit(
 )
 ```
 
+## Market orders
+Market orders require specifying a price to for price slippage protection and use hidden orders.
+By setting a price for a market order, you can limit the potential price slippage. For example,
+if you set the price of $100 for a market buy order, the order will only be executed if the market price
+is at or below $100. If the market price is above $100, the order will not be executed.
+
+Some exchanges, including dYdX, support hidden orders. A hidden order is an order that is not visible
+to other market participants, but is still executable. By setting a price for a market order, you can
+create a hidden order that will only be executed if the market price reaches the specified price.
+
+If the market price is not specified, a default value of 0 is used.
+
+To specify the price when creating a market order:
+```python
+order = self.order_factory.market(
+    instrument_id=self.instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=self.instrument.make_qty(self.trade_size),
+    time_in_force=TimeInForce.IOC,
+    tags=[DYDXOrderTags(is_short_term_order=True, market_order_price=Price.from_str("10_000")).value],
+)
+```
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.

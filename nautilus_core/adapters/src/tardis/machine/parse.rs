@@ -210,8 +210,8 @@ pub fn parse_book_snapshot_msg_as_quote(
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> QuoteTick {
-    let ts_event = UnixNanos::from(msg.timestamp.timestamp_nanos_opt().unwrap() as u64);
-    let ts_init = UnixNanos::from(msg.local_timestamp.timestamp_nanos_opt().unwrap() as u64);
+    let ts_event = UnixNanos::from(msg.timestamp);
+    let ts_init = UnixNanos::from(msg.local_timestamp);
 
     let best_bid = &msg.bids[0];
     let bid_price = Price::new(best_bid.price, price_precision);
@@ -243,8 +243,8 @@ pub fn parse_trade_msg(
     let size = Quantity::new(msg.amount, size_precision);
     let aggressor_side = parse_aggressor_side(&msg.side);
     let trade_id = TradeId::new(msg.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
-    let ts_event = UnixNanos::from(msg.timestamp.timestamp_nanos_opt().unwrap() as u64);
-    let ts_init = UnixNanos::from(msg.local_timestamp.timestamp_nanos_opt().unwrap() as u64);
+    let ts_event = UnixNanos::from(msg.timestamp);
+    let ts_init = UnixNanos::from(msg.local_timestamp);
 
     TradeTick::new(
         instrument_id,
@@ -272,8 +272,8 @@ pub fn parse_bar_msg(
     let low = Price::new(msg.low, price_precision);
     let close = Price::new(msg.close, price_precision);
     let volume = Quantity::new(msg.volume, size_precision);
-    let ts_event = UnixNanos::from(msg.timestamp.timestamp_nanos_opt().unwrap() as u64);
-    let ts_init = UnixNanos::from(msg.local_timestamp.timestamp_nanos_opt().unwrap() as u64);
+    let ts_event = UnixNanos::from(msg.timestamp);
+    let ts_init = UnixNanos::from(msg.local_timestamp);
 
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }

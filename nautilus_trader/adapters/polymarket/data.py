@@ -41,7 +41,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -49,7 +48,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BinaryOption
-from nautilus_trader.model.instruments import Instrument
 
 
 class PolymarketDataClient(LiveMarketDataClient):
@@ -226,7 +224,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -242,38 +240,70 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         await self._subscribe_asset_book(instrument_id)
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         await self._subscribe_asset_book(instrument_id)
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         await self._subscribe_asset_book(instrument_id)
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot subscribe to {bar_type} bars: not implemented for Polymarket",
         )
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} order book deltas: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} order book snapshots: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} quotes: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} trades: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {bar_type} bars: not implemented for Polymarket",
         )
@@ -284,6 +314,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -299,15 +330,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
-        data_type = DataType(
-            type=Instrument,
-            metadata={"instrument_id": instrument_id},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=instrument,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instrument(instrument, correlation_id, params)
 
     async def _request_instruments(
         self,
@@ -315,6 +339,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -331,15 +356,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         for instrument in all_instruments.values():
             if instrument.venue == venue:
                 target_instruments.append(instrument)
-        data_type = DataType(
-            type=Instrument,
-            metadata={"venue": venue},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=target_instruments,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instruments(target_instruments, venue, correlation_id, params)
 
     async def _request_quote_ticks(
         self,
@@ -348,6 +366,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error("Cannot request historical quotes: not published by Polymarket")
 
@@ -358,6 +377,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error("Cannot request historical trades: not published by Polymarket")
 
@@ -368,6 +388,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error("Cannot request historical bars: not published by Polymarket")
 

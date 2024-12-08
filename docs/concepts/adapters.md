@@ -128,7 +128,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 
 # nautilus_trader/adapters/binance/spot/data.py
-def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4, params: dict[str, Any]):
     instrument: Instrument | None = self._instrument_provider.find(instrument_id)
     if instrument is None:
         self._log.error(f"Cannot find instrument for {instrument_id}.")
@@ -143,6 +143,7 @@ def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4)
         data_type=data_type,
         data=[instrument],  # Data engine handles lists of instruments
         correlation_id=correlation_id,
+        params=params,
     )
 
 ```

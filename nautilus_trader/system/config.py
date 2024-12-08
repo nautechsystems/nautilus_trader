@@ -61,6 +61,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The configuration for streaming to feather files.
     catalogs : list[DataCatalogConfig], optional
         The list of data catalog configs.
+        We assume that catalogs have no duplicate data.
     actors : list[ImportableActorConfig]
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]

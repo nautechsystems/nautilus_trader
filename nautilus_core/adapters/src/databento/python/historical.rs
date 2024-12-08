@@ -42,7 +42,7 @@ use crate::databento::{
     common::get_date_time_range,
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
-        decode_status_msg, raw_ptr_to_ustr,
+        decode_status_msg,
     },
     symbology::{check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
@@ -155,7 +155,7 @@ impl DatabentoHistoricalClient {
             let mut instruments = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
+                let raw_symbol = msg.raw_symbol().expect("Error decoding `raw_symbol`");
                 let symbol = Symbol::from(raw_symbol);
 
                 let publisher = msg.hd.publisher().expect("Invalid `publisher` for record");
@@ -183,7 +183,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_quotes")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None, schema=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_quotes<'py>(
         &self,
         py: Python<'py>,
@@ -192,6 +193,8 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
+        schema: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -200,16 +203,26 @@ impl DatabentoHistoricalClient {
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
+        let schema = schema.unwrap_or_else(|| "mbp-1".to_string());
+        let dbn_schema = dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?;
+        match dbn_schema {
+            dbn::Schema::Mbp1 | dbn::Schema::Bbo1S | dbn::Schema::Bbo1M => (),
+            _ => {
+                return Err(to_pyvalue_err(
+                    "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m",
+                ))
+            }
+        };
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
             .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
-            .schema(dbn::Schema::Mbp1)
+            .schema(dbn_schema)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -224,8 +237,7 @@ impl DatabentoHistoricalClient {
             let metadata = decoder.metadata().clone();
             let mut result: Vec<QuoteTick> = Vec::new();
 
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
-                let record = dbn::RecordRef::from(msg);
+            let mut process_record = |record: dbn::RecordRef| -> PyResult<()> {
                 let instrument_id =
                     decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
                         .map_err(to_pyvalue_err)?;
@@ -242,9 +254,29 @@ impl DatabentoHistoricalClient {
                 match data {
                     Some(Data::Quote(quote)) => {
                         result.push(quote);
+                        Ok(())
                     }
                     _ => panic!("Invalid data element not `QuoteTick`, was {data:?}"),
                 }
+            };
+
+            match dbn_schema {
+                dbn::Schema::Mbp1 => {
+                    while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                        process_record(dbn::RecordRef::from(msg))?;
+                    }
+                }
+                dbn::Schema::Bbo1M => {
+                    while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1MMsg>().await {
+                        process_record(dbn::RecordRef::from(msg))?;
+                    }
+                }
+                dbn::Schema::Bbo1S => {
+                    while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1SMsg>().await {
+                        process_record(dbn::RecordRef::from(msg))?;
+                    }
+                }
+                _ => panic!("Invalid schema {dbn_schema}"),
             }
 
             Python::with_gil(|py| Ok(result.into_py(py)))
@@ -252,7 +284,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_trades")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_trades<'py>(
         &self,
         py: Python<'py>,
@@ -261,6 +294,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -278,7 +312,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -322,7 +356,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_bars")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_bars<'py>(
         &self,
         py: Python<'py>,
@@ -332,6 +366,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -356,7 +391,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -400,7 +435,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_imbalance")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_imbalance<'py>(
         &self,
         py: Python<'py>,
@@ -409,6 +444,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -426,7 +462,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -459,7 +495,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_statistics")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_statistics<'py>(
         &self,
         py: Python<'py>,
@@ -468,6 +504,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -485,7 +522,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 

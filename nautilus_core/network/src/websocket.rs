@@ -39,7 +39,7 @@ use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
-type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -48,8 +48,8 @@ type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 )]
 pub struct WebSocketConfig {
     pub url: String,
-    pub handler: Arc<PyObject>,
     pub headers: Vec<(String, String)>,
+    pub handler: Option<Arc<PyObject>>,
     pub heartbeat: Option<u64>,
     pub heartbeat_msg: Option<String>,
     pub ping_handler: Option<Arc<PyObject>>,
@@ -73,7 +73,7 @@ pub struct WebSocketConfig {
 /// frequently - than the required amount.
 struct WebSocketClientInner {
     config: WebSocketConfig,
-    read_task: task::JoinHandle<()>,
+    read_task: Option<task::JoinHandle<()>>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
 }
@@ -96,8 +96,11 @@ impl WebSocketClientInner {
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
-        // Keep receiving messages from socket and pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler.clone(), ping_handler.clone());
+        // Only spawn read task if handler is provided
+        let read_task = handler
+            .as_ref()
+            .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
+
         let heartbeat_task =
             Self::spawn_heartbeat_task(*heartbeat, heartbeat_msg.clone(), writer.clone());
 
@@ -232,9 +235,11 @@ impl WebSocketClientInner {
     pub async fn shutdown(&mut self) {
         tracing::debug!("Closing connection");
 
-        if !self.read_task.is_finished() {
-            self.read_task.abort();
-            tracing::debug!("Aborted message read task");
+        if let Some(ref read_task) = self.read_task.take() {
+            if !read_task.is_finished() {
+                read_task.abort();
+                tracing::debug!("Aborted message read task");
+            }
         }
 
         // Cancel heart beat task
@@ -267,11 +272,13 @@ impl WebSocketClientInner {
         *guard = new_writer;
         drop(guard);
 
-        self.read_task = Self::spawn_read_task(
-            reader,
-            self.config.handler.clone(),
-            self.config.ping_handler.clone(),
-        );
+        if let Some(ref handler) = self.config.handler {
+            self.read_task = Some(Self::spawn_read_task(
+                reader,
+                handler.clone(),
+                self.config.ping_handler.clone(),
+            ));
+        }
 
         self.heartbeat_task = Self::spawn_heartbeat_task(
             self.config.heartbeat,
@@ -292,14 +299,19 @@ impl WebSocketClientInner {
     #[inline]
     #[must_use]
     pub fn is_alive(&self) -> bool {
-        !self.read_task.is_finished()
+        match &self.read_task {
+            Some(read_task) => !read_task.is_finished(),
+            None => true, // Stream is being used directly
+        }
     }
 }
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
-        if !self.read_task.is_finished() {
-            self.read_task.abort();
+        if let Some(ref read_task) = self.read_task.take() {
+            if !read_task.is_finished() {
+                read_task.abort();
+            }
         }
 
         // Cancel heart beat task
@@ -316,13 +328,64 @@ impl Drop for WebSocketClientInner {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketClient {
-    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) writer: SharedMessageWriter,
     pub(crate) controller_task: task::JoinHandle<()>,
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
 }
 
 impl WebSocketClient {
+    /// Creates a websocket client that returns a stream for reading messages.
+    pub async fn connect_stream(
+        url: String,
+        headers: Vec<(String, String)>,
+        heartbeat: Option<u64>,
+        heartbeat_msg: Option<String>,
+        max_reconnection_tries: Option<u64>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+    ) -> Result<(MessageReader, Self), Error> {
+        let (ws_stream, _) = connect_async(url.clone().into_client_request()?).await?;
+        let (writer, reader) = ws_stream.split();
+        let writer = Arc::new(Mutex::new(writer));
+
+        // Create config with minimal no-op Python handler so we incrementally
+        // move towards a more Rust-native approach.
+        let config = {
+            WebSocketConfig {
+                url,
+                handler: None,
+                headers,
+                heartbeat,
+                heartbeat_msg,
+                ping_handler: None,
+                max_reconnection_tries,
+            }
+        };
+
+        let disconnect_mode = Arc::new(AtomicBool::new(false));
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+
+        let inner = WebSocketClientInner::connect_url(config).await?;
+        let controller_task = Self::spawn_controller_task(
+            inner,
+            disconnect_mode.clone(),
+            None, // no post_reconnection
+            None, // no post_disconnection
+            max_reconnection_tries,
+        );
+
+        Ok((
+            reader,
+            Self {
+                writer: writer.clone(),
+                controller_task,
+                rate_limiter,
+                disconnect_mode,
+            },
+        ))
+    }
+
     /// Creates a websocket client.
     ///
     /// Creates an inner client and controller task to reconnect or disconnect
@@ -357,9 +420,9 @@ impl WebSocketClient {
         };
 
         Ok(Self {
-            rate_limiter,
             writer,
             controller_task,
+            rate_limiter,
             disconnect_mode,
         })
     }
@@ -393,6 +456,12 @@ impl WebSocketClient {
         }
     }
 
+    pub async fn send_text(&self, data: String) -> Result<(), Error> {
+        tracing::trace!("Sending text: {data:?}");
+        let mut guard = self.writer.lock().await;
+        guard.send(Message::Text(data)).await
+    }
+
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
@@ -415,9 +484,12 @@ impl WebSocketClient {
         max_reconnection_tries: Option<u64>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
+            let check_interval = Duration::from_millis(100);
+            let retry_interval = Duration::from_millis(1000);
             let mut retry_counter: u64 = 0;
+
             loop {
-                sleep(Duration::from_millis(100)).await;
+                sleep(check_interval).await;
 
                 // Check if client needs to disconnect
                 let disconnect = disconnect_mode.load(Ordering::SeqCst);
@@ -443,7 +515,7 @@ impl WebSocketClient {
                                 if retry_counter < max_reconnection_tries {
                                     retry_counter += 1;
                                     tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max_reconnection_tries}");
-                                    sleep(Duration::from_millis(1000)).await;
+                                    sleep(retry_interval).await;
                                 } else {
                                     tracing::error!("Reconnect failed {e}");
                                     break;

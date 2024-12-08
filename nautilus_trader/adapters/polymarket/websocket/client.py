@@ -171,11 +171,8 @@ class PolymarketWebSocketClient:
         """
         Reconnect the client to the server and resubscribe to all streams.
         """
-        if (
-            self._channel == PolymarketWebSocketChannel.USER
-            and not self._markets
-            or self._channel == PolymarketWebSocketChannel.MARKET
-            and not self._assets
+        if (self._channel == PolymarketWebSocketChannel.USER and not self._markets) or (
+            self._channel == PolymarketWebSocketChannel.MARKET and not self._assets
         ):
             if not self._markets:
                 self._log.error("Cannot reconnect: no streams for initial connection")

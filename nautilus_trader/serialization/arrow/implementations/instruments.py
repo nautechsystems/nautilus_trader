@@ -61,7 +61,7 @@ SCHEMAS = {
         },
         metadata={"type": "BettingInstrument"},
     ),
-    BinaryOption: pa.schema(  # TBD
+    BinaryOption: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),
@@ -350,12 +350,16 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
         b"BettingInstrument": BettingInstrument,
         b"BinaryOption": BinaryOption,
         b"Cfd": Cfd,
+        b"Commodity": Commodity,
         b"CurrencyPair": CurrencyPair,
         b"CryptoPerpetual": CryptoPerpetual,
         b"CryptoFuture": CryptoFuture,
         b"Equity": Equity,
         b"FuturesContract": FuturesContract,
+        b"FuturesSpread": FuturesSpread,
+        b"IndexInstrument": IndexInstrument,
         b"OptionsContract": OptionsContract,
+        b"OptionsSpread": OptionsSpread,
     }[ins_type]
 
     maps = batch.to_pylist()

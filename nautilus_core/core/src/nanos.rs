@@ -22,7 +22,10 @@ use std::{
     str::FromStr,
 };
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+use crate::time::duration_since_unix_epoch;
 
 /// Represents a timestamp in nanoseconds since the UNIX epoch.
 #[repr(C)]
@@ -32,6 +35,16 @@ use serde::{Deserialize, Serialize};
 pub struct UnixNanos(u64);
 
 impl UnixNanos {
+    /// Returns the current UNIX nanoseconds.
+    ///
+    /// This uses the real-time system clock (wall-clock time) and is not suitable for
+    /// backtesting, where a test clock with static time should be used instead.
+    #[must_use]
+    pub fn now() -> Self {
+        let now = duration_since_unix_epoch().as_nanos();
+        Self::from(now as u64)
+    }
+
     /// Returns the underlying value as `u64`.
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
@@ -114,6 +127,12 @@ impl From<&str> for UnixNanos {
 impl From<String> for UnixNanos {
     fn from(value: String) -> Self {
         Self::from(value.as_str())
+    }
+}
+
+impl From<DateTime<Utc>> for UnixNanos {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self::from(value.timestamp_nanos_opt().expect("Invalid timestamp") as u64)
     }
 }
 

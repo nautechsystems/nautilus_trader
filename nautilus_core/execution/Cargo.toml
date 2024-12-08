@@ -19,6 +19,8 @@ derive_builder = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }

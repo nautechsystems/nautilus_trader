@@ -32,8 +32,8 @@ from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.core.datetime import max_date_str
-from nautilus_trader.core.datetime import min_date_str
+from nautilus_trader.core.datetime import max_date
+from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.model import BOOK_DATA_TYPES
@@ -370,11 +370,11 @@ class BacktestNode:
 
             used_start = config.start_time
             if used_start is not None or start is not None:
-                used_start = max_date_str(used_start, start)
+                used_start = max_date(used_start, start).isoformat()
 
             used_end = config.end_time
             if used_end is not None or end is not None:
-                used_end = min_date_str(used_end, end)
+                used_end = min_date(used_end, end).isoformat()
 
             session = catalog.backend_session(
                 data_cls=config.data_type,
@@ -466,10 +466,10 @@ class BacktestNode:
         config_query = config.query
 
         if config_query["start"] is not None or start is not None:
-            config_query["start"] = max_date_str(config_query["start"], start)
+            config_query["start"] = max_date(config_query["start"], start).isoformat()
 
         if config_query["end"] is not None or end is not None:
-            config_query["end"] = min_date_str(config_query["end"], end)
+            config_query["end"] = min_date(config_query["end"], end).isoformat()
 
         return CatalogDataResult(
             data_cls=config.data_type,

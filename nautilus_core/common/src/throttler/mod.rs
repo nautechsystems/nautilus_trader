@@ -528,7 +528,7 @@ mod tests {
             let limit_filled_within_interval = inner
                 .timestamps
                 .get(inner.limit - 1)
-                .map_or(false, |&ts| (now - ts.as_u64()) < interval);
+                .is_some_and(|&ts| (now - ts.as_u64()) < interval);
             let expected_limiting = buffered_messages && limit_filled_within_interval;
             assert_eq!(inner.is_limiting, expected_limiting);
 

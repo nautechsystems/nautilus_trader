@@ -38,7 +38,7 @@ impl LongRatio {
 }
 
 impl PortfolioStatistic for LongRatio {
-    type Item = String;
+    type Item = f64;
 
     fn name(&self) -> String {
         stringify!(LongRatio).to_string()
@@ -55,7 +55,9 @@ impl PortfolioStatistic for LongRatio {
             .collect();
 
         let value = longs.len() as f64 / positions.len() as f64;
-        Some(format!("{:.1$}", value, self.precision))
+
+        let scale = 10f64.powi(self.precision as i32);
+        Some((value * scale).round() / scale)
     }
 }
 
@@ -131,7 +133,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "1.00");
+        assert_eq!(result.unwrap(), 1.00);
     }
 
     #[test]
@@ -145,7 +147,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "0.00");
+        assert_eq!(result.unwrap(), 0.00);
     }
 
     #[test]
@@ -160,7 +162,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "0.50");
+        assert_eq!(result.unwrap(), 0.50);
     }
 
     #[test]
@@ -174,7 +176,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "0.667");
+        assert_eq!(result.unwrap(), 0.667);
     }
 
     #[test]
@@ -184,7 +186,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "1.00");
+        assert_eq!(result.unwrap(), 1.00);
     }
 
     #[test]
@@ -194,7 +196,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "0.00");
+        assert_eq!(result.unwrap(), 0.00);
     }
 
     #[test]
@@ -208,7 +210,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "1");
+        assert_eq!(result.unwrap(), 1.00);
     }
 
     #[test]

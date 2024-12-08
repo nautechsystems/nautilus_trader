@@ -19,7 +19,6 @@ Define websocket message of the dYdX venue.
 # ruff: noqa: N815
 
 import datetime
-from collections import defaultdict
 from decimal import Decimal
 
 import msgspec
@@ -548,31 +547,12 @@ class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=
         """
         Create an account balance report.
         """
-        orders: dict[str, list[DYDXOrderResponse]] = defaultdict(list)
-
-        # Orders with state BEST_EFFORT_CANCELED are not considered to be
-        # included in the locked account balance.
-        if self.orders is not None:
-            for order in self.orders:
-                if (
-                    order.status
-                    in (
-                        DYDXOrderStatus.OPEN,
-                        DYDXOrderStatus.BEST_EFFORT_OPENED,
-                    )
-                    and order.type == DYDXOrderType.LIMIT
-                ):
-                    orders[order.quote_currency()].append(order)
-
         account_balances = []
 
         if self.subaccount is not None:
             for asset_position in self.subaccount.assetPositions.values():
+                # Only valid for a margin account
                 locked = Decimal(0)
-
-                for order in orders[asset_position.symbol]:
-                    locked += Decimal(order.size) * Decimal(order.price)
-
                 account_balance = asset_position.parse_to_account_balance(locked=locked)
                 account_balances.append(account_balance)
 
@@ -916,3 +896,48 @@ class DYDXWsMarketSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
     message_id: int
     channel: str
     contents: DYDXListPerpetualMarketsResponse
+
+
+class DYDXBlockHeightSubscribedContents(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height subscribed contents struct.
+    """
+
+    height: str
+    time: datetime.datetime
+
+
+class DYDXWsBlockHeightSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height subscribed data.
+    """
+
+    type: str
+    connection_id: str
+    message_id: int
+    channel: str
+    id: str
+    contents: DYDXBlockHeightSubscribedContents
+
+
+class DYDXBlockHeightChannelContents(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height channel contents struct.
+    """
+
+    blockHeight: str
+    time: datetime.datetime
+
+
+class DYDXWsBlockHeightChannelData(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height channel data.
+    """
+
+    type: str
+    connection_id: str
+    message_id: int
+    id: str
+    channel: str
+    version: str
+    contents: DYDXBlockHeightChannelContents

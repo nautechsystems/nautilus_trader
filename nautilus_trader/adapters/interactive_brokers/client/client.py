@@ -581,10 +581,8 @@ class InteractiveBrokersClient(
         )
         try:
             while (
-                self._eclient.conn
-                and self._eclient.conn.isConnected()
-                or not self._internal_msg_queue.empty()
-            ):
+                self._eclient.conn and self._eclient.conn.isConnected()
+            ) or not self._internal_msg_queue.empty():
                 msg = await self._internal_msg_queue.get()
                 if not await self._process_message(msg):
                     break
