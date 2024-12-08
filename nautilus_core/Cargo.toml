@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "adapters",
+    "adapters/*",
     "analysis",
     "backtest",
     "cli",
@@ -60,7 +60,7 @@ semver = "1.0.23"
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "2.0.4"
+thiserror = "2.0.5"
 thousands = "0.2.0"
 toml = "0.8.19"
 tracing = "0.1.41"

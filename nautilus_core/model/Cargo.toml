@@ -32,7 +32,7 @@ implied-vol = { version = "1.0.0", features = ["normal-distribution"] }
 tabled = "0.17.0"
 
 [dev-dependencies]
-nautilus-adapters = { path = "../adapters" }
+nautilus-databento = { path = "../adapters/databento" }
 nautilus-test-kit = { path = "../test_kit" }
 criterion = { workspace = true }
 float-cmp = { workspace = true }
