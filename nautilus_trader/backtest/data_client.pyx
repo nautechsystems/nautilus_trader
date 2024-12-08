@@ -86,13 +86,13 @@ cdef class BacktestDataClient(DataClient):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe(self, DataType data_type):
+    cpdef void subscribe(self, DataType data_type, dict params = None):
         Condition.not_none(data_type, "data_type")
 
         self._add_subscription(data_type)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe(self, DataType data_type):
+    cpdef void unsubscribe(self, DataType data_type, dict params = None):
         Condition.not_none(data_type, "data_type")
 
         self._remove_subscription(data_type)
@@ -100,7 +100,7 @@ cdef class BacktestDataClient(DataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id):
+    cpdef void request(self, DataType data_type, UUID4 correlation_id, dict params = None):
         Condition.not_none(data_type, "data_type")
         # Do nothing else for backtest
 

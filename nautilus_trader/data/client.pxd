@@ -43,15 +43,15 @@ cdef class DataClient(Component):
 
     cpdef list subscribed_custom_data(self)
 
-    cpdef void subscribe(self, DataType data_type)
-    cpdef void unsubscribe(self, DataType data_type)
+    cpdef void subscribe(self, DataType data_type, dict[str, object] params=*)
+    cpdef void unsubscribe(self, DataType data_type, dict[str, object] params=*)
 
     cpdef void _add_subscription(self, DataType data_type)
     cpdef void _remove_subscription(self, DataType data_type)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id)
+    cpdef void request(self, DataType data_type, UUID4 correlation_id, dict[str, object] params=*)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
@@ -82,7 +82,7 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
 
-    cpdef void subscribe_instruments(self, dict params=*)
+    cpdef void subscribe_instruments(self, dict[str, object] params=*)
     cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params=*)
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict[str, object] params=*)
     cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict[str, object] params=*)

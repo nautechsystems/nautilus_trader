@@ -140,7 +140,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, bint await_partial, dict params)
-    cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
+    cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type, dict params)
     cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, InstrumentId instrument_id, dict params)
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id, dict params)
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, dict params)
@@ -149,7 +149,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type, dict params)
-    cpdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
+    cpdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type, dict params)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
@@ -161,7 +161,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_quote_ticks(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
     cpdef void _handle_request_trade_ticks(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
     cpdef void _handle_request_bars(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
-    cpdef void _handle_request_data(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now)
+    cpdef void _handle_request_data(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
     cpdef void _query_catalog(self, DataRequest request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
