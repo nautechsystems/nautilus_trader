@@ -719,7 +719,11 @@ cdef class DataEngine(Component):
                 command.params,
             )
         else:
-            self._handle_subscribe_data(client, command.data_type)
+            self._handle_subscribe_data(
+                client,
+                command.data_type,
+                command.params,
+            )
 
     cpdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command):
         if command.data_type.type == Instrument:
@@ -759,7 +763,11 @@ cdef class DataEngine(Component):
                 command.params,
             )
         else:
-            self._handle_unsubscribe_data(client, command.data_type)
+            self._handle_unsubscribe_data(
+                client,
+                command.data_type,
+                command.params,
+            )
 
     cpdef void _handle_subscribe_instrument(
         self,
@@ -1075,13 +1083,14 @@ cdef class DataEngine(Component):
         self,
         DataClient client,
         DataType data_type,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
 
         try:
             if data_type not in client.subscribed_custom_data():
-                client.subscribe(data_type)
+                client.subscribe(data_type, params)
         except NotImplementedError:
             self._log.error(
                 f"Cannot subscribe: {client.id.value} "
@@ -1288,6 +1297,7 @@ cdef class DataEngine(Component):
         self,
         DataClient client,
         DataType data_type,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
@@ -1295,7 +1305,7 @@ cdef class DataEngine(Component):
         try:
             if not self._msgbus.has_subscribers(f"data.{data_type}"):
                 if data_type in client.subscribed_custom_data():
-                    client.unsubscribe(data_type)
+                    client.unsubscribe(data_type, params)
         except NotImplementedError:
             self._log.error(
                 f"Cannot unsubscribe: {client.id.value} "
@@ -1370,7 +1380,7 @@ cdef class DataEngine(Component):
         elif request.data_type.type == Bar or bars_market_data_type == "bars":
             self._handle_request_bars(request, client, start, end, now, params)
         else:
-            self._handle_request_data(request, client, start, end, now)
+            self._handle_request_data(request, client, start, end, now, params)
 
     cpdef void _handle_request_instruments(
         self,
@@ -1583,6 +1593,7 @@ cdef class DataEngine(Component):
         datetime start,
         datetime end,
         datetime now,
+        dict params,
     ):
         last_timestamp, _ = self._catalogs_last_timestamp(
             request.data_type.type,
@@ -1604,7 +1615,11 @@ cdef class DataEngine(Component):
             self._query_catalog(request)
 
         try:
-            client.request(request.data_type, request.id)
+            client.request(
+                request.data_type,
+                request.id,
+                params
+            )
         except NotImplementedError:
             self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}")
 

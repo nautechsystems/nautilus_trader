@@ -1955,6 +1955,7 @@ cdef class Actor(Component):
         DataType data_type,
         ClientId client_id,
         callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog = False,
         dict params = None,
     ):
         """
@@ -1987,6 +1988,9 @@ cdef class Actor(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.callable_or_none(callback, "callback")
+
+        params = params if params else {}
+        params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(

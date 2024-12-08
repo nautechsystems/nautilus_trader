@@ -214,19 +214,19 @@ class LiveDataClient(DataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType) -> None:
+    def subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         self._add_subscription(data_type)
         self.create_task(
-            self._subscribe(data_type),
+            self._subscribe(data_type, params),
             log_msg=f"subscribe: {data_type}",
             success_msg=f"Subscribed {data_type}",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe(self, data_type: DataType) -> None:
+    def unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         self._remove_subscription(data_type)
         self.create_task(
-            self._unsubscribe(data_type),
+            self._unsubscribe(data_type, params),
             log_msg=f"unsubscribe_{data_type}",
             success_msg=f"Unsubscribed {data_type}",
             success_color=LogColor.BLUE,
@@ -234,10 +234,15 @@ class LiveDataClient(DataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    def request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.debug(f"Request {data_type} {correlation_id}")
         self.create_task(
-            self._request(data_type, correlation_id),
+            self._request(data_type, correlation_id, params),
             log_msg=f"request_{data_type}",
         )
 
@@ -254,17 +259,22 @@ class LiveDataClient(DataClient):
             "implement the `_disconnect` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request` coroutine",  # pragma: no cover
         )
@@ -441,10 +451,10 @@ class LiveMarketDataClient(MarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType) -> None:
+    def subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         self._add_subscription(data_type)
         self.create_task(
-            self._subscribe(data_type),
+            self._subscribe(data_type, params),
             log_msg=f"subscribe: {data_type}",
             success_msg=f"Subscribed {data_type}",
             success_color=LogColor.BLUE,
@@ -579,10 +589,10 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe(self, data_type: DataType) -> None:
+    def unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         self._remove_subscription(data_type)
         self.create_task(
-            self._unsubscribe(data_type),
+            self._unsubscribe(data_type, params),
             log_msg=f"unsubscribe {data_type}",
             success_msg=f"Unsubscribed {data_type}",
             success_color=LogColor.BLUE,
@@ -700,10 +710,15 @@ class LiveMarketDataClient(MarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    def request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.info(f"Request {data_type}", LogColor.BLUE)
         self.create_task(
-            self._request(data_type, correlation_id),
+            self._request(data_type, correlation_id, params),
             log_msg=f"request: {data_type}",
         )
 
@@ -856,7 +871,7 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_disconnect` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
@@ -942,7 +957,7 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe_instrument_close` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
@@ -1024,7 +1039,12 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_unsubscribe_instrument_close` coroutine",  # pragma: no cover
         )
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request` coroutine",  # pragma: no cover
         )
