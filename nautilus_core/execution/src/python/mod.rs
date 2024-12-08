@@ -13,13 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::env;
+//! Python bindings from `pyo3`.
 
-/// The `NautilusTrader` string constant.
-pub static NAUTILUS_TRADER: &str = "NautilusTrader";
+use pyo3::prelude::*;
 
-/// The `NautilusTrader` version string read from the top-level `pyproject.toml` at compile time.
-pub static NAUTILUS_VERSION: &str = env!("NAUTILUS_VERSION");
+use crate::reports;
 
-/// The `NautilusTrader` common User-Agent string including the current version at compile time.
-pub static USER_AGENT: &str = env!("NAUTILUS_USER_AGENT");
+/// Loaded as nautilus_pyo3.execution
+#[pymodule]
+#[rustfmt::skip]
+pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<reports::fill::FillReport>()?;
+    m.add_class::<reports::order::OrderStatusReport>()?;
+    m.add_class::<reports::position::PositionStatusReport>()?;
+    Ok(())
+}

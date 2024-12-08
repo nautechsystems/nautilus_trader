@@ -15,7 +15,7 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Clock
@@ -84,9 +84,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        self._handle_instrument(self.instrument, correlation_id, metadata)
+        self._handle_instrument(self.instrument, correlation_id, params)
 
     def request_instruments(
         self,
@@ -94,9 +94,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        self._handle_instruments(venue, self.instruments, correlation_id, metadata)
+        self._handle_instruments(venue, self.instruments, correlation_id, params)
 
     def request_quote_ticks(
         self,
@@ -105,9 +105,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        self._handle_quote_ticks(instrument_id, self.quote_ticks, correlation_id, metadata)
+        self._handle_quote_ticks(instrument_id, self.quote_ticks, correlation_id, params)
 
     def request_trade_ticks(
         self,
@@ -116,9 +116,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        self._handle_trade_ticks(instrument_id, self.trade_ticks, correlation_id, metadata)
+        self._handle_trade_ticks(instrument_id, self.trade_ticks, correlation_id, params)
 
     def request_bars(
         self,
@@ -127,9 +127,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        self._handle_bars(bar_type, self.bars, None, correlation_id, metadata)
+        self._handle_bars(bar_type, self.bars, None, correlation_id, params)
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

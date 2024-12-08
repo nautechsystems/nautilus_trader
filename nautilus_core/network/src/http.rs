@@ -15,9 +15,10 @@
 
 //! A high-performance HTTP client implementation.
 
-use std::{collections::HashMap, hash::Hash, sync::Arc, time::Duration};
+use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Duration};
 
 use bytes::Bytes;
+use http::HeaderValue;
 use reqwest::{
     header::{HeaderMap, HeaderName},
     Method, Response, Url,
@@ -65,9 +66,9 @@ pub struct HttpResponse {
     /// The HTTP status code returned by the server.
     pub status: u16,
     /// The headers returned by the server as a map of key-value pairs.
-    pub(crate) headers: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
     /// The body of the response as raw bytes.
-    pub(crate) body: Bytes,
+    pub body: Bytes,
 }
 
 /// Represents errors that can occur when using the `HttpClient`.
@@ -105,6 +106,7 @@ impl From<String> for HttpClientError {
 /// support for rate limiting, timeouts, and custom headers. The client is
 /// built on top of `reqwest` and can be used for both synchronous and
 /// asynchronous HTTP requests.
+#[derive(Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -120,12 +122,26 @@ impl HttpClient {
     /// Creates a new [`HttpClient`] instance.
     #[must_use]
     pub fn new(
+        headers: HashMap<String, String>,
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Self {
+        // Build default headers
+        let mut header_map = HeaderMap::new();
+        for (key, value) in headers {
+            let header_name = HeaderName::from_str(&key).expect("Invalid header name");
+            let header_value = HeaderValue::from_str(&value).expect("Invalid header value");
+            header_map.insert(header_name, header_value);
+        }
+
+        let client = reqwest::Client::builder()
+            .default_headers(header_map)
+            .build()
+            .expect("Failed to build reqwest client");
+
         let client = InnerHttpClient {
-            client: reqwest::Client::new(),
+            client,
             header_keys: Arc::new(header_keys),
         };
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
@@ -176,7 +192,7 @@ impl HttpClient {
 ///
 /// The client returns an [`HttpResponse`]. The client filters only the key value
 /// for the give `header_keys`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
     pub(crate) header_keys: Arc<Vec<String>>,

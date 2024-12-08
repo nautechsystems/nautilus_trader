@@ -2572,7 +2572,7 @@ impl Cache {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
-            .filter(|i| underlying.map_or(true, |u| i.underlying() == Some(u)))
+            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(u)))
             .collect()
     }
 

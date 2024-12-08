@@ -3,10 +3,12 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083), thanks @faysou
+- Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 
 ### Internal Improvements
 - Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
+- Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
 None
@@ -14,6 +16,8 @@ None
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
 - Fixed `BEST_EFFORT_CANCELED` order status report for dYdX (#2082), thanks @davidsblom
+- Fixed specifying price for market orders on dYdX (#2088), thanks @davidsblom
+- Fixed interest rate curve custom data and interpolation (#2090), thanks @gcheshkov
 
 ---
 

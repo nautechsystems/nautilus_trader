@@ -16,6 +16,7 @@
 import asyncio
 import decimal
 from decimal import Decimal
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -320,10 +321,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 f"Cannot unsubscribe from {data_type.type} (not implemented)",
             )
 
-    async def _subscribe_instruments(self) -> None:
+    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         pass  # Do nothing further
 
-    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         pass  # Do nothing further
 
     async def _subscribe_order_book_deltas(
@@ -331,11 +336,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        update_speed = None
-        if kwargs is not None:
-            update_speed = kwargs.get("update_speed")
+        update_speed: int | None = params.get("update_speed") if params else None
+
         await self._subscribe_order_book(
             instrument_id=instrument_id,
             book_type=book_type,
@@ -348,11 +352,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
-        update_speed = None
-        if kwargs is not None:
-            update_speed = kwargs.get("update_speed")
+        update_speed: int | None = params.get("update_speed") if params else None
+
         await self._subscribe_order_book(
             instrument_id=instrument_id,
             book_type=book_type,
@@ -446,16 +449,28 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         await self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if self._use_agg_trade_ticks:
             await self._ws_client.subscribe_agg_trades(instrument_id.symbol.value)
         else:
             await self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         PyCondition.is_true(
             bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
@@ -486,25 +501,49 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             interval=interval.value,
         )
 
-    async def _unsubscribe_instruments(self) -> None:
+    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         pass  # Do nothing further
 
-    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         pass  # Do nothing further
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         await self._ws_client.unsubscribe_trades(instrument_id.symbol.value)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
                 f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance",
@@ -538,7 +577,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -555,7 +594,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, metadata)
+        self._handle_instrument(instrument, correlation_id, params)
 
     async def _request_quote_ticks(
         self,
@@ -564,7 +603,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Binance",
@@ -577,7 +616,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -610,7 +649,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._handle_trade_ticks(instrument_id, ticks, correlation_id, metadata)
+        self._handle_trade_ticks(instrument_id, ticks, correlation_id, params)
 
     async def _request_bars(  # (too complex)
         self,
@@ -619,7 +658,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
@@ -688,13 +727,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, metadata)
+        self._handle_bars(bar_type, bars, partial, correlation_id, params)
 
     async def _request_order_book_snapshot(
         self,
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
+        params: dict | None = None,
     ) -> None:
         if limit not in [5, 10, 20, 50, 100, 500, 1000]:
             self._log.error(
@@ -712,15 +752,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
             data_type = DataType(
                 OrderBookDeltas,
-                metadata={
-                    "instrument_id": instrument_id,
-                    "limit": limit,
-                },
+                metadata=({"instrument_id": instrument_id}),
             )
             self._handle_data_response(
                 data_type=data_type,
                 data=snapshot,
                 correlation_id=correlation_id,
+                params=params,
             )
 
     async def _aggregate_internal_from_minute_bars(

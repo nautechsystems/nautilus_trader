@@ -134,7 +134,7 @@ class TestDataClient:
         )
 
         # Act
-        self.client._handle_data_response_py(data_type, data, UUID4())
+        self.client._handle_data_response_py(data_type, data, UUID4(), None)
 
         # Assert
         assert self.data_engine.response_count == 1

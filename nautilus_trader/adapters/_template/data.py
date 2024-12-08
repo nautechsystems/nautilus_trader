@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 import pandas as pd
 
 from nautilus_trader.core.uuid import UUID4
@@ -172,12 +174,16 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_subscribe` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_instruments(self) -> None:
+    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "method `_subscribe_instruments` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_subscribe_instrument` must be implemented in the subclass",
         )  # pragma: no cover
@@ -187,7 +193,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_subscribe_order_book_deltas` must be implemented in the subclass",
@@ -198,33 +204,53 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_subscribe_order_book_snapshots` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_subscribe_quote_ticks` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_subscribe_trade_ticks` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_subscribe_bars` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_subscribe_instrument_status` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_subscribe_instrument_close` must be implemented in the subclass",
         )  # pragma: no cover
@@ -234,47 +260,79 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_unsubscribe` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_instruments(self) -> None:
+    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_instruments` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_instrument` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_order_book_deltas` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_order_book_snapshots` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_quote_tick` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_trade_ticks` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_bars` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        params: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_instrument_status` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_instrument_close` must be implemented in the subclass",
         )  # pragma: no cover
@@ -296,7 +354,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_instrument` must be implemented in the subclass",
@@ -308,7 +366,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_instruments` must be implemented in the subclass",
@@ -319,6 +377,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_quote_tick` must be implemented in the subclass",
@@ -331,7 +390,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_quote_tick` must be implemented in the subclass",
@@ -344,7 +403,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_trade_ticks` must be implemented in the subclass",
@@ -357,7 +416,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_bars` must be implemented in the subclass",

@@ -2721,8 +2721,9 @@ class HttpTimeoutError(Exception):
 class HttpClient:
     def __init__(
         self,
-        header_keys: list[str] = [],
-        keyed_quotas: list[tuple[str, Quota]] = [],
+        default_headers: dict[str, str] | None = None,
+        header_keys: list[str] | None = None,
+        keyed_quotas: list[tuple[str, Quota]] | None = None,
         default_quota: Quota | None = None,
     ) -> None: ...
     async def request(
@@ -4019,6 +4020,8 @@ class DatabentoHistoricalClient:
         start: int,
         end: int | None = None,
         limit: int | None = None,
+        price_precision: int | None = None,
+        schema: str | None = None,
     ) -> list[QuoteTick]: ...
     async def get_range_trades(
         self,

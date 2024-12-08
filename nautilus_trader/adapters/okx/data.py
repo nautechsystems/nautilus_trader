@@ -15,6 +15,7 @@
 
 import asyncio
 from functools import partial
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -244,7 +245,7 @@ class OKXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -300,7 +301,11 @@ class OKXDataClient(LiveMarketDataClient):
     # Copy subscribe method for book deltas to book snapshots (same logic)
     _subscribe_order_book_snapshots = _subscribe_order_book_deltas
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if instrument_id in self._tob_client_map:
             self._log.warning(
                 f"Already subscribed to {instrument_id} top-of-book (quotes)",
@@ -318,7 +323,11 @@ class OKXDataClient(LiveMarketDataClient):
         self._tob_client_map[instrument_id] = ws_client
         await ws_client.subscribe_order_book(okx_symbol.raw_symbol, 1)
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if instrument_id in self._trades_client_map:
             self._log.warning(
                 f"Already subscribed to {instrument_id} trades",
@@ -330,14 +339,22 @@ class OKXDataClient(LiveMarketDataClient):
         self._trades_client_map[instrument_id] = ws_client
         await ws_client.subscribe_trades(okx_symbol.raw_symbol)
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         PyCondition.is_true(
             bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
         )
         self._log.error("OKX bar subscriptions are not yet implemented")
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.debug(
             f"Unsubscribing {instrument_id} from order book deltas/snapshots",
             LogColor.MAGENTA,
@@ -353,7 +370,11 @@ class OKXDataClient(LiveMarketDataClient):
     # Copy unsubscribe method for book deltas to book snapshots (same logic)
     _unsubscribe_order_book_snapshots = _unsubscribe_order_book_deltas
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.debug(
             f"Unsubscribing {instrument_id} from quotes (top-of-book)",
             LogColor.MAGENTA,
@@ -366,7 +387,11 @@ class OKXDataClient(LiveMarketDataClient):
                 break
         self._tob_client_map.pop(instrument_id, None)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.debug(f"Unsubscribing {instrument_id} from trades", LogColor.MAGENTA)
         okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
@@ -376,7 +401,11 @@ class OKXDataClient(LiveMarketDataClient):
                 break
         self._tob_client_map.pop(instrument_id, None)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.error("OKX bar subscriptions are not yet implemented")
         return
 
@@ -391,7 +420,7 @@ class OKXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -408,7 +437,7 @@ class OKXDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, metadata)
+        self._handle_instrument(instrument, correlation_id, params)
 
     async def _request_instruments(
         self,
@@ -416,7 +445,7 @@ class OKXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -434,7 +463,7 @@ class OKXDataClient(LiveMarketDataClient):
             if instrument.venue == venue:
                 target_instruments.append(instrument)
 
-        self._handle_instruments(target_instruments, venue, correlation_id, metadata)
+        self._handle_instruments(target_instruments, venue, correlation_id, params)
 
     async def _request_quote_ticks(
         self,
@@ -443,7 +472,7 @@ class OKXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by OKX. Subscribe to "
@@ -458,7 +487,7 @@ class OKXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error("Cannot request historical trades: not yet implemented for OKX")
         return
@@ -470,7 +499,7 @@ class OKXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error("Cannot request historical bars: not yet implemented for OKX")
         return

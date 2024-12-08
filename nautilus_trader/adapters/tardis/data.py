@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 import pandas as pd
 
@@ -251,7 +252,7 @@ class TardisDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -269,7 +270,7 @@ class TardisDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -283,39 +284,71 @@ class TardisDataClient(LiveMarketDataClient):
         tardis_data_type = f"{tardis_data_type}_{depth}_0ms"
         self._subscribe_stream(instrument_id, tardis_data_type, "order book snapshots")
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(QuoteTick)
         self._subscribe_stream(instrument_id, tardis_data_type, "quotes")
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
         self._subscribe_stream(instrument_id, tardis_data_type, "trades")
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
         self._subscribe_stream(bar_type.instrument_id, tardis_data_type, "bars")
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDelta)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDepth10)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(QuoteTick)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
         ws_client_key = get_ws_client_key(bar_type.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
@@ -326,7 +359,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -343,7 +376,7 @@ class TardisDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, metadata)
+        self._handle_instrument(instrument, correlation_id, params)
 
     async def _request_instruments(
         self,
@@ -351,7 +384,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -369,7 +402,7 @@ class TardisDataClient(LiveMarketDataClient):
             if instrument.venue == venue:
                 target_instruments.append(instrument)
 
-        self._handle_instruments(target_instruments, venue, correlation_id, metadata)
+        self._handle_instruments(target_instruments, venue, correlation_id, params)
 
     async def _request_quote_ticks(
         self,
@@ -378,7 +411,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error(
             f"Cannot request historical quotes for {instrument_id}: not supported in this version",
@@ -391,7 +424,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error(
             f"Cannot request historical trades for {instrument_id}: not supported in this version",
@@ -404,7 +437,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if bar_type.is_internally_aggregated():
             self._log.error(
@@ -486,7 +519,7 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
 
-        self._handle_bars(bar_type, bars, None, correlation_id, metadata)
+        self._handle_bars(bar_type, bars, None, correlation_id, params)
 
     def _handle_msg(
         self,

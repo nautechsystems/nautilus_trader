@@ -39,7 +39,7 @@ use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
-type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -48,8 +48,8 @@ type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 )]
 pub struct WebSocketConfig {
     pub url: String,
-    pub handler: Arc<PyObject>,
     pub headers: Vec<(String, String)>,
+    pub handler: Option<Arc<PyObject>>,
     pub heartbeat: Option<u64>,
     pub heartbeat_msg: Option<String>,
     pub ping_handler: Option<Arc<PyObject>>,
@@ -73,7 +73,7 @@ pub struct WebSocketConfig {
 /// frequently - than the required amount.
 struct WebSocketClientInner {
     config: WebSocketConfig,
-    read_task: task::JoinHandle<()>,
+    read_task: Option<task::JoinHandle<()>>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
 }
@@ -96,8 +96,11 @@ impl WebSocketClientInner {
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
-        // Keep receiving messages from socket and pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler.clone(), ping_handler.clone());
+        // Only spawn read task if handler is provided
+        let read_task = handler
+            .as_ref()
+            .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
+
         let heartbeat_task =
             Self::spawn_heartbeat_task(*heartbeat, heartbeat_msg.clone(), writer.clone());
 
@@ -232,9 +235,11 @@ impl WebSocketClientInner {
     pub async fn shutdown(&mut self) {
         tracing::debug!("Closing connection");
 
-        if !self.read_task.is_finished() {
-            self.read_task.abort();
-            tracing::debug!("Aborted message read task");
+        if let Some(ref read_task) = self.read_task.take() {
+            if !read_task.is_finished() {
+                read_task.abort();
+                tracing::debug!("Aborted message read task");
+            }
         }
 
         // Cancel heart beat task
@@ -267,11 +272,13 @@ impl WebSocketClientInner {
         *guard = new_writer;
         drop(guard);
 
-        self.read_task = Self::spawn_read_task(
-            reader,
-            self.config.handler.clone(),
-            self.config.ping_handler.clone(),
-        );
+        if let Some(ref handler) = self.config.handler {
+            self.read_task = Some(Self::spawn_read_task(
+                reader,
+                handler.clone(),
+                self.config.ping_handler.clone(),
+            ));
+        }
 
         self.heartbeat_task = Self::spawn_heartbeat_task(
             self.config.heartbeat,
@@ -292,14 +299,19 @@ impl WebSocketClientInner {
     #[inline]
     #[must_use]
     pub fn is_alive(&self) -> bool {
-        !self.read_task.is_finished()
+        match &self.read_task {
+            Some(read_task) => !read_task.is_finished(),
+            None => true, // Stream is being used directly
+        }
     }
 }
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
-        if !self.read_task.is_finished() {
-            self.read_task.abort();
+        if let Some(ref read_task) = self.read_task.take() {
+            if !read_task.is_finished() {
+                read_task.abort();
+            }
         }
 
         // Cancel heart beat task
@@ -340,10 +352,9 @@ impl WebSocketClient {
         // Create config with minimal no-op Python handler so we incrementally
         // move towards a more Rust-native approach.
         let config = {
-            let handler = Python::with_gil(|py| Arc::new(py.None()));
             WebSocketConfig {
                 url,
-                handler,
+                handler: None,
                 headers,
                 heartbeat,
                 heartbeat_msg,
