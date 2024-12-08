@@ -898,7 +898,7 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
     decoder = msgspec.json.Decoder(DYDXWsOrderbookChannelData)
     expected_delta = OrderBookDelta(
         instrument_id=instrument_id,
-        action=BookAction.DELETE,
+        action=BookAction.REMOVE,
         order=BookOrder(
             side=OrderSide.BUY,
             price=Price(Decimal("65920"), 0),
@@ -927,7 +927,7 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
     assert deltas.is_snapshot is False
     assert len(deltas.deltas) == expected_num_deltas
     assert deltas.deltas[0].order.size == 0
-    assert deltas.deltas[0].action == BookAction.DELETE
+    assert deltas.deltas[0].action == BookAction.REMOVE
     assert deltas.deltas[0].ts_event == expected_delta.ts_event
     assert deltas.deltas[0].ts_init == expected_delta.ts_init
     assert deltas.deltas[0].order.size == expected_delta.order.size

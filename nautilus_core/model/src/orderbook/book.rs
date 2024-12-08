@@ -120,7 +120,7 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
-    pub fn delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
+    pub fn remove(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
             OrderSideSpecified::Buy => self.bids.delete(order, sequence, ts_event),
@@ -154,7 +154,7 @@ impl OrderBook {
         match delta.action {
             BookAction::Add => self.add(order, flags, sequence, ts_event),
             BookAction::Update => self.update(order, flags, sequence, ts_event),
-            BookAction::Delete => self.delete(order, flags, sequence, ts_event),
+            BookAction::Remove => self.remove(order, flags, sequence, ts_event),
             BookAction::Clear => self.clear(sequence, ts_event),
         }
     }

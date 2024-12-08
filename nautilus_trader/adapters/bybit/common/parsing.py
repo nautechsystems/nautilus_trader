@@ -54,7 +54,7 @@ def parse_bybit_delta(
     if snapshot:
         action = BookAction.ADD
     else:
-        action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+        action = BookAction.REMOVE if size == 0 else BookAction.UPDATE
 
     return OrderBookDelta(
         instrument_id=instrument_id,

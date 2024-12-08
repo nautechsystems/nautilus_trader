@@ -164,9 +164,9 @@ typedef enum BookAction {
      */
     UPDATE = 2,
     /**
-     * An existing order in the book is deleted/canceled.
+     * An existing order in the book is deleted/removed/canceled.
      */
-    DELETE = 3,
+    REMOVE = 3,
     /**
      * The state of the order book is cleared.
      */
@@ -2379,7 +2379,7 @@ void orderbook_update(struct OrderBook_API *book,
                       uint64_t sequence,
                       uint64_t ts_event);
 
-void orderbook_delete(struct OrderBook_API *book,
+void orderbook_remove(struct OrderBook_API *book,
                       struct BookOrder_t order,
                       uint8_t flags,
                       uint64_t sequence,

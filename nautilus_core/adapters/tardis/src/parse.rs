@@ -146,7 +146,7 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
     if is_snapshot {
         BookAction::Add
     } else if amount == 0.0 {
-        BookAction::Delete
+        BookAction::Remove
     } else {
         BookAction::Update
     }
@@ -311,7 +311,7 @@ mod tests {
 
     #[rstest]
     #[case(true, 10.0, BookAction::Add)]
-    #[case(false, 0.0, BookAction::Delete)]
+    #[case(false, 0.0, BookAction::Remove)]
     #[case(false, 10.0, BookAction::Update)]
     fn test_parse_book_action(
         #[case] is_snapshot: bool,

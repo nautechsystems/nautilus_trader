@@ -103,7 +103,7 @@ pub const fn parse_aggressor_side(c: c_char) -> AggressorSide {
 pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     match c as u8 as char {
         'A' => Ok(BookAction::Add),
-        'C' => Ok(BookAction::Delete),
+        'C' => Ok(BookAction::Remove),
         'F' => Ok(BookAction::Update),
         'M' => Ok(BookAction::Update),
         'R' => Ok(BookAction::Clear),
@@ -1217,7 +1217,7 @@ mod tests {
 
     #[rstest]
     #[case('A' as c_char, Ok(BookAction::Add))]
-    #[case('C' as c_char, Ok(BookAction::Delete))]
+    #[case('C' as c_char, Ok(BookAction::Remove))]
     #[case('F' as c_char, Ok(BookAction::Update))]
     #[case('M' as c_char, Ok(BookAction::Update))]
     #[case('R' as c_char, Ok(BookAction::Clear))]
@@ -1315,7 +1315,7 @@ mod tests {
         let delta = delta.unwrap();
 
         assert_eq!(delta.instrument_id, instrument_id);
-        assert_eq!(delta.action, BookAction::Delete);
+        assert_eq!(delta.action, BookAction::Remove);
         assert_eq!(delta.order.side, OrderSide::Sell);
         assert_eq!(delta.order.price, Price::from("3722.75"));
         assert_eq!(delta.order.size, Quantity::from("1"));

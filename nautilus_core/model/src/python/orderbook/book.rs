@@ -103,9 +103,9 @@ impl OrderBook {
     }
 
     #[pyo3(signature = (order, flags, sequence, ts_event))]
-    #[pyo3(name = "delete")]
-    fn py_delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
-        self.delete(order, flags, sequence, ts_event.into());
+    #[pyo3(name = "remove")]
+    fn py_remove(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+        self.remove(order, flags, sequence, ts_event.into());
     }
 
     #[pyo3(signature = (sequence, ts_event))]

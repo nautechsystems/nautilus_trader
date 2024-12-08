@@ -275,7 +275,7 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
                 flags = RecordFlag.F_LAST
 
             size = Quantity(Decimal(bid[1]), size_precision)
-            action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+            action = BookAction.REMOVE if size == 0 else BookAction.UPDATE
             delta = OrderBookDelta(
                 instrument_id=instrument_id,
                 action=action,
@@ -301,7 +301,7 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
                 flags = RecordFlag.F_LAST
 
             size = Quantity(Decimal(ask[1]), size_precision)
-            action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+            action = BookAction.REMOVE if size == 0 else BookAction.UPDATE
             delta = OrderBookDelta(
                 instrument_id=instrument_id,
                 action=action,
@@ -488,7 +488,7 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
                     flags = RecordFlag.F_LAST
 
                 size = Quantity(Decimal(bid[1]), size_precision)
-                action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+                action = BookAction.REMOVE if size == 0 else BookAction.UPDATE
                 delta = OrderBookDelta(
                     instrument_id=instrument_id,
                     action=action,
@@ -514,7 +514,7 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
                     flags = RecordFlag.F_LAST
 
                 size = Quantity(Decimal(ask[1]), size_precision)
-                action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+                action = BookAction.REMOVE if size == 0 else BookAction.UPDATE
                 delta = OrderBookDelta(
                     instrument_id=instrument_id,
                     action=action,

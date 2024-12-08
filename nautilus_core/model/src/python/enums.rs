@@ -639,9 +639,9 @@ impl BookAction {
     }
 
     #[classattr]
-    #[pyo3(name = "DELETE")]
-    fn py_delete() -> Self {
-        Self::Delete
+    #[pyo3(name = "REMOVE")]
+    fn py_remove() -> Self {
+        Self::Remove
     }
 
     #[classattr]

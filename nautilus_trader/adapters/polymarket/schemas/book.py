@@ -161,7 +161,7 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
             )
             delta = OrderBookDelta(
                 instrument_id=instrument.id,
-                action=BookAction.UPDATE if order.size > 0 else BookAction.DELETE,
+                action=BookAction.UPDATE if order.size > 0 else BookAction.REMOVE,
                 order=order,
                 flags=RecordFlag.F_LAST,
                 sequence=0,  # N/A

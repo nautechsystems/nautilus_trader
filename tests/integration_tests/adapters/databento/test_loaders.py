@@ -194,7 +194,7 @@ def test_loader_mbo() -> None:
     assert isinstance(data[1], OrderBookDelta)
     delta = data[0]
     assert delta.instrument_id == InstrumentId.from_str("ESH1.GLBX")
-    assert delta.action == BookAction.DELETE
+    assert delta.action == BookAction.REMOVE
     assert delta.order.side == OrderSide.SELL
     assert delta.order.price == Price.from_str("3722.75")
     assert delta.order.size == Quantity.from_int(1)
@@ -219,7 +219,7 @@ def test_loader_mbo_pyo3() -> None:
     assert isinstance(data[1], nautilus_pyo3.OrderBookDelta)
     delta = data[0]
     assert delta.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
-    assert delta.action == nautilus_pyo3.BookAction.DELETE
+    assert delta.action == nautilus_pyo3.BookAction.REMOVE
     assert delta.order.side == nautilus_pyo3.OrderSide.SELL
     assert delta.order.price == nautilus_pyo3.Price.from_str("3722.75")
     assert delta.order.size == nautilus_pyo3.Quantity.from_int(1)
