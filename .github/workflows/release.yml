@@ -27,8 +27,6 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang"
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -55,6 +53,18 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set sccache-cache env vars (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          echo "CC=sccache clang" >> $GITHUB_ENV
+          echo "CXX=sccache clang" >> $GITHUB_ENV
+
+      - name: Set sccache-cache env vars (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache" >> $GITHUB_ENV
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" >> $GITHUB_ENV
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
@@ -300,8 +310,6 @@ jobs:
       BUILD_MODE: release
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang"
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -328,6 +336,18 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set sccache-cache env vars (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          echo "CC=sccache clang" >> $GITHUB_ENV
+          echo "CXX=sccache clang" >> $GITHUB_ENV
+
+      - name: Set sccache-cache env vars (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache" >> $GITHUB_ENV
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" >> $GITHUB_ENV
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6

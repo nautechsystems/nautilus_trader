@@ -197,8 +197,8 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang"
+      CMAKE_C_COMPILER_LAUNCHER: "sccache"
+      CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
 
     steps:
       - name: Checkout repository
