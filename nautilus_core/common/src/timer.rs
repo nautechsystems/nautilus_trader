@@ -51,6 +51,16 @@ use ustr::Ustr;
 
 use crate::runtime::get_runtime;
 
+/// Creates a valid nanoseconds interval that is guaranteed to be positive.
+///
+/// # Panics
+///
+/// This function panics:
+/// - If `interval_ns` is zero.
+pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
+    NonZeroU64::new(interval_ns).expect("`interval_ns` must be positive")
+}
+
 #[repr(C)]
 #[derive(Clone, Debug)]
 #[cfg_attr(
@@ -244,13 +254,11 @@ impl TestTimer {
     #[must_use]
     pub fn new(
         name: &str,
-        interval_ns: u64,
+        interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
-        // SAFETY: Guaranteed to be non-zero
-        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
         Self {
             name: Ustr::from(name),
@@ -367,14 +375,12 @@ impl LiveTimer {
     #[cfg(not(feature = "clock_v2"))]
     pub fn new(
         name: &str,
-        interval_ns: u64,
+        interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: TimeEventCallback,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
-        let interval_ns =
-            NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be non-zero");
 
         log::debug!("Creating timer '{name}'");
         Self {
@@ -399,15 +405,13 @@ impl LiveTimer {
     #[cfg(feature = "clock_v2")]
     pub fn new(
         name: &str,
-        interval_ns: u64,
+        interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: TimeEventCallback,
         heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
-        // SAFETY: Guaranteed to be non-zero
-        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
         log::debug!("Creating timer '{name}'");
         Self {
@@ -554,6 +558,8 @@ fn call_python_with_time_event(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU64;
+
     use nautilus_core::nanos::UnixNanos;
     use rstest::*;
 
@@ -561,7 +567,12 @@ mod tests {
 
     #[rstest]
     fn test_test_timer_pop_event() {
-        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::from(1), None);
+        let mut timer = TestTimer::new(
+            "test_timer",
+            NonZeroU64::new(1).unwrap(),
+            UnixNanos::from(1),
+            None,
+        );
 
         assert!(timer.next().is_some());
         assert!(timer.next().is_some());
@@ -571,7 +582,12 @@ mod tests {
 
     #[rstest]
     fn test_test_timer_advance_within_next_time_ns() {
-        let mut timer = TestTimer::new("test_timer", 5, UnixNanos::default(), None);
+        let mut timer = TestTimer::new(
+            "test_timer",
+            NonZeroU64::new(5).unwrap(),
+            UnixNanos::default(),
+            None,
+        );
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(1)).collect();
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(2)).collect();
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(3)).collect();
@@ -582,7 +598,12 @@ mod tests {
 
     #[rstest]
     fn test_test_timer_advance_up_to_next_time_ns() {
-        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::default(), None);
+        let mut timer = TestTimer::new(
+            "test_timer",
+            NonZeroU64::new(1).unwrap(),
+            UnixNanos::default(),
+            None,
+        );
         assert_eq!(timer.advance(UnixNanos::from(1)).count(), 1);
         assert!(!timer.is_expired);
     }
@@ -591,7 +612,7 @@ mod tests {
     fn test_test_timer_advance_up_to_next_time_ns_with_stop_time() {
         let mut timer = TestTimer::new(
             "test_timer",
-            1,
+            NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(2)),
         );
@@ -603,7 +624,7 @@ mod tests {
     fn test_test_timer_advance_beyond_next_time_ns() {
         let mut timer = TestTimer::new(
             "test_timer",
-            1,
+            NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
         );
@@ -615,7 +636,7 @@ mod tests {
     fn test_test_timer_advance_beyond_stop_time() {
         let mut timer = TestTimer::new(
             "test_timer",
-            1,
+            NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
         );
