@@ -23,6 +23,10 @@ jobs:
         shell: bash
     name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -49,6 +53,23 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Set sccache-cache env vars (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "CC=sccache clang" >> $GITHUB_ENV
+          echo "CXX=sccache clang" >> $GITHUB_ENV
+
+      - name: Set sccache-cache env vars (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
 
       - name: Set up Rust toolchain
         run: |
@@ -81,6 +102,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
+    env:
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang"
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -102,6 +130,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Set up Rust toolchain
         run: |
@@ -173,6 +204,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang"
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -191,6 +228,9 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Set up Rust toolchain
         run: |
@@ -272,6 +312,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: release
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -298,6 +341,23 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Set sccache-cache env vars (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "CC=sccache clang" >> $GITHUB_ENV
+          echo "CXX=sccache clang" >> $GITHUB_ENV
+
+      - name: Set sccache-cache env vars (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
 
       - name: Set up Rust toolchain
         run: |

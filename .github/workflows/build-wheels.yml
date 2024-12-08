@@ -14,6 +14,13 @@ jobs:
         python-version: ["3.11", "3.12"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang"
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -34,6 +41,9 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Set up Rust toolchain
         run: |
