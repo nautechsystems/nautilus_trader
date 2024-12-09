@@ -372,8 +372,8 @@ data streams by subscribing in the following way from your actor or strategy:
 
 ```python
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model import DataType
+from nautilus_trader.model import ClientId
 
 # In your `on_start` method
 self.subscribe_data(
@@ -387,7 +387,7 @@ objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom/generic data.
 
 ```python
-from nautilus_trader.core.data import Data
+from nautilus_trader.core import Data
 
 def on_data(self, data: Data):
     # First check the type of data

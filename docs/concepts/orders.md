@@ -170,9 +170,9 @@ to BUY 100,000 AUD using USD:
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import MarketOrder
 
 order: MarketOrder = self.order_factory.market(
     instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
@@ -199,10 +199,10 @@ contracts at a limit price of 5000 USDT, as a market maker.
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import LimitOrder
 
 order: LimitOrder = self.order_factory.limit(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
@@ -235,10 +235,10 @@ to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StopMarketOrder
 
 order: StopMarketOrder = self.order_factory.stop_market(
     instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
@@ -270,10 +270,10 @@ import pandas as pd
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StopLimitOrder
 
 order: StopLimitOrder = self.order_factory.stop_limit(
     instrument_id=InstrumentId.from_str("GBP/USD.CURRENEX"),
@@ -306,9 +306,9 @@ to BUY 200,000 USD using JPY:
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import MarketToLimitOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import MarketToLimitOrder
 
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
     instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
@@ -339,10 +339,10 @@ to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import MarketIfTouchedOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import MarketIfTouchedOrder
 
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
@@ -375,10 +375,10 @@ import pandas as pd
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StopLimitOrder
 
 order: StopLimitOrder = self.order_factory.limit_if_touched(
     instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
@@ -415,10 +415,10 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import TrailingOffsetType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import TrailingStopMarketOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import TrailingStopMarketOrder
 
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
@@ -456,10 +456,10 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import TrailingOffsetType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import TrailingStopLimitOrder
 
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
     instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),

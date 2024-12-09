@@ -214,7 +214,7 @@ schema for the `AAPL.XNAS` instrument (Apple Inc trading on the Nasdaq exchange)
 ```python
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento import DatabentoImbalance
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 instrument_id = InstrumentId.from_str("AAPL.XNAS")
 self.subscribe_data(
@@ -228,7 +228,7 @@ Or requesting the previous days `statistics` schema for the `ES.FUT` parent symb
 ```python
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento import DatabentoStatisics
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 instrument_id = InstrumentId.from_str("ES.FUT.GLBX")
 metadata = {

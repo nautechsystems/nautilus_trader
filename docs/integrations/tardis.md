@@ -300,7 +300,7 @@ To load the data, create a script similar to the following:
 
 ```python
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 
 instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
