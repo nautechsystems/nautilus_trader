@@ -37,7 +37,7 @@ Exchange specific instruments can be discovered from live exchange data using an
 
 ```python
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 provider = BinanceSpotInstrumentProvider(client=binance_http_client)
 await self.provider.load_all_async()
@@ -67,7 +67,7 @@ Since the same actor/strategy classes can be used for both backtest and live tra
 get instruments in exactly the same way through the central cache:
 
 ```python
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 instrument = self.cache.instrument(instrument_id)
@@ -80,7 +80,7 @@ self.subscribe_instrument(instrument_id)
 
 Or subscribe to all instrument changes for an entire venue:
 ```python
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model import Venue
 
 binance = Venue("BINANCE")
 self.subscribe_instruments(binance)

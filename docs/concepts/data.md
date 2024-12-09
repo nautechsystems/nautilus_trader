@@ -325,7 +325,7 @@ The following example shows how to achieve this by initializing a `BacktestDataC
 
 ```python
 from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model import OrderBookDelta
 
 
 data_config = BacktestDataConfig(

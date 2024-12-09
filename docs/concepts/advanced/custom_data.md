@@ -11,7 +11,7 @@ As `Data` holds no state, it is not strictly necessary to call `super().__init__
 :::
 
 ```python
-from nautilus_trader.core.data import Data
+from nautilus_trader.core import Data
 
 
 class MyDataPoint(Data):
@@ -123,13 +123,13 @@ them in the `Cache` or `ParquetDataCatalog` for efficient retrieval.
 
 ```python
 import msgspec
-from nautilus_trader.core.data import Data
-from nautilus_trader.model.data import DataType
+from nautilus_trader.core import Data
+from nautilus_trader.model import DataType
 from nautilus_trader.serialization.base import register_serializable_type
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 import pyarrow as pa
 
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt, format_iso8601
 
 
@@ -281,8 +281,8 @@ For instance, if you have a custom data class defined in `greeks.py`, you can cr
 with the following constructor signature:
 
 ```python
-from nautilus_trader.core.data import Data
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.core import Data
+from nautilus_trader.model import InstrumentId
 
 
 class GreeksData(Data):

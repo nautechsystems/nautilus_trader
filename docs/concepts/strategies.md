@@ -90,14 +90,14 @@ These handlers receive data updates, including built-in market data and custom u
 You can use these handlers to define actions upon receiving data object instances.
 
 ```python
-from nautilus_trader.core.data import Data
-from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.core import Data
+from nautilus_trader.model import OrderBook
+from nautilus_trader.model import Bar
+from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import TradeTick
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import InstrumentClose
+from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model.instruments import Instrument
 
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
@@ -315,11 +315,11 @@ The following shows a general outline of available methods.
 ```python
 import decimal
 
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.model.objects import Currency
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import Venue
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
+from nautilus_trader.model import InstrumentId
 
 def account(self, venue: Venue) -> Account
 
@@ -414,7 +414,7 @@ This example submits a `MARKET` BUY order to a TWAP execution algorithm:
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model import ExecAlgorithmId
 
 
 def buy(self) -> None:
@@ -527,8 +527,8 @@ Here is an example configuration:
 ```python
 from decimal import Decimal
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarType
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
 

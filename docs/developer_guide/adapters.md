@@ -35,7 +35,7 @@ instrument list.
 
 ```python
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 class TemplateInstrumentProvider(InstrumentProvider):
     """
@@ -65,8 +65,8 @@ that enhance trading strategies but do not directly represent market activity.
 
 ```python
 from nautilus_trader.live.data_client import LiveDataClient
-from nautilus_trader.model.data import DataType
-from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model import DataType
+from nautilus_trader.core import UUID4
 
 class TemplateLiveDataClient(LiveDataClient):
     """
@@ -112,9 +112,9 @@ trading operations.
 
 ```python
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import BarType, DataType
+from nautilus_trader.model import BarType, DataType
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.identifiers import InstrumentId
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
     """
@@ -166,7 +166,7 @@ trading system to manage and execute trades.
 from nautilus_trader.execution.messages import BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder
 from nautilus_trader.execution.reports import FillReport, OrderStatusReport, PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.identifiers import ClientOrderId, InstrumentId, VenueOrderId
+from nautilus_trader.model import ClientOrderId, InstrumentId, VenueOrderId
 
 class TemplateLiveExecutionClient(LiveExecutionClient):
     """
