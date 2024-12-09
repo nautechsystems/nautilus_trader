@@ -28,9 +28,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport BookType
-from nautilus_trader.core.rust.model cimport Level_API
 from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
@@ -413,19 +413,19 @@ cdef class OrderBook(Data):
 
         Returns
         -------
-        list[Level]
+        list[BookLevel]
             Sorted in descending order of price.
 
         """
         cdef CVec raw_levels_vec = orderbook_bids(&self._mem)
-        cdef Level_API* raw_levels = <Level_API*>raw_levels_vec.ptr
+        cdef BookLevel_API* raw_levels = <BookLevel_API*>raw_levels_vec.ptr
 
         cdef list levels = []
 
         cdef:
             uint64_t i
         for i in range(raw_levels_vec.len):
-            levels.append(Level.from_mem_c(raw_levels[i]))
+            levels.append(BookLevel.from_mem_c(raw_levels[i]))
 
         vec_levels_drop(raw_levels_vec)
 
@@ -437,19 +437,19 @@ cdef class OrderBook(Data):
 
         Returns
         -------
-        list[Level]
+        list[BookLevel]
             Sorted in ascending order of price.
 
         """
         cdef CVec raw_levels_vec = orderbook_asks(&self._mem)
-        cdef Level_API* raw_levels = <Level_API*>raw_levels_vec.ptr
+        cdef BookLevel_API* raw_levels = <BookLevel_API*>raw_levels_vec.ptr
 
         cdef list levels = []
 
         cdef:
             uint64_t i
         for i in range(raw_levels_vec.len):
-            levels.append(Level.from_mem_c(raw_levels[i]))
+            levels.append(BookLevel.from_mem_c(raw_levels[i]))
 
         vec_levels_drop(raw_levels_vec)
 
@@ -712,11 +712,13 @@ cdef class OrderBook(Data):
         return cstr_to_pystr(orderbook_pprint_to_cstr(&self._mem, num_levels))
 
 
-cdef class Level:
+cdef class BookLevel:
     """
-    Represents a read-only order book `Level`.
+    Represents an order book price level.
 
     A price level on one side of the order book with one or more individual orders.
+
+    This class is read-only and cannot be initialized from Python.
 
     Parameters
     ----------
@@ -735,23 +737,23 @@ cdef class Level:
         if self._mem._0 != NULL:
             level_drop(self._mem)
 
-    def __eq__(self, Level other) -> bool:
+    def __eq__(self, BookLevel other) -> bool:
         return self.price._mem.raw == other.price._mem.raw
 
-    def __lt__(self, Level other) -> bool:
+    def __lt__(self, BookLevel other) -> bool:
         return self.price._mem.raw < other.price._mem.raw
 
-    def __le__(self, Level other) -> bool:
+    def __le__(self, BookLevel other) -> bool:
         return self.price._mem.raw <= other.price._mem.raw
 
-    def __gt__(self, Level other) -> bool:
+    def __gt__(self, BookLevel other) -> bool:
         return self.price._mem.raw > other.price._mem.raw
 
-    def __ge__(self, Level other) -> bool:
+    def __ge__(self, BookLevel other) -> bool:
         return self.price._mem.raw >= other.price._mem.raw
 
     def __repr__(self) -> str:
-        return f"Level(price={self.price}, orders={self.orders()})"
+        return f"BookLevel(price={self.price}, orders={self.orders()})"
 
     @property
     def price(self) -> Price:
@@ -766,8 +768,8 @@ cdef class Level:
         return Price.from_mem_c(level_price(&self._mem))
 
     @staticmethod
-    cdef Level from_mem_c(Level_API mem):
-        cdef Level level = Level.__new__(Level)
+    cdef BookLevel from_mem_c(BookLevel_API mem):
+        cdef BookLevel level = BookLevel.__new__(BookLevel)
         level._mem = level_clone(&mem)
         return level
 

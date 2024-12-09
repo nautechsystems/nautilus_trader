@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.book import Level
+from nautilus_trader.model.book import BookLevel
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -56,8 +56,8 @@ def compute_effective_deltas(
     ts_event = book_new.ts_event
     ts_init = book_new.ts_init
 
-    old_bids: dict[Price, Level] = {level.price: level for level in book_old.bids()}
-    old_asks: dict[Price, Level] = {level.price: level for level in book_old.asks()}
+    old_bids: dict[Price, BookLevel] = {level.price: level for level in book_old.bids()}
+    old_asks: dict[Price, BookLevel] = {level.price: level for level in book_old.asks()}
 
     new_bids = book_new.bids()
     for bid in new_bids:

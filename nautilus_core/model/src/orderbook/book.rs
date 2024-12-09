@@ -19,7 +19,7 @@ use std::fmt::Display;
 
 use nautilus_core::nanos::UnixNanos;
 
-use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::Level};
+use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel};
 use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
@@ -27,7 +27,7 @@ use crate::{
     },
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{error::InvalidBookOperation, ladder::Ladder},
+    orderbook::{error::InvalidBookOperation, ladder::BookLadder},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -53,8 +53,8 @@ pub struct OrderBook {
     pub ts_last: UnixNanos,
     /// The current count of events applied to the order book.
     pub count: u64,
-    pub(crate) bids: Ladder,
-    pub(crate) asks: Ladder,
+    pub(crate) bids: BookLadder,
+    pub(crate) asks: BookLadder,
 }
 
 impl PartialEq for OrderBook {
@@ -87,8 +87,8 @@ impl OrderBook {
             sequence: 0,
             ts_last: UnixNanos::default(),
             count: 0,
-            bids: Ladder::new(OrderSide::Buy),
-            asks: Ladder::new(OrderSide::Sell),
+            bids: BookLadder::new(OrderSide::Buy),
+            asks: BookLadder::new(OrderSide::Sell),
         }
     }
 
@@ -178,11 +178,11 @@ impl OrderBook {
         }
     }
 
-    pub fn bids(&self) -> impl Iterator<Item = &Level> {
+    pub fn bids(&self) -> impl Iterator<Item = &BookLevel> {
         self.bids.levels.values()
     }
 
-    pub fn asks(&self) -> impl Iterator<Item = &Level> {
+    pub fn asks(&self) -> impl Iterator<Item = &BookLevel> {
         self.asks.levels.values()
     }
 

@@ -23,7 +23,7 @@ use crate::{
     },
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, book::OrderBook, level::Level},
+    orderbook::{analysis::book_check_integrity, book::OrderBook, level::BookLevel},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -147,13 +147,13 @@ impl OrderBook {
     }
 
     #[pyo3(name = "bids")]
-    fn py_bids(&self) -> Vec<Level> {
+    fn py_bids(&self) -> Vec<BookLevel> {
         // TODO: Improve efficiency
         self.bids().map(|level_ref| (*level_ref).clone()).collect()
     }
 
     #[pyo3(name = "asks")]
-    fn py_asks(&self) -> Vec<Level> {
+    fn py_asks(&self) -> Vec<BookLevel> {
         // TODO: Improve efficiency
         self.asks().map(|level_ref| (*level_ref).clone()).collect()
     }

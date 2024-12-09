@@ -22,7 +22,7 @@ built around this domain model.
 """
 
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.model.book import Level
+from nautilus_trader.model.book import BookLevel
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -83,6 +83,7 @@ __all__ = [
     "Bar",
     "BarSpecification",
     "BarType",
+    "BookLevel",
     "BookOrder",
     "ClientId",
     "ClientOrderId",
@@ -95,7 +96,6 @@ __all__ = [
     "InstrumentClose",
     "InstrumentId",
     "InstrumentStatus",
-    "Level",
     "MarginBalance",
     "Money",
     "OrderBook",

@@ -795,7 +795,7 @@ typedef enum TriggerType {
  * The level maintains a collection of orders as well as tracking insertion order
  * to preserve FIFO queue dynamics.
  */
-typedef struct Level Level;
+typedef struct BookLevel BookLevel;
 
 /**
  * Provides a high-performance, versatile order book.
@@ -1436,9 +1436,9 @@ typedef struct OrderBook_API {
  * dereferenced to `Level`, providing access to `Level`'s methods without
  * having to manually acce wss the underlying `Level` instance.
  */
-typedef struct Level_API {
-    struct Level *_0;
-} Level_API;
+typedef struct BookLevel_API {
+    struct BookLevel *_0;
+} BookLevel_API;
 
 /**
  * Represents a medium of exchange in a specified denomination with a fixed decimal precision.
@@ -2456,19 +2456,19 @@ void vec_fills_drop(CVec v);
  */
 const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
 
-struct Level_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
+struct BookLevel_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
 
-void level_drop(struct Level_API level);
+void level_drop(struct BookLevel_API level);
 
-struct Level_API level_clone(const struct Level_API *level);
+struct BookLevel_API level_clone(const struct BookLevel_API *level);
 
-struct Price_t level_price(const struct Level_API *level);
+struct Price_t level_price(const struct BookLevel_API *level);
 
-CVec level_orders(const struct Level_API *level);
+CVec level_orders(const struct BookLevel_API *level);
 
-double level_size(const struct Level_API *level);
+double level_size(const struct BookLevel_API *level);
 
-double level_exposure(const struct Level_API *level);
+double level_exposure(const struct BookLevel_API *level);
 
 void vec_levels_drop(CVec v);
 
