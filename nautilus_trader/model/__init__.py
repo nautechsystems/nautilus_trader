@@ -37,7 +37,6 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.greeks import GreeksData
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -92,7 +91,6 @@ __all__ = [
     "CustomData",
     "DataType",
     "ExecAlgorithmId",
-    "GreeksData",
     "InstrumentClose",
     "InstrumentId",
     "InstrumentStatus",
