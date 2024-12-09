@@ -15,22 +15,10 @@
 
 use std::sync::Arc;
 
-use rustls::{self, ClientConfig, RootCertStore};
-use rustls_native_certs::load_native_certs;
+use rustls::{self, ClientConfig};
+use rustls_platform_verifier::ConfigVerifierExt;
 
-// TODO: We could disentangle and extract network.tls and add the functionality here
 pub fn create_tls_config() -> Arc<ClientConfig> {
-    tracing::info!("Loading native certificates");
-    let mut root_store = RootCertStore::empty();
-    let cert_result = load_native_certs();
-    for e in cert_result.errors {
-        tracing::error!("Error loading certificates: {e}");
-    }
-    root_store.add_parsable_certificates(cert_result.certs);
-
-    Arc::new(
-        ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth(),
-    )
+    tracing::info!("Loading certificates");
+    Arc::new(ClientConfig::with_platform_verifier())
 }
