@@ -378,9 +378,9 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import StopLimitOrder
+from nautilus_trader.model import LimitIfTouched
 
-order: StopLimitOrder = self.order_factory.limit_if_touched(
+order: LimitIfTouched = self.order_factory.limit_if_touched(
     instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_int(5),
@@ -396,7 +396,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 ```
 
 :::info
-See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder-1) for further details.
+See the `LimitIfTouched` [API Reference](../api_reference/model/orders.md#class-limitiftouchedorder-1) for further details.
 :::
 
 ### Trailing-Stop-Market
