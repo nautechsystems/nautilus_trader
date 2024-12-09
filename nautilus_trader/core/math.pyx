@@ -21,18 +21,22 @@ cimport numpy as np
 cdef inline double linear_weight(double x1, double x2, double x):
     return (x - x1) / (x2 - x1)
 
+
 cdef inline double linear_weighting(double y1, double y2, double x1_diff):
     return y1 + x1_diff * (y2 - y1)
+
 
 cdef inline int pos_search(double x, np.ndarray xs):
     cdef int n_elem = xs.shape[0]
     cdef int pos = max(min(int(np.searchsorted(xs, x, side='right')), n_elem - 1) - 1, 0)
     return pos
 
+
 cdef inline double quad_polynomial(double x, double x0, double x1, double x2, double y0, double y1, double y2):
     return (y0 * (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2))
             + y1 * (x - x0) * (x - x2) / ((x1 - x0) * (x1 - x2))
             + y2 * (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1)))
+
 
 cpdef double quadratic_interpolation(double x, np.ndarray xs, np.ndarray ys):
     cdef int n_elem = xs.shape[0]
