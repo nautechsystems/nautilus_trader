@@ -15,10 +15,10 @@
 
 use pyo3::prelude::*;
 
-use crate::{data::order::BookOrder, orderbook::level::Level, types::price::Price};
+use crate::{data::order::BookOrder, orderbook::level::BookLevel, types::price::Price};
 
 #[pymethods]
-impl Level {
+impl BookLevel {
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }

@@ -34,13 +34,13 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct Level {
+pub struct BookLevel {
     pub price: BookPrice,
     pub orders: BTreeMap<OrderId, BookOrder>,
     insertion_order: Vec<OrderId>,
 }
 
-impl Level {
+impl BookLevel {
     /// Creates a new [`Level`] instance.
     #[must_use]
     pub fn new(price: BookPrice) -> Self {
@@ -167,13 +167,13 @@ impl Level {
     }
 }
 
-impl PartialEq for Level {
+impl PartialEq for BookLevel {
     fn eq(&self, other: &Self) -> bool {
         self.price == other.price
     }
 }
 
-impl PartialOrd for Level {
+impl PartialOrd for BookLevel {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -195,7 +195,7 @@ impl PartialOrd for Level {
     }
 }
 
-impl Ord for Level {
+impl Ord for BookLevel {
     fn cmp(&self, other: &Self) -> Ordering {
         self.price.cmp(&other.price)
     }
@@ -211,35 +211,35 @@ mod tests {
     use crate::{
         data::order::BookOrder,
         enums::OrderSide,
-        orderbook::{ladder::BookPrice, level::Level},
+        orderbook::{ladder::BookPrice, level::BookLevel},
         types::{price::Price, quantity::Quantity},
     };
 
     #[rstest]
     fn test_empty_level() {
-        let level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         assert!(level.first().is_none());
     }
 
     #[rstest]
     fn test_comparisons_bid_side() {
-        let level0 = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
-        let level1 = Level::new(BookPrice::new(Price::from("1.01"), OrderSide::Buy));
+        let level0 = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let level1 = BookLevel::new(BookPrice::new(Price::from("1.01"), OrderSide::Buy));
         assert_eq!(level0, level0);
         assert!(level0 > level1);
     }
 
     #[rstest]
     fn test_comparisons_ask_side() {
-        let level0 = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Sell));
-        let level1 = Level::new(BookPrice::new(Price::from("1.01"), OrderSide::Sell));
+        let level0 = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Sell));
+        let level1 = BookLevel::new(BookPrice::new(Price::from("1.01"), OrderSide::Sell));
         assert_eq!(level0, level0);
         assert!(level0 < level1);
     }
 
     #[rstest]
     fn test_add_one_order() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
 
         level.add(order);
@@ -251,7 +251,7 @@ mod tests {
 
     #[rstest]
     fn test_add_multiple_orders() {
-        let mut level = Level::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
 
@@ -265,7 +265,7 @@ mod tests {
 
     #[rstest]
     fn test_update_order() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(20), 0);
 
@@ -278,7 +278,7 @@ mod tests {
 
     #[rstest]
     fn test_update_order_with_zero_size() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::zero(0), 0);
 
@@ -291,7 +291,7 @@ mod tests {
 
     #[rstest]
     fn test_delete_order() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1_id = 0;
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -318,7 +318,7 @@ mod tests {
 
     #[rstest]
     fn test_remove_order() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1_id = 0;
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -345,7 +345,7 @@ mod tests {
 
     #[rstest]
     fn test_add_bulk_orders() {
-        let mut level = Level::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1_id = 0;
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -373,13 +373,13 @@ mod tests {
         expected = "Integrity error: order not found: order_id=1, sequence=2, ts_event=3"
     )]
     fn test_remove_nonexistent_order() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         level.remove_by_id(1, 2, 3.into());
     }
 
     #[rstest]
     fn test_size() {
-        let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(15), 1);
 
@@ -390,7 +390,7 @@ mod tests {
 
     #[rstest]
     fn test_size_raw() {
-        let mut level = Level::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
 
@@ -401,7 +401,7 @@ mod tests {
 
     #[rstest]
     fn test_exposure() {
-        let mut level = Level::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
 
@@ -412,7 +412,7 @@ mod tests {
 
     #[rstest]
     fn test_exposure_raw() {
-        let mut level = Level::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
+        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
 

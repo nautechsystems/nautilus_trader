@@ -14,7 +14,8 @@ Released on TBD (UTC).
 - Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
-None
+- Renamed `Level` to `BookLevel` (standardizes order book type naming conventions)
+- Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
