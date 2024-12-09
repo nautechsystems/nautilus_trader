@@ -1089,6 +1089,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             OrderSide.SELL: DYDXOrder.Side.SIDE_SELL,
         }
         time_in_force_map = {
+            TimeInForce.GTC: DYDXOrder.TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
             TimeInForce.GTD: DYDXOrder.TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
             TimeInForce.IOC: DYDXOrder.TimeInForce.TIME_IN_FORCE_IOC,
             TimeInForce.FOK: DYDXOrder.TimeInForce.TIME_IN_FORCE_FILL_OR_KILL,
