@@ -15,7 +15,7 @@
 
 from collections.abc import Callable
 from io import BytesIO
-from typing import Any
+from typing import Any, Union
 
 import pyarrow as pa
 
@@ -25,7 +25,6 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
@@ -49,6 +48,14 @@ from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
+
+NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
+    nautilus_pyo3.OrderBookDelta,
+    nautilus_pyo3.OrderBookDepth10,
+    nautilus_pyo3.QuoteTick,
+    nautilus_pyo3.TradeTick,
+    nautilus_pyo3.Bar,
+]
 
 _ARROW_ENCODERS: dict[type, Callable] = {}
 _ARROW_DECODERS: dict[type, Callable] = {}

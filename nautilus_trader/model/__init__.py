@@ -21,12 +21,44 @@ built around this domain model.
 
 """
 
-from typing import Union
-
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.book import Level
+from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.greeks import GreeksData
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import MarginBalance
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 
 
 # Defines all order book data types (capable of updating an L2_MBP and L3_MBO book)
@@ -44,10 +76,43 @@ NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
     nautilus_pyo3.Bar,
 )
 
-NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
-    nautilus_pyo3.OrderBookDelta,
-    nautilus_pyo3.OrderBookDepth10,
-    nautilus_pyo3.QuoteTick,
-    nautilus_pyo3.TradeTick,
-    nautilus_pyo3.Bar,
+
+__all__ = [
+    "AccountBalance",
+    "AccountId",
+    "Bar",
+    "BarSpecification",
+    "BarType",
+    "BookOrder",
+    "ClientId",
+    "ClientOrderId",
+    "ComponentId",
+    "Currency",
+    "CustomData",
+    "DataType",
+    "ExecAlgorithmId",
+    "GreeksData",
+    "InstrumentClose",
+    "InstrumentId",
+    "InstrumentStatus",
+    "Level",
+    "MarginBalance",
+    "Money",
+    "OrderBook",
+    "OrderBookDelta",
+    "OrderBookDeltas",
+    "OrderBookDepth10",
+    "OrderListId",
+    "Position",
+    "PositionId",
+    "Price",
+    "Quantity",
+    "QuoteTick",
+    "StrategyId",
+    "Symbol",
+    "TradeId",
+    "TradeTick",
+    "TraderId",
+    "Venue",
+    "VenueOrderId",
 ]

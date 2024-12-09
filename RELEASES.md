@@ -8,8 +8,9 @@ Released on TBD (UTC).
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
 ### Internal Improvements
-- Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
-- Use sccache in CI (#2093), thanks @sunlei
+- Added re-exports and module declarations to enhance code ergonomics and improve import discoverability
+- Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
+- Added sccache in CI (#2093), thanks @sunlei
 - Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
