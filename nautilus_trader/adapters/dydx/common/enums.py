@@ -244,7 +244,7 @@ class DYDXEnumParser:
             DYDXOrderStatus.OPEN: OrderStatus.ACCEPTED,
             DYDXOrderStatus.FILLED: OrderStatus.FILLED,
             DYDXOrderStatus.CANCELED: OrderStatus.CANCELED,
-            DYDXOrderStatus.BEST_EFFORT_CANCELED: OrderStatus.CANCELED,
+            DYDXOrderStatus.BEST_EFFORT_CANCELED: OrderStatus.PENDING_CANCEL,
             DYDXOrderStatus.BEST_EFFORT_OPENED: OrderStatus.ACCEPTED,
             DYDXOrderStatus.UNTRIGGERED: OrderStatus.ACCEPTED,
         }
