@@ -13,23 +13,22 @@ For more details, see the [CONTRIBUTING.md](/CONTRIBUTING.md).
 ## Vision
 
 To establish NautilusTrader as the standard platform for quantitative algorithmic trading, combining
-performance, usability, and comprehensive documentation for traders and developers alike.
+performance, reliability, usability, and comprehensive documentation for traders and developers alike.
 
 ## Priorities
 
 1. **Port core to Rust**
 
    **Goal**: Leverage Rust's performance and safety features to improve reliability, performance and scalability.
-     - Incrementally rewrite performance-critical components.
+     - Rewrite performance-critical components in Rust (replacing existing Cython modules).
      - Ensure interoperability between Rust and Python layers using PyO3.
      - Benchmark performance improvements throughout the transition.
-     - Replace existing Cython modules.
 
 2. **Improve Documentation and Tutorials**
 
     **Goal**: Lower the learning curve for new users and empower developers with clear, comprehensive guides:
     - Fill gaps in user and developer documentation by adding missing sections.
-    - Refine in-code docstrings and examples for greater clarity and discoverability.
+    - Add additional tutorials and examples.
 
 3. **Improve Code Ergonomics**
 
@@ -51,7 +50,7 @@ As we progress on the top priorities, we also plan to focus on the following enh
 
 - **Achieving Stable Status**: While NautilusTrader is already successfully used in production, v2.0 represents a significant milestone toward establishing a stable API.
 - **Focus Areas**: The v2.0 initiative will prioritize API consistency, long-term maintainability, and meeting the rigorous standards of live trading environments.
-- **Formal Deprecations**: v2.0 will introduce formal deprecations to streamline the platform, making it easier to adopt changes and new features while maintaining clarity for developers.
+- **Formal Deprecations**: v2.0 will introduce formal deprecations, making it easier to adopt changes and new features while maintaining clarity for developers.
 - **Python API Commitment**: Despite transitioning the core to Rust, NautilusTrader will continue to provide a user-facing Python API.
 
 ## Charting the Future
