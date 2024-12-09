@@ -698,7 +698,7 @@ def test_account_channel_data_order_best_effort_canceled() -> None:
         order_side=OrderSide.SELL,
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.IOC,
-        order_status=OrderStatus.CANCELED,
+        order_status=OrderStatus.PENDING_CANCEL,
         price=Price(2519.4, 4),
         quantity=Quantity(0.003, 5),
         filled_qty=Quantity(0, 5),
