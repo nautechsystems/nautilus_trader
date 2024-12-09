@@ -7,6 +7,7 @@ use nautilus_model::data::depth::OrderBookDepth10;
 use nautilus_model::data::quote::QuoteTick;
 use nautilus_model::data::trade::TradeTick;
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
+use serde::Serialize;
 use std::path::PathBuf;
 
 use datafusion::arrow::record_batch::RecordBatch;
@@ -71,17 +72,42 @@ impl ParquetDataCatalog {
             .collect()
     }
 
-    pub fn write_data<T>(&self, data: Vec<T>, type_name: &str)
+    pub fn write_to_json<T>(&self, data: Vec<T>)
+    where
+        T: GetTsInit + Serialize,
+    {
+        let type_name = std::any::type_name::<T>().to_snake_case();
+        ParquetDataCatalog::check_ascending_timestamps(&data, &type_name);
+
+        let path = self.make_path(&type_name, None);
+        let json_path = path.with_extension("json");
+
+        info!(
+            "Writing {} records of {} data to {:?}",
+            data.len(),
+            type_name,
+            json_path
+        );
+
+        let file = std::fs::File::create(&json_path)
+            .unwrap_or_else(|_| panic!("Failed to create JSON file at {:?}", json_path));
+
+        serde_json::to_writer(file, &data)
+            .unwrap_or_else(|_| panic!("Failed to write {} to JSON", type_name));
+    }
+
+    pub fn write_data<T>(&self, data: Vec<T>)
     where
         T: GetTsInit + EncodeToRecordBatch,
     {
-        ParquetDataCatalog::check_ascending_timestamps(&data, type_name);
+        let type_name = std::any::type_name::<T>().to_snake_case();
+        ParquetDataCatalog::check_ascending_timestamps(&data, &type_name);
 
         let batches = self.data_to_record_batches(data);
         if let Some(batch) = batches.first() {
             let schema = batch.schema();
             let instrument_id = schema.metadata.get("instrument_id");
-            let path = self.make_path(type_name, instrument_id);
+            let path = self.make_path(&type_name, instrument_id);
 
             // Write all batches to parquet file
             info!(
@@ -154,10 +180,10 @@ impl ParquetDataCatalog {
             }
         }
 
-        self.write_data(delta, &"OrderBookDelta".to_snake_case());
-        self.write_data(depth10, &"OrderBookDepth10".to_snake_case());
-        self.write_data(quote, &"QuoteTick".to_snake_case());
-        self.write_data(trade, &"TradeTick".to_snake_case());
-        self.write_data(bar, &"Bar".to_snake_case());
+        self.write_data(delta);
+        self.write_data(depth10);
+        self.write_data(quote);
+        self.write_data(trade);
+        self.write_data(bar);
     }
 }

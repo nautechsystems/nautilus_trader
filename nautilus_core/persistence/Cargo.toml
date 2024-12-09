@@ -27,6 +27,8 @@ compare = "0.1.0"
 datafusion = { version = "43.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
 itertools.workspace = true
 heck.workspace = true
+serde_json.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }
@@ -34,6 +36,8 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
+tempfile.workspace = true
+pretty_assertions = "1.4.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"
 

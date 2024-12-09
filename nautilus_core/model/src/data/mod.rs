@@ -55,7 +55,7 @@ use crate::{
 /// Not recommended for storing large amounts of data, as the largest variant is significantly
 /// larger (10x) than the smallest.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum Data {
     Delta(OrderBookDelta),
@@ -64,6 +64,34 @@ pub enum Data {
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
+}
+
+macro_rules! impl_try_from_data {
+    ($variant:ident, $type:ty) => {
+        impl TryFrom<Data> for $type {
+            type Error = ();
+
+            fn try_from(value: Data) -> Result<Self, Self::Error> {
+                match value {
+                    Data::$variant(x) => Ok(x),
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+impl_try_from_data!(Delta, OrderBookDelta);
+impl_try_from_data!(Deltas, OrderBookDeltas_API);
+impl_try_from_data!(Depth10, OrderBookDepth10);
+impl_try_from_data!(Quote, QuoteTick);
+impl_try_from_data!(Trade, TradeTick);
+impl_try_from_data!(Bar, Bar);
+
+pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
+    data.into_iter()
+        .filter_map(|d| T::try_from(d).ok())
+        .collect()
 }
 
 impl Data {

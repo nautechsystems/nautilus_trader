@@ -28,11 +28,12 @@ use nautilus_core::{
 
 use super::{delta::OrderBookDelta, GetTsInit};
 use crate::identifiers::InstrumentId;
+use serde::{Deserialize, Serialize};
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 ///
 /// This type cannot be `repr(C)` due to the `deltas` vec.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -137,7 +138,7 @@ impl GetTsInit for OrderBookDeltas {
 /// dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
 /// having to manually access the underlying `OrderBookDeltas` instance.
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub struct OrderBookDeltas_API(Box<OrderBookDeltas>);
 
