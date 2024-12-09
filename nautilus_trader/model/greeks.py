@@ -17,10 +17,10 @@ from dataclasses import field
 
 import numpy as np
 
-from nautilus_trader.common.math import quadratic_interpolation
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_str
+from nautilus_trader.core.math import quadratic_interpolation
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.identifiers import InstrumentId
 
