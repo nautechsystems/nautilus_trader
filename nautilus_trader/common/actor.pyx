@@ -1135,9 +1135,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=None,
             data_type=data_type,
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1174,9 +1174,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=venue,
             data_type=DataType(Instrument),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1215,9 +1215,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1280,9 +1280,9 @@ cdef class Actor(Component):
                 "book_type": book_type,
                 "depth": depth,
             }),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1366,9 +1366,9 @@ cdef class Actor(Component):
                 "book_type": book_type,
                 "depth": depth,
             }),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1407,9 +1407,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1448,9 +1448,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1494,9 +1494,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1533,9 +1533,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1573,9 +1573,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentClose, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1615,9 +1615,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=None,
             data_type=data_type,
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1654,9 +1654,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=venue,
             data_type=DataType(Instrument),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1695,9 +1695,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1736,9 +1736,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBookDelta, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1786,9 +1786,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBook, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1827,9 +1827,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1868,9 +1868,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1909,9 +1909,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": standard_bar_type}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1949,9 +1949,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentStatus),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -2082,10 +2082,10 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=None,
             data_type=data_type,
-            params=params,
             callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2169,10 +2169,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_instrument_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2256,10 +2256,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_instruments_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2319,10 +2319,10 @@ cdef class Actor(Component):
                 "instrument_id": instrument_id,
                 "limit": limit,
             }),
-            params=params,
             callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2406,10 +2406,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_quote_ticks_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2493,10 +2493,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_trade_ticks_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2580,10 +2580,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_bars_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2703,10 +2703,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_aggregated_bars_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
