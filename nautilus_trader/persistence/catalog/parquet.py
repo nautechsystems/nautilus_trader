@@ -45,7 +45,6 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
@@ -916,7 +915,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def convert_stream_to_data(
         self,
-        instance_id: UUID4,
+        instance_id: str,
         data_cls: type,
         other_catalog: ParquetDataCatalog | None = None,
         **kwargs: Any,

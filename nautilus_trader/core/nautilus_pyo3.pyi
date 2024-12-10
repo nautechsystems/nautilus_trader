@@ -32,13 +32,13 @@ NANOSECONDS_IN_MICROSECOND: Final[int]
 class UUID4:
     def __init__(self, value: str) -> None: ...
 
-def secs_to_nanos(secs: float) -> int:
+def secs_to_nanos(secs: float | Decimal) -> int:
     """
     Return round nanoseconds (ns) converted from the given seconds.
 
     Parameters
     ----------
-    secs : float
+    secs : float or Decimal
         The seconds to convert.
 
     Returns
@@ -47,7 +47,7 @@ def secs_to_nanos(secs: float) -> int:
 
     """
 
-def secs_to_millis(secs: float) -> int:
+def secs_to_millis(secs: float | Decimal) -> int:
     """
     Return round milliseconds (ms) converted from the given seconds.
 
@@ -62,7 +62,7 @@ def secs_to_millis(secs: float) -> int:
 
     """
 
-def millis_to_nanos(millis: float) -> int:
+def millis_to_nanos(millis: float | Decimal) -> int:
     """
     Return round nanoseconds (ns) converted from the given milliseconds (ms).
 
@@ -77,7 +77,7 @@ def millis_to_nanos(millis: float) -> int:
 
     """
 
-def micros_to_nanos(micros: float) -> int:
+def micros_to_nanos(micros: float | Decimal) -> int:
     """
     Return round nanoseconds (ns) converted from the given microseconds (μs).
 

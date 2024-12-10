@@ -80,7 +80,7 @@ pytestmark = pytest.mark.skipif(
 
 
 class TestCacheDatabaseAdapter:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
