@@ -159,6 +159,7 @@ fn test_execute_subscribe_custom_data(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -175,6 +176,7 @@ fn test_execute_subscribe_custom_data(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -217,6 +219,7 @@ fn test_execute_subscribe_order_book_deltas(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -233,6 +236,7 @@ fn test_execute_subscribe_order_book_deltas(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -275,6 +279,7 @@ fn test_execute_subscribe_order_book_snapshots(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -291,6 +296,7 @@ fn test_execute_subscribe_order_book_snapshots(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -331,6 +337,7 @@ fn test_execute_subscribe_instrument(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -347,6 +354,7 @@ fn test_execute_subscribe_instrument(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -387,6 +395,7 @@ fn test_execute_subscribe_quote_ticks(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -403,6 +412,7 @@ fn test_execute_subscribe_quote_ticks(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -443,6 +453,7 @@ fn test_execute_subscribe_trade_ticks(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -459,6 +470,7 @@ fn test_execute_subscribe_trade_ticks(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -505,6 +517,7 @@ fn test_execute_subscribe_bars(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -518,6 +531,7 @@ fn test_execute_subscribe_bars(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -557,6 +571,7 @@ fn test_process_instrument(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
 
@@ -605,6 +620,7 @@ fn test_process_order_book_delta(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -656,6 +672,7 @@ fn test_process_order_book_deltas(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -709,6 +726,7 @@ fn test_process_order_book_depth10(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -759,6 +777,7 @@ fn test_process_quote_tick(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -810,6 +829,7 @@ fn test_process_trade_tick(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -861,6 +881,7 @@ fn test_process_bar(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
