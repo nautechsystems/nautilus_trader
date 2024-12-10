@@ -105,7 +105,6 @@ class BybitWebSocketClient:
             signature = self._get_signature()
             await self._send(signature)
 
-    # TODO: Temporarily sync
     def reconnect(self) -> None:
         """
         Reconnect the client to the server and resubscribe to all streams.
@@ -113,18 +112,22 @@ class BybitWebSocketClient:
         if not self._is_running:
             return
 
-        self._log.warning(f"Reconnected to {self._base_url}")
+        self._log.warning(f"Trying to reconnect to {self._base_url}")
+        self._loop.create_task(self._reconnect_wrapper())
 
+    async def _reconnect_wrapper(self) -> None:
         ## Authenticate
         if self._is_private:
             signature = self._get_signature()
-            self._loop.create_task(self._send(signature))
+            await self._send(signature)
 
         # Re-subscribe to all streams
-        self._loop.create_task(self._subscribe_all())
+        await self._subscribe_all()
 
         if self._handler_reconnect:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
+            await self._handler_reconnect()
+
+        self._log.warning(f"Reconnected to {self._base_url}")
 
     async def disconnect(self) -> None:
         self._is_running = False
