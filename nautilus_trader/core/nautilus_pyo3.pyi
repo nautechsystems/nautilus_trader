@@ -32,172 +32,17 @@ NANOSECONDS_IN_MICROSECOND: Final[int]
 class UUID4:
     def __init__(self, value: str) -> None: ...
 
-def secs_to_nanos(secs: float | Decimal) -> int:
-    """
-    Return round nanoseconds (ns) converted from the given seconds.
+def secs_to_nanos(secs: float | Decimal) -> int:...
+def secs_to_millis(secs: float | Decimal) -> int:...
+def millis_to_nanos(millis: float | Decimal) -> int:...
+def micros_to_nanos(micros: float | Decimal) -> int:...
+def nanos_to_secs(nanos: int) -> float:...
+def nanos_to_millis(nanos: int) -> int:...
+def nanos_to_micros(nanos: int) -> int:...
+def last_weekday_nanos(year: int, month: int, day: int) -> int:...
+def is_within_last_24_hours(timestamp_ns: int) -> bool:...
+def convert_to_snake_case(input: str) -> str:...
 
-    Parameters
-    ----------
-    secs : float or Decimal
-        The seconds to convert.
-
-    Returns
-    -------
-    int
-
-    """
-
-def secs_to_millis(secs: float | Decimal) -> int:
-    """
-    Return round milliseconds (ms) converted from the given seconds.
-
-    Parameters
-    ----------
-    secs : float
-        The seconds to convert.
-
-    Returns
-    -------
-    int
-
-    """
-
-def millis_to_nanos(millis: float | Decimal) -> int:
-    """
-    Return round nanoseconds (ns) converted from the given milliseconds (ms).
-
-    Parameters
-    ----------
-    millis : float
-        The milliseconds to convert.
-
-    Returns
-    -------
-    int
-
-    """
-
-def micros_to_nanos(micros: float | Decimal) -> int:
-    """
-    Return round nanoseconds (ns) converted from the given microseconds (μs).
-
-    Parameters
-    ----------
-    micros : float
-        The microseconds to convert.
-
-    Returns
-    -------
-    int
-
-    """
-
-def nanos_to_secs(nanos: int) -> float:
-    """
-    Return seconds converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : int
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    float
-
-    """
-
-def nanos_to_millis(nanos: int) -> int:
-    """
-    Return round milliseconds (ms) converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : int
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    int
-
-    """
-
-def nanos_to_micros(nanos: int) -> int:
-    """
-    Return round microseconds (μs) converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : int
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    int
-
-    """
-
-def last_weekday_nanos(year: int, month: int, day: int) -> int:
-    """
-    Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).
-
-    Parameters
-    ----------
-    year : int
-        The year from the datum date.
-    month : int
-        The month from the datum date.
-    day : int
-        The day from the datum date.
-
-    Returns
-    -------
-    int
-
-    Raises
-    ------
-    ValueError
-        If given an invalid date.
-
-    """
-
-def is_within_last_24_hours(timestamp_ns: int) -> bool:
-    """
-    Return whether the given UNIX nanoseconds timestamp is within the last 24 hours.
-
-    Parameters
-    ----------
-    timestamp_ns : int
-        The UNIX nanoseconds timestamp datum.
-
-    Returns
-    -------
-    bool
-
-    Raises
-    ------
-    ValueError
-        If `timestamp` is invalid.
-
-    """
-
-def convert_to_snake_case(input: str) -> str:
-    """
-    Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
-    to *lower* snake_case.
-
-    This function uses the `heck` Rust crate under the hood.
-
-    Parameters
-    ----------
-    input : str
-        The input string to convert.
-
-    Returns
-    -------
-    str
-
-    """
 
 ###################################################################################################
 # Common
@@ -205,13 +50,7 @@ def convert_to_snake_case(input: str) -> str:
 
 # Logging
 
-class LogGuard:
-    """
-    Provides a `LogGuard` which serves as a token to signal the initialization
-    of the logging system. It also ensures that the global logger is flushed
-    of any buffered records when the instance is destroyed.
-
-    """
+class LogGuard: ...
 
 def init_tracing() -> None:
     ...
