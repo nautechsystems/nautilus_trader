@@ -960,7 +960,7 @@ class BybitExecutionClient(LiveExecutionClient):
         instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
         client_order_id = ClientOrderId(execution.orderLinkId) if execution.orderLinkId else None
         venue_order_id = VenueOrderId(execution.orderId)
-        order_side = self._enum_parser.parse_bybit_order_side(execution.side)
+        order_side: OrderSide = self._enum_parser.parse_bybit_order_side(execution.side)
 
         if client_order_id is None:
             client_order_id = self._cache.client_order_id(venue_order_id)
@@ -986,7 +986,7 @@ class BybitExecutionClient(LiveExecutionClient):
             order_type = self._enum_parser.parse_bybit_order_type(
                 execution.orderType,
                 execution.stopOrderType,
-                order_side,
+                execution.side,
                 trigger_direction,
             )
         else:
