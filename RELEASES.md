@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Fixed order handling for `BEST_EFFORT_CANCELED` messages of dYdX (#2095), thanks @davidsblom
 - Fixed specifying price for market orders on dYdX (#2088), thanks @davidsblom
 - Fixed interest rate curve custom data and interpolation (#2090), thanks @gcheshkov
+- Fixed `BybitHttpClient` error handling when not a JSON string (#2096), thanks @sunlei
 
 ---
 
