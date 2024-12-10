@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 # ruff: noqa: UP007 PYI021 PYI044 PYI053
 # fmt: off
 
@@ -13,9 +28,10 @@ import numpy as np
 
 from nautilus_trader.core.data import Data
 
-# Python Interface typing:
-# We will eventually separate these into a .pyi file per module, for now this at least
-# provides import resolution as well as docstrings.
+# Python interface type hints
+# ---------------------------
+# These type definitions provide import resolution and docstrings for Python types
+# implemented in PyO3. They will eventually be separated into per-module .pyi files.
 
 ###################################################################################################
 # Core
@@ -31,6 +47,10 @@ NANOSECONDS_IN_MICROSECOND: Final[int]
 
 class UUID4:
     def __init__(self, value: str) -> None: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+    @property
+    def value(self) -> str: ...
 
 def secs_to_nanos(secs: float | Decimal) -> int:...
 def secs_to_millis(secs: float | Decimal) -> int:...
