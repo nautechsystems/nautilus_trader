@@ -4,10 +4,12 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083, #2094), thanks @faysou
+- Added support for `STOP_LIMIT` entry order type for `OrderFactory.bracket(...)`
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
 ### Internal Improvements
+- Added type stubs for `core` subpackage
 - Added re-exports and module declarations to enhance code ergonomics and improve import discoverability
 - Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
 - Added sccache in CI (#2093), thanks @sunlei
