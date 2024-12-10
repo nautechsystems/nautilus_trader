@@ -26,6 +26,8 @@ Released on TBD (UTC).
 - Fixed specifying price for market orders on dYdX (#2088), thanks @davidsblom
 - Fixed interest rate curve custom data and interpolation (#2090), thanks @gcheshkov
 - Fixed `BybitHttpClient` error handling when not a JSON string (#2096), thanks @sunlei
+- Fixed Bybit WebSocket private channel reconnect (#2097), thanks @sunlei
+- Fixed incorrect order side use in `BybitExecutionClient` (#2098), thanks @sunlei
 
 ---
 
