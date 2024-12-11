@@ -154,7 +154,7 @@ jobs:
           fi
 
           # Copy new wheels
-          cp ../dist/*.whl simple/nightly/
+          find ../dist/ -name "*.whl" -exec cp {} simple/nightly/ \;
           ls -lh simple/nightly/
 
           # Generate index.html
