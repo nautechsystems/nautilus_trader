@@ -442,7 +442,7 @@ outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_tra
 to ensure that your contributions can be included in the project.
 
 Note that all pull requests should be made to the `develop` branch. This is where new features
-and improvements are integrated before being released to the public.
+and improvements are integrated before being released.
 
 Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.
 
