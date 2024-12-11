@@ -219,10 +219,19 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
-## Redis
+## Nightly wheels
 
-Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
-See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
+The nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch.
+These wheels are useful for testing the latest features and fixes that have not yet been included in a stable release to PyPI.
+
+To install the latest nightly build:
+
+    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
+
+**Notes**:
+- The `develop` branch is merged into the `nightly` branch daily at **14:00 UTC**.
+- The version naming convention is `dev.{date}`, where `{date}` corresponds to the UTC build date (e.g., 1.0.0.dev20241212 for a nightly build on December 12, 2024).
+- The nightly wheels have a **lookback window of 30 days**; wheels older than 30 days are automatically removed.
 
 ## Versioning and releases
 
@@ -237,12 +246,17 @@ We strive to document these changes in the release notes on a best-effort basis.
 We aim to maintain a stable, passing build across all branches.
 
 - `master`: Reflects the source code for the latest released version.
-- `nightly`: May contain experimental features, merged from the `develop` branch daily at 14:00 UTC.
-- `develop`: Very active with frequent commits and may include experimental features.
+- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at 14:00 UTC and also when required.
+- `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
 
-Our [roadmap](/ROADMAP.md) aims to achieve a stable API for version 2.x (likely post-Rust port).
-Once we reach this milestone, we will implement a formal release process, including deprecation 
-periods for any API changes. This approach allows us to maintain a rapid development pace for now.
+Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+This approach allows us to maintain a rapid development pace for now.
+
+## Redis
+
+Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Makefile
 
