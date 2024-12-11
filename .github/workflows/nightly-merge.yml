@@ -60,7 +60,9 @@ jobs:
                 echo "Error updating version in pyproject.toml"
                 exit 1
             fi
-            git add pyproject.toml
+            poetry lock --no-update  # Update lock file without installing dependencies
+            git add pyproject.toml poetry.lock
+            git remote set-url origin https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}
             git commit -m "Update nightly version suffix ${date_suffix}"
             git push
           else
