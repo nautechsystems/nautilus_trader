@@ -36,8 +36,8 @@ jobs:
           echo "The latest workflow for the develop branch succeeded, proceeding"
 
   nightly-merge:
-    # needs: check-develop-status
-    # if: needs.check-develop-status.outputs.develop_status == 'success'
+    needs: check-develop-status
+    if: needs.check-develop-status.outputs.develop_status == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

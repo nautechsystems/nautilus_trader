@@ -2,7 +2,7 @@ name: docker
 
 on:
   push:
-    branches: [master, nightly-pause]
+    branches: [master, nightly]
 
 jobs:
   build-docker-images:

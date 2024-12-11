@@ -2,7 +2,7 @@ name: build-docs
 
 on:
   push:
-    branches: [master, nightly-pause]
+    branches: [master, nightly]
 
 jobs:
   build-docs:
