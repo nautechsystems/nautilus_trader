@@ -87,15 +87,27 @@ jobs:
           poetry install
           poetry build --format wheel
 
-      - name: Set release output
-        id: vars
-        run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+      - name: Log built wheels
+        run: ls -lh dist/
 
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ASSET_NAME }}
-          path: ${{ env.ASSET_PATH }}
+      - name: Prune old wheels
+        run: |
+          git clone --branch=packages https://github.com/${{ github.repository }} packages
+          if [ -d "packages/simple" ]; then
+            find packages/simple -type f -mtime +30 -name "*.whl" -exec rm -f {} \;
+            echo "Pruned wheels older than 30 days"
+          else
+            echo "No wheels directory found; skipping prune step"
+          fi
+
+      - name: Deploy to packages branch
+        run: |
+          git config --global user.email "bot@nautechsystems.io"
+          git config --global user.name "nautilus-trader-bot"
+          git clone --branch=packages https://github.com/${{ github.repository }} packages
+          mkdir -p packages/simple/${{ github.repository }}
+          cp ./dist/*.whl packages/simple/
+          cd packages
+          git add .
+          git commit -m "Publish nightly wheels from ${{ github.sha }}"
+          git push

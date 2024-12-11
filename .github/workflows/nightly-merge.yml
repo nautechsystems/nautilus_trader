@@ -3,8 +3,8 @@ name: nightly-merge
 on:
   push:
     branches: [nightly-merge-test]
-  # schedule:
-  #   - cron: '0 14 * * *'  # At 14:00 UTC every day
+  schedule:
+    - cron: '0 14 * * *'  # At 14:00 UTC every day
 
 jobs:
   nightly-merge:
@@ -22,9 +22,36 @@ jobs:
           stable_branch: 'develop'  # Branch to merge from
           development_branch: 'nightly'  # Branch to merge to
           allow_ff: false
-          user_name: 'Chris Sellers'
-          user_email: 'chris@cjdsellers.io'
+          user_name: 'nautilus-trader-bot'
+          user_email: 'bot@nautechsystems.io'
           push_token: 'NIGHTLY_TOKEN'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}
+
+      - name: Log no-merge message
+        if: steps.nightly-merge.outputs.conclusion != 'merge'
+        run: echo "No changes were merged into the nightly branch, skipping version update"
+
+      - name: Update version for nightly build
+        if: steps.nightly-merge.outputs.conclusion == 'merge'
+        run: |
+          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+          date_suffix=".dev$(date +%Y%m%d)"
+          if [[ $current_version != *"$date_suffix" ]]; then
+            if ! sed -i "s/^version = \".*\"/version = \"${current_version}${date_suffix}\"/" pyproject.toml; then
+                echo "Error updating version in pyproject.toml"
+                exit 1
+            fi
+            git add pyproject.toml
+            git commit -m "Update nightly version suffix ${date_suffix}"
+            git push
+          else
+            echo "Version already has the nightly suffix; no changes made"
+          fi
+
+      - name: Log updated version
+        if: steps.nightly-merge.outputs.conclusion == 'merge'
+        run: |
+          echo "Updated version in pyproject.toml:"
+          grep '^version = ' pyproject.toml
