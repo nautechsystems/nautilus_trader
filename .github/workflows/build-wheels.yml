@@ -102,8 +102,34 @@ jobs:
           poetry install
           poetry build --format wheel
 
-      - name: Log built wheels
+      - name: Log built wheel
         run: ls -lh dist/
+
+      - name: Set release output
+        id: vars
+        run: |
+          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+          cd dist
+          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATH }}
+
+  publish-wheels:
+    name: Publish to Packages
+    runs-on: ubuntu-latest
+    needs: build-wheels
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download built wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
 
       - name: Configure Git user
         run: |
