@@ -67,7 +67,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 - **Highly performant event-driven Python**: Native binary core components.
 - **Parity between backtesting and live trading**: Identical strategy code.
-- **Reduced operational risk**: Risk management functionality, logical correctness and type safety.
+- **Reduced operational risk**: Enhanced risk management functionality, logical accuracy, and type safety.
 - **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
