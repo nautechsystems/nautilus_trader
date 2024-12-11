@@ -7,7 +7,26 @@ on:
     - cron: '0 14 * * *'  # At 14:00 UTC every day
 
 jobs:
+  check-develop-status:
+    runs-on: ubuntu-latest
+    outputs:
+      develop_status: ${{ steps.check-workflow.outputs.status }}
+    steps:
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Check develop branch workflow status
+        id: check-workflow
+        run: |
+          status=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?branch=develop&per_page=1" \
+            | jq -r '.workflow_runs[0].conclusion')
+          echo "status=$status" >> $GITHUB_OUTPUT
+          echo "Last develop branch workflow status: $status"
+
   nightly-merge:
+    needs: check-develop-status
+    if: needs.check-develop-status.outputs.develop_status == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,27 +39,6 @@ jobs:
         run: |
           git config --global user.name "nautilus-trader-bot"
           git config --global user.email "bot@nautechsystems.io"
-
-      - name: Install runner dependencies (Linux)
-        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
-
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Get Poetry version from poetry-version
-        run: |
-          version=$(cat poetry-version)
-          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
 
       - name: Nightly merge
         id: merge
@@ -57,41 +55,9 @@ jobs:
           NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}
 
       - name: Check merge result
-        id: check_merge
         run: |
           if [[ $(git rev-parse HEAD) == $(git merge-base HEAD develop) ]]; then
-            echo "changes=false" >> $GITHUB_OUTPUT
             echo "No changes needed to be merged"
           else
-            echo "changes=true" >> $GITHUB_OUTPUT
             echo "Changes were merged"
           fi
-
-      - name: Log no-merge message
-        if: steps.check_merge.outputs.changes == 'false'
-        run: echo "No changes were merged into the nightly branch, skipping version update"
-
-      - name: Update version for nightly build
-        if: steps.check_merge.outputs.changes == 'true'
-        run: |
-          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
-          date_suffix=".dev$(date +%Y%m%d)"
-          if [[ $current_version != *"$date_suffix" ]]; then
-            if ! sed -i "s/^version = \".*\"/version = \"${current_version}${date_suffix}\"/" pyproject.toml; then
-                echo "Error updating version in pyproject.toml"
-                exit 1
-            fi
-            poetry lock --no-update  # Update lock file without installing dependencies
-            git add pyproject.toml poetry.lock
-            git remote set-url origin https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}
-            git commit -m "Update nightly version suffix ${date_suffix}"
-            git push
-          else
-            echo "Version already has the nightly suffix; no changes made"
-          fi
-
-      - name: Log updated version
-        if: steps.check_merge.outputs.changes == 'true'
-        run: |
-          echo "Updated version in pyproject.toml:"
-          grep '^version = ' pyproject.toml

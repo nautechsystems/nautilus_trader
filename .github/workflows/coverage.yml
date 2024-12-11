@@ -2,7 +2,7 @@ name: coverage
 
 on:
   push:
-    branches: [nightly]
+    branches: [nightly-pause]
 
 jobs:
   build:
