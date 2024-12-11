@@ -21,6 +21,12 @@ jobs:
           git config --global user.name "nautilus-trader-bot"
           git config --global user.email "bot@nautechsystems.io"
 
+      - name: Install runner dependencies (Linux)
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel
+
       - name: Set up Python environment
         uses: actions/setup-python@v5
         with:
