@@ -165,7 +165,7 @@ jobs:
             echo "<a href=\"$file\">$file</a><br>" >> index.html
           done
           echo "</body></html>" >> index.html
-          cd ../../..
+          cd ../../
 
           # Publish wheels
           git remote set-url origin https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}
