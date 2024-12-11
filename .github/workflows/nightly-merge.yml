@@ -21,6 +21,11 @@ jobs:
           git config --global user.name "nautilus-trader-bot"
           git config --global user.email "bot@nautechsystems.io"
 
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Get Poetry version from poetry-version
         run: |
           version=$(cat poetry-version)
