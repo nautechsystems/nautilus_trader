@@ -119,17 +119,17 @@ jobs:
           cd packages
 
           # Prune old wheels
-          if [ -d "simple/${{ github.repository }}/nightly/" ]; then
-            find simple/${{ github.repository }}/nightly/ -type f -mtime +30 -name "*.whl" -exec rm -f {} \;
+          if [ -d "simple/nightly/" ]; then
+            find simple/nightly/ -type f -mtime +30 -name "*.whl" -exec rm -f {} \;
             echo "Pruned nightly wheels older than 30 days"
           else
             echo "Nightly wheels directory does not exist. Creating it."
-            mkdir -p simple/${{ github.repository }}/nightly/
+            mkdir -p simple/nightly/
           fi
 
           # Copy new wheels
-          cp ../dist/*.whl simple/${{ github.repository }}/nightly/
-          ls -lh simple/${{ github.repository }}/nightly/
+          cp ../dist/*.whl simple/nightly/
+          ls -lh simple/nightly/
 
           # Publish wheels
           git remote set-url origin https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}
