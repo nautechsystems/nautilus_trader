@@ -16,6 +16,11 @@ jobs:
           token: ${{ secrets.NIGHTLY_TOKEN }}
           fetch-depth: 0  # Fetch all history for all tags and branches
 
+      - name: Configure Git user
+        run: |
+          git config --global user.name "nautilus-trader-bot"
+          git config --global user.email "bot@nautechsystems.io"
+
       - name: Nightly merge
         id: merge
         uses: robotology/gh-action-nightly-merge@v1.5.2
