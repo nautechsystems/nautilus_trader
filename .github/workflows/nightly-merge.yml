@@ -15,12 +15,45 @@ jobs:
       - name: Install jq
         run: sudo apt-get install -y jq
 
+      - name: Fetch develop branch workflows
+        id: fetch-workflows
+        run: |
+          set -eo pipefail
+
+          url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=20"
+          echo "Fetching workflows from: $url"
+          if ! curl -s --max-time 30 -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
+              echo "Failed to fetch workflows, exiting"
+              exit 1
+          fi
+
+          echo "Fetched workflow runs:"
+          jq '.' workflow_runs.json
+
       - name: Check develop branch workflow status
         id: check-workflow
         run: |
-          status=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=1" \
-            | jq -r '.workflow_runs[0] | if .status == "in_progress" then "in_progress" else .conclusion end')
+          set -eo pipefail
+
+          matching_workflows=$(jq '.workflow_runs | map(select(.name == "build" and .head_branch == "develop"))' workflow_runs.json)
+          if [[ -z "$matching_workflows" ]]; then
+            echo "No matching workflows found for the develop branch"
+            exit 1
+          fi
+
+          echo "Matching workflows:"
+          echo "$matching_workflows" | jq '.'
+
+          first_workflow=$(echo "$matching_workflows" | jq -r 'first')
+          if [[ "$first_workflow" == "null" || -z "$first_workflow" ]]; then
+              echo "No valid workflows found, exiting"
+              exit 1
+          fi
+
+          echo "First matching workflow:"
+          echo "$first_workflow"
+
+          status=$(echo "$first_workflow" | jq -r 'if .status == "in_progress" then "in_progress" else .conclusion end')
 
           echo "status=$status" >> $GITHUB_OUTPUT
           echo "Last develop branch workflow status: $status"
@@ -34,6 +67,9 @@ jobs:
           fi
 
           echo "The latest workflow for the develop branch succeeded, proceeding"
+
+      - name: Cleanup temporary files
+        run: rm -f workflow_runs.json
 
   nightly-merge:
     needs: check-develop-status
@@ -57,7 +93,8 @@ jobs:
         with:
           stable_branch: 'develop'  # Branch to merge from
           development_branch: 'nightly'  # Branch to merge to
-          allow_ff: false
+          allow_ff: true
+          ff_only: true
           user_name: 'nautilus-trader-bot'
           user_email: 'bot@nautechsystems.io'
           push_token: 'NIGHTLY_TOKEN'
