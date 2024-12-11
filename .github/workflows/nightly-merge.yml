@@ -17,7 +17,8 @@ jobs:
           fetch-depth: 0  # Fetch all history for all tags and branches
 
       - name: Nightly merge
-        uses: robotology/gh-action-nightly-merge@v1.4.0
+        id: merge
+        uses: robotology/gh-action-nightly-merge@v1.5.2
         with:
           stable_branch: 'develop'  # Branch to merge from
           development_branch: 'nightly'  # Branch to merge to
@@ -29,12 +30,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}
 
+      - name: Check merge result
+        id: check_merge
+        run: |
+          if [[ $(git rev-parse HEAD) == $(git merge-base HEAD develop) ]]; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "No changes needed to be merged"
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Changes were merged"
+          fi
+
       - name: Log no-merge message
-        if: steps.nightly-merge.outputs.conclusion != 'merge'
+        if: steps.check_merge.outputs.changes == 'false'
         run: echo "No changes were merged into the nightly branch, skipping version update"
 
       - name: Update version for nightly build
-        if: steps.nightly-merge.outputs.conclusion == 'merge'
+        if: steps.check_merge.outputs.changes == 'true'
         run: |
           current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
           date_suffix=".dev$(date +%Y%m%d)"
@@ -51,7 +63,7 @@ jobs:
           fi
 
       - name: Log updated version
-        if: steps.nightly-merge.outputs.conclusion == 'merge'
+        if: steps.check_merge.outputs.changes == 'true'
         run: |
           echo "Updated version in pyproject.toml:"
           grep '^version = ' pyproject.toml
