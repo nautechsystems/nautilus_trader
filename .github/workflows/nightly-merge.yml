@@ -21,6 +21,16 @@ jobs:
           git config --global user.name "nautilus-trader-bot"
           git config --global user.email "bot@nautechsystems.io"
 
+      - name: Get Poetry version from poetry-version
+        run: |
+          version=$(cat poetry-version)
+          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
       - name: Nightly merge
         id: merge
         uses: robotology/gh-action-nightly-merge@v1.5.2
