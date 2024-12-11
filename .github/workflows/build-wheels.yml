@@ -82,6 +82,21 @@ jobs:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
+      - name: Update version in pyproject.toml
+        run: |
+          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+          date_suffix=".dev$(date +%Y%m%d)"
+          if [[ $current_version != *"$date_suffix" ]]; then
+            sed -i.bak "s/^version = \".*\"/version = \"${current_version}${date_suffix}\"/" pyproject.toml
+            rm -f pyproject.toml.bak  # Clean up backup file
+            echo "Updated version to ${current_version}${date_suffix}"
+          else
+            echo "Version already updated to ${current_version}${date_suffix}"
+          fi
+
+      - name: Generate updated lock file
+        run: poetry lock --no-update
+
       - name: Install / Build
         run: |
           poetry install
@@ -90,24 +105,38 @@ jobs:
       - name: Log built wheels
         run: ls -lh dist/
 
-      - name: Prune old wheels
+      - name: Configure Git user
         run: |
+          git config --global user.name "nautilus-trader-bot"
+          git config --global user.email "bot@nautechsystems.io"
+
+      - name: Publish to packages branch
+        run: |
+          set -eo pipefail
+          rm -rf packages  # Ensure clean state
           git clone --branch=packages https://github.com/${{ github.repository }} packages
-          if [ -d "packages/simple" ]; then
-            find packages/simple -type f -mtime +30 -name "*.whl" -exec rm -f {} \;
-            echo "Pruned wheels older than 30 days"
+
+          cd packages
+
+          # Prune old wheels
+          if [ -d "simple/${{ github.repository }}/nightly/" ]; then
+            find simple/${{ github.repository }}/nightly/ -type f -mtime +30 -name "*.whl" -exec rm -f {} \;
+            echo "Pruned nightly wheels older than 30 days"
           else
-            echo "No wheels directory found; skipping prune step"
+            echo "Nightly wheels directory does not exist. Creating it."
+            mkdir -p simple/${{ github.repository }}/nightly/
           fi
 
-      - name: Deploy to packages branch
-        run: |
-          git config --global user.email "bot@nautechsystems.io"
-          git config --global user.name "nautilus-trader-bot"
-          git clone --branch=packages https://github.com/${{ github.repository }} packages
-          mkdir -p packages/simple/${{ github.repository }}
-          cp ./dist/*.whl packages/simple/
-          cd packages
+          # Copy new wheels
+          cp ../dist/*.whl simple/${{ github.repository }}/nightly/
+          ls -lh simple/${{ github.repository }}/nightly/
+
+          # Publish wheels
+          git remote set-url origin https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}
           git add .
-          git commit -m "Publish nightly wheels from ${{ github.sha }}"
-          git push
+          if git diff-index --quiet HEAD --; then
+              echo "No changes to commit"
+          else
+              git commit -m "Publish nightly wheels from ${{ github.sha }}"
+              git push
+          fi
