@@ -234,13 +234,13 @@ We strive to document these changes in the release notes on a best-effort basis.
 
 ### Branches
 
-We strive to maintain a stable, passing build across all branches.
+We aim to maintain a stable, passing build across all branches.
 
 - `master`: Reflects the source code for the latest released version.
-- `nightly`: Contains experimental features, merged from the `develop` branch daily or as needed.
+- `nightly`: May contain experimental features, merged from the `develop` branch daily at 14:00 UTC.
 - `develop`: Very active with frequent commits and may include experimental features.
 
-Our roadmap aims to achieve a stable API for version 2.x (likely post-Rust port).
+Our [roadmap](/ROADMAP.md) aims to achieve a stable API for version 2.x (likely post-Rust port).
 Once we reach this milestone, we will implement a formal release process, including deprecation 
 periods for any API changes. This approach allows us to maintain a rapid development pace for now.
 
