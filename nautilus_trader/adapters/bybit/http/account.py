@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
@@ -25,10 +27,17 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParams
+from nautilus_trader.adapters.bybit.endpoints.account.info import BybitAccountInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParams
+from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeverageEndpoint
+from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeveragePostParams
 
 # fmt: off
+from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModeEndpoint
+from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModePostParams
+from nautilus_trader.adapters.bybit.endpoints.account.switch_mode import BybitSwitchModeEndpoint
+from nautilus_trader.adapters.bybit.endpoints.account.switch_mode import BybitSwitchModePostParams
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderEndpoint
@@ -68,6 +77,16 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
 
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.common.enums import BybitMarginMode
+    from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+    from nautilus_trader.adapters.bybit.schemas.account.info import BybitAccountInfo
+    from nautilus_trader.adapters.bybit.schemas.account.set_leverage import BybitSetLeverageResponse
+    from nautilus_trader.adapters.bybit.schemas.account.set_margin_mode import BybitSetMarginModeResponse
+    from nautilus_trader.adapters.bybit.schemas.account.switch_mode import BybitSwitchModeResponse
+    from nautilus_trader.common.component import LiveClock
+
 # fmt: on
 
 
@@ -100,6 +119,56 @@ class BybitAccountHttpAPI:
             client,
             self.base_endpoint,
         )
+        self._endpoint_account_info = BybitAccountInfoEndpoint(client, self.base_endpoint)
+        self._endpoint_set_margin_mode = BybitSetMarginModeEndpoint(client, self.base_endpoint)
+        self._endpoint_set_leverage = BybitSetLeverageEndpoint(client, self.base_endpoint)
+        self._endpoint_switch_mode = BybitSwitchModeEndpoint(client, self.base_endpoint)
+
+    async def fetch_account_info(self) -> BybitAccountInfo:
+        response = await self._endpoint_account_info.get()
+        return response.result
+
+    async def set_margin_mode(self, margin_mode: BybitMarginMode) -> BybitSetMarginModeResponse:
+        response = await self._endpoint_set_margin_mode.post(
+            BybitSetMarginModePostParams(
+                setMarginMode=margin_mode,
+            ),
+        )
+        return response
+
+    async def set_leverage(
+        self,
+        category: BybitProductType,
+        symbol: str,
+        buy_leverage: str,
+        sell_leverage: str,
+    ) -> BybitSetLeverageResponse:
+        response = await self._endpoint_set_leverage.post(
+            BybitSetLeveragePostParams(
+                category=category,
+                symbol=symbol,
+                buyLeverage=buy_leverage,
+                sellLeverage=sell_leverage,
+            ),
+        )
+        return response
+
+    async def switch_mode(
+        self,
+        category: BybitProductType,
+        mode: int,
+        symbol: str | None = None,
+        coin: str | None = None,
+    ) -> BybitSwitchModeResponse:
+        response = await self._endpoint_switch_mode.post(
+            BybitSwitchModePostParams(
+                category=category,
+                symbol=symbol,
+                coin=coin,
+                mode=mode,
+            ),
+        )
+        return response
 
     async def fetch_fee_rate(
         self,
