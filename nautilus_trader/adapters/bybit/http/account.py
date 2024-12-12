@@ -32,12 +32,12 @@ from nautilus_trader.adapters.bybit.endpoints.account.position_info import Bybit
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParams
 from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeverageEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.set_leverage import BybitSetLeveragePostParams
+
+# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModeEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.set_margin_mode import BybitSetMarginModePostParams
 from nautilus_trader.adapters.bybit.endpoints.account.switch_mode import BybitSwitchModeEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.switch_mode import BybitSwitchModePostParams
-
-# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderEndpoint
