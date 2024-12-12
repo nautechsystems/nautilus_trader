@@ -57,7 +57,8 @@ use crate::runtime::get_runtime;
 ///
 /// This function panics:
 /// - If `interval_ns` is zero.
-pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
+#[must_use]
+pub const fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(interval_ns).expect("`interval_ns` must be positive")
 }
 
