@@ -228,9 +228,13 @@ To install the latest nightly build:
 
     pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
 
+To install a specific nightly build (e.g. 1.208.0.dev20241212):
+
+    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
+
 **Notes**:
 - The `develop` branch is merged into the `nightly` branch daily at **14:00 UTC**.
-- The version naming convention is `dev.{date}`, where `{date}` corresponds to the UTC build date (e.g., 1.0.0.dev20241212 for a nightly build on December 12, 2024).
+- The version naming convention is `dev.{date}`, where `{date}` corresponds to the UTC build date (e.g., 1.208.0.dev20241212 for a nightly build on December 12, 2024).
 - The nightly wheels have a **lookback window of 30 days**; wheels older than 30 days are automatically removed.
 
 ## Versioning and releases
@@ -246,7 +250,7 @@ We strive to document these changes in the release notes on a best-effort basis.
 We aim to maintain a stable, passing build across all branches.
 
 - `master`: Reflects the source code for the latest released version.
-- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at 14:00 UTC and also when required.
+- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
 - `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
 
 Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
