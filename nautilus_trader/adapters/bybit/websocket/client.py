@@ -20,6 +20,7 @@ from typing import Any
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsSubscriptionMsg
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
@@ -81,6 +82,9 @@ class BybitWebSocketClient:
 
         self._subscriptions: list[str] = []
 
+        self._is_authenticated = False
+        self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
+
     @property
     def subscriptions(self) -> list[str]:
         return self._subscriptions
@@ -93,7 +97,7 @@ class BybitWebSocketClient:
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
-            handler=self._handler,
+            handler=self._msg_handler,
             heartbeat=20,
             heartbeat_msg=msgspec.json.encode({"op": "ping"}).decode(),
             headers=[],
@@ -106,10 +110,9 @@ class BybitWebSocketClient:
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
 
-        ## Authenticate
+        # Authenticate
         if self._is_private:
-            signature = self._get_signature()
-            await self._send(signature)
+            await self._authenticate()
 
     def reconnect(self) -> None:
         """
@@ -122,10 +125,9 @@ class BybitWebSocketClient:
         self._loop.create_task(self._reconnect_wrapper())
 
     async def _reconnect_wrapper(self) -> None:
-        ## Authenticate
+        # Authenticate
         if self._is_private:
-            signature = self._get_signature()
-            await self._send(signature)
+            await self._authenticate()
 
         # Re-subscribe to all streams
         await self._subscribe_all()
@@ -150,6 +152,36 @@ class BybitWebSocketClient:
         self._client = None  # Dispose (will go out of scope)
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
+
+    def _msg_handler(self, raw: bytes) -> None:
+        """
+        Handle pushed websocket messages.
+
+        Parameters
+        ----------
+        raw : bytes
+            The received message in bytes.
+
+        """
+        if self._is_private and not self._is_authenticated:
+            msg = self._decoder_ws_subscription.decode(raw)
+            if msg.op == "auth":
+                if msg.success is True:
+                    self._is_authenticated = True
+                    self._log.info("Private channel authenticated")
+                else:
+                    raise RuntimeError(f"Private channel authentication failed: {msg}")
+
+        self._handler(raw)
+
+    async def _authenticate(self) -> None:
+        self._is_authenticated = False
+        signature = self._get_signature()
+        await self._send(signature)
+
+        while not self._is_authenticated:
+            self._log.warning("Waiting for private channel authentication")
+            await asyncio.sleep(0.2)
 
     ################################################################################
     # Public
