@@ -165,11 +165,12 @@ class BybitWebSocketClient:
         """
         if self._is_private and not self._is_authenticated:
             msg = self._decoder_ws_subscription.decode(raw)
-            if msg.op == "auth" and msg.success is True:
-                self._is_authenticated = True
-                self._log.info("Private channel authenticated")
-            else:
-                raise RuntimeError(f"Private channel authentication failed: {msg}")
+            if msg.op == "auth":
+                if msg.success is True:
+                    self._is_authenticated = True
+                    self._log.info("Private channel authenticated")
+                else:
+                    raise RuntimeError(f"Private channel authentication failed: {msg}")
 
         self._handler(raw)
 
