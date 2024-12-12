@@ -71,8 +71,3 @@ class SpotLotSizeFilter(msgspec.Struct):
     maxOrderQty: str
     minOrderAmt: str
     maxOrderAmt: str
-
-
-class BybitWsSubscriptionMsg(msgspec.Struct):
-    success: bool
-    op: str

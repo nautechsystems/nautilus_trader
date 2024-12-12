@@ -40,13 +40,13 @@ from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.http.errors import should_retry
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
-from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
