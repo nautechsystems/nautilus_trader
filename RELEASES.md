@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083, #2094), thanks @faysou
 - Added support for `STOP_LIMIT` entry order type for `OrderFactory.bracket(...)`
 - Added `max_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
+- Added additional API functionality for Bybit (#2102), thanks @sunlei
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
@@ -15,6 +16,7 @@ Released on TBD (UTC).
 - Added re-exports and module declarations to enhance code ergonomics and improve import discoverability
 - Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
 - Added sccache in CI (#2093), thanks @sunlei
+- Refined `BybitWebSocketClient` private channel authentication (#2101), thanks @sunlei
 - Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
