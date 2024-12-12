@@ -9,8 +9,8 @@ Released on TBD (UTC).
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
 ### Internal Improvements
-- Added type stubs for `core` subpackage (improves import resolution)
-- Added type stubs for `common` and `model` enums (improves import resolution)
+- Added type stubs for `core` subpackage
+- Added type stubs for `common` and `model` enums
 - Added re-exports and module declarations to enhance code ergonomics and improve import discoverability
 - Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
 - Added sccache in CI (#2093), thanks @sunlei
