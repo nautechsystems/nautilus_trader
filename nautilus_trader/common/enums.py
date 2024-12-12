@@ -48,61 +48,51 @@ __all__ = [
 if TYPE_CHECKING:
 
     class ComponentState:
-        PreInitialized: int = 0
-        Ready: int = 1
-        Starting: int = 2
-        Running: int = 3
-        Stopping: int = 4
-        Stopped: int = 5
-        Resuming: int = 6
-        Resetting: int = 7
-        Disposing: int = 8
-        Disposed: int = 9
-        Degrading: int = 10
-        Degraded: int = 11
-        Faulting: int = 12
-        Faulted: int = 13
+        PRE_INITIALIZED: int = 0
+        READY: int = 1
+        STARTING: int = 2
+        RUNNING: int = 3
+        STOPPING: int = 4
+        STOPPED: int = 5
+        RESUMING: int = 6
+        RESETTING: int = 7
+        DISPOSING: int = 8
+        DISPOSED: int = 9
+        DEGRADING: int = 10
+        DEGRADED: int = 11
+        FAULTING: int = 12
+        FAULTED: int = 13
 
     class ComponentTrigger:
-        Initialize: int = 1
-        Start: int = 2
-        StartCompleted: int = 3
-        Stop: int = 4
-        StopCompleted: int = 5
-        Resume: int = 6
-        ResumeCompleted: int = 7
-        Reset: int = 8
-        ResetCompleted: int = 9
-        Dispose: int = 10
-        DisposeCompleted: int = 11
-        Degrade: int = 12
-        DegradeCompleted: int = 13
-        Fault: int = 14
-        FaultCompleted: int = 15
+        INITIALIZE: int = 1
+        START: int = 2
+        START_COMPLETED: int = 3
+        STOP: int = 4
+        STOP_COMPLETED: int = 5
+        RESUME: int = 6
+        RESUME_COMPLETED: int = 7
+        RESET: int = 8
+        RESET_COMPLETED: int = 9
+        DISPOSE: int = 10
+        DISPOSE_COMPLETED: int = 11
+        DEGRADE: int = 12
+        DEGRADE_COMPLETED: int = 13
+        FAULT: int = 14
+        FAULT_COMPLETED: int = 15
 
     class LogLevel:
-        Off: int = 0
-        Trace: int = 1
-        Debug: int = 2
-        Info: int = 3
-        Warning: int = 4
-        Error: int = 5
+        OFF: int = 0
+        TRACE: int = 1
+        DEBUG: int = 2
+        INFO: int = 3
+        WARNING: int = 4
+        ERROR: int = 5
 
     class LogColor:
-        Normal: int = 0
-        Green: int = 1
-        Blue: int = 2
-        Magenta: int = 3
-        Cyan: int = 4
-        Yellow: int = 5
-        Red: int = 6
-
-    class LogFormat:
-        Header: int = 1
-        Endc: int = 2
-        Bold: int = 3
-        Underline: int = 4
-
-    class SerializationEncoding:
-        MsgPack: int = 0
-        Json: int = 1
+        NORMAL: int = 0
+        GREEN: int = 1
+        BLUE: int = 2
+        MAGENTA: int = 3
+        CYAN: int = 4
+        YELLOW: int = 5
+        RED: int = 6
