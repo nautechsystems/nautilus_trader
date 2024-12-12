@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083, #2094), thanks @faysou
 - Added support for `STOP_LIMIT` entry order type for `OrderFactory.bracket(...)`
+- Added `max_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
