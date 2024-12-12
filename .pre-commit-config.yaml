@@ -119,6 +119,7 @@ repos:
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
         ]
+        exclude: "nautilus_trader/common/enums.pyi|nautilus_trader/model/enums.pyi"
         additional_dependencies: [
           msgspec,
           types-frozendict,
