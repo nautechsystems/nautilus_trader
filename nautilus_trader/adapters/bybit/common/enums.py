@@ -32,6 +32,22 @@ def raise_error(error):
 
 
 @unique
+class BybitUnifiedMarginStatus(Enum):
+    CLASSIC_ACCOUNT = 1  # Classic account
+    UNIFIED_TRADING_ACCOUNT_1_0 = 3  # Unified trading account 1.0
+    UNIFIED_TRADING_ACCOUNT_1_0_PRO = 4  # Unified trading account 1.0 (pro version)
+    UNIFIED_TRADING_ACCOUNT_2_0 = 5  # Unified trading account 2.0
+    UNIFIED_TRADING_ACCOUNT_2_0_PRO = 6  # Unified trading account 2.0 (pro version)
+
+
+@unique
+class BybitMarginMode(Enum):
+    ISOLATED_MARGIN = "ISOLATED_MARGIN"
+    REGULAR_MARGIN = "REGULAR_MARGIN"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
+
+
+@unique
 class BybitPositionIdx(Enum):
     # One-way mode position
     ONE_WAY = 0
@@ -223,6 +239,7 @@ class BybitEndpointType(Enum):
     ACCOUNT = "ACCOUNT"
     TRADE = "TRADE"
     POSITION = "POSITION"
+    USER = "USER"
 
 
 def check_dict_keys(key, data):
