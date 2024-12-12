@@ -46,6 +46,9 @@ class BybitWebSocketClient:
         The callback handler for message events.
     handler_reconnect : Callable[..., Awaitable[None]], optional
         The callback handler to be called on reconnect.
+    max_reconnection_tries: int, default 3
+        The number of retries to reconnect the websocket connection if the
+        connection is broken.
 
     """
 
@@ -59,6 +62,7 @@ class BybitWebSocketClient:
         api_secret: str,
         loop: asyncio.AbstractEventLoop,
         is_private: bool | None = False,
+        max_reconnection_tries: int | None = 3,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)
@@ -67,6 +71,7 @@ class BybitWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._max_reconnection_tries = max_reconnection_tries
 
         self._client: WebSocketClient | None = None
         self._api_key = api_key
@@ -92,6 +97,7 @@ class BybitWebSocketClient:
             heartbeat=20,
             heartbeat_msg=msgspec.json.encode({"op": "ping"}).decode(),
             headers=[],
+            max_reconnection_tries=self._max_reconnection_tries,
         )
         client = await WebSocketClient.connect(
             config=config,
