@@ -270,11 +270,15 @@ class BybitWebSocketClient:
     ################################################################################
     # Private
     ################################################################################
-    # async def subscribe_account_position_update(self) -> None:
-    #     subscription = "position"
-    #     msg = {"op": "subscribe", "args": [subscription]}
-    #     await self._send(msg)
-    #     self._subscriptions.append(subscription)
+
+    async def subscribe_account_position_update(self) -> None:
+        subscription = "position"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def subscribe_orders_update(self) -> None:
         subscription = "order"
@@ -287,6 +291,15 @@ class BybitWebSocketClient:
 
     async def subscribe_executions_update(self) -> None:
         subscription = "execution"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
+
+    async def subscribe_executions_update_fast(self) -> None:
+        subscription = "execution.fast"
         if subscription in self._subscriptions:
             return
 
