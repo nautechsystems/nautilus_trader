@@ -425,10 +425,11 @@ cdef extern from "../includes/model.h":
 
     # Provides a high-performance, versatile order book.
     #
-    # Capable of handling various levels of data granularity:
-    # - MBO (market by order) / L3
-    # - MBP (market by price) / L2 aggregated order per level
-    # - MBP (market by price) / L1 top-of-book only
+    # Maintains buy (bid) and sell (ask) orders in price-time priority, supporting multiple
+    # market data formats:
+    # - L3 (MBO): Market By Order - tracks individual orders with unique IDs
+    # - L2 (MBP): Market By Price - aggregates orders at each price level
+    # - L1 (MBP): Top of Book - maintains only the best bid and ask prices
     cdef struct OrderBook:
         pass
 

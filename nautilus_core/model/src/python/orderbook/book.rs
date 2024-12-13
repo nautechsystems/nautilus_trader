@@ -171,6 +171,16 @@ impl OrderBook {
         self.asks_as_map()
     }
 
+    #[pyo3(name = "group_bids")]
+    pub fn py_group_bids(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+        self.group_bids(group_size, depth)
+    }
+
+    #[pyo3(name = "group_asks")]
+    pub fn py_group_asks(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+        self.group_asks(group_size, depth)
+    }
+
     #[pyo3(name = "best_bid_price")]
     fn py_best_bid_price(&self) -> Option<Price> {
         self.best_bid_price()

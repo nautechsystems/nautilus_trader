@@ -34,10 +34,11 @@ use crate::{
 
 /// Provides a high-performance, versatile order book.
 ///
-/// Capable of handling various levels of data granularity:
-/// - MBO (market by order) / L3
-/// - MBP (market by price) / L2 aggregated order per level
-/// - MBP (market by price) / L1 top-of-book only
+/// Maintains buy (bid) and sell (ask) orders in price-time priority, supporting multiple
+/// market data formats:
+/// - L3 (MBO): Market By Order - tracks individual orders with unique IDs
+/// - L2 (MBP): Market By Price - aggregates orders at each price level
+/// - L1 (MBP): Top of Book - maintains only the best bid and ask prices
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
@@ -197,6 +198,41 @@ impl OrderBook {
         self.asks()
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect()
+    }
+
+    pub fn group_bids(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+        self.group_levels(self.bids(), group_size, depth, true)
+    }
+
+    pub fn group_asks(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+        self.group_levels(self.asks(), group_size, depth, false)
+    }
+
+    fn group_levels<'a>(
+        &self,
+        levels_iter: impl Iterator<Item = &'a BookLevel>,
+        group_size: Decimal,
+        depth: usize,
+        is_bid: bool,
+    ) -> HashMap<Decimal, Decimal> {
+        levels_iter
+            .take(depth) // Only process up to `depth` levels
+            .fold(HashMap::new(), |mut levels, level| {
+                let price = level.price.value.as_decimal();
+                let grouped_price = if is_bid {
+                    (price / group_size).floor() * group_size
+                } else {
+                    (price / group_size).ceil() * group_size
+                };
+                let size = level.size_decimal();
+
+                levels
+                    .entry(grouped_price)
+                    .and_modify(|total| *total += size)
+                    .or_insert(size);
+
+                levels
+            })
     }
 
     #[must_use]
@@ -378,6 +414,7 @@ impl OrderBook {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         data::{
@@ -842,5 +879,130 @@ mod tests {
 
         println!("{pprint_output}");
         assert_eq!(pprint_output, expected_output);
+    }
+
+    #[rstest]
+    fn test_group_bids_asks_empty() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let grouped_bids = book.group_bids(dec!(1), 10);
+        let grouped_asks = book.group_asks(dec!(1), 10);
+
+        assert!(grouped_bids.is_empty());
+        assert!(grouped_asks.is_empty());
+    }
+
+    #[rstest]
+    fn test_group_bids_asks() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let orders = vec![
+            BookOrder::new(OrderSide::Buy, Price::from("1.1"), Quantity::from(1), 1),
+            BookOrder::new(OrderSide::Buy, Price::from("1.2"), Quantity::from(2), 2),
+            BookOrder::new(OrderSide::Buy, Price::from("1.8"), Quantity::from(3), 3),
+            BookOrder::new(OrderSide::Sell, Price::from("2.1"), Quantity::from(1), 4),
+            BookOrder::new(OrderSide::Sell, Price::from("2.2"), Quantity::from(2), 5),
+            BookOrder::new(OrderSide::Sell, Price::from("2.8"), Quantity::from(3), 6),
+        ];
+        for (i, order) in orders.into_iter().enumerate() {
+            book.add(order, 0, i as u64, 100.into());
+        }
+
+        let grouped_bids = book.group_bids(dec!(0.5), 10);
+        let grouped_asks = book.group_asks(dec!(0.5), 10);
+
+        assert_eq!(grouped_bids.len(), 2);
+        assert_eq!(grouped_asks.len(), 2);
+        assert_eq!(grouped_bids.get(&dec!(1.0)), Some(&dec!(3))); // 1.1, 1.2 group to 1.0
+        assert_eq!(grouped_bids.get(&dec!(1.5)), Some(&dec!(3))); // 1.8 groups to 1.5
+        assert_eq!(grouped_asks.get(&dec!(2.5)), Some(&dec!(3))); // 2.1, 2.2 group to 2.5
+        assert_eq!(grouped_asks.get(&dec!(3.0)), Some(&dec!(3))); // 2.8 groups to 3.0
+    }
+
+    #[rstest]
+    fn test_group_bids_asks_with_depth_limit() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let orders = vec![
+            BookOrder::new(OrderSide::Buy, Price::from("1.0"), Quantity::from(1), 1),
+            BookOrder::new(OrderSide::Buy, Price::from("2.0"), Quantity::from(2), 2),
+            BookOrder::new(OrderSide::Buy, Price::from("3.0"), Quantity::from(3), 3),
+            BookOrder::new(OrderSide::Sell, Price::from("4.0"), Quantity::from(1), 4),
+            BookOrder::new(OrderSide::Sell, Price::from("5.0"), Quantity::from(2), 5),
+            BookOrder::new(OrderSide::Sell, Price::from("6.0"), Quantity::from(3), 6),
+        ];
+
+        for (i, order) in orders.into_iter().enumerate() {
+            book.add(order, 0, i as u64, 100.into());
+        }
+
+        let grouped_bids = book.group_bids(dec!(1), 2);
+        let grouped_asks = book.group_asks(dec!(1), 2);
+
+        assert_eq!(grouped_bids.len(), 2); // Should only have levels at 2.0 and 3.0
+        assert_eq!(grouped_asks.len(), 2); // Should only have levels at 5.0 and 6.0
+        assert_eq!(grouped_bids.get(&dec!(3)), Some(&dec!(3)));
+        assert_eq!(grouped_bids.get(&dec!(2)), Some(&dec!(2)));
+        assert_eq!(grouped_asks.get(&dec!(4)), Some(&dec!(1)));
+        assert_eq!(grouped_asks.get(&dec!(5)), Some(&dec!(2)));
+    }
+
+    #[rstest]
+    fn test_group_bids_asks_example() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let orders = vec![
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00000"),
+                Quantity::from(1000),
+                1,
+            ),
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("99.00000"),
+                Quantity::from(2000),
+                2,
+            ),
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("98.00000"),
+                Quantity::from(3000),
+                3,
+            ),
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("101.00000"),
+                Quantity::from(1000),
+                4,
+            ),
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("102.00000"),
+                Quantity::from(2000),
+                5,
+            ),
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("103.00000"),
+                Quantity::from(3000),
+                6,
+            ),
+        ];
+        for (i, order) in orders.into_iter().enumerate() {
+            book.add(order, 0, i as u64, 100.into());
+        }
+
+        let grouped_bids = book.group_bids(dec!(2), 10);
+        let grouped_asks = book.group_asks(dec!(2), 10);
+
+        assert_eq!(grouped_bids.len(), 2);
+        assert_eq!(grouped_asks.len(), 2);
+        assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(1000)));
+        assert_eq!(grouped_bids.get(&dec!(98.0)), Some(&dec!(5000))); // 2000 + 3000 grouped
+        assert_eq!(grouped_asks.get(&dec!(102.0)), Some(&dec!(3000))); // 1000 + 2000 grouped
+        assert_eq!(grouped_asks.get(&dec!(104.0)), Some(&dec!(3000)));
     }
 }

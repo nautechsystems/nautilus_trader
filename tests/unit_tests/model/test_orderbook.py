@@ -792,22 +792,3 @@ class TestOrderBook:
         trade = TestDataStubs.trade_tick(self.instrument)
         with pytest.raises(RuntimeError):
             book.update_trade_tick(trade)
-
-    # def grouped_apply():
-    # self.bids.clear()
-    # self.asks.clear()
-    # g = self.grouping_provider.output
-    #
-    # for level in self.order_book.bids():
-    #     if len(self.bids) > self.depth:
-    #         break
-    #     price = (level.price / g).quantize(Decimal("1"), rounding=ROUND_DOWN) * g
-    #     size = self.volume_fn(level.price, level.orders()[0].size)
-    #     self.bids[price] = self.bids.get(price, Decimal(0)) + size
-    #
-    # for level in self.order_book.asks():
-    #     if len(self.asks) > self.depth:
-    #         break
-    #     price = (level.price / g).quantize(Decimal("1"), rounding=ROUND_UP) * g
-    #     size = self.volume_fn(level.price, level.orders()[0].size)
-    #     self.asks[price] = self.asks.get(price, Decimal(0)) + size
