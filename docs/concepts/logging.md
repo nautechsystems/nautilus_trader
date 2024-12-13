@@ -151,7 +151,7 @@ Using `LogGuard` is critical to maintain consistent logging behavior throughout 
 
 The following example demonstrates how to use a `LogGuard` when running multiple engines sequentially in the same process:
 
-```{python}
+```python
 log_guard = None  # Initialize LogGuard reference
 
 for i in range(number_of_backtests):
@@ -168,7 +168,7 @@ for i in range(number_of_backtests):
     engine.dispose()  # Dispose safely
 ```
 
-### Key steps
+### Steps
 
 - **Initialize LogGuard once**: The `LogGuard` is obtained from the first engine (`engine.get_log_guard()`) and is retained throughout the process. This ensures that the logging system remains active.
 - **Dispose engines safely**: Each engine is safely disposed of after its backtest completes, without affecting the logging system.
