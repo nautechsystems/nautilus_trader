@@ -147,8 +147,8 @@ jobs:
           mkdir -p simple/nautilus-trader/
 
           # Prune old wheels
-          echo "Pruning wheels older than 30 days"
-          find simple/nautilus-trader/ -type f -mtime +30 -name "*.whl" -exec rm -f {} \;
+          echo "Pruning wheels older than 3 days"
+          find simple/nautilus-trader/ -type f -mtime +3 -name "*.whl" -exec rm -f {} \;
 
           # Check wheels
           if [ -z "$(ls -A ../dist/*.whl)" ]; then
