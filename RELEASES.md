@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `ShutdownSystem` command and `shutdown_system(...)` method for components (system-wide shutdown for backtest, sandbox, or live environments)
 - Added `max_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
 - Added additional API functionality for Bybit (#2102), thanks @sunlei
+- Added position and execution.fast subscriptions for Bybit (#2104), thanks @sunlei
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
