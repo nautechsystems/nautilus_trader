@@ -221,21 +221,21 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ## Nightly wheels
 
-The nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch.
-These wheels are useful for testing the latest features and fixes that have not yet been included in a stable release to PyPI.
+Nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch
+using the version format `dev.{date}` (e.g., `1.208.0.dev20241212` for December 12, 2024).
+These wheels allow testing of the latest features and fixes that have not yet been included in a stable PyPI release.
 
-To install the latest nightly build:
+**To install the latest nightly build**:
 
     pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
 
-To install a specific nightly build (e.g. 1.208.0.dev20241212):
+**To install a specific nightly build** (e.g., 1.208.0.dev20241212 for December 12, 2024):
 
     pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
 
 **Notes**:
-- The `develop` branch is merged into the `nightly` branch daily at **14:00 UTC**.
-- The version naming convention is `dev.{date}`, where `{date}` corresponds to the UTC build date (e.g., 1.208.0.dev20241212 for a nightly build on December 12, 2024).
-- The nightly wheels currently have a **lookback window of 3 days**; wheels older than 3 days are automatically removed.
+- The `develop` branch is merged into `nightly` daily at **14:00 UTC** (if there are changes).
+- A 3-day lookback window is maintained, retaining only the last 3 nightly builds.
 
 ## Versioning and releases
 
