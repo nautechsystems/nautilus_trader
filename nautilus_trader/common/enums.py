@@ -16,6 +16,8 @@
 Defines system level enums for use with framework components.
 """
 
+from enum import Enum
+from enum import unique
 from typing import TYPE_CHECKING
 
 from nautilus_trader.common.component import component_state_from_str
@@ -47,52 +49,56 @@ __all__ = [
 
 if TYPE_CHECKING:
 
-    class ComponentState:
-        PRE_INITIALIZED: int = 0
-        READY: int = 1
-        STARTING: int = 2
-        RUNNING: int = 3
-        STOPPING: int = 4
-        STOPPED: int = 5
-        RESUMING: int = 6
-        RESETTING: int = 7
-        DISPOSING: int = 8
-        DISPOSED: int = 9
-        DEGRADING: int = 10
-        DEGRADED: int = 11
-        FAULTING: int = 12
-        FAULTED: int = 13
+    @unique
+    class ComponentState(Enum):
+        PRE_INITIALIZED = 0
+        READY = 1
+        STARTING = 2
+        RUNNING = 3
+        STOPPING = 4
+        STOPPED = 5
+        RESUMING = 6
+        RESETTING = 7
+        DISPOSING = 8
+        DISPOSED = 9
+        DEGRADING = 10
+        DEGRADED = 11
+        FAULTING = 12
+        FAULTED = 13
 
-    class ComponentTrigger:
-        INITIALIZE: int = 1
-        START: int = 2
-        START_COMPLETED: int = 3
-        STOP: int = 4
-        STOP_COMPLETED: int = 5
-        RESUME: int = 6
-        RESUME_COMPLETED: int = 7
-        RESET: int = 8
-        RESET_COMPLETED: int = 9
-        DISPOSE: int = 10
-        DISPOSE_COMPLETED: int = 11
-        DEGRADE: int = 12
-        DEGRADE_COMPLETED: int = 13
-        FAULT: int = 14
-        FAULT_COMPLETED: int = 15
+    @unique
+    class ComponentTrigger(Enum):
+        INITIALIZE = 1
+        START = 2
+        START_COMPLETED = 3
+        STOP = 4
+        STOP_COMPLETED = 5
+        RESUME = 6
+        RESUME_COMPLETED = 7
+        RESET = 8
+        RESET_COMPLETED = 9
+        DISPOSE = 10
+        DISPOSE_COMPLETED = 11
+        DEGRADE = 12
+        DEGRADE_COMPLETED = 13
+        FAULT = 14
+        FAULT_COMPLETED = 15
 
-    class LogLevel:
-        OFF: int = 0
-        TRACE: int = 1
-        DEBUG: int = 2
-        INFO: int = 3
-        WARNING: int = 4
-        ERROR: int = 5
+    @unique
+    class LogLevel(Enum):
+        OFF = 0
+        TRACE = 1
+        DEBUG = 2
+        INFO = 3
+        WARNING = 4
+        ERROR = 5
 
-    class LogColor:
-        NORMAL: int = 0
-        GREEN: int = 1
-        BLUE: int = 2
-        MAGENTA: int = 3
-        CYAN: int = 4
-        YELLOW: int = 5
-        RED: int = 6
+    @unique
+    class LogColor(Enum):
+        NORMAL = 0
+        GREEN = 1
+        BLUE = 2
+        MAGENTA = 3
+        CYAN = 4
+        YELLOW = 5
+        RED = 6
