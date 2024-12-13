@@ -26,11 +26,11 @@ To install the latest [nautilus_trader]([nautilus_trader](https://pypi.org/proje
 
 Install optional dependencies as 'extras' for specific integrations:
 
-- `betfair`: Betfair adapter (integration) dependencies
-- `docker`: Needed for Docker when using the IB gateway (with the Interactive Brokers adapter)
-- `dydx`: dYdX adapter (integration) dependencies
-- `ib`: Interactive Brokers adapter (integration) dependencies
-- `polymarket`: Polymarket adapter (integration) dependencies
+- `betfair`: Betfair adapter (integration) dependencies.
+- `docker`: Needed for Docker when using the IB gateway (with the Interactive Brokers adapter).
+- `dydx`: dYdX adapter (integration) dependencies.
+- `ib`: Interactive Brokers adapter (integration) dependencies.
+- `polymarket`: Polymarket adapter (integration) dependencies.
 
 To install with specific extras using pip:
 
@@ -100,6 +100,32 @@ To install a binary wheel from GitHub, first navigate to the [latest release](ht
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
     pip install <file-name>.whl
+
+## Nightly wheels
+
+Nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch
+using the version format `dev.{date}` (e.g., `1.208.0.dev20241212` for December 12, 2024).
+These wheels allow testing of the latest features and fixes that have not yet been included in a stable PyPI release.
+
+**To install the latest nightly build**:
+
+    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
+
+**To install a specific nightly build** (e.g., 1.208.0.dev20241212 for December 12, 2024):
+
+    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
+
+**Notes**:
+- The `develop` branch is merged into `nightly` daily at **14:00 UTC** (if there are changes).
+- A 3-day lookback window is maintained, retaining only the last 3 nightly builds.
+
+## Versioning and releases
+
+NautilusTrader aims for a weekly release schedule. The introduction of experimental or larger features
+may delay a release by several weeks.
+
+The API is becoming more stable, but breaking changes may still occur between releases.
+We strive to document these changes in the release notes on a best-effort basis.
 
 ## Redis
 
