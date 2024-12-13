@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
 use crate::{
     data::{
@@ -156,6 +159,16 @@ impl OrderBook {
     fn py_asks(&self) -> Vec<BookLevel> {
         // TODO: Improve efficiency
         self.asks().map(|level_ref| (*level_ref).clone()).collect()
+    }
+
+    #[pyo3(name = "bids_to_dict")]
+    fn py_bids_to_dict(&self) -> HashMap<Decimal, Decimal> {
+        self.bids_as_map()
+    }
+
+    #[pyo3(name = "asks_to_dict")]
+    fn py_asks_to_dict(&self) -> HashMap<Decimal, Decimal> {
+        self.asks_as_map()
     }
 
     #[pyo3(name = "best_bid_price")]

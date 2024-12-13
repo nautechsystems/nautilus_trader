@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083, #2094), thanks @faysou
 - Added support for `STOP_LIMIT` entry order type for `OrderFactory.bracket(...)`
+- Added `.bids_to_dict()` and `.asks_to_dict()` for PyO3 `OrderBook`
 - Added `ShutdownSystem` command and `shutdown_system(...)` method for components (system-wide shutdown for backtest, sandbox, or live environments)
 - Added `max_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
 - Added additional API functionality for Bybit (#2102), thanks @sunlei
@@ -13,6 +14,7 @@ Released on TBD (UTC).
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
 ### Internal Improvements
+- Added `.bids_as_map()` and `.asks_as_map()` for `OrderBook` in Rust
 - Added type stubs for `core` subpackage
 - Added type stubs for `common` and `model` enums
 - Added type stubs for `common.messages`

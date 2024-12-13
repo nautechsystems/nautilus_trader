@@ -15,9 +15,10 @@
 
 //! A performant, generic, multi-purpose order book.
 
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use nautilus_core::nanos::UnixNanos;
+use rust_decimal::Decimal;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel};
 use crate::{
@@ -184,6 +185,18 @@ impl OrderBook {
 
     pub fn asks(&self) -> impl Iterator<Item = &BookLevel> {
         self.asks.levels.values()
+    }
+
+    pub fn bids_as_map(&self) -> HashMap<Decimal, Decimal> {
+        self.bids()
+            .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
+            .collect()
+    }
+
+    pub fn asks_as_map(&self) -> HashMap<Decimal, Decimal> {
+        self.asks()
+            .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
+            .collect()
     }
 
     #[must_use]
