@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
 - Added sccache in CI (#2093), thanks @sunlei
 - Refined `BybitWebSocketClient` private channel authentication (#2101), thanks @sunlei
+- Refined `BybitWebSocketClient` subscribe and unsubscribe (#2105), thanks @sunlei
 - Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
