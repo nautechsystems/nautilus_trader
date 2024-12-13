@@ -18,6 +18,7 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use nautilus_core::nanos::UnixNanos;
+use rust_decimal::Decimal;
 
 use crate::{
     data::order::{BookOrder, OrderId},
@@ -97,6 +98,11 @@ impl BookLevel {
     #[must_use]
     pub fn size_raw(&self) -> u64 {
         self.orders.values().map(|o| o.size.raw).sum()
+    }
+
+    #[must_use]
+    pub fn size_decimal(&self) -> Decimal {
+        self.orders.values().map(|o| o.size.as_decimal()).sum()
     }
 
     #[must_use]
@@ -207,6 +213,7 @@ impl Ord for BookLevel {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         data::order::BookOrder,
@@ -397,6 +404,17 @@ mod tests {
         level.add(order1);
         level.add(order2);
         assert_eq!(level.size_raw(), 30_000_000_000);
+    }
+
+    #[rstest]
+    fn test_size_decimal() {
+        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
+        let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
+
+        level.add(order1);
+        level.add(order2);
+        assert_eq!(level.size_decimal(), dec!(30.0));
     }
 
     #[rstest]
