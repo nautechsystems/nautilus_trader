@@ -20,6 +20,7 @@ from typing import Any, Union
 import pyarrow as pa
 
 from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
@@ -42,6 +43,7 @@ from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWranglerV
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.serialization.arrow.implementations import account_state
+from nautilus_trader.serialization.arrow.implementations import component_commands
 from nautilus_trader.serialization.arrow.implementations import component_events
 from nautilus_trader.serialization.arrow.implementations import instruments
 from nautilus_trader.serialization.arrow.implementations import order_events
@@ -371,6 +373,14 @@ register_arrow(
     schema=NAUTILUS_ARROW_SCHEMA[ComponentStateChanged],
     encoder=component_events.serialize,
     decoder=component_events.deserialize(ComponentStateChanged),
+)
+
+
+register_arrow(
+    ShutdownSystem,
+    schema=NAUTILUS_ARROW_SCHEMA[ShutdownSystem],
+    encoder=component_commands.serialize,
+    decoder=component_commands.deserialize(ShutdownSystem),
 )
 
 

@@ -33,6 +33,118 @@ from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+cdef class ShutdownSystem(Command):
+    """
+    Represents a command to shut down a system and terminate the process.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the event.
+    component_id : Identifier
+        The component ID associated with the event.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    reason : str, optional
+        The reason for the shutdown command (can be None).
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        Identifier component_id not None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        str reason = None,
+    ) -> None:
+        super().__init__(command_id, ts_init)
+        self.trader_id = trader_id
+        self.component_id = component_id
+        self.reason = reason
+        self._command_id = command_id
+        self._ts_init = ts_init
+
+    def __eq__(self, Command other) -> bool:
+        return self._command_id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self._command_id)
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.to_str()}, "
+            f"component_id={self.component_id.to_str()}, "
+            f"reason='{self.reason}', "
+            f"command_id={self._command_id.to_str()})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.to_str()}, "
+            f"component_id={self.component_id.to_str()}, "
+            f"reason='{self.reason}', "
+            f"command_id={self._command_id.to_str()}, "
+            f"ts_init={self._ts_init})"
+        )
+
+    @staticmethod
+    cdef ShutdownSystem from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return ShutdownSystem(
+            trader_id=TraderId(values["trader_id"]),
+            component_id=ComponentId(values["component_id"]),
+            reason=values["reason"],
+            command_id=UUID4(values["command_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(ShutdownSystem obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "ShutdownSystem",
+            "trader_id": obj.trader_id.to_str(),
+            "component_id": obj.component_id.to_str(),
+            "reason": obj.reason,
+            "command_id": obj._command_id.to_str(),
+            "ts_init": obj._ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> ShutdownSystem:
+        """
+        Return a shutdown system command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        ShutdownSystem
+
+        """
+        return ShutdownSystem.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(ShutdownSystem obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return ShutdownSystem.to_dict_c(obj)
+
+
+
 cdef class ComponentStateChanged(Event):
     """
     Represents an event which includes information on the state of a component.
@@ -67,7 +179,7 @@ cdef class ComponentStateChanged(Event):
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self.trader_id = trader_id
         self.component_id = component_id
         self.component_type = component_type
@@ -223,7 +335,7 @@ cdef class RiskEvent(Event):
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self.trader_id = trader_id
         self._event_id = event_id
         self._ts_event = ts_event
@@ -300,7 +412,7 @@ cdef class TradingStateChanged(RiskEvent):
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self.trader_id = trader_id
         self.state = state
         self.config = config

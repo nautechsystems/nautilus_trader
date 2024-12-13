@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added support for `STOP_LIMIT` entry order type for `OrderFactory.bracket(...)`
 - Added `max_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
 - Added additional API functionality for Bybit (#2102), thanks @sunlei
+- Added `ShutdownSystem` command message
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
