@@ -235,7 +235,7 @@ To install a specific nightly build (e.g. 1.208.0.dev20241212):
 **Notes**:
 - The `develop` branch is merged into the `nightly` branch daily at **14:00 UTC**.
 - The version naming convention is `dev.{date}`, where `{date}` corresponds to the UTC build date (e.g., 1.208.0.dev20241212 for a nightly build on December 12, 2024).
-- The nightly wheels have a **lookback window of 30 days**; wheels older than 30 days are automatically removed.
+- The nightly wheels currently have a **lookback window of 3 days**; wheels older than 3 days are automatically removed.
 
 ## Versioning and releases
 
