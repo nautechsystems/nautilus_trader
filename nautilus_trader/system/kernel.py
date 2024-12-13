@@ -48,6 +48,7 @@ from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import ControllerFactory
 from nautilus_trader.config import DataEngineConfig
@@ -322,6 +323,8 @@ class NautilusKernel:
             config=config.message_bus,
         )
 
+        self._setup_shutdown_handling()
+
         self._cache = Cache(
             database=cache_db,
             config=config.cache,
@@ -538,6 +541,9 @@ class NautilusKernel:
         if self._loop_sig_callback:
             self._loop_sig_callback(sig)
 
+    def _setup_shutdown_handling(self) -> None:
+        self._msgbus.subscribe("commands.system.shutdown", self._on_shutdown_system)
+
     def _setup_streaming(self, config: StreamingConfig) -> None:
         # Set up persistence
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}"
@@ -561,6 +567,18 @@ class NautilusKernel:
         full_path = f"{self._writer.path}/config.json"
         with self._writer.fs.open(full_path, "wb") as f:
             f.write(self._config.json())
+
+    def _on_shutdown_system(self, command: ShutdownSystem):
+        if command.trader_id != self.trader_id:
+            self._log.warning(f"Received {command!r} not for this trader {self.trader_id}")
+            return
+
+        self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
+
+        if self._loop:
+            self._loop.create_task(self.stop_async())
+        else:
+            self.stop()
 
     @property
     def environment(self) -> Environment:
@@ -970,8 +988,6 @@ class NautilusKernel:
 
         self._log.info("STOPPING")
 
-        self._stop_clients()
-
         if self._trader.is_running:
             self._trader.stop()
             await self._await_trader_residuals()
@@ -979,6 +995,7 @@ class NautilusKernel:
         if self.save_state:
             self._trader.save()
 
+        self._stop_clients()
         self._disconnect_clients()
 
         await self._await_engines_disconnected()

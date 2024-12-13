@@ -23,10 +23,12 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.executor import TaskId
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.message import Command
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataResponse
@@ -929,6 +931,29 @@ class TestActor:
         # Assert
         assert "on_fault" in actor.calls
         assert actor.state == ComponentState.FAULTED
+
+    def test_shutdown_system(self) -> None:
+        # Arrange
+        handler: list[Command] = []
+        self.msgbus.subscribe("commands.system.shutdown", handler.append)
+
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.start()
+
+        # Act
+        actor.shutdown_system("test")
+
+        # Assert
+        assert len(handler) == 1
+        assert isinstance(handler[0], ShutdownSystem)
+        assert handler[0].reason == "test"
 
     def test_handle_instrument_with_blow_up_logs_exception(self) -> None:
         # Arrange
