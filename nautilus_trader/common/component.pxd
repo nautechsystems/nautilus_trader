@@ -236,6 +236,7 @@ cdef class Component:
     cpdef void dispose(self)
     cpdef void degrade(self)
     cpdef void fault(self)
+    cpdef void shutdown_system(self, str reason=*)
 
 # --------------------------------------------------------------------------------------------------
 

@@ -46,6 +46,7 @@ from libc.stdint cimport uint64_t
 from libc.stdio cimport printf
 
 from nautilus_trader.common.messages cimport ComponentStateChanged
+from nautilus_trader.common.messages cimport ShutdownSystem
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
@@ -1921,6 +1922,28 @@ cdef class Component:
             is_transitory=False,
             action=None,
         )
+
+    cpdef void shutdown_system(self, str reason = None):
+        """
+        Initiate a system-wide shutdown by generating and publishing a `ShutdownSystem` command.
+
+        The command is handled by the system's `NautilusKernel`, which will invoke either `stop` (synchronously)
+        or `stop_async` (asynchronously) depending on the execution context and the presence of an active event loop.
+
+        Parameters
+        ----------
+        reason : str, optional
+            The reason for issuing the shutdown command.
+
+        """
+        cdef ShutdownSystem command = ShutdownSystem(
+            trader_id=self.trader_id,
+            component_id=self.id,
+            reason=reason,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._msgbus.publish("commands.system.shutdown", command)
 
 # --------------------------------------------------------------------------------------------------
 
