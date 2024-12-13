@@ -123,6 +123,7 @@ class TestBacktestEngine:
         assert engine.backtest_start is None
         assert engine.backtest_end is None
         assert engine.iteration == 0
+        assert engine.get_log_guard() is None  # Logging bypassed
 
     def test_reset_engine(self):
         # Arrange
