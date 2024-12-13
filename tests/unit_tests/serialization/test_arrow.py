@@ -22,12 +22,15 @@ import pytest
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -277,7 +280,29 @@ class TestArrowSerializer:
             BookAction.ADD,
         ]
 
-    def test_serialize_and_deserialize_component_state_changed(self):
+    def test_serialize_and_deserialize_shutdown_system_commands(self):
+        # Arrange
+        command = ShutdownSystem(
+            trader_id=TestIdStubs.trader_id(),
+            component_id=ComponentId("Controller"),
+            reason="Maintenance",
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        serialized = ArrowSerializer.serialize(command)
+        [deserialized] = ArrowSerializer.deserialize(
+            data_cls=ShutdownSystem,
+            batch=serialized,
+        )
+
+        # Assert
+        assert deserialized == command
+
+        self.catalog.write_data([command])
+
+    def test_serialize_and_deserialize_component_state_changed_events(self):
         # Arrange
         event = TestEventStubs.component_state_changed()
 
@@ -293,7 +318,7 @@ class TestArrowSerializer:
 
         self.catalog.write_data([event])
 
-    def test_serialize_and_deserialize_trading_state_changed(self):
+    def test_serialize_and_deserialize_trading_state_changed_events(self):
         # Arrange
         event = TestEventStubs.trading_state_changed()
 
@@ -313,7 +338,7 @@ class TestArrowSerializer:
             TestEventStubs.margin_account_state(),
         ],
     )
-    def test_serialize_and_deserialize_account_state(self, event):
+    def test_serialize_and_deserialize_account_state_events(self, event):
         # Arrange, Act
         serialized = ArrowSerializer.serialize(event, data_cls=AccountState)
         [deserialized] = ArrowSerializer.deserialize(data_cls=AccountState, batch=serialized)

@@ -20,6 +20,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 
 from nautilus_trader.common.messages cimport ComponentStateChanged
+from nautilus_trader.common.messages cimport ShutdownSystem
 from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -74,6 +75,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
+    ShutdownSystem.__name__: ShutdownSystem.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
     AccountState.__name__: AccountState.to_dict_c,
@@ -127,6 +129,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
+    ShutdownSystem.__name__: ShutdownSystem.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.from_dict_c,
     AccountState.__name__: AccountState.from_dict_c,
@@ -183,6 +186,7 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     SubmitOrderList,
     ModifyOrder,
     CancelOrder,
+    ShutdownSystem,
     ComponentStateChanged,
     TradingStateChanged,
     AccountState,
