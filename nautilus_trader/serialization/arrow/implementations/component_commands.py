@@ -25,7 +25,7 @@ def serialize(command: ShutdownSystem) -> pa.RecordBatch:
 
 
 def deserialize(cls):
-    def inner(batch: pa.RecordBatch) -> ShutdownSystem:
+    def inner(batch: pa.RecordBatch) -> list[ShutdownSystem]:
         def parse(data):
             return data
 

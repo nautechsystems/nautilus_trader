@@ -14,6 +14,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added type stubs for `core` subpackage
 - Added type stubs for `common` and `model` enums
+- Added type stubs for `common.messages`
 - Added re-exports and module declarations to enhance code ergonomics and improve import discoverability
 - Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
 - Added sccache in CI (#2093), thanks @sunlei
