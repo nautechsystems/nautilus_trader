@@ -180,8 +180,8 @@ class BybitWebSocketClient:
         await self._send(signature)
 
         while not self._is_authenticated:
-            self._log.warning("Waiting for private channel authentication")
-            await asyncio.sleep(0.2)
+            self._log.debug("Waiting for private channel authentication")
+            await asyncio.sleep(0.1)
 
     ################################################################################
     # Public
