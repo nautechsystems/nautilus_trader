@@ -245,10 +245,10 @@ class BybitEndpointType(Enum):
 def check_dict_keys(key, data):
     try:
         return data[key]
-    except KeyError as exec:
+    except KeyError as e:
         raise RuntimeError(
             f"Unrecognized Bybit {key} not found in {data}",
-        ) from exec
+        ) from e
 
 
 class BybitEnumParser:
@@ -554,10 +554,10 @@ class BybitEnumParser:
     def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
         try:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
-        except KeyError as exec:
+        except KeyError as e:
             raise RuntimeError(
                 f"unrecognized Bybit time in force, was {time_in_force_to_str(time_in_force)}",  # pragma: no cover
-            ) from exec
+            ) from e
 
     def parse_nautilus_trigger_type(self, trigger_type: TriggerType) -> BybitTriggerType:
         return check_dict_keys(trigger_type, self.nautilus_to_bybit_trigger_type)
@@ -587,7 +587,7 @@ class BybitEnumParser:
                 raise ValueError(
                     f"Bybit incorrect aggregation {aggregation}",  # pragma: no cover
                 )
-        except KeyError as exec:
+        except KeyError as e:
             raise RuntimeError(
                 f"unrecognized Bybit bar type, was {bar_type}",  # pragma: no cover
-            ) from exec
+            ) from e
