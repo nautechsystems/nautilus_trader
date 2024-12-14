@@ -24,6 +24,7 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUE_MEMBERS
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.common.providers import InstrumentProvider
@@ -124,9 +125,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
             self._log.debug(f"Got {details=}")
         except ValueError as e:
-            for d in details:
-                print(d.__dict__)
-            self._log.error(f"No contract details found for the given kwargs {contract}, {e}")
+            self._log.debug(f"No contract details found for the given kwargs {contract}, {e}")
             return []
         min_expiry = pd.Timestamp.now() + pd.Timedelta(
             days=(contract.min_expiry_days or self._min_expiry_days or 0),
@@ -273,9 +272,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                     symbology_method=self.config.symbology_method,
                 )
             except ValueError as e:
-                self._log.error(
-                    f"{self.config.symbology_method=} failed to parse {instrument_id=}, {e}",
-                )
+                self._log.error(str(e))
                 return
         elif isinstance(instrument_id, IBContract):
             assert self.config.symbology_method != SymbologyMethod.DATABENTO
@@ -285,8 +282,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return
 
         self._log.info(f"Attempting to find instrument for {contract=}")
-        if databento_venue == "GLBX":
-            for exchange in ["CME", "CBOT", "NYMEX", "NYBOT"]:
+        contract_details = []
+        if databento_venue in VENUE_MEMBERS.keys():
+            # Use a safe mapping to prevent unintended symbol matches from global venues
+            for exchange in VENUE_MEMBERS.get(databento_venue, []):
                 contract = instrument_id_to_ib_contract(
                     instrument_id=instrument_id,
                     symbology_method=self.config.symbology_method,
@@ -300,6 +299,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         if contract_details:
             await self._process_contract_details(contract_details, databento_venue=databento_venue)
+        else:
+            self._log.error(
+                f"Unable to resolve contract details for {instrument_id!r}. "
+                f"If you believe the InstrumentId is correct, please verify its tradability "
+                f"in TWS (Trader Workstation) for Interactive Brokers.",
+            )
 
     async def _process_contract_details(
         self,

@@ -38,6 +38,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
     CONNECTIVITY_LOST_CODES: Final[set[int]] = {1100, 1300, 2110}
     CONNECTIVITY_RESTORED_CODES: Final[set[int]] = {1101, 1102}
     ORDER_REJECTION_CODES: Final[set[int]] = {201, 203, 321, 10289, 10293}
+    SUPPRESS_ERROR_LOGGING_CODES: Final[set[int]] = {200}
 
     async def _log_message(
         self,
@@ -62,7 +63,10 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         msg = f"{error_string} (code: {error_code}, {req_id=})."
-        self._log.warning(msg) if is_warning else self._log.error(msg)
+        if error_code in self.SUPPRESS_ERROR_LOGGING_CODES:
+            self._log.debug(msg)
+        else:
+            self._log.warning(msg) if is_warning else self._log.error(msg)
 
     async def process_error(
         self,
@@ -179,7 +183,10 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         request = self._requests.get(req_id=req_id)
-        self._log.warning(f"{error_code}: {error_string}, {request}")
+        if error_code == 200:
+            self._log.debug(f"{error_code}: {error_string}, {request}")
+        else:
+            self._log.warning(f"{error_code}: {error_string}, {request}")
         self._end_request(req_id, success=False)
 
     async def _handle_order_error(self, req_id: int, error_code: int, error_string: str) -> None:
