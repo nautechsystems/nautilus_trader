@@ -506,6 +506,23 @@ class BybitEnumParser:
             TimeInForce.FOK,
         }
 
+        # trigger direction
+        self.trigger_direction_map_buy = {
+            OrderType.STOP_MARKET: BybitTriggerDirection.RISES_TO,
+            OrderType.STOP_LIMIT: BybitTriggerDirection.RISES_TO,
+            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
+            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.RISES_TO,
+            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
+        }
+
+        self.trigger_direction_map_sell = {
+            OrderType.STOP_MARKET: BybitTriggerDirection.FALLS_TO,
+            OrderType.STOP_LIMIT: BybitTriggerDirection.FALLS_TO,
+            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
+            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.FALLS_TO,
+            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
+        }
+
     def parse_bybit_order_status(
         self,
         order_type: OrderType,
@@ -553,26 +570,10 @@ class BybitEnumParser:
         order_type: OrderType,
         order_side: OrderSide,
     ) -> BybitTriggerDirection | None:
-        map_buy = {
-            OrderType.STOP_MARKET: BybitTriggerDirection.RISES_TO,
-            OrderType.STOP_LIMIT: BybitTriggerDirection.RISES_TO,
-            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
-            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.RISES_TO,
-            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
-        }
-
-        map_sell = {
-            OrderType.STOP_MARKET: BybitTriggerDirection.FALLS_TO,
-            OrderType.STOP_LIMIT: BybitTriggerDirection.FALLS_TO,
-            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
-            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.FALLS_TO,
-            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
-        }
-
         if order_side == OrderSide.BUY:
-            return map_buy.get(order_type)
+            return self.trigger_direction_map_buy.get(order_type)
         else:  # SELL
-            return map_sell.get(order_type)
+            return self.trigger_direction_map_sell.get(order_type)
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
         try:
