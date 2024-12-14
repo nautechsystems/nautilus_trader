@@ -570,10 +570,11 @@ class BybitEnumParser:
         order_type: OrderType,
         order_side: OrderSide,
     ) -> BybitTriggerDirection | None:
-        if order_side == OrderSide.BUY:
-            return self.trigger_direction_map_buy.get(order_type)
-        else:  # SELL
-            return self.trigger_direction_map_sell.get(order_type)
+        return (
+            self.trigger_direction_map_buy.get(order_type)
+            if order_side == OrderSide.BUY
+            else self.trigger_direction_map_sell.get(order_type)
+        )
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
         try:
