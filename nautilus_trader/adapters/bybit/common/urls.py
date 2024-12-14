@@ -25,7 +25,7 @@ def get_http_base_url(is_demo: bool, is_testnet: bool) -> str:
     elif is_testnet:
         return "https://api-testnet.bybit.com"
     else:
-        return "https://api.bytick.com"
+        return "https://api.bybit.com"
 
 
 def get_ws_base_url_public(
