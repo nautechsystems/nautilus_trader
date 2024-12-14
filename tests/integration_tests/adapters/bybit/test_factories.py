@@ -53,7 +53,7 @@ class TestBybitFactories:
     @pytest.mark.parametrize(
         ("is_demo", "is_testnet", "expected"),
         [
-            [False, False, "https://api.bytick.com"],
+            [False, False, "https://api.bybit.com"],
             [False, True, "https://api-testnet.bybit.com"],
             [True, False, "https://api-demo.bybit.com"],
         ],
