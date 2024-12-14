@@ -181,6 +181,7 @@ class BybitExecutionClient(LiveExecutionClient):
             api_key=config.api_key or get_api_key(config.demo, config.testnet),
             api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
             loop=loop,
+            max_reconnection_tries=config.max_ws_reconnection_tries,
         )
 
         # HTTP API
