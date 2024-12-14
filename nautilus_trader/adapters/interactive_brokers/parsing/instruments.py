@@ -17,6 +17,7 @@ import datetime
 import re
 import time
 from decimal import Decimal
+from typing import Final
 
 import pandas as pd
 from ibapi.contract import ContractDetails
@@ -47,6 +48,12 @@ from nautilus_trader.model.objects import Quantity
 
 
 # fmt: on
+
+VENUE_MEMBERS: Final[dict[str, list[str]]] = {
+    "GLBX": ["CME", "CBOT", "NYMEX", "NYBOT"],
+    "IFEU": ["ICEEU", "ICEEUSOFT", "IPE"],
+    "NDEX": ["ENDEX"],
+}
 
 FUTURES_MONTH_TO_CODE: dict[str, str] = {
     "JAN": "F",
@@ -690,7 +697,7 @@ def instrument_id_to_ib_contract_databento_symbology(
     instrument_id: InstrumentId,
     exchange: str,
 ) -> IBContract:
-    if instrument_id.venue.value == "GLBX":
+    if instrument_id.venue.value in ["GLBX", "IFEU", "NDEX"]:
         assert exchange is not None
         if RE_FUT.match(instrument_id.symbol.value) or RE_FUT_ORIGINAL.match(
             instrument_id.symbol.value,
@@ -709,9 +716,10 @@ def instrument_id_to_ib_contract_databento_symbology(
                 localSymbol=instrument_id.symbol.value,
             )
         else:
-            raise ValueError(f"Cannot parse ib_contract for {instrument_id}")
-    elif instrument_id.venue.value == "IFEU":
-        raise ValueError(f"Cannot parse ib_contract for {instrument_id}")
+            raise ValueError(
+                f"Failed to parse ib_contract for {instrument_id}. "
+                f"Ensure it is a valid Future InstrumentId",
+            )
     else:
         if RE_OPT.match(instrument_id.symbol.value):
             return IBContract(
