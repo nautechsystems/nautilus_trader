@@ -17,8 +17,10 @@ import pytest
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -145,3 +147,62 @@ class TestBybitParsing:
     # ) -> None:
     #     result = self._enum_parser.parse_nautilus_order_status(order_status)
     #     assert result == bybit_order_status
+
+    @pytest.mark.parametrize(
+        ("order_type", "expected_direction_buy"),
+        [
+            (OrderType.STOP_MARKET, BybitTriggerDirection.RISES_TO),
+            (OrderType.STOP_LIMIT, BybitTriggerDirection.RISES_TO),
+            (OrderType.MARKET_IF_TOUCHED, BybitTriggerDirection.RISES_TO),
+            (OrderType.TRAILING_STOP_MARKET, BybitTriggerDirection.RISES_TO),
+            (OrderType.LIMIT_IF_TOUCHED, BybitTriggerDirection.FALLS_TO),
+            (OrderType.MARKET, None),
+            (OrderType.LIMIT, None),
+        ],
+    )
+    def test_parse_trigger_direction_buy_orders(self, order_type, expected_direction_buy):
+        # Arrange & Act
+        result = self._enum_parser.parse_trigger_direction(
+            order_type=order_type,
+            order_side=OrderSide.BUY,
+        )
+
+        # Assert
+        assert result == expected_direction_buy
+
+    @pytest.mark.parametrize(
+        ("order_type", "expected_direction_sell"),
+        [
+            (OrderType.STOP_MARKET, BybitTriggerDirection.FALLS_TO),
+            (OrderType.STOP_LIMIT, BybitTriggerDirection.FALLS_TO),
+            (OrderType.MARKET_IF_TOUCHED, BybitTriggerDirection.FALLS_TO),
+            (OrderType.TRAILING_STOP_MARKET, BybitTriggerDirection.FALLS_TO),
+            (OrderType.LIMIT_IF_TOUCHED, BybitTriggerDirection.RISES_TO),
+            (OrderType.MARKET, None),
+            (OrderType.LIMIT, None),
+        ],
+    )
+    def test_parse_trigger_direction_sell_orders(self, order_type, expected_direction_sell):
+        # Arrange & Act
+        result = self._enum_parser.parse_trigger_direction(
+            order_type=order_type,
+            order_side=OrderSide.SELL,
+        )
+
+        # Assert
+        assert result == expected_direction_sell
+
+    def test_parse_trigger_direction_unsupported_order_types(self):
+        # Arrange & Act
+        result_buy = self._enum_parser.parse_trigger_direction(
+            order_type=OrderType.MARKET,
+            order_side=OrderSide.BUY,
+        )
+        result_sell = self._enum_parser.parse_trigger_direction(
+            order_type=OrderType.MARKET,
+            order_side=OrderSide.SELL,
+        )
+
+        # Assert
+        assert result_buy is None
+        assert result_sell is None
