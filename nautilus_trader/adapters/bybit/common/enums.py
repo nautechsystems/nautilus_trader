@@ -245,10 +245,10 @@ class BybitEndpointType(Enum):
 def check_dict_keys(key, data):
     try:
         return data[key]
-    except KeyError:
+    except KeyError as exec:
         raise RuntimeError(
             f"Unrecognized Bybit {key} not found in {data}",
-        )
+        ) from exec
 
 
 class BybitEnumParser:
@@ -537,10 +537,10 @@ class BybitEnumParser:
     def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
         try:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
-        except KeyError:
+        except KeyError as exec:
             raise RuntimeError(
                 f"unrecognized Bybit time in force, was {time_in_force_to_str(time_in_force)}",  # pragma: no cover
-            )
+            ) from exec
 
     def parse_nautilus_trigger_type(self, trigger_type: TriggerType) -> BybitTriggerType:
         return check_dict_keys(trigger_type, self.nautilus_to_bybit_trigger_type)
@@ -548,39 +548,31 @@ class BybitEnumParser:
     def parse_bybit_trigger_type(self, trigger_type: BybitTriggerType) -> TriggerType:
         return check_dict_keys(trigger_type, self.bybit_to_nautilus_trigger_type)
 
-    def parse_trigger_direction(  # noqa: C901 (too complex)
+    def parse_trigger_direction(
         self,
         order_type: OrderType,
         order_side: OrderSide,
     ) -> BybitTriggerDirection | None:
+        map_buy = {
+            OrderType.STOP_MARKET: BybitTriggerDirection.RISES_TO,
+            OrderType.STOP_LIMIT: BybitTriggerDirection.RISES_TO,
+            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
+            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.RISES_TO,
+            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
+        }
+
+        map_sell = {
+            OrderType.STOP_MARKET: BybitTriggerDirection.FALLS_TO,
+            OrderType.STOP_LIMIT: BybitTriggerDirection.FALLS_TO,
+            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
+            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.FALLS_TO,
+            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
+        }
+
         if order_side == OrderSide.BUY:
-            match order_type:
-                case OrderType.STOP_MARKET:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.STOP_LIMIT:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.MARKET_IF_TOUCHED:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.TRAILING_STOP_MARKET:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.LIMIT_IF_TOUCHED:
-                    return BybitTriggerDirection.FALLS_TO
-                case _:
-                    return None
+            return map_buy.get(order_type)
         else:  # SELL
-            match order_type:
-                case OrderType.STOP_MARKET:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.STOP_LIMIT:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.MARKET_IF_TOUCHED:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.TRAILING_STOP_MARKET:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.LIMIT_IF_TOUCHED:
-                    return BybitTriggerDirection.RISES_TO
-                case _:
-                    return None
+            return map_sell.get(order_type)
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
         try:
@@ -593,7 +585,7 @@ class BybitEnumParser:
                 raise ValueError(
                     f"Bybit incorrect aggregation {aggregation}",  # pragma: no cover
                 )
-        except KeyError:
+        except KeyError as exec:
             raise RuntimeError(
                 f"unrecognized Bybit bar type, was {bar_type}",  # pragma: no cover
-            )
+            ) from exec
