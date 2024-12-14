@@ -802,9 +802,9 @@ typedef struct BookLevel BookLevel;
  *
  * Maintains buy (bid) and sell (ask) orders in price-time priority, supporting multiple
  * market data formats:
- * - L3 (MBO): Market By Order - tracks individual orders with unique IDs
- * - L2 (MBP): Market By Price - aggregates orders at each price level
- * - L1 (MBP): Top of Book - maintains only the best bid and ask prices
+ * - L3 (MBO): Market By Order - tracks individual orders with unique IDs.
+ * - L2 (MBP): Market By Price - aggregates orders at each price level.
+ * - L1 (MBP): Top-of-Book - maintains only the best bid and ask prices.
  */
 typedef struct OrderBook OrderBook;
 
