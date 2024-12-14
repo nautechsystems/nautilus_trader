@@ -579,16 +579,15 @@ class BybitExecutionClient(LiveExecutionClient):
 
         for i in range(0, len(valid_cancels), max_batch):
             batch_cancels = valid_cancels[i : i + max_batch]
-            cancel_orders: list[BybitBatchCancelOrder] = []
 
-            for cancel in batch_cancels:
-                cancel_orders.append(
-                    BybitBatchCancelOrder(
-                        symbol=bybit_symbol.raw_symbol,
-                        orderId=cancel.venue_order_id.value if cancel.venue_order_id else None,
-                        orderLinkId=cancel.client_order_id.value,
-                    ),
+            cancel_orders: list[BybitBatchCancelOrder] = [
+                BybitBatchCancelOrder(
+                    symbol=bybit_symbol.raw_symbol,
+                    orderId=cancel.venue_order_id.value if cancel.venue_order_id else None,
+                    orderLinkId=cancel.client_order_id.value,
                 )
+                for cancel in batch_cancels
+            ]
 
             async with self._retry_manager_pool as retry_manager:
                 await retry_manager.run(
