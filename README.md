@@ -229,7 +229,7 @@ These wheels allow testing of the latest features and fixes that have not yet be
 
     pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
 
-**To install a specific nightly build** (e.g., 1.208.0.dev20241212 for December 12, 2024):
+**To install a specific nightly build** (e.g., `1.208.0.dev20241212` for December 12, 2024):
 
     pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
 
