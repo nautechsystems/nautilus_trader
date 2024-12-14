@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added `max_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
 - Added additional API functionality for Bybit (#2102), thanks @sunlei
 - Added position and execution.fast subscriptions for Bybit (#2104), thanks @sunlei
+- Added `max_ws_reconnection_tries` to `BybitExecClientConfig` (#2109), thanks @sunlei
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
@@ -24,6 +25,8 @@ Released on TBD (UTC).
 - Added sccache in CI (#2093), thanks @sunlei
 - Refined `BybitWebSocketClient` private channel authentication (#2101), thanks @sunlei
 - Refined `BybitWebSocketClient` subscribe and unsubscribe (#2105), thanks @sunlei
+- Refined `BybitEnumParser` (#2107), thanks @sunlei
+- Refined batch cancel orders for Bybit (#2111), thanks @sunlei
 - Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
@@ -39,6 +42,7 @@ Released on TBD (UTC).
 - Fixed `BybitHttpClient` error handling when not a JSON string (#2096), thanks @sunlei
 - Fixed `BybitWebSocketClient` private channel reconnect (#2097), thanks @sunlei
 - Fixed incorrect order side use in `BybitExecutionClient` (#2098), thanks @sunlei
+- Fixed default `http_base_url` for Bybit (#2110), thanks @sunlei
 
 ---
 
