@@ -24,7 +24,12 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitPlaceOrderPostParams(BybitBatchPlaceOrder, omit_defaults=True, frozen=True, kw_only=True):
+class BybitPlaceOrderPostParams(
+    BybitBatchPlaceOrder,
+    omit_defaults=True,
+    frozen=True,
+    kw_only=True,
+):
     category: BybitProductType
 
 

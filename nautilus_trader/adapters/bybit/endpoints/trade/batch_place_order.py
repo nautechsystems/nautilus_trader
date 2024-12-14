@@ -29,7 +29,12 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderRes
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitBatchPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True, kw_only=True):
+class BybitBatchPlaceOrder(
+    msgspec.Struct,
+    omit_defaults=True,
+    frozen=True,
+    kw_only=True,
+):
     symbol: str
     isLeverage: int | None = None
     side: BybitOrderSide
