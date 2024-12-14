@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Added sccache in CI (#2093), thanks @sunlei
 - Refined `BybitWebSocketClient` private channel authentication (#2101), thanks @sunlei
 - Refined `BybitWebSocketClient` subscribe and unsubscribe (#2105), thanks @sunlei
+- Refined place order class definitions for Bybit (#2106), thanks @sunlei
 - Refined `BybitEnumParser` (#2107), thanks @sunlei
 - Refined batch cancel orders for Bybit (#2111), thanks @sunlei
 - Upgraded `tokio` crate to v1.42.0
