@@ -64,9 +64,9 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
             if not request:
                 return None
             request.handle()
-            return await self._await_request(request, 10)
+            return await self._await_request(request, 10, supress_timeout_warning=True)
         else:
-            return await self._await_request(request, 10)
+            return await self._await_request(request, 10, supress_timeout_warning=True)
 
     async def get_matching_contracts(self, pattern: str) -> list[IBContract] | None:
         """
