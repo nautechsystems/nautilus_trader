@@ -122,6 +122,11 @@ jobs:
     name: Publish to packages
     runs-on: ubuntu-latest
     needs: build-wheels
+    env:
+      TOTAL_WHEELS: 12
+      GIT_USER: "nautilus-trader-bot"
+      GIT_EMAIL: "bot@nautechsystems.io"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -133,50 +138,65 @@ jobs:
 
       - name: Configure Git user
         run: |
-          git config --global user.name "nautilus-trader-bot"
-          git config --global user.email "bot@nautechsystems.io"
+          git config --global user.name "${{ env.GIT_USER }}"
+          git config --global user.email "${{ env.GIT_EMAIL }}"
 
       - name: Publish to packages branch
         run: |
           set -eo pipefail
-          rm -rf packages  # Ensure clean state
+
+          # Ensure clean state
+          rm -rf packages
           git clone --branch=packages https://github.com/${{ github.repository }} packages
-          cd packages
 
-          # Ensure package directory exists
-          mkdir -p simple/nautilus-trader/
-
-          # Prune old wheels
-          echo "Pruning wheels older than 3 days"
-          find simple/nautilus-trader/ -type f -mtime +3 -name "*.whl" -exec rm -f {} \;
-
-          # Check wheels
-          if [ -z "$(ls -A ../dist/*.whl)" ]; then
-              echo "No wheels found in dist/, exiting"
-              exit 1
+          # Copy wheels
+          if ! ls dist/*.whl >/dev/null 2>&1; then
+            echo "No wheels found in dist/, exiting"
+            exit 1
           fi
 
-          # Copy new wheels
-          find ../dist/ -name "*.whl" -exec cp {} simple/nautilus-trader/ \;
-          ls -lh simple/nautilus-trader/
+          # Ensure package directory exists
+          cd packages
+          mkdir -p simple/nautilus-trader/
+
+          # Copy wheels before changing directory
+          echo "Copying new wheels..."
+          cp ../dist/*.whl simple/nautilus-trader/
+
+          # Managing wheel versions
+          cd simple/nautilus-trader/
+          WHEEL_COUNT=$(ls -1 *.whl 2>/dev/null | wc -l || echo "0")
+          echo "Current wheel count: $WHEEL_COUNT"
+
+          # Early exit if no wheels are present
+          if [ "$WHEEL_COUNT" -eq 0 ]; then
+            echo "No wheels currently present, skipping cleanup"
+            exit 0
+          fi
+
+          # Prune older wheels if necessary
+          if [ "$WHEEL_COUNT" -gt "$TOTAL_WHEELS" ]; then
+            echo "Removing older wheels..."
+            ls -1t *.whl | tail -n +$(($TOTAL_WHEELS + 1)) | xargs -r rm -f
+          fi
 
           # Generate index.html
           echo "Generating index.html for simple/nautilus-trader/"
-          cd simple/nautilus-trader/
           echo "<!DOCTYPE html>" > index.html
           echo "<html><body>" >> index.html
+
           for file in *.whl; do
             echo "<a href=\"$file\">$file</a><br>" >> index.html
           done
           echo "</body></html>" >> index.html
-          cd ../../
 
           # Publish wheels
+          cd ../../
           git remote set-url origin https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}
           git add .
           if git diff-index --quiet HEAD --; then
-              echo "No changes to commit"
+            echo "No changes to commit"
           else
-              git commit -m "Publish nightly wheels from ${{ github.sha }}"
-              git push
+            git commit -m "Publish nightly wheels from ${{ github.sha }}"
+            git push
           fi
