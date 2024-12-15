@@ -29,18 +29,27 @@ use crate::{
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
+///
+/// The `id` for the synthetic will become `{symbol}.{SYNTH}`.
 #[derive(Clone, Debug, Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct SyntheticInstrument {
+    /// The unique identifier for the synthetic instrument.
     pub id: InstrumentId,
+    /// The price precision for the synthetic instrument.
     pub price_precision: u8,
+    /// The minimum price increment.
     pub price_increment: Price,
+    /// The component instruments for the synthetic instrument.
     pub components: Vec<InstrumentId>,
+    /// The derivation formula for the synthetic instrument.
     pub formula: String,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
     context: HashMapContext,
     variables: Vec<String>,

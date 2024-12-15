@@ -31,7 +31,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-/// Represents a generic sports betting instrument.
+/// Represents a betting instrument with complete market and selection details.
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -40,40 +40,75 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BettingInstrument {
+    /// The instrument ID.
     pub id: InstrumentId,
+    /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
+    /// The event type identifier (e.g. 1=Soccer, 2=Tennis).
     pub event_type_id: u64,
+    /// The name of the event type (e.g. "Soccer", "Tennis").
     pub event_type_name: Ustr,
+    /// The competition/league identifier.
     pub competition_id: u64,
+    /// The name of the competition (e.g. "English Premier League").
     pub competition_name: Ustr,
+    /// The unique identifier for the event.
     pub event_id: u64,
+    /// The name of the event (e.g. "Arsenal vs Chelsea").
     pub event_name: Ustr,
+    /// The ISO country code where the event takes place.
     pub event_country_code: Ustr,
+    /// UNIX timestamp (nanoseconds) when the event becomes available for betting.
     pub event_open_date: UnixNanos,
+    /// The type of betting (e.g. "ODDS", "LINE").
     pub betting_type: Ustr,
+    /// The unique identifier for the betting market.
     pub market_id: Ustr,
+    /// The name of the market (e.g. "Match Odds", "Total Goals").
     pub market_name: Ustr,
+    /// The type of market (e.g. "WIN", "PLACE").
     pub market_type: Ustr,
+    /// UNIX timestamp (nanoseconds) when betting starts for this market.
     pub market_start_time: UnixNanos,
+    /// The unique identifier for the selection within the market.
     pub selection_id: u64,
+    /// The name of the selection (e.g. "Arsenal", "Over 2.5").
     pub selection_name: Ustr,
+    /// The handicap value for the selection, if applicable.
     pub selection_handicap: f64,
+    /// The contract currency.
     pub currency: Currency,
+    /// The price decimal precision.
     pub price_precision: u8,
+    /// The trading size decimal precision.
     pub size_precision: u8,
+    /// The minimum price increment (tick size).
     pub price_increment: Price,
+    /// The minimum size increment.
     pub size_increment: Quantity,
+    /// The initial (order) margin requirement in percentage of order value.
     pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
+    /// The fee rate for liquidity makers as a percentage of order value.
     pub maker_fee: Decimal,
+    /// The fee rate for liquidity takers as a percentage of order value.
     pub taker_fee: Decimal,
+    /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
+    /// The minimum allowable order quantity.
     pub min_quantity: Option<Quantity>,
+    /// The maximum allowable order notional value.
     pub max_notional: Option<Money>,
+    /// The minimum allowable order notional value.
     pub min_notional: Option<Money>,
+    /// The maximum allowable quoted price.
     pub max_price: Option<Price>,
+    /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 

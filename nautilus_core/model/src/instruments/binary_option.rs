@@ -39,29 +39,53 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BinaryOption {
+    /// The instrument ID.
     pub id: InstrumentId,
+    /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
+    /// The binary option asset class.
     pub asset_class: AssetClass,
+    /// The binary option contract currency.
     pub currency: Currency,
+    /// UNIX timestamp (nanoseconds) for contract activation.
     pub activation_ns: UnixNanos,
+    /// UNIX timestamp (nanoseconds) for contract expiration.
     pub expiration_ns: UnixNanos,
+    /// The price decimal precision.
     pub price_precision: u8,
+    /// The trading size decimal precision.
     pub size_precision: u8,
+    /// The minimum price increment (tick size).
     pub price_increment: Price,
+    /// The minimum size increment.
     pub size_increment: Quantity,
+    /// The initial (order) margin requirement in percentage of order value.
     pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
+    /// The fee rate for liquidity makers as a percentage of order value.
     pub maker_fee: Decimal,
+    /// The fee rate for liquidity takers as a percentage of order value.
     pub taker_fee: Decimal,
+    /// The binary outcome of the market.
     pub outcome: Option<Ustr>,
+    /// The market description.
     pub description: Option<Ustr>,
+    /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
+    /// The minimum allowable order quantity.
     pub min_quantity: Option<Quantity>,
+    /// The maximum allowable order notional value.
     pub max_notional: Option<Money>,
+    /// The minimum allowable order notional value.
     pub min_notional: Option<Money>,
+    /// The maximum allowable quoted price.
     pub max_price: Option<Price>,
+    /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 

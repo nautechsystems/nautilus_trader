@@ -441,6 +441,8 @@ cdef extern from "../includes/model.h":
 
     # Represents a synthetic instrument with prices derived from component instruments using a
     # formula.
+    #
+    # The `id` for the synthetic will become `{symbol}.{SYNTH}`.
     cdef struct SyntheticInstrument:
         pass
 
