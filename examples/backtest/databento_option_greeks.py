@@ -117,25 +117,19 @@ class OptionStrategy(Strategy):
 
     def __init__(self, config: OptionConfig):
         super().__init__(config=config)
-
-        self.future_id = config.future_id
-        self.option_id = config.option_id
-        self.option_id2 = config.option_id2
-        self.load_greeks = config.load_greeks
-
         self.start_orders_done = False
 
     def on_start(self):
-        self.subscribe_quote_ticks(self.option_id)
-        self.subscribe_quote_ticks(self.option_id2)
+        self.subscribe_quote_ticks(self.config.option_id)
+        self.subscribe_quote_ticks(self.config.option_id2)
 
-        bar_type = BarType.from_str(f"{self.future_id}-1-MINUTE-LAST-EXTERNAL")
+        bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
         self.subscribe_bars(bar_type)
 
     def init_portfolio(self):
-        self.submit_market_order(instrument_id=self.option_id, quantity=-10)
-        self.submit_market_order(instrument_id=self.option_id2, quantity=10)
-        self.submit_market_order(instrument_id=self.future_id, quantity=1)
+        self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
+        self.submit_market_order(instrument_id=self.config.option_id2, quantity=10)
+        self.submit_market_order(instrument_id=self.config.future_id, quantity=1)
 
         self.start_orders_done = True
 
@@ -147,7 +141,7 @@ class OptionStrategy(Strategy):
             self.init_portfolio()
             return
 
-        if self.load_greeks:
+        if self.config.load_greeks:
             # when greeks are loaded from a catalog a small delay is needed so all greeks are updated
             # note that loading greeks is not required, it's actually faster to just compute them every time
             self.clock.set_time_alert(

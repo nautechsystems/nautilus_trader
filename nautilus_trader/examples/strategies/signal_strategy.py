@@ -52,7 +52,6 @@ class SignalStrategy(Strategy):
 
     def __init__(self, config: SignalStrategyConfig) -> None:
         super().__init__(config)
-        self.instrument_id = self.config.instrument_id
         self.instrument: Instrument | None = None
         self.counter = 0
 
@@ -60,9 +59,9 @@ class SignalStrategy(Strategy):
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
-        self.subscribe_trade_ticks(instrument_id=self.instrument_id)
-        self.subscribe_quote_ticks(instrument_id=self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        self.subscribe_trade_ticks(instrument_id=self.config.instrument_id)
+        self.subscribe_quote_ticks(instrument_id=self.config.instrument_id)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """

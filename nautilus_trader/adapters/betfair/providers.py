@@ -71,7 +71,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
         assert config is not None, "Must pass config to BetfairInstrumentProvider"
         super().__init__(config=config)
 
-        self._config = config
         self._client = client
         self._account_currency = config.account_currency
 
@@ -93,15 +92,15 @@ class BetfairInstrumentProvider(InstrumentProvider):
         currency = await self.get_account_currency()
         filters = filters or {}
 
-        self._log.info(f"Loading markets with market_filter={self._config}")
+        self._log.info(f"Loading markets with market_filter={self.config}")
         markets: list[FlattenedMarket] = await load_markets(
             self._client,
-            event_type_ids=filters.get("event_type_ids") or self._config.event_type_ids,
-            event_ids=filters.get("event_ids") or self._config.event_ids,
-            market_ids=filters.get("market_ids") or self._config.market_ids,
-            event_country_codes=filters.get("country_codes") or self._config.country_codes,
-            market_market_types=filters.get("market_types") or self._config.market_types,
-            event_type_names=filters.get("event_type_names") or self._config.event_type_names,
+            event_type_ids=filters.get("event_type_ids") or self.config.event_type_ids,
+            event_ids=filters.get("event_ids") or self.config.event_ids,
+            market_ids=filters.get("market_ids") or self.config.market_ids,
+            event_country_codes=filters.get("country_codes") or self.config.country_codes,
+            market_market_types=filters.get("market_types") or self.config.market_types,
+            event_type_names=filters.get("event_type_names") or self.config.event_type_names,
         )
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")

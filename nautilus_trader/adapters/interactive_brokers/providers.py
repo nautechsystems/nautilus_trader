@@ -63,15 +63,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._load_contracts_on_start = (
             set(config.load_contracts) if config.load_contracts is not None else None
         )
-        self._min_expiry_days = config.min_expiry_days
-        self._max_expiry_days = config.max_expiry_days
-        self._build_options_chain = config.build_options_chain
-        self._build_futures_chain = config.build_futures_chain
-        self._cache_validity_days = config.cache_validity_days
-        # TODO: If cache_validity_days > 0 and Catalog is provided
+
+        # TODO: If config.cache_validity_days > 0 and Catalog is provided
 
         self._client = client
-        self.config = config
         self.contract_details: dict[str, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
@@ -128,15 +123,15 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._log.debug(f"No contract details found for the given kwargs {contract}, {e}")
             return []
         min_expiry = pd.Timestamp.now() + pd.Timedelta(
-            days=(contract.min_expiry_days or self._min_expiry_days or 0),
+            days=(contract.min_expiry_days or self.config.min_expiry_days or 0),
         )
         max_expiry = pd.Timestamp.now() + pd.Timedelta(
-            days=(contract.max_expiry_days or self._max_expiry_days or 90),
+            days=(contract.max_expiry_days or self.config.max_expiry_days or 90),
         )
 
         if (
             contract.secType in ["FUT", "CONTFUT"] and contract.build_futures_chain
-        ) or self._build_futures_chain:
+        ) or self.config.build_futures_chain:
             # Return Underlying contract details with Future Chains
             details = await self.get_future_chain_details(
                 underlying=qualified.contract,
@@ -157,7 +152,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         if (
             contract.secType in ["STK", "FUT", "IND"] and contract.build_options_chain
-        ) or self._build_options_chain:
+        ) or self.config.build_options_chain:
             # Return Underlying contract details with Option Chains, including for the Future Chains if apply
             for detail in set(details):
                 if contract.lastTradeDateOrContractMonth:

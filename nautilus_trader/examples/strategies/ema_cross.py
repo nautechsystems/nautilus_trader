@@ -102,11 +102,6 @@ class EMACross(Strategy):
         )
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-        self.bar_type = config.bar_type
-        self.trade_size = config.trade_size
-
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
@@ -118,31 +113,31 @@ class EMACross(Strategy):
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
-        # self.request_quote_ticks(self.instrument_id)
-        # self.request_trade_ticks(self.instrument_id)
+        self.request_bars(self.config.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
+        # self.request_quote_ticks(self.config.instrument_id)
+        # self.request_trade_ticks(self.config.instrument_id)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
+        self.subscribe_bars(self.config.bar_type)
 
         if self.config.subscribe_quote_ticks:
-            self.subscribe_quote_ticks(self.instrument_id)
+            self.subscribe_quote_ticks(self.config.instrument_id)
         if self.config.subscribe_trade_ticks:
-            self.subscribe_trade_ticks(self.instrument_id)
+            self.subscribe_trade_ticks(self.config.instrument_id)
 
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
-        # self.subscribe_order_book_at_interval(self.instrument_id, depth=20)  # For debugging
+        # self.subscribe_order_book_deltas(self.config.instrument_id, depth=20)  # For debugging
+        # self.subscribe_order_book_at_interval(self.config.instrument_id, depth=20)  # For debugging
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
@@ -225,7 +220,7 @@ class EMACross(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.config.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -236,17 +231,17 @@ class EMACross(Strategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
+            if self.portfolio.is_flat(self.config.instrument_id):
                 self.buy()
-            elif self.portfolio.is_net_short(self.instrument_id):
-                self.close_all_positions(self.instrument_id)
+            elif self.portfolio.is_net_short(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
                 self.buy()
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
+            if self.portfolio.is_flat(self.config.instrument_id):
                 self.sell()
-            elif self.portfolio.is_net_long(self.instrument_id):
-                self.close_all_positions(self.instrument_id)
+            elif self.portfolio.is_net_long(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
                 self.sell()
 
     def buy(self) -> None:
@@ -254,9 +249,9 @@ class EMACross(Strategy):
         Users simple buy method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
             # time_in_force=TimeInForce.FOK,
         )
 
@@ -267,9 +262,9 @@ class EMACross(Strategy):
         Users simple sell method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
             # time_in_force=TimeInForce.FOK,
         )
 
@@ -301,16 +296,16 @@ class EMACross(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.instrument_id)
+        self.cancel_all_orders(self.config.instrument_id)
         if self.close_positions_on_stop:
-            self.close_all_positions(self.instrument_id)
+            self.close_all_positions(self.config.instrument_id)
 
         # Unsubscribe from data
-        self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_quote_ticks(self.instrument_id)
-        self.unsubscribe_trade_ticks(self.instrument_id)
-        # self.unsubscribe_order_book_deltas(self.instrument_id)
-        # self.unsubscribe_order_book_at_interval(self.instrument_id)
+        self.unsubscribe_bars(self.config.bar_type)
+        # self.unsubscribe_quote_ticks(self.config.instrument_id)
+        self.unsubscribe_trade_ticks(self.config.instrument_id)
+        # self.unsubscribe_order_book_deltas(self.config.instrument_id)
+        # self.unsubscribe_order_book_at_interval(self.config.instrument_id)
 
     def on_reset(self) -> None:
         """
