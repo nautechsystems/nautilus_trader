@@ -1,6 +1,6 @@
 # NautilusTrader 1.208.0 Beta
 
-Released on TBD (UTC).
+Released on 15th December 2024 (UTC).
 
 ### Enhancements
 - Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083, #2094), thanks @faysou
