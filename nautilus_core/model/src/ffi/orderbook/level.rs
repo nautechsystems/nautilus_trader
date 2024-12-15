@@ -20,7 +20,7 @@ use nautilus_core::ffi::cvec::CVec;
 use crate::{
     data::order::BookOrder,
     enums::OrderSide,
-    orderbook::{ladder::BookPrice, level::Level},
+    orderbook::{ladder::BookPrice, level::BookLevel},
     types::price::Price,
 };
 
@@ -35,71 +35,71 @@ use crate::{
 #[repr(C)]
 #[derive(Clone)]
 #[allow(non_camel_case_types)]
-pub struct Level_API(Box<Level>);
+pub struct BookLevel_API(Box<BookLevel>);
 
-impl Level_API {
-    /// Creates a new [`Level_API`] instance.
+impl BookLevel_API {
+    /// Creates a new [`BookLevel_API`] instance.
     #[must_use]
-    pub fn new(level: Level) -> Self {
+    pub fn new(level: BookLevel) -> Self {
         Self(Box::new(level))
     }
 }
 
-impl Deref for Level_API {
-    type Target = Level;
+impl Deref for BookLevel_API {
+    type Target = BookLevel;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for Level_API {
+impl DerefMut for BookLevel_API {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 #[no_mangle]
-pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> Level_API {
+pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> BookLevel_API {
     let CVec { ptr, len, cap } = orders;
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
     let price = BookPrice {
         value: price,
         side: order_side,
     };
-    let mut level = Level::new(price);
+    let mut level = BookLevel::new(price);
     level.add_bulk(orders);
-    Level_API::new(level)
+    BookLevel_API::new(level)
 }
 
 #[no_mangle]
-pub extern "C" fn level_drop(level: Level_API) {
+pub extern "C" fn level_drop(level: BookLevel_API) {
     drop(level); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn level_clone(level: &Level_API) -> Level_API {
+pub extern "C" fn level_clone(level: &BookLevel_API) -> BookLevel_API {
     level.clone()
 }
 
 #[no_mangle]
-pub extern "C" fn level_price(level: &Level_API) -> Price {
+pub extern "C" fn level_price(level: &BookLevel_API) -> Price {
     level.price.value
 }
 
 #[no_mangle]
-pub extern "C" fn level_orders(level: &Level_API) -> CVec {
+pub extern "C" fn level_orders(level: &BookLevel_API) -> CVec {
     let orders_vec: Vec<BookOrder> = level.orders.values().copied().collect();
     orders_vec.into()
 }
 
 #[no_mangle]
-pub extern "C" fn level_size(level: &Level_API) -> f64 {
+pub extern "C" fn level_size(level: &BookLevel_API) -> f64 {
     level.size()
 }
 
 #[no_mangle]
-pub extern "C" fn level_exposure(level: &Level_API) -> f64 {
+pub extern "C" fn level_exposure(level: &BookLevel_API) -> f64 {
     level.exposure()
 }
 
@@ -107,7 +107,8 @@ pub extern "C" fn level_exposure(level: &Level_API) -> f64 {
 #[no_mangle]
 pub extern "C" fn vec_levels_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
-    let data: Vec<Level_API> = unsafe { Vec::from_raw_parts(ptr.cast::<Level_API>(), len, cap) };
+    let data: Vec<BookLevel_API> =
+        unsafe { Vec::from_raw_parts(ptr.cast::<BookLevel_API>(), len, cap) };
     drop(data); // Memory freed here
 }
 

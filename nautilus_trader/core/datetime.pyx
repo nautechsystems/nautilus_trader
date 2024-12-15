@@ -276,7 +276,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
     return data
 
 
-cpdef time_object_to_dt(time_object):
+cpdef datetime time_object_to_dt(time_object):
     """
     Return the datetime (UTC) from the given UNIX timestamp as integer (nanoseconds), string or pd.Timestamp.
     Returns None if the input is None.
@@ -331,7 +331,7 @@ cpdef str format_iso8601(datetime dt):
 
 def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
-    Returns the maximum date as a datetime (UTC).
+    Return the maximum date as a datetime (UTC).
 
     Parameters
     ----------
@@ -360,7 +360,7 @@ def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
 
 def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
-    Returns the minimum date as a datetime (UTC).
+    Return the minimum date as a datetime (UTC).
 
     Parameters
     ----------

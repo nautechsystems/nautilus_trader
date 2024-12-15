@@ -659,7 +659,7 @@ impl OrderMatchingEngine {
             if self.config.use_reduce_only
                 && order.is_reduce_only()
                 && !order.is_closed()
-                && position.map_or(true, |pos| {
+                && position.is_none_or(|pos| {
                     pos.is_closed()
                         || (order.is_buy() && pos.is_long())
                         || (order.is_sell() && pos.is_short())

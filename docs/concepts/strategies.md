@@ -1,7 +1,7 @@
 # Strategies
 
 The heart of the NautilusTrader user experience is in writing and working with
-trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
+trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class,
 and implementing the methods required by the users trading strategy logic.
 
 Strategies can be added to Nautilus systems with any [environment context](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
@@ -57,10 +57,10 @@ This is because the systems clock and logging system have not yet been initializ
 ### Handlers
 
 Handlers are methods within the `Strategy` class which may perform actions based on different types of events or on state changes.
-These methods are named with the prefix `on_*`. You can choose to implement any or all of these handler 
+These methods are named with the prefix `on_*`. You can choose to implement any or all of these handler
 methods depending on the specific goals and needs of your strategy.
 
-The purpose of having multiple handlers for similar types of events is to provide flexibility in handling granularity. 
+The purpose of having multiple handlers for similar types of events is to provide flexibility in handling granularity.
 This means that you can choose to respond to specific events with a dedicated handler, or use a more generic
 handler to react to a range of related events (using typical switch statement logic).
 The handlers are called in sequence from the most specific to the most general.
@@ -90,14 +90,14 @@ These handlers receive data updates, including built-in market data and custom u
 You can use these handlers to define actions upon receiving data object instances.
 
 ```python
-from nautilus_trader.core.data import Data
-from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.core import Data
+from nautilus_trader.model import OrderBook
+from nautilus_trader.model import Bar
+from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import TradeTick
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import InstrumentClose
+from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model.instruments import Instrument
 
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
@@ -315,11 +315,11 @@ The following shows a general outline of available methods.
 ```python
 import decimal
 
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.model.objects import Currency
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import Venue
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
+from nautilus_trader.model import InstrumentId
 
 def account(self, venue: Venue) -> Account
 
@@ -348,7 +348,7 @@ of all available methods.
 
 #### Reports and analysis
 
-The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed with a flexible amount of data 
+The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed with a flexible amount of data
 (to accommodate different lookback windows). The analyzer can provide tracking for and generating of performance
 metrics and statistics.
 
@@ -363,9 +363,9 @@ See the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guid
 
 ### Trading commands
 
-NautilusTrader offers a comprehensive suite of trading commands, enabling granular order management 
-tailored for algorithmic trading. These commands are essential for executing strategies, managing risk, 
-and ensuring seamless interaction with various trading venues. In the following sections, we will 
+NautilusTrader offers a comprehensive suite of trading commands, enabling granular order management
+tailored for algorithmic trading. These commands are essential for executing strategies, managing risk,
+and ensuring seamless interaction with various trading venues. In the following sections, we will
 delve into the specifics of each command and its use cases.
 
 :::info
@@ -414,7 +414,7 @@ This example submits a `MARKET` BUY order to a TWAP execution algorithm:
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model import ExecAlgorithmId
 
 
 def buy(self) -> None:
@@ -527,8 +527,8 @@ Here is an example configuration:
 ```python
 from decimal import Decimal
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarType
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -540,7 +540,7 @@ class MyStrategyConfig(StrategyConfig):
     trade_size: Decimal
     order_id_tag: str
 
-# Here we simply add an instrument ID as a string, to 
+# Here we simply add an instrument ID as a string, to
 # parameterize the instrument the strategy will trade.
 
 class MyStrategy(Strategy):
@@ -551,7 +551,7 @@ class MyStrategy(Strategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
 
-# Once a configuration is defined and instantiated, we can pass this to our 
+# Once a configuration is defined and instantiated, we can pass this to our
 # trading strategy to initialize.
 
 config = MyStrategyConfig(

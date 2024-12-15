@@ -22,6 +22,7 @@ use std::{
     str::FromStr,
 };
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Represents a timestamp in nanoseconds since the UNIX epoch.
@@ -114,6 +115,12 @@ impl From<&str> for UnixNanos {
 impl From<String> for UnixNanos {
     fn from(value: String) -> Self {
         Self::from(value.as_str())
+    }
+}
+
+impl From<DateTime<Utc>> for UnixNanos {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self::from(value.timestamp_nanos_opt().expect("Invalid timestamp") as u64)
     }
 }
 

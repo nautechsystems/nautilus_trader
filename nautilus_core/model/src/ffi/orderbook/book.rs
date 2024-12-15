@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
-use super::level::Level_API;
+use super::level::BookLevel_API;
 use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
@@ -167,8 +167,8 @@ pub extern "C" fn orderbook_bids(book: &mut OrderBook_API) -> CVec {
     book.bids
         .levels
         .values()
-        .map(|level| Level_API::new(level.clone()))
-        .collect::<Vec<Level_API>>()
+        .map(|level| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
         .into()
 }
 
@@ -177,8 +177,8 @@ pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
     book.asks
         .levels
         .values()
-        .map(|level| Level_API::new(level.clone()))
-        .collect::<Vec<Level_API>>()
+        .map(|level| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
         .into()
 }
 

@@ -896,3 +896,48 @@ class DYDXWsMarketSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
     message_id: int
     channel: str
     contents: DYDXListPerpetualMarketsResponse
+
+
+class DYDXBlockHeightSubscribedContents(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height subscribed contents struct.
+    """
+
+    height: str
+    time: datetime.datetime
+
+
+class DYDXWsBlockHeightSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height subscribed data.
+    """
+
+    type: str
+    connection_id: str
+    message_id: int
+    channel: str
+    id: str
+    contents: DYDXBlockHeightSubscribedContents
+
+
+class DYDXBlockHeightChannelContents(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height channel contents struct.
+    """
+
+    blockHeight: str
+    time: datetime.datetime
+
+
+class DYDXWsBlockHeightChannelData(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the block height channel data.
+    """
+
+    type: str
+    connection_id: str
+    message_id: int
+    id: str
+    channel: str
+    version: str
+    contents: DYDXBlockHeightChannelContents

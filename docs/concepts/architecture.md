@@ -3,7 +3,7 @@
 Welcome to the architectural overview of NautilusTrader.
 
 This guide dives deep into the foundational principles, structures, and designs that underpin
-the platform. Whether you're a developer, system architect, or just curious about the inner workings 
+the platform. Whether you're a developer, system architect, or just curious about the inner workings
 of NautilusTrader, this section covers:
 
 - The design philosophy that drives decisions and shapes the system's evolution
@@ -45,14 +45,14 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 ## System architecture
 
 The NautilusTrader codebase is actually both a framework for composing trading
-systems, and a set of default system implementations which can operate in various 
+systems, and a set of default system implementations which can operate in various
 [environment contexts](/concepts/architecture.md#environment-contexts).
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
 
 ### Environment contexts
 
-An environment context in NautilusTrader defines the type of data and trading venue you are working 
+An environment context in NautilusTrader defines the type of data and trading venue you are working
 with. Understanding these contexts is crucial for effective backtesting, development, and live trading.
 
 Here are the available environments you can work with:
@@ -63,18 +63,18 @@ Here are the available environments you can work with:
 
 ### Common core
 
-The platform has been designed to share as much common code between backtest, sandbox and live trading systems as possible. 
-This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class, 
+The platform has been designed to share as much common code between backtest, sandbox and live trading systems as possible.
+This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class,
 providing a common core system 'kernel'.
 
-The _ports and adapters_ architectural style enables modular components to be integrated into the 
+The _ports and adapters_ architectural style enables modular components to be integrated into the
 core system, providing various hooks for user-defined or custom component implementations.
 
 ### Messaging
 
 To facilitate modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
 
-From a high level architectural view, it's important to understand that the platform has been designed to run efficiently 
+From a high level architectural view, it's important to understand that the platform has been designed to run efficiently
 on a single thread, for both backtesting and live trading. Much research and testing
 resulted in arriving at this design, as it was found the overhead of context switching between threads
 didn't actually result in improved performance.
@@ -121,7 +121,7 @@ for each of these subpackages from the left nav menu.
 
 - `backtest`: Backtesting componentry as well as a backtest engine and node implementations
 - `live`: Live engine and client implementations as well as a node for live trading
-- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](/concepts/architecture.md#environment-contexts) 
+- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](/concepts/architecture.md#environment-contexts)
 
 ## Code structure
 
@@ -160,7 +160,7 @@ Python bindings for the Rust core are provided by statically linking the Rust li
 ```
 
 :::note
-Both Rust and Cython are build dependencies. The binary wheels produced from a build do not require 
+Both Rust and Cython are build dependencies. The binary wheels produced from a build do not require
 Rust or Cython to be installed at runtime.
 :::
 
@@ -178,7 +178,7 @@ If you pass an argument with an invalid type to a Cython implemented module with
 then you will receive a `TypeError` at runtime.
 :::
 
-If a function or method's parameter is not explicitly typed to accept `None`, passing `None` as an 
+If a function or method's parameter is not explicitly typed to accept `None`, passing `None` as an
 argument will result in a `ValueError` at runtime.
 
 :::warning
@@ -191,13 +191,13 @@ Every attempt has been made to accurately document the possible exceptions which
 can be raised from NautilusTrader code, and the conditions which will trigger them.
 
 :::warning
-There may be other undocumented exceptions which can be raised by Pythons standard 
+There may be other undocumented exceptions which can be raised by Pythons standard
 library, or from third party library dependencies.
 :::
 
 ### Processes and threads
 
 :::tip
-For optimal performance and to prevent potential issues related to Python's memory 
+For optimal performance and to prevent potential issues related to Python's memory
 model and equality, it is highly recommended to run each trader instance in a separate process.
 :::

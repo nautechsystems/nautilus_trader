@@ -20,7 +20,7 @@ use nautilus_core::nanos::UnixNanos;
 use super::ladder::BookPrice;
 use crate::enums::{BookType, OrderSide};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum InvalidBookOperation {
     #[error("Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),
@@ -30,7 +30,7 @@ pub enum InvalidBookOperation {
     Update(BookType),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum BookIntegrityError {
     #[error("Integrity error: order not found: order_id={0}, sequence={1}, ts_event={2}")]
     OrderNotFound(u64, u64, UnixNanos),

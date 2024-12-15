@@ -2279,12 +2279,55 @@ class TestDataEngine:
                     "bar_type": bar_type,
                     "start": None,
                     "end": None,
-                    "update_catalog": False,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [bar]
+
+    def test_request_bars_with_start_and_end(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
+        bar = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            0,
+            0,
+        )
+        self.mock_market_data_client.bars = [bar]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=bar_type.instrument_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_type": bar_type,
+                    "start": pd.Timestamp("2024-10-01"),
+                    "end": pd.Timestamp("2024-10-31"),
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
         )
 
         # Act
@@ -2323,12 +2366,12 @@ class TestDataEngine:
                     "bar_type": bar_type,
                     "start": None,
                     "end": None,
-                    "update_catalog": False,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
         )
 
         # Act
@@ -2380,12 +2423,12 @@ class TestDataEngine:
                     "bar_type": bar_type,
                     "start": pd.Timestamp("2024-3-24"),
                     "end": pd.Timestamp("2024-3-25"),
-                    "update_catalog": True,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": True},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2426,12 +2469,12 @@ class TestDataEngine:
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "start": None,
                     "end": None,
-                    "update_catalog": False,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
         )
 
         # Act
@@ -2467,12 +2510,12 @@ class TestDataEngine:
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "start": None,
                     "end": None,
-                    "update_catalog": False,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
         )
 
         # Act
@@ -2520,12 +2563,12 @@ class TestDataEngine:
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "start": pd.Timestamp("2024-3-24"),
                     "end": pd.Timestamp("2024-3-25"),
-                    "update_catalog": True,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": True},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2568,12 +2611,12 @@ class TestDataEngine:
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "start": None,
                     "end": None,
-                    "update_catalog": False,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": True},
         )
 
         # Act
@@ -2611,12 +2654,12 @@ class TestDataEngine:
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "start": None,
                     "end": None,
-                    "update_catalog": False,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
         )
 
         # Act
@@ -2664,12 +2707,12 @@ class TestDataEngine:
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "start": pd.Timestamp("2024-3-24"),
                     "end": pd.Timestamp("2024-3-25"),
-                    "update_catalog": True,
                 },
             ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": True},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)

@@ -86,6 +86,7 @@ impl HttpResponse {
 impl HttpClient {
     /// Creates a new HttpClient.
     ///
+    /// `default_headers`: The default headers to be used with every request.
     /// `header_keys`: The key value pairs for the given `header_keys` are retained from the responses.
     /// `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
     /// `default_quota`: The default rate limiting quota for any request.
@@ -106,14 +107,15 @@ impl HttpClient {
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[new]
-    #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
+    #[pyo3(signature = (default_headers = HashMap::new(), header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
     #[must_use]
     pub fn py_new(
+        default_headers: HashMap<String, String>,
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Self {
-        Self::new(header_keys, keyed_quotas, default_quota)
+        Self::new(default_headers, header_keys, keyed_quotas, default_quota)
     }
 
     /// Send an HTTP request.

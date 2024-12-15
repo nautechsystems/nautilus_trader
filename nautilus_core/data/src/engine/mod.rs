@@ -661,13 +661,15 @@ impl DataEngine {
                 let callback =
                     TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
 
-                self.clock.set_timer_ns(
-                    &timer_name,
-                    interval_ns,
-                    start_time_ns.into(),
-                    None,
-                    Some(callback),
-                );
+                self.clock
+                    .set_timer_ns(
+                        &timer_name,
+                        interval_ns,
+                        start_time_ns.into(),
+                        None,
+                        Some(callback),
+                    )
+                    .expect(FAILED);
             }
         }
 

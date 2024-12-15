@@ -52,6 +52,7 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport LOGGING_PYO3
 from nautilus_trader.common.component cimport LiveClock
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport LogGuard
 from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.component cimport TimeEventHandler
@@ -350,6 +351,19 @@ cdef class BacktestEngine:
 
         """
         return self._kernel.portfolio
+
+    def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
+        """
+        Return the global logging systems log guard.
+
+        May return ``None`` if the logging system was already initialized.
+
+        Returns
+        -------
+        nautilus_pyo3.LogGuard | LogGuard | None
+
+        """
+        return self._kernel.get_log_guard()
 
     def list_venues(self) -> list[Venue]:
         """

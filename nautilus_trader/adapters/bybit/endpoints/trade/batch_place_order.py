@@ -29,16 +29,21 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderRes
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitBatchPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
+class BybitBatchPlaceOrder(
+    msgspec.Struct,
+    omit_defaults=True,
+    frozen=True,
+    kw_only=True,
+):
     symbol: str
+    isLeverage: int | None = None
     side: BybitOrderSide
     orderType: BybitOrderType
     qty: str
-    isLeverage: str | None = None
-    marketUnit: str | None = None
     price: str | None = None
-    orderFilter: str | None = None
+    marketUnit: str | None = None
     triggerDirection: BybitTriggerDirection | None = None
+    orderFilter: str | None = None
     triggerPrice: str | None = None
     triggerBy: BybitTriggerType | None = None
     orderIv: str | None = None
@@ -51,6 +56,8 @@ class BybitBatchPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     slTriggerBy: BybitTriggerType | None = None
     reduceOnly: bool | None = None
     closeOnTrigger: bool | None = None
+    smpType: str | None = None
+    mmp: bool | None = None
     tpslMode: BybitTpSlMode | None = None  # Must be PARTIAL for Limit orders
     tpLimitPrice: str | None = None  # tpslMode must be PARTIAL, tpOrderType must be LIMIT
     slLimitPrice: str | None = None  # tpslMode must be PARTIAL, slOrderType must be LIMIT

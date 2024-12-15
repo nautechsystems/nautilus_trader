@@ -40,13 +40,13 @@ from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.http.errors import should_retry
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
-from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -181,6 +181,7 @@ class BybitExecutionClient(LiveExecutionClient):
             api_key=config.api_key or get_api_key(config.demo, config.testnet),
             api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
             loop=loop,
+            max_reconnection_tries=config.max_ws_reconnection_tries,
         )
 
         # HTTP API
@@ -578,16 +579,15 @@ class BybitExecutionClient(LiveExecutionClient):
 
         for i in range(0, len(valid_cancels), max_batch):
             batch_cancels = valid_cancels[i : i + max_batch]
-            cancel_orders: list[BybitBatchCancelOrder] = []
 
-            for cancel in batch_cancels:
-                cancel_orders.append(
-                    BybitBatchCancelOrder(
-                        symbol=bybit_symbol.raw_symbol,
-                        orderId=cancel.venue_order_id.value if cancel.venue_order_id else None,
-                        orderLinkId=cancel.client_order_id.value,
-                    ),
+            cancel_orders: list[BybitBatchCancelOrder] = [
+                BybitBatchCancelOrder(
+                    symbol=bybit_symbol.raw_symbol,
+                    orderId=cancel.venue_order_id.value if cancel.venue_order_id else None,
+                    orderLinkId=cancel.client_order_id.value,
                 )
+                for cancel in batch_cancels
+            ]
 
             async with self._retry_manager_pool as retry_manager:
                 await retry_manager.run(
@@ -960,7 +960,7 @@ class BybitExecutionClient(LiveExecutionClient):
         instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
         client_order_id = ClientOrderId(execution.orderLinkId) if execution.orderLinkId else None
         venue_order_id = VenueOrderId(execution.orderId)
-        order_side = self._enum_parser.parse_bybit_order_side(execution.side)
+        order_side: OrderSide = self._enum_parser.parse_bybit_order_side(execution.side)
 
         if client_order_id is None:
             client_order_id = self._cache.client_order_id(venue_order_id)
@@ -986,7 +986,7 @@ class BybitExecutionClient(LiveExecutionClient):
             order_type = self._enum_parser.parse_bybit_order_type(
                 execution.orderType,
                 execution.stopOrderType,
-                order_side,
+                execution.side,
                 trigger_direction,
             )
         else:

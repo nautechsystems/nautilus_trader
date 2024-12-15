@@ -1,6 +1,6 @@
 # Portfolio Statistics
 
-There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/analysis/statistics) 
+There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/analysis/statistics)
 which are used to analyse a trading portfolios performance for both backtests and live trading.
 
 The statistics are generally categorized as follows.
@@ -55,7 +55,7 @@ The expectation is that you would then return ``None``, NaN or a reasonable defa
 
 ## Backtest Analysis
 Following a backtest run a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
-statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet 
+statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet
 under the `Portfolio Performance` heading, grouped as.
 
 - Realized PnL statistics (per currency)

@@ -47,7 +47,7 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Arc::new(handler),
+            handler: Some(Arc::new(handler)),
             headers,
             heartbeat,
             heartbeat_msg,

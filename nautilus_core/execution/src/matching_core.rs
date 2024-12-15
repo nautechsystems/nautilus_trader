@@ -215,16 +215,16 @@ impl OrderMatchingCore {
     #[must_use]
     pub fn is_limit_matched(&self, order: &LimitOrderAny) -> bool {
         match order.order_side_specified() {
-            OrderSideSpecified::Buy => self.ask.map_or(false, |a| a <= order.limit_px()),
-            OrderSideSpecified::Sell => self.bid.map_or(false, |b| b >= order.limit_px()),
+            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= order.limit_px()),
+            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= order.limit_px()),
         }
     }
 
     #[must_use]
     pub fn is_stop_matched(&self, order: &StopOrderAny) -> bool {
         match order.order_side_specified() {
-            OrderSideSpecified::Buy => self.ask.map_or(false, |a| a >= order.stop_px()),
-            OrderSideSpecified::Sell => self.bid.map_or(false, |b| b <= order.stop_px()),
+            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a >= order.stop_px()),
+            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b <= order.stop_px()),
         }
     }
 }

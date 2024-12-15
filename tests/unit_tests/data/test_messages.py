@@ -98,22 +98,22 @@ class TestDataMessage:
             client_id=None,
             venue=BINANCE,
             data_type=DataType(Data, {"type": "newswire"}),
+            params={"filter": "ABC"},
             command_id=command_id,
             ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert
-
         assert (
             str(command)
-            == "Subscribe(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'})"
+            == "Subscribe(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'}, params={'filter': 'ABC'})"
         )
         assert repr(command) == (
             f"Subscribe("
             f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=Data{{'type': 'newswire'}}, "
-            f"id={command_id})"
+            f"id={command_id}, params={{'filter': 'ABC'}})"
         )
 
     def test_venue_data_command_str_and_repr(self):

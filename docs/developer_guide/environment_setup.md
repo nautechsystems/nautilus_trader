@@ -32,7 +32,7 @@ The following steps are for UNIX-like systems, and only need to be completed onc
     ```
 
     Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree .cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree .cargo/config.toml`.
-    
+
     The git hack is needed till [local cargo config](https://github.com/rust-lang/cargo/issues/7723) feature is merged.
 
 ## Builds
@@ -52,7 +52,7 @@ To compile in debug mode, use:
 
 ## Services
 
-You can use `docker-compose.yml` file located in `.docker` directory 
+You can use `docker-compose.yml` file located in `.docker` directory
 to bootstrap the Nautilus working environment. This will start the following services:
 
 ```bash
@@ -82,7 +82,7 @@ To do that you can run, and type `POSTGRES_PASSWORD` from docker service setup
 psql -h localhost -p 5432 -U postgres
 ```
 
-After you have logged in as `postgres` administrator, run `CREATE DATABASE` command with target db name (we use `nautilus`): 
+After you have logged in as `postgres` administrator, run `CREATE DATABASE` command with target db name (we use `nautilus`):
 
 ```
 psql (16.2, server 15.2 (Debian 15.2-1.pgdg110+1))
@@ -104,7 +104,7 @@ It offers commands for managing the PostgreSQL database and handling various tra
 The Nautilus CLI command is only supported on UNIX-like systems.
 :::
 
-## Install 
+## Install
 
 You can install the Nautilus CLI using the below Makefile target, which leverages `cargo install` under the hood.
 This will place the nautilus binary in your system's PATH, assuming Rust's `cargo` is properly configured.

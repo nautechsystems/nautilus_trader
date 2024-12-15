@@ -28,6 +28,8 @@ cdef class DataCommand(Command):
     """The venue for the command.\n\n:returns: `Venue` or ``None``"""
     cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
+    cdef readonly dict[str, object] params
+    """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
 
 
 cdef class Subscribe(DataCommand):
@@ -45,6 +47,8 @@ cdef class DataRequest(Request):
     """The venue for the request.\n\n:returns: `Venue` or ``None``"""
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
+    cdef readonly dict[str, object] params
+    """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
 
 
 cdef class DataResponse(Response):
@@ -56,3 +60,9 @@ cdef class DataResponse(Response):
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
+    cdef readonly dict[str, object] params
+    """Additional specific parameters for the response.\n\n:returns: `dict[str, object]` or ``None``"""
+
+
+cdef inline str form_params_str(dict[str, object] params):
+    return "" if not params else f", params={params}"

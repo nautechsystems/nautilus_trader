@@ -50,15 +50,15 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Symbology
 
-Only perpetual contracts are available on dYdX. To be consistent with other adapters and to be 
-futureproof in case other products become available on dYdX, NautilusTrader appends `-PERP` for all 
-available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified 
+Only perpetual contracts are available on dYdX. To be consistent with other adapters and to be
+futureproof in case other products become available on dYdX, NautilusTrader appends `-PERP` for all
+available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified
 as `BTC-USD-PERP`. The quote currency for all markets is USD-C. Therefore, dYdX abbreviates it to USD.
 
 ## Order types
 
-dYdX offers a flexible combination of trigger types, enabling a broader range of Nautilus orders. 
-However, the execution engine currently only supports submitting market and limit orders. Stop orders 
+dYdX offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
+However, the execution engine currently only supports submitting market and limit orders. Stop orders
 and trailing stop orders can be implemented later.
 
 ## Short-term and long-term orders
@@ -101,6 +101,29 @@ order: LimitOrder = self.order_factory.limit(
     post_only=True,
     emulation_trigger=self.emulation_trigger,
     tags=[DYDXOrderTags(is_short_term_order=True, num_blocks_open=5).value],
+)
+```
+
+## Market orders
+Market orders require specifying a price to for price slippage protection and use hidden orders.
+By setting a price for a market order, you can limit the potential price slippage. For example,
+if you set the price of $100 for a market buy order, the order will only be executed if the market price
+is at or below $100. If the market price is above $100, the order will not be executed.
+
+Some exchanges, including dYdX, support hidden orders. A hidden order is an order that is not visible
+to other market participants, but is still executable. By setting a price for a market order, you can
+create a hidden order that will only be executed if the market price reaches the specified price.
+
+If the market price is not specified, a default value of 0 is used.
+
+To specify the price when creating a market order:
+```python
+order = self.order_factory.market(
+    instrument_id=self.instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=self.instrument.make_qty(self.trade_size),
+    time_in_force=TimeInForce.IOC,
+    tags=[DYDXOrderTags(is_short_term_order=True, market_order_price=Price.from_str("10_000")).value],
 )
 ```
 

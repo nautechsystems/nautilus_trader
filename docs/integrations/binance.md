@@ -252,7 +252,7 @@ instrument_provider=InstrumentProviderConfig(
 
 ### Futures Hedge mode
 
-Binance Futures Hedge mode is a position mode where a trader opens positions in both long and short 
+Binance Futures Hedge mode is a position mode where a trader opens positions in both long and short
 directions to mitigate risk and potentially profit from market volatility.
 
 To use Binance Future Hedge mode, you need to follow the three items below:
@@ -372,8 +372,8 @@ data streams by subscribing in the following way from your actor or strategy:
 
 ```python
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model import DataType
+from nautilus_trader.model import ClientId
 
 # In your `on_start` method
 self.subscribe_data(
@@ -387,7 +387,7 @@ objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom/generic data.
 
 ```python
-from nautilus_trader.core.data import Data
+from nautilus_trader.core import Data
 
 def on_data(self, data: Data):
     # First check the type of data

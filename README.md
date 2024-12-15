@@ -67,7 +67,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 - **Highly performant event-driven Python**: Native binary core components.
 - **Parity between backtesting and live trading**: Identical strategy code.
-- **Reduced operational risk**: Risk management functionality, logical correctness and type safety.
+- **Reduced operational risk**: Enhanced risk management functionality, logical accuracy, and type safety.
 - **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
@@ -120,7 +120,7 @@ As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the
 
 ## Integrations
 
-NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues 
+NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
 and data providers by converting their raw APIs into a unified interface.
 
 The following integrations are currently supported:
@@ -133,11 +133,11 @@ The following integrations are currently supported:
 | [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
 | [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/bybit.html)      |
 | [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/databento.html)  |
-| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/dydx.html)       |
+| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/dydx.html)       |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)         |
 | [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/latest/integrations/okx.html)        |
-| [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/polymarket.html) |
-| [Tardis](https://tardis.dev)                              | `TARDIS`              | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/tardis.html)     |
+| [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/polymarket.html) |
+| [Tardis](https://tardis.dev)                              | `TARDIS`              | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/tardis.html)     |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
@@ -219,10 +219,23 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
-## Redis
+## Nightly wheels
 
-Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
-See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
+Nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch
+using the version format `dev.{date}` (e.g., `1.208.0.dev20241212` for December 12, 2024).
+These wheels allow testing of the latest features and fixes that have not yet been included in a stable PyPI release.
+
+**To install the latest nightly build**:
+
+    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
+
+**To install a specific nightly build** (e.g., `1.208.0.dev20241212` for December 12, 2024):
+
+    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
+
+**Notes**:
+- The `develop` branch is merged into `nightly` daily at **14:00 UTC** (if there are changes).
+- A 3-day lookback window is maintained, retaining only the last 3 nightly builds.
 
 ## Versioning and releases
 
@@ -234,15 +247,20 @@ We strive to document these changes in the release notes on a best-effort basis.
 
 ### Branches
 
-We strive to maintain a stable, passing build across all branches.
+We aim to maintain a stable, passing build across all branches.
 
 - `master`: Reflects the source code for the latest released version.
-- `nightly`: Contains experimental features, merged from the `develop` branch daily or as needed.
-- `develop`: Very active with frequent commits and may include experimental features.
+- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
+- `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
 
-Our roadmap aims to achieve a stable API for version 2.x (likely post-Rust port).
-Once we reach this milestone, we will implement a formal release process, including deprecation 
-periods for any API changes. This approach allows us to maintain a rapid development pace for now.
+Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+This approach allows us to maintain a rapid development pace for now.
+
+## Redis
+
+Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Makefile
 
@@ -302,9 +320,9 @@ Then open your browser at the following address:
 | :---------------- |
 
 **NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more 
-logging will cause the notebook to hang during cell execution. We are investigating a fix, which 
-may involve either raising the configured rate limits for Jupyter or throttling the log flushing 
+As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
+logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+may involve either raising the configured rate limits for Jupyter or throttling the log flushing
 from Nautilus.**
 - https://github.com/jupyterlab/jupyterlab/issues/12845
 - https://github.com/deshaw/jupyterlab-limit-output
@@ -312,7 +330,7 @@ from Nautilus.**
 ## Minimal Strategy
 
 The following is a minimal EMA Cross strategy example that uses bar data. While this platform
-supports very advanced trading strategies, it is also possible to create simple ones. Start by 
+supports very advanced trading strategies, it is also possible to create simple ones. Start by
 inheriting from the `Strategy` base class and implement only the methods required by your strategy.
 
 ```python
@@ -428,7 +446,7 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 
-    cargo install cargo-nextest    
+    cargo install cargo-nextest
 
 ## Contributing
 
@@ -442,7 +460,7 @@ outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_tra
 to ensure that your contributions can be included in the project.
 
 Note that all pull requests should be made to the `develop` branch. This is where new features
-and improvements are integrated before being released to the public.
+and improvements are integrated before being released.
 
 Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.
 

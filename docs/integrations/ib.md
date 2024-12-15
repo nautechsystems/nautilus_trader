@@ -136,7 +136,7 @@ In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://ibkrc
 
 To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
-It's typically suggested to utilize `symbology_method=SymbologyMethod.IB_SIMPLIFIED` (which is the default setting). This provides a cleaner and more intuitive use of `InstrumentId` by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section. 
+It's typically suggested to utilize `symbology_method=SymbologyMethod.IB_SIMPLIFIED` (which is the default setting). This provides a cleaner and more intuitive use of `InstrumentId` by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section.
 In order to load multiple Instruments, such as Options Instrument without having to specify each strike explicitly, you would need to utilize `load_contracts` with provided instances of `IBContract`.
 
 ```python

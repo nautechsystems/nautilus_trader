@@ -71,6 +71,14 @@ class BybitWsMessageGeneral(msgspec.Struct):
     ret_msg: str | None = None
 
 
+class BybitWsSubscriptionMsg(msgspec.Struct):
+    success: bool
+    op: str
+    conn_id: str
+    ret_msg: str | None = None
+    req_id: str | None = None
+
+
 ################################################################################
 # Public - Kline
 ################################################################################

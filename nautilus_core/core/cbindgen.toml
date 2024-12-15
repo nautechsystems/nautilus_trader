@@ -11,8 +11,8 @@ tab_width = 4
 # found but otherwise don't appear to be used by the public API.
 #
 # default: []
-# Explicit export declaration needed. CVec is not returned from a function in this module. 
-include = ["CVec"] 
+# Explicit export declaration needed. CVec is not returned from a function in this module.
+include = ["CVec"]
 
 [enum]
 rename_variants = "ScreamingSnakeCase"

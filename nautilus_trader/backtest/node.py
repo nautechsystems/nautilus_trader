@@ -370,11 +370,13 @@ class BacktestNode:
 
             used_start = config.start_time
             if used_start is not None or start is not None:
-                used_start = max_date(used_start, start).isoformat()
+                result = max_date(used_start, start)
+                used_start = result.isoformat() if result else None
 
             used_end = config.end_time
             if used_end is not None or end is not None:
-                used_end = min_date(used_end, end).isoformat()
+                result = min_date(used_end, end)
+                used_end = result.isoformat() if result else None
 
             session = catalog.backend_session(
                 data_cls=config.data_type,
@@ -466,10 +468,12 @@ class BacktestNode:
         config_query = config.query
 
         if config_query["start"] is not None or start is not None:
-            config_query["start"] = max_date(config_query["start"], start).isoformat()
+            result = max_date(config_query["start"], start)
+            config_query["start"] = result.isoformat() if result else None
 
         if config_query["end"] is not None or end is not None:
-            config_query["end"] = min_date(config_query["end"], end).isoformat()
+            result = min_date(config_query["end"], end)
+            config_query["end"] = result.isoformat() if result else None
 
         return CatalogDataResult(
             data_cls=config.data_type,

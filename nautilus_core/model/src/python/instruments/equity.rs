@@ -33,7 +33,7 @@ use crate::{
 impl Equity {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (id, raw_symbol, currency, price_precision, price_increment, ts_event, ts_init, maker_fee=None, taker_fee=None, margin_init=None, margin_maint=None, isin=None, lot_size=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None))]
+    #[pyo3(signature = (id, raw_symbol, currency, price_precision, price_increment, ts_event, ts_init, isin=None, lot_size=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,
@@ -42,16 +42,16 @@ impl Equity {
         price_increment: Price,
         ts_event: u64,
         ts_init: u64,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
         isin: Option<String>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
     ) -> PyResult<Self> {
         Self::new_checked(
             id,
@@ -60,15 +60,15 @@ impl Equity {
             currency,
             price_precision,
             price_increment,
-            maker_fee,
-            taker_fee,
-            margin_init,
-            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event.into(),
             ts_init.into(),
         )
@@ -127,9 +127,21 @@ impl Equity {
     }
 
     #[getter]
+    #[pyo3(name = "size_precision")]
+    fn py_size_precision(&self) -> u8 {
+        0
+    }
+
+    #[getter]
     #[pyo3(name = "price_increment")]
     fn py_price_increment(&self) -> Price {
         self.price_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "size_increment")]
+    fn py_size_increment(&self) -> Quantity {
+        Quantity::from(1)
     }
 
     #[getter]

@@ -683,7 +683,11 @@ class DYDXDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
         await self._ws_client.subscribe_trades(dydx_symbol.raw_symbol)
 
@@ -692,7 +696,7 @@ class DYDXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type in (BookType.L1_MBP, BookType.L3_MBO):
             self._log.error(
@@ -712,7 +716,11 @@ class DYDXDataClient(LiveMarketDataClient):
         if not self._ws_client.has_subscription(subscription):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.debug(
             f"Subscribing deltas {instrument_id} (quotes are not available)",
             LogColor.MAGENTA,
@@ -729,7 +737,11 @@ class DYDXDataClient(LiveMarketDataClient):
                 book_type=book_type,
             )
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self._log.info(f"Subscribe to {bar_type} bars")
         dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
         candles_resolution = get_interval_from_bar_type(bar_type)
@@ -737,11 +749,19 @@ class DYDXDataClient(LiveMarketDataClient):
         self._topic_bar_type[topic] = bar_type
         await self._ws_client.subscribe_klines(dydx_symbol.raw_symbol, candles_resolution)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
         await self._ws_client.unsubscribe_trades(dydx_symbol.raw_symbol)
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
@@ -753,7 +773,11 @@ class DYDXDataClient(LiveMarketDataClient):
         if self._ws_client.has_subscription(subscription):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
@@ -762,7 +786,11 @@ class DYDXDataClient(LiveMarketDataClient):
         if self._ws_client.has_subscription(subscription):
             await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
         candles_resolution = get_interval_from_bar_type(bar_type)
         await self._ws_client.unsubscribe_klines(dydx_symbol.raw_symbol, candles_resolution)
@@ -779,7 +807,7 @@ class DYDXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         max_bars = 100
 
@@ -835,4 +863,4 @@ class DYDXDataClient(LiveMarketDataClient):
             ]
 
             partial: Bar = bars.pop()
-            self._handle_bars(bar_type, bars, partial, correlation_id, metadata)
+            self._handle_bars(bar_type, bars, partial, correlation_id, params)

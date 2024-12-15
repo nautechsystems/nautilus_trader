@@ -133,7 +133,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;
-    m.add_class::<crate::orderbook::level::Level>()?;
+    m.add_class::<crate::orderbook::level::BookLevel>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::orderbook::book::py_update_book_with_quote_tick,
         m

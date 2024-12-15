@@ -547,7 +547,7 @@ impl AccountsManager {
     ) {
         let mut new_balances = Vec::new();
         let commission = fill.commission;
-        let mut apply_commission = commission.map_or(false, |c| !c.is_zero());
+        let mut apply_commission = commission.is_some_and(|c| !c.is_zero());
 
         for pnl in pnls.iter_mut() {
             if apply_commission && pnl.currency == commission.unwrap().currency {

@@ -399,6 +399,24 @@ class DYDXWebsocketClient:
         msg = {"type": "subscribe", "channel": channel, "id": channel_id}
         await self._send(msg)
 
+    async def subscribe_block_height(self) -> None:
+        """
+        Subscribe to block height messages.
+        """
+        if self._client is None:
+            self._log.warning("Cannot subscribe to trades: not connected")
+            return
+
+        subscription = ("v4_block_height", "")
+        if subscription in self._subscriptions:
+            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
+            return
+
+        self._subscriptions.add(subscription)
+        msg = {"type": "subscribe", "channel": "v4_block_height"}
+        self._log.debug("Subscribe to block height updates")
+        await self._send(msg)
+
     async def unsubscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
         Unsubscribe from account updates.
@@ -520,6 +538,25 @@ class DYDXWebsocketClient:
         msg = {"type": "unsubscribe", "channel": "v4_markets"}
         await self._send(msg)
 
+    async def unsubscribe_block_height(self) -> None:
+        """
+        Unsubscribe from block height updates.
+        """
+        if self._client is None:
+            self._log.warning("Cannot unsubscribe: not connected")
+            return
+
+        channel = "v4_block_height"
+
+        subscription = (channel, "")
+        if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
+            return
+
+        self._subscriptions.remove(subscription)
+        msg = {"type": "unsubscribe", "channel": channel}
+        await self._send(msg)
+
     async def _subscribe_all(self) -> None:
         """
         Resubscribe to all previous subscriptions.
@@ -532,8 +569,10 @@ class DYDXWebsocketClient:
             msg: dict[str, Any] = {
                 "type": "subscribe",
                 "channel": subscription[0],
-                "id": subscription[1],
             }
+
+            if subscription[0] not in ("v4_block_height", "v4_markets"):
+                msg["id"] = subscription[1]
 
             await self._send(msg)
 

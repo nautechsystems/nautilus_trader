@@ -16,6 +16,7 @@
 import asyncio
 from collections import defaultdict
 from functools import partial
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -148,6 +149,7 @@ class BybitDataClient(LiveMarketDataClient):
                 api_key=config.api_key or get_api_key(config.demo, config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
+                max_reconnection_tries=config.max_ws_reconnection_tries,
             )
 
         # WebSocket decoders
@@ -257,7 +259,7 @@ class BybitDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -314,7 +316,11 @@ class BybitDataClient(LiveMarketDataClient):
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
 
@@ -329,12 +335,20 @@ class BybitDataClient(LiveMarketDataClient):
         else:
             await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         interval_str = get_interval_from_bar_type(bar_type)
@@ -342,19 +356,31 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type[topic] = bar_type
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         if instrument_id in self._tob_quotes:
@@ -362,12 +388,20 @@ class BybitDataClient(LiveMarketDataClient):
         else:
             await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         interval_str = get_interval_from_bar_type(bar_type)
@@ -383,7 +417,12 @@ class BybitDataClient(LiveMarketDataClient):
         bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
         return bybit_symbol.to_instrument_id()
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if data_type.type == BybitTickerData:
             symbol = data_type.metadata["symbol"]
             await self._handle_ticker_data_request(symbol, correlation_id)
@@ -394,7 +433,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -411,7 +450,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, metadata)
+        self._handle_instrument(instrument, correlation_id, params)
 
     async def _request_instruments(
         self,
@@ -419,7 +458,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -437,7 +476,7 @@ class BybitDataClient(LiveMarketDataClient):
             if instrument.venue == venue:
                 target_instruments.append(instrument)
 
-        self._handle_instruments(venue, target_instruments, correlation_id, metadata)
+        self._handle_instruments(venue, target_instruments, correlation_id, params)
 
     async def _request_quote_ticks(
         self,
@@ -446,7 +485,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Bybit",
@@ -459,7 +498,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -479,7 +518,7 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_trade_ticks(instrument_id, trades, correlation_id, metadata)
+        self._handle_trade_ticks(instrument_id, trades, correlation_id, params)
 
     async def _request_bars(
         self,
@@ -488,7 +527,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -530,7 +569,7 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, metadata)
+        self._handle_bars(bar_type, bars, partial, correlation_id, params)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)
