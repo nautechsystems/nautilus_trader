@@ -38,10 +38,10 @@ Released on 15th December 2024 (UTC).
 ### Breaking Changes
 - Renamed `Level` to `BookLevel` (standardizes order book type naming conventions)
 - Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
-- Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
-- Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
-- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
-- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
+- Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
