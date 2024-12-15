@@ -85,7 +85,7 @@ cdef class IndexInstrument(Instrument):
         uint64_t ts_event,
         uint64_t ts_init,
         dict info = None,
-    ):
+    ) -> None:
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,

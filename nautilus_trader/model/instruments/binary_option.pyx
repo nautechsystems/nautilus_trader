@@ -69,10 +69,6 @@ cdef class BinaryOption(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
-    outcome : str, optional
-        The binary outcome of the market.
-    description : str, optional
-        The market description.
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
@@ -81,6 +77,10 @@ cdef class BinaryOption(Instrument):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal, optional
         The fee rate for liquidity takers as a percentage of order value.
+    outcome : str, optional
+        The binary outcome of the market.
+    description : str, optional
+        The market description.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -94,6 +94,7 @@ cdef class BinaryOption(Instrument):
         If `price_increment` is not positive (> 0).
     ValueError
         If `size_increment` is not positive (> 0).
+
     """
 
     def __init__(
@@ -110,12 +111,12 @@ cdef class BinaryOption(Instrument):
         uint64_t expiration_ns,
         uint64_t ts_event,
         uint64_t ts_init,
-        str outcome = None,
-        str description = None,
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        str outcome = None,
+        str description = None,
         dict info = None,
     ) -> None:
         if description is not None:

@@ -72,7 +72,7 @@ cdef class BettingInstrument(Instrument):
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
         dict info = None,
-    ):
+    ) -> None:
         assert event_open_date.tzinfo or market_start_time.tzinfo is not None
 
         # Event type (Sport) info e.g. Basketball
