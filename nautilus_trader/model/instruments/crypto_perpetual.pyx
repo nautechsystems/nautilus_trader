@@ -55,14 +55,6 @@ cdef class CryptoPerpetual(Instrument):
         The minimum price increment (tick size).
     size_increment : Quantity
         The minimum size increment.
-    margin_init : Decimal
-        The initial (order) margin requirement in percentage of order value.
-    margin_maint : Decimal
-        The maintenance (position) margin in percentage of position value.
-    maker_fee : Decimal
-        The fee rate for liquidity makers as a percentage of order value.
-    taker_fee : Decimal
-        The fee rate for liquidity takers as a percentage of order value.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -81,6 +73,14 @@ cdef class CryptoPerpetual(Instrument):
         The maximum allowable quoted price.
     min_price : Price, optional
         The minimum allowable quoted price.
+    margin_init : Decimal, optional
+        The initial (order) margin requirement in percentage of order value.
+    margin_maint : Decimal, optional
+        The maintenance (position) margin in percentage of position value.
+    maker_fee : Decimal, optional
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal, optional
+        The fee rate for liquidity takers as a percentage of order value.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -112,6 +112,11 @@ cdef class CryptoPerpetual(Instrument):
         If `max_price` is not positive (> 0).
     ValueError
         If `min_price` is negative (< 0).
+    ValueError
+        If `margin_init` is negative (< 0).
+    ValueError
+        If `margin_maint` is negative (< 0).
+
     """
 
     def __init__(
@@ -126,10 +131,6 @@ cdef class CryptoPerpetual(Instrument):
         int size_precision,
         Price price_increment not None,
         Quantity size_increment not None,
-        margin_init not None: Decimal,
-        margin_maint not None: Decimal,
-        maker_fee not None: Decimal,
-        taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
         multiplier=Quantity.from_int_c(1),
@@ -139,8 +140,12 @@ cdef class CryptoPerpetual(Instrument):
         Money min_notional: Money | None = None,
         Price max_price: Price | None = None,
         Price min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         dict info = None,
-    ):
+    ) -> None:
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -160,10 +165,10 @@ cdef class CryptoPerpetual(Instrument):
             min_notional=min_notional,
             max_price=max_price,
             min_price=min_price,
-            margin_init=margin_init,
-            margin_maint=margin_maint,
-            maker_fee=maker_fee,
-            taker_fee=taker_fee,
+            margin_init=margin_init or Decimal(0),
+            margin_maint=margin_maint or Decimal(0),
+            maker_fee=maker_fee or Decimal(0),
+            taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
             info=info,

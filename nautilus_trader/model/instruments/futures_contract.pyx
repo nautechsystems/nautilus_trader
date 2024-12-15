@@ -91,7 +91,12 @@ cdef class FuturesContract(Instrument):
     ValueError
         If `lot_size` is not positive (> 0).
     ValueError
+        If `margin_init` is negative (< 0).
+    ValueError
+        If `margin_maint` is negative (< 0).
+    ValueError
         If `exchange` is not ``None`` and not a valid string.
+
     """
 
     def __init__(
@@ -115,7 +120,7 @@ cdef class FuturesContract(Instrument):
         taker_fee: Decimal | None = None,
         str exchange = None,
         dict info = None,
-    ):
+    ) -> None:
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
         super().__init__(
