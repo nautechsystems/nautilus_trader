@@ -252,7 +252,7 @@ impl BettingInstrument {
 
     #[getter]
     #[pyo3(name = "currency")]
-    fn py_quote_currency(&self) -> Currency {
+    fn py_currency(&self) -> Currency {
         self.currency
     }
 
