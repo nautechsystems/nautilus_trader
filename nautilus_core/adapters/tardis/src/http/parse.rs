@@ -65,6 +65,12 @@ fn parse_spot_instrument(
     let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
+    let margin_init = dec!(0); // TBD
+    let margin_maint = dec!(0); // TBD
+    let maker_fee =
+        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let taker_fee =
+        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
     let instrument = CurrencyPair::new(
         instrument_id,
@@ -75,17 +81,17 @@ fn parse_spot_instrument(
         size_increment.precision,
         price_increment,
         size_increment,
-        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value"),
-        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value"),
-        dec!(0), // TBD
-        dec!(0), // TBD
-        None,    // TBD
+        None, // TBD
         None,
         Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
         None,
         None,
         None,
         None,
+        Some(margin_init),
+        Some(margin_maint),
+        Some(maker_fee),
+        Some(taker_fee),
         ts_init, // ts_event same as ts_init (no local timestamp)
         ts_init,
     );
@@ -107,6 +113,12 @@ fn parse_perp_instrument(
     let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
+    let margin_init = dec!(0); // TBD
+    let margin_maint = dec!(0); // TBD
+    let maker_fee =
+        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let taker_fee =
+        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
     let instrument = CryptoPerpetual::new(
         instrument_id,
@@ -124,18 +136,18 @@ fn parse_perp_instrument(
         size_increment.precision,
         price_increment,
         size_increment,
-        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value"),
-        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value"),
-        dec!(0), // TBD
-        dec!(0), // TBD
-        None,    // TBD
-        None,    // TBD
+        None, // TBD
+        None, // TBD
         None,
         Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
         None,
         None,
         None,
         None,
+        Some(margin_init),
+        Some(margin_maint),
+        Some(maker_fee),
+        Some(taker_fee),
         ts_init, // ts_event same as ts_init (no local timestamp)
         ts_init,
     );
@@ -159,6 +171,12 @@ fn parse_future_instrument(
     let size_increment = get_size_increment(info.amount_increment);
     let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
     let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
+    let margin_init = dec!(0); // TBD
+    let margin_maint = dec!(0); // TBD
+    let maker_fee =
+        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let taker_fee =
+        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
     let instrument = CryptoFuture::new(
         instrument_id,
@@ -173,18 +191,18 @@ fn parse_future_instrument(
         size_increment.precision,
         price_increment,
         size_increment,
-        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value"),
-        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value"),
-        dec!(0), // TBD
-        dec!(0), // TBD
-        None,    // TBD
-        None,    // TBD
+        None, // TBD
+        None, // TBD
         None,
         Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
         None,
         None,
         None,
         None,
+        Some(margin_init),
+        Some(margin_maint),
+        Some(maker_fee),
+        Some(taker_fee),
         ts_init, // ts_event same as ts_init (no local timestamp)
         ts_init,
     );
@@ -205,9 +223,14 @@ fn parse_option_instrument(
 
     let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
-
     let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
     let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
+    let margin_init = dec!(0); // TBD
+    let margin_maint = dec!(0); // TBD
+    let maker_fee =
+        Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let taker_fee =
+        Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
     let instrument = OptionsContract::new(
         instrument_id,
@@ -235,10 +258,10 @@ fn parse_option_instrument(
         Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
         None, // TBD
         None,
-        None,
-        None,
-        None,
-        None,
+        Some(margin_init),
+        Some(margin_maint),
+        Some(maker_fee),
+        Some(taker_fee),
         ts_init, // ts_event same as ts_init (no local timestamp)
         ts_init,
     );

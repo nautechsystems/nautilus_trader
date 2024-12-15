@@ -288,11 +288,11 @@ pub fn decode_equity_v1(
         currency,
         price_increment.precision,
         price_increment,
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
         Some(lot_size),
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
@@ -948,11 +948,11 @@ pub fn decode_equity(
         currency,
         price_increment.precision,
         price_increment,
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
         Some(lot_size),
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD

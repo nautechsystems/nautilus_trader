@@ -32,7 +32,7 @@ use crate::{
 impl CryptoFuture {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None))]
+    #[pyo3(signature = (id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,
@@ -46,10 +46,6 @@ impl CryptoFuture {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         ts_event: u64,
         ts_init: u64,
         multiplier: Option<Quantity>,
@@ -60,6 +56,10 @@ impl CryptoFuture {
         min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
     ) -> PyResult<Self> {
         Self::new_checked(
             id,
@@ -74,10 +74,6 @@ impl CryptoFuture {
             size_precision,
             price_increment,
             size_increment,
-            maker_fee,
-            taker_fee,
-            margin_init,
-            margin_maint,
             multiplier,
             lot_size,
             max_quantity,
@@ -86,6 +82,10 @@ impl CryptoFuture {
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event.into(),
             ts_init.into(),
         )
