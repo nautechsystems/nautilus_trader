@@ -961,12 +961,12 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 
 [[package]]
 name = "colored"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbf2150cce219b664a8a70df7a1f933836724b503f8a413af9365b4dcc4d90b8"
+checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1132,9 +1132,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613f8cc01fe9cf1a3eb3d7f488fd2fa8388403e97039e2f73692932e291a770d"
+checksum = "9dd111b7b7f7d55b72c0a6ae361660ee5853c9af73f70c3c2ef6858b950e2e51"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
@@ -1151,18 +1151,18 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-queue"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df0346b5d5e76ac2fe4e327c5fd1118d6be7c51dfb18f9b7922923f287471e35"
+checksum = "0f58bbc28f91df819d0aa2a2c00cd19754769c2fad90579b3592b1c9ba7a3115"
 dependencies = [
  "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.20"
+version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "crunchy"
@@ -2906,7 +2906,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2919,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2941,7 +2941,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2957,7 +2957,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2989,7 +2989,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -3030,7 +3030,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3051,7 +3051,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "log",
@@ -3114,7 +3114,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3145,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3176,7 +3176,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "axum",
  "bytes",
@@ -3204,7 +3204,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3229,7 +3229,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3255,7 +3255,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -3275,7 +3275,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3294,7 +3294,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "arrow",
  "criterion",
@@ -3309,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3348,7 +3348,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-test-kit"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "axum",

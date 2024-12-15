@@ -149,6 +149,28 @@ The following integrations are currently supported:
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
 
+### Branches
+
+We aim to maintain a stable, passing build across all branches.
+
+- `master`: Reflects the source code for the latest released version.
+- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
+- `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
+
+Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+This approach allows us to maintain a rapid development pace for now.
+
+## Versioning and releases
+
+NautilusTrader is still under active development. Some features may be incomplete, and while
+the API is becoming more stable, breaking changes can occur between releases.
+We strive to document these changes in the release notes on a **best-effort basis**.
+
+We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+
+Use NautilusTrader only if you are prepared to adapt to these changes.
+
 ## Installation
 
 ### From PyPI
@@ -234,28 +256,8 @@ These wheels allow testing of the latest features and fixes that have not yet be
     pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
 
 **Notes**:
-- The `develop` branch is merged into `nightly` daily at **14:00 UTC** (if there are changes).
-- A 3-day lookback window is maintained, retaining only the last 3 nightly builds.
-
-## Versioning and releases
-
-NautilusTrader aims for a weekly release schedule. The introduction of experimental or larger features
-may delay a release by several weeks.
-
-The API is becoming more stable, but breaking changes may still occur between releases.
-We strive to document these changes in the release notes on a best-effort basis.
-
-### Branches
-
-We aim to maintain a stable, passing build across all branches.
-
-- `master`: Reflects the source code for the latest released version.
-- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
-- `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
-
-Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
-Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
-This approach allows us to maintain a rapid development pace for now.
+- Updates from the `develop` branch are merged into `nightly` daily at **14:00 UTC**.
+- A 3-version lookback policy is followed, retaining only the 3 most recent nightly builds.
 
 ## Redis
 
