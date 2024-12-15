@@ -252,7 +252,7 @@ instrument_provider=InstrumentProviderConfig(
 
 ### Futures Hedge mode
 
-Binance Futures Hedge mode is a position mode where a trader opens positions in both long and short 
+Binance Futures Hedge mode is a position mode where a trader opens positions in both long and short
 directions to mitigate risk and potentially profit from market volatility.
 
 To use Binance Future Hedge mode, you need to follow the three items below:

@@ -1,7 +1,7 @@
 # Strategies
 
 The heart of the NautilusTrader user experience is in writing and working with
-trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
+trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class,
 and implementing the methods required by the users trading strategy logic.
 
 Strategies can be added to Nautilus systems with any [environment context](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
@@ -57,10 +57,10 @@ This is because the systems clock and logging system have not yet been initializ
 ### Handlers
 
 Handlers are methods within the `Strategy` class which may perform actions based on different types of events or on state changes.
-These methods are named with the prefix `on_*`. You can choose to implement any or all of these handler 
+These methods are named with the prefix `on_*`. You can choose to implement any or all of these handler
 methods depending on the specific goals and needs of your strategy.
 
-The purpose of having multiple handlers for similar types of events is to provide flexibility in handling granularity. 
+The purpose of having multiple handlers for similar types of events is to provide flexibility in handling granularity.
 This means that you can choose to respond to specific events with a dedicated handler, or use a more generic
 handler to react to a range of related events (using typical switch statement logic).
 The handlers are called in sequence from the most specific to the most general.
@@ -348,7 +348,7 @@ of all available methods.
 
 #### Reports and analysis
 
-The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed with a flexible amount of data 
+The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed with a flexible amount of data
 (to accommodate different lookback windows). The analyzer can provide tracking for and generating of performance
 metrics and statistics.
 
@@ -363,9 +363,9 @@ See the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guid
 
 ### Trading commands
 
-NautilusTrader offers a comprehensive suite of trading commands, enabling granular order management 
-tailored for algorithmic trading. These commands are essential for executing strategies, managing risk, 
-and ensuring seamless interaction with various trading venues. In the following sections, we will 
+NautilusTrader offers a comprehensive suite of trading commands, enabling granular order management
+tailored for algorithmic trading. These commands are essential for executing strategies, managing risk,
+and ensuring seamless interaction with various trading venues. In the following sections, we will
 delve into the specifics of each command and its use cases.
 
 :::info
@@ -540,7 +540,7 @@ class MyStrategyConfig(StrategyConfig):
     trade_size: Decimal
     order_id_tag: str
 
-# Here we simply add an instrument ID as a string, to 
+# Here we simply add an instrument ID as a string, to
 # parameterize the instrument the strategy will trade.
 
 class MyStrategy(Strategy):
@@ -551,7 +551,7 @@ class MyStrategy(Strategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
 
-# Once a configuration is defined and instantiated, we can pass this to our 
+# Once a configuration is defined and instantiated, we can pass this to our
 # trading strategy to initialize.
 
 config = MyStrategyConfig(

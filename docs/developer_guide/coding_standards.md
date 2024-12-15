@@ -8,7 +8,7 @@ Additional guidelines are provided below.
 
 [Black](https://github.com/psf/black) is a PEP-8 compliant opinionated formatter and used during the pre-commit step.
 
-We philosophically agree with the *Black* formatting style, however it does not currently run over the Cython parts of the codebase. 
+We philosophically agree with the *Black* formatting style, however it does not currently run over the Cython parts of the codebase.
 So there you could say we are “handcrafting towards”  *Black* stylistic conventions for consistency.
 
 ### Formatting
@@ -40,7 +40,7 @@ There are two reasons for this;
 
 *“Always use if foo is None: (or is not None) to check for a None value. E.g., when testing whether a variable or argument that defaults to None was set to some other value. The other value might be a value that’s false in a boolean context!”*
 
-Having said all of this there are still areas of the codebase which aren’t as performance-critical where it is safe to use Python truthiness to check for `None`. 
+Having said all of this there are still areas of the codebase which aren’t as performance-critical where it is safe to use Python truthiness to check for `None`.
 
 :::note
 To be clear, it's still encouraged to use Python truthiness `is` and `not` to check if collections are `None` or empty.
@@ -65,7 +65,7 @@ Here are some guidelines for the style of your commit messages:
 2. Use 'imperative voice', i.e. the message should describe what the commit will do if applied.
 
 3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 80 character width. You can use bullet points.
-    
+
 4. Optional: Provide # references to relevant issues or tickets.
 
 5. Optional: Provide any hyperlinks which are informative.

@@ -23,8 +23,8 @@ This will ensure Python exceptions are not ignored, and instead are “bubbled u
 
 ### PyCharm
 
-Improved debugging support for Cython has remained a highly up-voted PyCharm 
-feature for many years. Unfortunately, it's safe to assume that PyCharm will not 
+Improved debugging support for Cython has remained a highly up-voted PyCharm
+feature for many years. Unfortunately, it's safe to assume that PyCharm will not
 be receiving first class support for Cython debugging
 https://youtrack.jetbrains.com/issue/PY-9476.
 

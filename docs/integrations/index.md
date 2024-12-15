@@ -1,6 +1,6 @@
 # Integrations
 
-NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues 
+NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
 and data providers by converting their raw APIs into a unified interface.
 
 The following integrations are currently supported:
@@ -30,8 +30,8 @@ The following integrations are currently supported:
 
 ## Implementation goals
 
-The primary goal of NautilusTrader is to provide a unified trading system for 
-use with a variety of integrations. To support the widest range of trading 
+The primary goal of NautilusTrader is to provide a unified trading system for
+use with a variety of integrations. To support the widest range of trading
 strategies, priority will be given to 'standard' functionality:
 
 - Requesting historical market data

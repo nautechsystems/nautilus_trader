@@ -46,7 +46,7 @@ Log messages are written to the console via stdout/stderr writers. The minimum l
 
 ### File logging
 
-Log files are written to the current working directory with daily rotation (UTC) by default. 
+Log files are written to the current working directory with daily rotation (UTC) by default.
 
 The default naming convention is as follows:
 - Trader ID
@@ -60,7 +60,7 @@ The default naming convention is as follows:
 
 e.g. `TESTER-001_2023-03-23_635a4539-4fe2-4cb1-9be3-3079ba8d879e.json`
 
-You can specify a custom log directory path using the `log_directory` parameter and/or a custom log file basename using the `log_file_name` parameter. 
+You can specify a custom log directory path using the `log_directory` parameter and/or a custom log file basename using the `log_file_name` parameter.
 The log files will always be suffixed with '.log' for plain text, or '.json' for JSON (no need to include a suffix in file names).
 
 If the log file already exists, it will be appended to.
@@ -105,7 +105,7 @@ compatibility across different environments where color rendering is not support
 
 It's possible to use `Logger` objects directly, and these can be initialized anywhere (very similar to the Python built-in `logging` API).
 
-If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`, 
+If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`,
 then you can activate logging in the following way:
 ```python
 from nautilus_trader.common.component import init_logging

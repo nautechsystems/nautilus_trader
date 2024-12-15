@@ -79,7 +79,7 @@ configuration(s):
 from nautilus_trader.config import TradingNodeConfig
 
 config = TradingNodeConfig(
-    ...,  # Omitted 
+    ...,  # Omitted
     data_clients={
         "BETFAIR": {
             # username=None, # 'BETFAIR_USERNAME' env var

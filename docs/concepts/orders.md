@@ -14,7 +14,7 @@ order execution and management, facilitating the creation of virtually any type 
 The two main types of orders are _Market_ orders and _Limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
 are exact opposites. _Market_ orders demand liquidity and require immediate trading at the best
-price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a limit order book 
+price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a limit order book
 at a specified limit price.
 
 The core order types available for the platform are (using the enum values):
@@ -29,9 +29,9 @@ The core order types available for the platform are (using the enum values):
 - `TRAILING_STOP_LIMIT`
 
 :::info
-NautilusTrader has unified the API for a large set of order types and execution instructions. 
-Not all of these are available for every exchange. If an order is submitted where an instruction or 
-option is not available, the system will **NOT** submit the order and an error will be logged with 
+NautilusTrader has unified the API for a large set of order types and execution instructions.
+Not all of these are available for every exchange. If an order is submitted where an instruction or
+option is not available, the system will **NOT** submit the order and an error will be logged with
 a clear explanatory message.
 :::
 
@@ -86,7 +86,7 @@ at which the order will expire and be removed from the exchanges order book (or 
 
 ### Post-only
 
-An order which is marked as `post_only` will only ever participate in providing liquidity to the 
+An order which is marked as `post_only` will only ever participate in providing liquidity to the
 limit order book, and never initiating a trade which takes liquidity as an aggressor. This option is
 important for market makers, or traders seeking to restrict the order to a liquidity _maker_ fee tier.
 
@@ -102,12 +102,12 @@ exchanges, however the behavior as per the Nautilus `SimulatedExchange` is typic
 ### Display quantity
 
 The `display_qty` specifies the portion of a _Limit_ order which is displayed on the limit order book.
-These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
+These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden.
 Specifying a display quantity of zero is also equivalent to setting an order as `hidden`.
 
 ### Trigger type
 
-Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
+Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm)
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
 - `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`)
@@ -143,7 +143,7 @@ The easiest way to create new orders is by using the built-in `OrderFactory`, wh
 automatically attached to every `Strategy` class. This factory will take care
 of lower level details - such as ensuring the correct trader ID and strategy ID are assigned, generation
 of a necessary initialization ID and timestamp, and abstracts away parameters which don't necessarily
-apply to the order type being created, or are only needed to specify more advanced execution instructions. 
+apply to the order type being created, or are only needed to specify more advanced execution instructions.
 
 This leaves the factory with simpler order creation methods to work with, all the
 examples will leverage an `OrderFactory` from within a `Strategy` context.
@@ -228,7 +228,7 @@ A _Stop-Market_ order is a conditional order which once triggered, will immediat
 place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
 as a SELL order against LONG positions, or as a BUY order against SHORT positions.
 
-In the following example we create a _Stop-Market_ order on the Binance Spot/Margin exchange 
+In the following example we create a _Stop-Market_ order on the Binance Spot/Margin exchange
 to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
 
 ```python
@@ -260,7 +260,7 @@ See the `StopMarketOrder` [API Reference](../api_reference/model/orders.md#class
 ### Stop-Limit
 
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
-a _Limit_ order at the specified price. 
+a _Limit_ order at the specified price.
 
 In the following example we create a _Stop-Limit_ order on the Currenex FX ECN to BUY 50,000 GBP at a limit price of 1.3000 USD
 once the market hits the trigger price of 1.30010 USD, active until midday 6th June, 2022 (UTC):
@@ -296,8 +296,8 @@ See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-
 
 ### Market-To-Limit
 
-A _Market-To-Limit_ order is submitted as a market order to execute at the current best market price. 
-If the order is only partially filled, the remainder of the order is canceled and re-submitted as a _Limit_ order with 
+A _Market-To-Limit_ order is submitted as a market order to execute at the current best market price.
+If the order is only partially filled, the remainder of the order is canceled and re-submitted as a _Limit_ order with
 the limit price equal to the price at which the filled portion of the order executed.
 
 In the following example we create a _Market-To-Limit_ order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
@@ -329,7 +329,7 @@ See the `MarketToLimitOrder` [API Reference](../api_reference/model/orders.md#cl
 
 A _Market-If-Touched_ order is a conditional order which once triggered will immediately
 place a _Market_ order. This order type is often used to enter a new position on a stop price,
-or to take profits for an existing position, either as a SELL order against LONG positions, 
+or to take profits for an existing position, either as a SELL order against LONG positions,
 or as a BUY order against SHORT positions.
 
 In the following example we create a _Market-If-Touched_ order on the Binance Futures exchange
@@ -364,7 +364,7 @@ See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#
 ### Limit-If-Touched
 
 A _Limit-If-Touched_ order is a conditional order which once triggered will immediately place
-a _Limit_ order at the specified price. 
+a _Limit_ order at the specified price.
 
 In the following example we create a _Stop-Limit_ order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
 Binance Futures exchange at a limit price of 30,100 USDT (once the market hits the trigger price of 30,150 USDT),
@@ -445,7 +445,7 @@ A _Trailing-Stop-Limit_ order is a conditional order which trails a stop trigger
 a fixed offset away from the defined market price. Once triggered a _Limit_ order will
 immediately be placed at the defined price (which is also updated as the market moves until triggered).
 
-In the following example we create a _Trailing-Stop-Limit_ order on the Currenex FX ECN to BUY 1,250,000 AUD using USD 
+In the following example we create a _Trailing-Stop-Limit_ order on the Currenex FX ECN to BUY 1,250,000 AUD using USD
 at a limit price of 0.71000 USD, activating at 0.72000 USD then trailing at a stop offset of 0.00100 USD
 away from the current ask price, active until further notice:
 
