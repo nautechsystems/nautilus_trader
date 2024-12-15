@@ -818,6 +818,8 @@ typedef struct OrderBookDeltas_t OrderBookDeltas_t;
 /**
  * Represents a synthetic instrument with prices derived from component instruments using a
  * formula.
+ *
+ * The `id` for the synthetic will become `{symbol}.{SYNTH}`.
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 

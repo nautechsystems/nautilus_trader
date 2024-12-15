@@ -39,23 +39,39 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct Equity {
+    /// The instrument ID.
     pub id: InstrumentId,
+    /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
-    /// The ISIN (International Securities Identification Number).
+    /// The instruments International Securities Identification Number (ISIN).
     pub isin: Option<Ustr>,
+    /// The futures contract currency.
     pub currency: Currency,
+    /// The price decimal precision.
     pub price_precision: u8,
+    /// The minimum price increment (tick size).
     pub price_increment: Price,
+    /// The initial (order) margin requirement in percentage of order value.
     pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
+    /// The fee rate for liquidity makers as a percentage of order value.
     pub maker_fee: Decimal,
+    /// The fee rate for liquidity takers as a percentage of order value.
     pub taker_fee: Decimal,
+    /// The rounded lot unit size (standard/board).
     pub lot_size: Option<Quantity>,
+    /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
+    /// The minimum allowable order quantity.
     pub min_quantity: Option<Quantity>,
+    /// The maximum allowable quoted price.
     pub max_price: Option<Price>,
+    /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
