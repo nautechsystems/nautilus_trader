@@ -64,9 +64,13 @@ cdef class BettingInstrument(Instrument):
         int8_t size_precision,
         uint64_t ts_event,
         uint64_t ts_init,
-        str tick_scheme_name=None,
-        Price min_price = None,
-        Price max_price = None,
+        str tick_scheme_name = None,
+        Price min_price: Price | None = None,
+        Price max_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         dict info = None,
     ):
         assert event_open_date.tzinfo or market_start_time.tzinfo is not None
@@ -118,10 +122,10 @@ cdef class BettingInstrument(Instrument):
             min_notional=Money(1, Currency.from_str_c(currency)),
             max_price=None,      # Can be None
             min_price=None,      # Can be None
-            margin_init=Decimal(1),
-            margin_maint=Decimal(1),
-            maker_fee=Decimal(0),
-            taker_fee=Decimal(0),
+            margin_init=margin_init or Decimal(1),
+            margin_maint=margin_maint or Decimal(1),
+            maker_fee=maker_fee or Decimal(0),
+            taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
             tick_scheme_name=tick_scheme_name,
@@ -138,11 +142,26 @@ cdef class BettingInstrument(Instrument):
         data = values.copy()
         data["event_open_date"] = pd.Timestamp(data["event_open_date"], tz="UTC")
         data["market_start_time"] = pd.Timestamp(data["market_start_time"], tz="UTC")
+
+        margin_init = data.get("margin_init")
+        if margin_init:
+            data["margin_init"] = Decimal(margin_init)
+
+        margin_maint = data.get("margin_maint")
+        if margin_maint:
+            data["margin_maint"] = Decimal(margin_maint)
+
+        maker_fee = data.get("maker_fee")
+        if maker_fee:
+            data["maker_fee"] = Decimal(maker_fee)
+
+        taker_fee = data.get("taker_fee")
+        if taker_fee:
+            data["taker_fee"] = Decimal(taker_fee)
+
         data.pop("raw_symbol", None)
         data.pop("price_increment", None)
         data.pop("size_increment", None)
-        data.pop("maker_fee", None)
-        data.pop("taker_fee", None)
         data.pop("max_quantity", None)
         data.pop("min_quantity", None)
         data.pop("max_notional", None)
@@ -180,14 +199,16 @@ cdef class BettingInstrument(Instrument):
             "price_increment": str(obj.price_increment),
             "size_increment": str(obj.size_increment),
             "currency": obj.quote_currency.code,
-            "maker_fee": str(obj.maker_fee),
-            "taker_fee": str(obj.taker_fee),
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "max_notional": str(obj.max_notional) if obj.max_notional is not None else None,
             "min_notional": str(obj.min_notional) if obj.min_notional is not None else None,
             "max_price": str(obj.max_price) if obj.max_price is not None else None,
             "min_price": str(obj.min_price) if obj.min_price is not None else None,
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": obj.info,

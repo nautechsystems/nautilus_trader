@@ -71,6 +71,14 @@ cdef class OptionsSpread(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
+    margin_init : Decimal, optional
+        The initial (order) margin requirement in percentage of order value.
+    margin_maint : Decimal, optional
+        The maintenance (position) margin in percentage of position value.
+    maker_fee : Decimal, optional
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal, optional
+        The fee rate for liquidity takers as a percentage of order value.
     exchange : str, optional
         The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
     info : dict[str, object], optional
@@ -106,6 +114,10 @@ cdef class OptionsSpread(Instrument):
         uint64_t expiration_ns,
         uint64_t ts_event,
         uint64_t ts_init,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         str exchange = None,
         dict info = None,
     ):
@@ -132,10 +144,10 @@ cdef class OptionsSpread(Instrument):
             min_notional=None,
             max_price=None,
             min_price=None,
-            margin_init=Decimal(0),
-            margin_maint=Decimal(0),
-            maker_fee=Decimal(0),
-            taker_fee=Decimal(0),
+            margin_init=margin_init or Decimal(0),
+            margin_maint=margin_maint or Decimal(0),
+            maker_fee=maker_fee or Decimal(0),
+            taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
             info=info,
@@ -216,6 +228,10 @@ cdef class OptionsSpread(Instrument):
             expiration_ns=values["expiration_ns"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            margin_init=Decimal(values["margin_init"]),
+            margin_maint=Decimal(values["margin_maint"]),
+            maker_fee=Decimal(values["maker_fee"]),
+            taker_fee=Decimal(values["taker_fee"]),
             exchange=values["exchange"],
             info=values.get("info"),
         )
@@ -247,6 +263,10 @@ cdef class OptionsSpread(Instrument):
             "margin_maint": str(obj.margin_maint),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
             "exchange": obj.exchange,
             "info": obj.info,
         }

@@ -65,10 +65,6 @@ cdef class BinaryOption(Instrument):
         UNIX timestamp (nanoseconds) for contract activation.
     expiration_ns : uint64_t
         UNIX timestamp (nanoseconds) for contract expiration.
-    maker_fee : Decimal
-        The fee rate for liquidity makers as a percentage of order value.
-    taker_fee : Decimal
-        The fee rate for liquidity takers as a percentage of order value.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -81,6 +77,10 @@ cdef class BinaryOption(Instrument):
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
         The minimum allowable order quantity.
+    maker_fee : Decimal, optional
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal, optional
+        The fee rate for liquidity takers as a percentage of order value.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -108,14 +108,14 @@ cdef class BinaryOption(Instrument):
         Quantity size_increment not None,
         uint64_t activation_ns,
         uint64_t expiration_ns,
-        maker_fee not None: Decimal,
-        taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
         str outcome = None,
         str description = None,
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         dict info = None,
     ) -> None:
         if description is not None:
@@ -141,8 +141,8 @@ cdef class BinaryOption(Instrument):
             min_price=None,
             margin_init=Decimal(0),
             margin_maint=Decimal(0),
-            maker_fee=Decimal(0),
-            taker_fee=Decimal(0),
+            maker_fee=maker_fee or Decimal(0),
+            taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
             info=info,
@@ -194,8 +194,8 @@ cdef class BinaryOption(Instrument):
             size_increment=Quantity.from_str(values["size_increment"]),
             activation_ns=values["activation_ns"],
             expiration_ns=values["expiration_ns"],
-            maker_fee=values["maker_fee"],
-            taker_fee=values["taker_fee"],
+            maker_fee=Decimal(values["maker_fee"]),
+            taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             outcome=values["outcome"],

@@ -237,6 +237,8 @@ fn parse_option_instrument(
         None,
         None,
         None,
+        None,
+        None,
         ts_init, // ts_event same as ts_init (no local timestamp)
         ts_init,
     );
