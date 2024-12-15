@@ -12,6 +12,11 @@ Released on TBD (UTC).
 - Added additional API functionality for Bybit (#2102), thanks @sunlei
 - Added position and execution.fast subscriptions for Bybit (#2104), thanks @sunlei
 - Added `max_ws_reconnection_tries` to `BybitExecClientConfig` (#2109), thanks @sunlei
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesContract`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesSpread`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsContract`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsSpread`
+- Improved Databento symbology support for Interactive Brokers (#2113), thanks @rsmb7z
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
 
@@ -33,6 +38,10 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Renamed `Level` to `BookLevel` (standardizes order book type naming conventions)
 - Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
+- Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
+- Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
+- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
+- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)

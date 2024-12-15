@@ -58,6 +58,8 @@ def test_to_dict():
         "size_precision": 2,
         "price_increment": "0.01",
         "size_increment": "0.01",
+        "margin_init": "1",
+        "margin_maint": "1",
         "maker_fee": "0",
         "taker_fee": "0",
         "ts_event": 0,

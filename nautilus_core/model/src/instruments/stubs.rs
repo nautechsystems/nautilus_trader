@@ -356,6 +356,8 @@ pub fn futures_contract_es(
         None,
         None,
         None,
+        None,
+        None,
         0.into(),
         0.into(),
     )
@@ -383,6 +385,8 @@ pub fn futures_spread_es() -> FuturesSpread {
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
+        None,
         None,
         None,
         None,
@@ -423,6 +427,8 @@ pub fn options_contract_appl() -> OptionsContract {
         None,
         None,
         None,
+        None,
+        None,
         0.into(),
         0.into(),
     )
@@ -450,6 +456,8 @@ pub fn options_spread() -> OptionsSpread {
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
+        None,
         None,
         None,
         None,
@@ -498,14 +506,16 @@ pub fn betting() -> BettingInstrument {
     let currency = Currency::GBP();
     let price_increment = Price::from("0.01");
     let size_increment = Quantity::from("0.01");
-    let maker_fee = Decimal::from(0);
-    let taker_fee = Decimal::from(0);
     let max_quantity = Some(Quantity::from("1000"));
     let min_quantity = Some(Quantity::from("1"));
     let max_notional = Some(Money::from("10000 GBP"));
     let min_notional = Some(Money::from("10 GBP"));
     let max_price = Some(Price::from("100.00"));
     let min_price = Some(Price::from("1.00"));
+    let margin_init = Some(Decimal::from(1));
+    let margin_maint = Some(Decimal::from(1));
+    let maker_fee = Some(Decimal::from(0));
+    let taker_fee = Some(Decimal::from(0));
     let ts_event = UnixNanos::default(); // For testing purposes
     let ts_init = UnixNanos::default(); // For testing purposes
 
@@ -533,14 +543,16 @@ pub fn betting() -> BettingInstrument {
         size_increment.precision,
         price_increment,
         size_increment,
-        maker_fee,
-        taker_fee,
         max_quantity,
         min_quantity,
         max_notional,
         min_notional,
         max_price,
         min_price,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
         ts_event,
         ts_init,
     )
@@ -570,8 +582,8 @@ pub fn binary_option() -> BinaryOption {
         size_increment.precision,
         price_increment,
         size_increment,
-        Decimal::from(0), // TBD
-        Decimal::from(0), // TBD
+        None,
+        None,
         None,
         None,
         None,

@@ -1632,8 +1632,6 @@ class BettingInstrument:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
         ts_event: int,
         ts_init: int,
         outcome: str | None = None,
@@ -1644,6 +1642,10 @@ class BettingInstrument:
         min_notional: Money | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> BettingInstrument: ...
@@ -1678,10 +1680,6 @@ class BinaryOption:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         ts_event: int,
         ts_init: int,
         outcome: str | None = None,
@@ -1692,6 +1690,10 @@ class BinaryOption:
         min_notional: Money | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> BinaryOption: ...
@@ -1909,14 +1911,16 @@ class FuturesContract:
         lot_size: Quantity,
         ts_event: int,
         ts_init: int,
-        margin_init: Decimal | None = None,
-        margin_maint: Decimal | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         exchange: str | None = None,
-        info: dict[str, Any] | None = None,
+        # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> CryptoFuture: ...
@@ -1961,8 +1965,10 @@ class FuturesSpread:
         min_price: Price | None = None,
         margin_init: Decimal | None = None,
         margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         exchange: str | None = None,
-        info: dict[str, Any] | None = None,
+        # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> FuturesSpread: ...
@@ -2008,8 +2014,10 @@ class OptionsContract:
         min_price: Price | None = None,
         margin_init: Decimal | None = None,
         margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         exchange: str | None = None,
-        info: dict[str, Any] | None = None,
+        # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
@@ -2054,8 +2062,10 @@ class OptionsSpread:
         min_price: Price | None = None,
         margin_init: Decimal | None = None,
         margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         exchange: str | None = None,
-        info: dict[str, Any] | None = None,
+        # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...

@@ -335,6 +335,8 @@ pub fn decode_futures_contract_v1(
         None, // TBD
         None, // TBD
         None, // TBD
+        None, // TBD
+        None, // TBD
         ts_event,
         ts_init,
     )
@@ -369,6 +371,8 @@ pub fn decode_futures_spread_v1(
         price_increment,
         multiplier,
         lot_size,
+        None, // TBD
+        None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
@@ -421,8 +425,10 @@ pub fn decode_options_contract_v1(
         None, // TBD
         None, // TBD
         None, // TBD
-        None,
-        None,
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
         ts_event,
         ts_init,
     )
@@ -462,6 +468,8 @@ pub fn decode_options_spread_v1(
         price_increment,
         multiplier,
         lot_size,
+        None, // TBD
+        None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
@@ -987,6 +995,8 @@ pub fn decode_futures_contract(
         None, // TBD
         None, // TBD
         None, // TBD
+        None, // TBD
+        None, // TBD
         ts_event,
         ts_init,
     )
@@ -1021,6 +1031,8 @@ pub fn decode_futures_spread(
         price_increment,
         multiplier,
         lot_size,
+        None, // TBD
+        None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
@@ -1075,6 +1087,8 @@ pub fn decode_options_contract(
         None, // TBD
         None, // TBD
         None, // TBD
+        None, // TBD
+        None, // TBD
         ts_event,
         ts_init,
     )
@@ -1114,6 +1128,8 @@ pub fn decode_options_spread(
         price_increment,
         multiplier,
         lot_size,
+        None, // TBD
+        None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
