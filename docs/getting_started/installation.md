@@ -121,11 +121,13 @@ These wheels allow testing of the latest features and fixes that have not yet be
 
 ## Versioning and releases
 
-NautilusTrader aims for a weekly release schedule. The introduction of experimental or larger features
-may delay a release by several weeks.
+NautilusTrader is still under active development. Some features may be incomplete, and while
+the API is becoming more stable, breaking changes can occur between releases.
+We strive to document these changes in the release notes on a **best-effort basis**.
 
-The API is becoming more stable, but breaking changes may still occur between releases.
-We strive to document these changes in the release notes on a best-effort basis.
+We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+
+Use NautilusTrader only if you are prepared to adapt to these changes.
 
 ## Redis
 
