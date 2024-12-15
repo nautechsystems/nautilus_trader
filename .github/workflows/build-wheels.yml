@@ -119,7 +119,7 @@ jobs:
           path: ${{ env.ASSET_PATH }}
 
   publish-wheels:
-    name: Publish to packages
+    name: publish-packages
     runs-on: ubuntu-latest
     needs: build-wheels
     env:
@@ -150,7 +150,7 @@ jobs:
           git clone --branch=packages https://github.com/${{ github.repository }} packages
 
           # Copy wheels
-          if ! ls dist/*.whl >/dev/null 2>&1; then
+          if ! find dist/ -type f -name "*.whl" >/dev/null 2>&1; then
             echo "No wheels found in dist/, exiting"
             exit 1
           fi
@@ -161,7 +161,7 @@ jobs:
 
           # Copy wheels before changing directory
           echo "Copying new wheels..."
-          cp ../dist/*.whl simple/nautilus-trader/
+          find ../dist/ -type f -name "*.whl" -exec cp {} simple/nautilus-trader/ \;
 
           # Managing wheel versions
           cd simple/nautilus-trader/
