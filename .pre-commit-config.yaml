@@ -1,4 +1,3 @@
-exclude: "tests/integration_tests/adapters/betfair/test_betfair_data.py"
 repos:
   ##############################################################################
   #  General checks
@@ -12,7 +11,6 @@ repos:
       - id: end-of-file-fixer
         types_or: [rust, cython, python, markdown]
       - id: trailing-whitespace
-        types_or: [rust, cython, python, markdown]
       - id: debug-statements
       - id: detect-private-key
       - id: check-builtin-literals
@@ -29,7 +27,6 @@ repos:
     rev: v0.19.1
     hooks:
       - id: gitlint
-      # - id: gitlint-ci
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.3.0
@@ -80,7 +77,6 @@ repos:
         types_or: [python, pyi]
         entry: "black"
         args: ["--config", "pyproject.toml"]
-        exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.3
