@@ -1,5 +1,5 @@
 # Custom Data
-Due to the modular nature of the Nautilus design, it is possible to set up systems 
+Due to the modular nature of the Nautilus design, it is possible to set up systems
 with very flexible data streams, including custom user-defined data types. This
 guide covers some possible use cases for this functionality.
 
@@ -63,12 +63,12 @@ class MyDataPoint(Data):
 
 ```
 
-The `Data` abstract base class acts as a contract within the system and requires two properties 
-for all types of data: `ts_event` and `ts_init`. These represent the UNIX nanosecond timestamps 
+The `Data` abstract base class acts as a contract within the system and requires two properties
+for all types of data: `ts_event` and `ts_init`. These represent the UNIX nanosecond timestamps
 for when the event occurred and when the object was initialized, respectively.
 
-The recommended approach to satisfy the contract is to assign `ts_event` and `ts_init` 
-to backing fields, and then implement the `@property` for each as shown above 
+The recommended approach to satisfy the contract is to assign `ts_event` and `ts_init`
+to backing fields, and then implement the `@property` for each as shown above
 (for completeness, the docstrings are copied from the `Data` base class).
 
 :::info
@@ -80,7 +80,7 @@ We can now work with this data type for backtesting and live trading. For instan
 we could now create an adapter which is able to parse and create objects of this
 type - and send them back to the `DataEngine` for consumption by subscribers.
 
-You can subscribe to these custom data types within your actor/strategy in the 
+You can subscribe to these custom data types within your actor/strategy in the
 following way:
 
 ```python
@@ -90,8 +90,8 @@ self.subscribe_data(
 )
 ```
 
-This will result in your actor/strategy passing these received `MyDataPoint` 
-objects to your `on_data` method. You will need to check the type, as this 
+This will result in your actor/strategy passing these received `MyDataPoint`
+objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom data.
 
 ```python
@@ -103,8 +103,8 @@ def on_data(self, data: Data) -> None:
 
 ### Publishing and receiving signal data
 
-Here is an example of publishing and receiving signal data using the `MessageBus` from an actor or strategy. 
-A signal is an automatically generated custom data identified by a name containing only one value of a basic type 
+Here is an example of publishing and receiving signal data using the `MessageBus` from an actor or strategy.
+A signal is an automatically generated custom data identified by a name containing only one value of a basic type
 (str, float, int, bool or bytes).
 
 ```python
@@ -233,7 +233,7 @@ def greeks_from_cache(self, instrument_id: InstrumentId):
 
 ### Writing and reading data using a catalog
 
-For streaming custom data to feather files or writing it to parquet files in a catalog 
+For streaming custom data to feather files or writing it to parquet files in a catalog
 (`register_arrow` needs to be used):
 
 ```python
@@ -273,11 +273,11 @@ GreeksTestData(
 ### Custom data type stub
 
 To enhance development convenience and improve code suggestions in your IDE, you can create a `.pyi`
-stub file with the proper constructor signature for your custom data types as well as type hints for attributes. 
-This is particularly useful when the constructor is dynamically generated at runtime, as it allows the IDE to recognize 
+stub file with the proper constructor signature for your custom data types as well as type hints for attributes.
+This is particularly useful when the constructor is dynamically generated at runtime, as it allows the IDE to recognize
 and provide suggestions for the class's methods and attributes.
 
-For instance, if you have a custom data class defined in `greeks.py`, you can create a corresponding `greeks.pyi` file 
+For instance, if you have a custom data class defined in `greeks.py`, you can create a corresponding `greeks.pyi` file
 with the following constructor signature:
 
 ```python
@@ -288,7 +288,7 @@ from nautilus_trader.model import InstrumentId
 class GreeksData(Data):
     instrument_id: InstrumentId
     delta: float
-    
+
     def __init__(
         self,
         ts_event: int = 0,

@@ -455,7 +455,7 @@ For simplicity, it’s recommended to load all instruments for the venues you in
 The `TardisDataClient` enables integration of a Tardis Machine with a running NautilusTrader system.
 It supports subscriptions to the following data types:
 
-- `OrderBookDelta` (L2 granularity from Tardis, includes all changes or full-depth snapshots) 
+- `OrderBookDelta` (L2 granularity from Tardis, includes all changes or full-depth snapshots)
 - `OrderBookDepth10` (L2 granularity from Tardis, provides snapshots up to 10 levels)
 - `QuoteTick`
 - `TradeTick`
@@ -464,21 +464,21 @@ It supports subscriptions to the following data types:
 ### Data WebSockets
 
 The main `TardisMachineClient` data WebSocket manages all stream subscriptions received during the initial connection phase,
-up to the duration specified by `ws_connection_delay_secs`. For any additional subscriptions made 
-after this period, a new `TardisMachineClient` is created. This approach optimizes performance by 
-allowing the main WebSocket to handle potentially hundreds of subscriptions in a single stream if 
+up to the duration specified by `ws_connection_delay_secs`. For any additional subscriptions made
+after this period, a new `TardisMachineClient` is created. This approach optimizes performance by
+allowing the main WebSocket to handle potentially hundreds of subscriptions in a single stream if
 they are provided at startup.
 
-When an initial subscription delay is set with `ws_connection_delay_secs`, unsubscribing from any 
-of these streams will not actually remove the subscription from the Tardis Machine stream, as selective 
-unsubscription is not supported by Tardis. However, the component will still unsubscribe from message 
+When an initial subscription delay is set with `ws_connection_delay_secs`, unsubscribing from any
+of these streams will not actually remove the subscription from the Tardis Machine stream, as selective
+unsubscription is not supported by Tardis. However, the component will still unsubscribe from message
 bus publishing as expected.
 
 All subscriptions made after any initial delay will behave normally, fully unsubscribing from the
 Tardis Machine stream when requested.
 
 :::tip
-If you anticipate frequent subscription and unsubscription of data, it is recommended to set 
+If you anticipate frequent subscription and unsubscription of data, it is recommended to set
 `ws_connection_delay_secs` to zero. This will create a new client for each initial subscription,
 allowing them to be later closed individually upon unsubscription.
 :::

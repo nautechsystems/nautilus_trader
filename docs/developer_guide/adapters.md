@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This developer guide provides instructions on how to develop an integration adapter for the NautilusTrader platform. 
+This developer guide provides instructions on how to develop an integration adapter for the NautilusTrader platform.
 Adapters provide connectivity to trading venues and data providers - converting their raw API
 into a unified interface.
 
@@ -29,8 +29,8 @@ Below is a step-by-step guide to building an adapter for a new data provider usi
 
 ### InstrumentProvider
 
-The `InstrumentProvider` supplies instrument definitions available on the venue. This 
-includes loading all available instruments, specific instruments by ID, and applying filters to the 
+The `InstrumentProvider` supplies instrument definitions available on the venue. This
+includes loading all available instruments, specific instruments by ID, and applying filters to the
 instrument list.
 
 ```python
@@ -59,8 +59,8 @@ class TemplateInstrumentProvider(InstrumentProvider):
 
 ### DataClient
 
-The `LiveDataClient` handles the subscription and management of data feeds that are not specifically 
-related to market data. This might include news feeds, custom data streams, or other data sources 
+The `LiveDataClient` handles the subscription and management of data feeds that are not specifically
+related to market data. This might include news feeds, custom data streams, or other data sources
 that enhance trading strategies but do not directly represent market activity.
 
 ```python
@@ -106,8 +106,8 @@ class TemplateLiveDataClient(LiveDataClient):
 
 ### MarketDataClient
 
-The `MarketDataClient` handles market-specific data such as order books, top-of-book quotes and trades, 
-and instrument status updates. It focuses on providing historical and real-time market data that is essential for 
+The `MarketDataClient` handles market-specific data such as order books, top-of-book quotes and trades,
+and instrument status updates. It focuses on providing historical and real-time market data that is essential for
 trading operations.
 
 ```python
@@ -158,8 +158,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
 ### ExecutionClient
 
-The `ExecutionClient` is responsible for order management, including submission, modification, and 
-cancellation of orders. It is a crucial component of the adapter that interacts with the venues 
+The `ExecutionClient` is responsible for order management, including submission, modification, and
+cancellation of orders. It is a crucial component of the adapter that interacts with the venues
 trading system to manage and execute trades.
 
 ```python
@@ -192,7 +192,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         raise NotImplementedError("method `_cancel_all_orders` must be implemented in the subclass")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        raise NotImplementedError("method `_batch_cancel_orders` must be implemented in the subclass")  
+        raise NotImplementedError("method `_batch_cancel_orders` must be implemented in the subclass")
 
     async def generate_order_status_report(
         self, instrument_id: InstrumentId, client_order_id: ClientOrderId | None = None, venue_order_id: VenueOrderId | None = None
@@ -230,8 +230,8 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
 ### Configuration
 
-The configuration file defines settings specific to the adapter, such as API keys and connection 
-details. These settings are essential for initializing and managing the adapter’s connection to the 
+The configuration file defines settings specific to the adapter, such as API keys and connection
+details. These settings are essential for initializing and managing the adapter’s connection to the
 data provider.
 
 ```python

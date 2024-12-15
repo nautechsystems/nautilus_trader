@@ -10,9 +10,9 @@ repos:
       - id: fix-encoding-pragma
         args: [--remove]
       - id: end-of-file-fixer
-        types_or: [python, cython, rust]
+        types_or: [rust, cython, python, markdown]
       - id: trailing-whitespace
-        types_or: [rust, cython, python]
+        types_or: [rust, cython, python, markdown]
       - id: debug-statements
       - id: detect-private-key
       - id: check-builtin-literals

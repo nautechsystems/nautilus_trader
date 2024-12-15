@@ -4,8 +4,8 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
 
-The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant 
-and robust Python native environment. This helps to address the parity challenge of keeping the Python research/backtest 
+The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant
+and robust Python native environment. This helps to address the parity challenge of keeping the Python research/backtest
 environment, consistent with the production live trading environment.
 
 NautilusTraders design, architecture and implementation philosophy holds software correctness and safety at the
@@ -48,7 +48,7 @@ express the granular time and event dependent complexity of real-time trading, w
 proven to be more suitable due to their inherently higher performance, and type safety.
 
 One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
-have all been written entirely in Rust or Cython. This means we're using the right tools for the job, where systems programming languages compile performant binaries, 
+have all been written entirely in Rust or Cython. This means we're using the right tools for the job, where systems programming languages compile performant binaries,
 with CPython C extension modules then able to offer a Python native environment, suitable for professional quantitative traders and trading firms.
 
 ## Use cases
@@ -71,7 +71,7 @@ include the application and infrastructure layers.
 
 ## Distributed
 
-The platform is designed to be easily integrated into a larger distributed system. 
+The platform is designed to be easily integrated into a larger distributed system.
 To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
 ## Common core
@@ -86,18 +86,18 @@ a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the dat
 
 ## Live trading
 
-A `TradingNode` can ingest data and events from multiple data and execution clients. 
+A `TradingNode` can ingest data and events from multiple data and execution clients.
 Live deployments can use both demo/paper trading accounts, or real accounts.
 
-For live trading, a `TradingNode` can ingest data and events from multiple data and execution clients. 
+For live trading, a `TradingNode` can ingest data and events from multiple data and execution clients.
 The platform supports both demo/paper trading accounts and real accounts. High performance can be achieved by running
-asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
+asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html),
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
 ## Domain model
 
-The platform features a comprehensive trading domain model that includes various value types such as 
-`Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects, 
+The platform features a comprehensive trading domain model that includes various value types such as
+`Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects,
 which are used to aggregate multiple events to determine state.
 
 ### Data types
@@ -142,7 +142,7 @@ The following `BarAggregation` methods are available:
 - `VALUE_IMBALANCE`
 - `VALUE_RUNS`
 
-The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`. 
+The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`.
 This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
 
 ### Account Types

@@ -4,7 +4,7 @@ about: Report a bug here
 labels:
   - bug
 ---
-  
+
 # Bug Report
 
 ### Expected Behavior

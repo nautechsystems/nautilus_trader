@@ -184,7 +184,7 @@ object, which occurs during the replay startup sequence.
 ### MBP-1 (market by price, top-of-book)
 
 This schema represents the top-of-book only (quotes *and* trades). Like with MBO messages, some
-messages carry trade information, and so when decoding MBP-1 messages Nautilus 
+messages carry trade information, and so when decoding MBP-1 messages Nautilus
 will produce a `QuoteTick` and *also* a `TradeTick` if the message is a trade.
 
 ### OHLCV (bar aggregates)
@@ -207,7 +207,7 @@ Here is a general pattern for converting a pyo3 `Price` to a Cython `Price`:
 price = Price.from_raw(pyo3_price.raw, pyo3_price.precision)
 ```
 
-Additionally requesting for and subscribing to these data types requires the use of the 
+Additionally requesting for and subscribing to these data types requires the use of the
 lower level generic methods for custom data types. The following example subscribes to the `imbalance`
 schema for the `AAPL.XNAS` instrument (Apple Inc trading on the Nasdaq exchange):
 
@@ -270,8 +270,8 @@ You can load DBN files and convert the records to Nautilus objects using the
 ### DBN data to a BacktestEngine
 
 This code snippet demonstrates how to load DBN data and pass to a `BacktestEngine`.
-Since the `BacktestEngine` needs an instrument added, we'll use a test instrument 
-provided by the `TestInstrumentProvider` (you could also pass an instrument object 
+Since the `BacktestEngine` needs an instrument added, we'll use a test instrument
+provided by the `TestInstrumentProvider` (you could also pass an instrument object
 which was parsed from a DBN file too).
 The data is a month of TSLA (Tesla Inc) trades on the Nasdaq exchange:
 

@@ -10,7 +10,7 @@
    :glob:
    :titlesonly:
    :hidden:
-   
+
    book.md
    data.md
    events.md

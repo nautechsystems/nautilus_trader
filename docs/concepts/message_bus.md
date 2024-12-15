@@ -1,8 +1,8 @@
 # Message Bus
 
-The `MessageBus` is a fundamental part of the platform, facilitating communicate between 
+The `MessageBus` is a fundamental part of the platform, facilitating communicate between
 various system components through message passing. This approach enables a loosely coupled architecture,
-where components can interact without strong dependencies. Messages exchanged via the message bus 
+where components can interact without strong dependencies. Messages exchanged via the message bus
 can be categorized into three distinct types:
 
 - Data
@@ -44,11 +44,11 @@ The minimum supported Redis version is 6.2 or higher (required for [streams](htt
 :::
 
 Under the hood, when a backing database (or any other compatible technology) is configured,
-all outgoing messages are first serialized. These serialized messages are then transmitted via a 
-Multiple-Producer Single-Consumer (MPSC) channel to a separate thread, which is implemented in Rust. 
+all outgoing messages are first serialized. These serialized messages are then transmitted via a
+Multiple-Producer Single-Consumer (MPSC) channel to a separate thread, which is implemented in Rust.
 In this separate thread, the message is written to its final destination, which is presently Redis streams.
 
-This design is primarily driven by performance considerations. By offloading the I/O operations to a separate thread, 
+This design is primarily driven by performance considerations. By offloading the I/O operations to a separate thread,
 we ensure that the main thread remains unblocked and can continue its tasks without being hindered by the potentially
 time-consuming operations involved in interacting with a database or client.
 
@@ -135,20 +135,20 @@ If the key should include the trader ID for the node.
 
 #### Instance ID
 
-Each trader node is assigned a unique 'instance ID,' which is a UUIDv4. This instance ID helps distinguish individual traders when messages 
+Each trader node is assigned a unique 'instance ID,' which is a UUIDv4. This instance ID helps distinguish individual traders when messages
 are distributed across multiple streams. You can include the instance ID in the trader key by setting the `use_instance_id` configuration option to `True`.
 This is particularly useful when you need to track and identify traders across various streams in a multi-node trading system.
 
 #### Streams prefix
 
 The `streams_prefix` string enables you to group all streams for a single trader instance or organize
-messages for multiple instances. Configure this by passing a string to the `streams_prefix` configuration 
+messages for multiple instances. Configure this by passing a string to the `streams_prefix` configuration
 option, ensuring other prefixes are set to false.
 
 #### Stream per topic
 
-Indicates whether the producer will write a separate stream for each topic. This is particularly 
-useful for Redis backings, which do not support wildcard topics when listening to streams. 
+Indicates whether the producer will write a separate stream for each topic. This is particularly
+useful for Redis backings, which do not support wildcard topics when listening to streams.
 If set to False, all messages will be written to the same stream.
 
 :::info
@@ -158,7 +158,7 @@ Redis does not support wildcard stream topics. For better compatibility with Red
 ### Types filtering
 
 When messages are published on the message bus, they are serialized and written to a stream if a backing
-for the message bus is configured and enabled. To prevent flooding the stream with data like high-frequency 
+for the message bus is configured and enabled. To prevent flooding the stream with data like high-frequency
 quotes, you may filter out certain types of messages from external publication.
 
 To enable this filtering mechanism, pass a list of `type` objects to the `types_filter` parameter in the message bus configuration,
@@ -191,40 +191,40 @@ Rather than a maximum lookback window based on the current wall clock time.
 The message bus within a `TradingNode` (node) is referred to as the "internal message bus".
 A producer node is one which publishes messages onto an external stream (see [external publishing](#external-publishing)).
 The consumer node listens to external streams to receive and publish deserialized message payloads on its internal message bus.
-                                                                         
-                      ┌───────────────────────────┐                      
-                      │                           │                      
-                      │                           │                      
-                      │                           │                      
-                      │      Producer Node        │                      
-                      │                           │                      
-                      │                           │                      
-                      │                           │                      
-                      │                           │                      
-                      │                           │                      
-                      │                           │                      
-                      └─────────────┬─────────────┘                      
-                                    │                                    
-                                    │                                    
-    ┌───────────────────────────────▼──────────────────────────────┐     
-    │                                                              │     
-    │                            Stream                            │     
-    │                                                              │     
-    └─────────────┬────────────────────────────────────┬───────────┘     
-                  │                                    │                 
-                  │                                    │                 
-    ┌─────────────▼───────────┐          ┌─────────────▼───────────┐     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    │     Consumer Node 1     │          │     Consumer Node 2     │     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    │                         │          │                         │     
-    └─────────────────────────┘          └─────────────────────────┘     
+
+                      ┌───────────────────────────┐
+                      │                           │
+                      │                           │
+                      │                           │
+                      │      Producer Node        │
+                      │                           │
+                      │                           │
+                      │                           │
+                      │                           │
+                      │                           │
+                      │                           │
+                      └─────────────┬─────────────┘
+                                    │
+                                    │
+    ┌───────────────────────────────▼──────────────────────────────┐
+    │                                                              │
+    │                            Stream                            │
+    │                                                              │
+    └─────────────┬────────────────────────────────────┬───────────┘
+                  │                                    │
+                  │                                    │
+    ┌─────────────▼───────────┐          ┌─────────────▼───────────┐
+    │                         │          │                         │
+    │                         │          │                         │
+    │     Consumer Node 1     │          │     Consumer Node 2     │
+    │                         │          │                         │
+    │                         │          │                         │
+    │                         │          │                         │
+    │                         │          │                         │
+    │                         │          │                         │
+    │                         │          │                         │
+    │                         │          │                         │
+    └─────────────────────────┘          └─────────────────────────┘
 
 :::tip
 Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.
@@ -258,7 +258,7 @@ to ensure a simple and predictable stream key that the consumer nodes can regist
 
 We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"` stream.
 The node will listen to the external stream keys to publish these messages onto its internal message bus.
-Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. This ensures that the 
+Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. This ensures that the
 `DataEngine` does not attempt to send data commands to this client ID, as we expect these messages to be
 published onto the internal message bus from the external stream, to which the node has subscribed to the relevant topics.
 

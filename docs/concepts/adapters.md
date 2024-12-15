@@ -1,7 +1,7 @@
 # Adapters
 
 The NautilusTrader design integrates data providers and/or trading venues
-through adapter implementations, these can be found in the top level `adapters` subpackage. 
+through adapter implementations, these can be found in the top level `adapters` subpackage.
 
 An integrations adapter is _typically_ comprised of the following main components:
 
@@ -13,7 +13,7 @@ An integrations adapter is _typically_ comprised of the following main component
 
 ## Instrument providers
 
-Instrument providers do as their name suggests - instantiating Nautilus 
+Instrument providers do as their name suggests - instantiating Nautilus
 `Instrument` objects by parsing the publisher or venues raw API.
 
 The use cases for the instruments available from an `InstrumentProvider` are either:
@@ -74,7 +74,7 @@ InstrumentProviderConfig(load_ids=["BTCUSDT-PERP.BINANCE", "ETHUSDT-PERP.BINANCE
 
 ### Requests
 
-An `Actor` or `Strategy` can request custom data from a `DataClient` by sending a `DataRequest`. If the client that receives the 
+An `Actor` or `Strategy` can request custom data from a `DataClient` by sending a `DataRequest`. If the client that receives the
 `DataRequest` implements a handler for the request, data will be returned to the `Actor` or `Strategy`.
 
 #### Example
@@ -82,7 +82,7 @@ An `Actor` or `Strategy` can request custom data from a `DataClient` by sending 
 An example of this is a `DataRequest` for an `Instrument`, which the `Actor` class implements (copied below). Any `Actor` or
 `Strategy` can call a `request_instrument` method with an `InstrumentId` to request the instrument from a `DataClient`.
 
-In this particular case, the `Actor` implements a separate method `request_instrument`. A similar type of 
+In this particular case, the `Actor` implements a separate method `request_instrument`. A similar type of
 `DataRequest` could be instantiated and called from anywhere and/or anytime in the actor/strategy code.
 
 On the actor/strategy:

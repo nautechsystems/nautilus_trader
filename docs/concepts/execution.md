@@ -1,7 +1,7 @@
 # Execution
 
 NautilusTrader can handle trade execution and order management for multiple strategies and venues
-simultaneously (per instance). Several interacting components are involved in execution, making it 
+simultaneously (per instance). Several interacting components are involved in execution, making it
 crucial to understand the possible flows of execution messages (commands and events).
 
 The main execution-related components include:
@@ -26,8 +26,8 @@ methods. It also provides methods for managing orders and trade execution:
 - `close_all_positions(...)`
 - `query_order(...)`
 
-These methods create the necessary execution commands under the hood and send them on the message 
-bus to the relevant components (point-to-point), as well as publishing any events (such as the 
+These methods create the necessary execution commands under the hood and send them on the message
+bus to the relevant components (point-to-point), as well as publishing any events (such as the
 initialization of new orders i.e. `OrderInitialized` events).
 
 The general execution flow looks like the following (each arrow indicates movement across the message bus):
@@ -72,18 +72,18 @@ This diagram illustrates message flow (commands and events) across the Nautilus 
 
 An order management system (OMS) type refers to the method used for assigning orders to positions and tracking those positions for an instrument.
 OMS types apply to both strategies and venues (simulated and real). Even if a venue doesn't explicitly
-state the method in use, an OMS type is always in effect. The OMS type for a component can be specified 
+state the method in use, an OMS type is always in effect. The OMS type for a component can be specified
 using the `OmsType` enum.
 
 The `OmsType` enum has three variants:
 
 - `UNSPECIFIED`: The OMS type defaults based on where it is applied (details below)
-- `NETTING`: Positions are combined into a single position per instrument ID 
+- `NETTING`: Positions are combined into a single position per instrument ID
 - `HEDGING`: Multiple positions per instrument ID are supported (both long and short)
 
 The table below describes different configuration combinations and their applicable scenarios.
 When the strategy and venue OMS types differ, the `ExecutionEngine` handles this by overriding or assigning `position_id` values for received `OrderFilled` events.
-A "virtual position" refers to a position ID that exists within the Nautilus system but not on the venue in 
+A "virtual position" refers to a position ID that exists within the Nautilus system but not on the venue in
 reality.
 
 | Strategy OMS                 | Venue OMS              | Description                                                                                                                                                |
@@ -111,7 +111,7 @@ It is advised to keep Binance account configurations as `BOTH` so that a single 
 ### OMS configuration
 
 If a strategy OMS type is not explicitly set using the `oms_type` configuration option,
-it will default to `UNSPECIFIED`. This means the `ExecutionEngine` will not override any venue `position_id`s, 
+it will default to `UNSPECIFIED`. This means the `ExecutionEngine` will not override any venue `position_id`s,
 and the OMS type will follow the venue's OMS type.
 
 :::tip
@@ -133,7 +133,7 @@ The `RiskEngine` includes several built-in pre-trade risk checks, including:
 - Within maximum or minimum quantity for the instrument
 - Only reducing position when a `reduce_only` execution instruction is specified for the order
 
-If any risk check fails, an `OrderDenied` event is generated, effectively closing the order and 
+If any risk check fails, an `OrderDenied` event is generated, effectively closing the order and
 preventing it from progressing further. This event includes a human-readable reason for the denial.
 
 ### Trading state
@@ -152,7 +152,7 @@ See the `RiskEngineConfig` [API Reference](../api_reference/config#risk) for fur
 
 ## Execution algorithms
 
-The platform supports customized execution algorithm components and provides some built-in 
+The platform supports customized execution algorithm components and provides some built-in
 algorithms, such as the Time-Weighted Average Price (TWAP) algorithm.
 
 ### TWAP (Time-Weighted Average Price)
@@ -168,8 +168,8 @@ minimizing the concentration of trade size at any given time.
 The algorithm will immediately submit the first order, with the final order submitted being the
 primary order at the end of the horizon period.
 
-Using the TWAP algorithm as an example (found in ``/examples/algorithms/twap.py``), this example 
-demonstrates how to initialize and register a TWAP execution algorithm directly with a 
+Using the TWAP algorithm as an example (found in ``/examples/algorithms/twap.py``), this example
+demonstrates how to initialize and register a TWAP execution algorithm directly with a
 `BacktestEngine` (assuming an engine is already initialized):
 
 ```python
@@ -181,12 +181,12 @@ exec_algorithm = TWAPExecAlgorithm()
 engine.add_exec_algorithm(exec_algorithm)
 ```
 
-For this particular algorithm, two parameters must be specified: 
-- `horizon_secs` 
-- `interval_secs` 
+For this particular algorithm, two parameters must be specified:
+- `horizon_secs`
+- `interval_secs`
 
-The `horizon_secs` parameter determines the time period over which the algorithm will execute, while 
-the `interval_secs` parameter sets the time between individual order executions. These parameters 
+The `horizon_secs` parameter determines the time period over which the algorithm will execute, while
+the `interval_secs` parameter sets the time between individual order executions. These parameters
 determine how a primary order is split into a series of spawned orders.
 
 ```python
@@ -205,8 +205,8 @@ config = EMACrossTWAPConfig(
 strategy = EMACrossTWAP(config=config)
 ```
 
-Alternatively, you can specify these parameters dynamically per order, determining them based on 
-actual market conditions. In this case, the strategy configuration parameters could be provided to 
+Alternatively, you can specify these parameters dynamically per order, determining them based on
+actual market conditions. In this case, the strategy configuration parameters could be provided to
 an execution model which determines the horizon and interval.
 
 :::info
@@ -229,11 +229,11 @@ Additionally it can:
 - Spawn secondary orders from a received primary (original) order
 
 Once an execution algorithm is registered, and the system is running, it will receive orders off the
-messages bus which are addressed to its `ExecAlgorithmId` via the `exec_algorithm_id` order parameter. 
+messages bus which are addressed to its `ExecAlgorithmId` via the `exec_algorithm_id` order parameter.
 The order may also carry the `exec_algorithm_params` being a `dict[str, Any]`.
 
 :::warning
-Because of the flexibility of the `exec_algorithm_params` dictionary. It's important to thoroughly 
+Because of the flexibility of the `exec_algorithm_params` dictionary. It's important to thoroughly
 validate all of the key value pairs for correct operation of the algorithm (for starters that the
 dictionary is not ``None`` and all necessary parameters actually exist).
 :::
@@ -347,7 +347,7 @@ Additionally, some venues may filter or drop execution information under certain
 in further information loss. This would not occur if all events were persisted in the cache database.
 :::
 
-Each strategy can also be configured to claim any external orders for an instrument ID generated during 
+Each strategy can also be configured to claim any external orders for an instrument ID generated during
 reconciliation using the `external_order_claims` configuration parameter.
 This is useful in situations where, at system start, there is no cached state or it is desirable for
 a strategy to resume its operations and continue managing existing open orders at the venue for an instrument.
@@ -358,7 +358,7 @@ See the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liv
 
 ### Reconciliation procedure
 
-The reconciliation procedure is standardized for all adapter execution clients and uses the following 
+The reconciliation procedure is standardized for all adapter execution clients and uses the following
 methods to produce an execution mass status:
 
 - `generate_order_status_reports`
@@ -380,7 +380,7 @@ The system state is then reconciled with the reports, which represent the extern
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 
 :::tip
-The current reconciliation procedure can experience state mismatches if the lookback window is 
+The current reconciliation procedure can experience state mismatches if the lookback window is
 misconfigured or if the venue omits certain order or trade reports due to filter conditions.
 
 If you encounter reconciliation issues, drop any cached state or ensure the account is flat at

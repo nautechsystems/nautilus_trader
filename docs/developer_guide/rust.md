@@ -3,7 +3,7 @@
 The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the
 platform and systems. This is because Rust will ensure that it is free of memory errors and
 data race conditions, being 'correct by construction' through its formal specification of types, ownership
-and lifetimes at compile time. 
+and lifetimes at compile time.
 
 Furthermore, due to the absence of a built-in runtime and garbage collector, along with the
 language's ability to access the lowest-level primitives, we can anticipate that future implementations
@@ -14,7 +14,7 @@ trading (HFT) platform.
 
 Interoperating from Python calling Rust can be achieved by binding a Rust C-ABI compatible interface generated using `cbindgen` with
 Cython. This approach is to aid a smooth transition to greater amounts
-of Rust in the codebase, and reducing amounts of Cython (which will eventually be eliminated). 
+of Rust in the codebase, and reducing amounts of Cython (which will eventually be eliminated).
 We want to avoid a need for Rust to call Python using the FFI. In the future [PyO3](https://github.com/PyO3/PyO3) will be used.
 
 ## Unsafe Rust

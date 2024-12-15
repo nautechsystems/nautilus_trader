@@ -19,7 +19,7 @@ We recommend using the latest supported version of Python and setting up [nautil
 ## From PyPI
 
 To install the latest [nautilus_trader]([nautilus_trader](https://pypi.org/project/nautilus_trader/)) binary wheel (or sdist package) from PyPI using Pythons pip package manager:
-    
+
     pip install -U nautilus_trader
 
 ## Extras
@@ -38,7 +38,7 @@ To install with specific extras using pip:
 
 ## From Source
 
-Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 
+Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
 You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
 
 For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured with --enable-shared:

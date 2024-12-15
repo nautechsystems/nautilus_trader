@@ -4,8 +4,8 @@
 We are currently working on this guide.
 :::
 
-Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time 
-trading environment with no code changes. This seamless transition from backtesting to live trading 
+Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time
+trading environment with no code changes. This seamless transition from backtesting to live trading
 is a cornerstone of the platform's design, ensuring consistency and reliability. Even so, there are
 still some key differences to be aware of between backtesting and live trading.
 
@@ -13,13 +13,13 @@ This guide provides an overview of the live trading process and its key aspects.
 
 ## Configuration
 
-When operating a live trading system, configuring your execution engine and strategies properly is 
+When operating a live trading system, configuring your execution engine and strategies properly is
 essential for ensuring performance, reliability, and accuracy. The following is an overview of the
 key concepts and settings involved for live configuration.
 
 ### Execution Engine configuration
 
-The `LiveExecEngineConfig` sets up the live execution engine, managing order processing, execution events, and reconciliation with trading venues. 
+The `LiveExecEngineConfig` sets up the live execution engine, managing order processing, execution events, and reconciliation with trading venues.
 The following outlines the main configuration options.
 
 :::info
@@ -27,7 +27,7 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 :::
 
 #### Reconciliation
-  
+
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
 **Settings**:
@@ -79,7 +79,7 @@ See also the `StrategyConfig` [API Reference](../api_reference/config#class-stra
  - `order_id_tag`: A unique tag for the strategy's orders, differentiates orders from multiple strategies.
 
 #### Order Management System (OMS) type
-        
+
 **Purpose**: Defines how the order management system handles position IDs, influencing how orders are processed and tracked.
 
 **Settings**:

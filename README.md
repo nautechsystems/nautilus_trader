@@ -120,7 +120,7 @@ As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the
 
 ## Integrations
 
-NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues 
+NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
 and data providers by converting their raw APIs into a unified interface.
 
 The following integrations are currently supported:
@@ -320,9 +320,9 @@ Then open your browser at the following address:
 | :---------------- |
 
 **NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more 
-logging will cause the notebook to hang during cell execution. We are investigating a fix, which 
-may involve either raising the configured rate limits for Jupyter or throttling the log flushing 
+As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
+logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+may involve either raising the configured rate limits for Jupyter or throttling the log flushing
 from Nautilus.**
 - https://github.com/jupyterlab/jupyterlab/issues/12845
 - https://github.com/deshaw/jupyterlab-limit-output
@@ -330,7 +330,7 @@ from Nautilus.**
 ## Minimal Strategy
 
 The following is a minimal EMA Cross strategy example that uses bar data. While this platform
-supports very advanced trading strategies, it is also possible to create simple ones. Start by 
+supports very advanced trading strategies, it is also possible to create simple ones. Start by
 inheriting from the `Strategy` base class and implement only the methods required by your strategy.
 
 ```python
@@ -446,7 +446,7 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 
-    cargo install cargo-nextest    
+    cargo install cargo-nextest
 
 ## Contributing
 
