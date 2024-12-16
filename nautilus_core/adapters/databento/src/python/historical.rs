@@ -140,7 +140,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -222,7 +222,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -334,7 +334,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -418,7 +418,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let schema = match aggregation {
             BarAggregation::Second => dbn::Schema::Ohlcv1S,
@@ -508,7 +508,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -580,7 +580,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -652,7 +652,7 @@ impl DatabentoHistoricalClient {
             .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
