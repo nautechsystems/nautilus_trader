@@ -78,8 +78,15 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_instruments")]
-    fn py_load_instruments(&mut self, py: Python, filepath: PathBuf) -> PyResult<PyObject> {
-        let iter = self.load_instruments(&filepath).map_err(to_pyvalue_err)?;
+    fn py_load_instruments(
+        &mut self,
+        py: Python,
+        filepath: PathBuf,
+        use_exchange_as_venue: bool,
+    ) -> PyResult<PyObject> {
+        let iter = self
+            .load_instruments(&filepath, use_exchange_as_venue)
+            .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for instrument in iter {

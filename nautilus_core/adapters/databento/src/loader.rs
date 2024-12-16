@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
 };
@@ -22,6 +23,7 @@ use databento::dbn;
 use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
+    Publisher,
 };
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
@@ -75,6 +77,7 @@ pub struct DatabentoDataLoader {
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
     venue_dataset_map: IndexMap<Venue, Dataset>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
+    symbol_venue_map: HashMap<Symbol, Venue>,
 }
 
 impl DatabentoDataLoader {
@@ -84,6 +87,7 @@ impl DatabentoDataLoader {
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
             publisher_venue_map: IndexMap::new(),
+            symbol_venue_map: HashMap::new(),
         };
 
         // Load publishers
@@ -130,6 +134,17 @@ impl DatabentoDataLoader {
             })
             .collect::<IndexMap<Venue, Ustr>>();
 
+        // Insert CME Globex exchanges
+        let glbx = Dataset::from("GLBX.MDP3");
+        self.venue_dataset_map.insert(Venue::CBCM(), glbx);
+        self.venue_dataset_map.insert(Venue::GLBX(), glbx);
+        self.venue_dataset_map.insert(Venue::NYUM(), glbx);
+        self.venue_dataset_map.insert(Venue::XCBT(), glbx);
+        self.venue_dataset_map.insert(Venue::XCEC(), glbx);
+        self.venue_dataset_map.insert(Venue::XCME(), glbx);
+        self.venue_dataset_map.insert(Venue::XFXS(), glbx);
+        self.venue_dataset_map.insert(Venue::XNYM(), glbx);
+
         self.publisher_venue_map = publishers
             .into_iter()
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
@@ -165,6 +180,7 @@ impl DatabentoDataLoader {
     pub fn read_definition_records(
         &mut self,
         filepath: &Path,
+        use_exchange_as_venue: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
         let mut decoder = Decoder::from_zstd_file(filepath)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
@@ -182,11 +198,23 @@ impl DatabentoDataLoader {
                     let raw_symbol = rec.raw_symbol().expect("Error decoding `raw_symbol`");
                     let symbol = Symbol::from(raw_symbol);
 
-                    let venue = self
-                        .publisher_venue_map
-                        .get(&msg.hd.publisher_id)
-                        .expect("`Venue` not found `publisher_id`");
-                    let instrument_id = InstrumentId::new(symbol, *venue);
+                    let publisher = rec.hd.publisher().expect("Invalid `publisher` for record");
+                    let venue = match publisher {
+                        Publisher::GlbxMdp3Glbx if use_exchange_as_venue => {
+                            // SAFETY: GLBX instruments have a valid `exchange` field
+                            let exchange = rec.exchange().unwrap();
+                            let venue = Venue::from_code(exchange).unwrap_or_else(|_| {
+                                panic!("`Venue` not found for exchange {exchange}")
+                            });
+                            self.symbol_venue_map.insert(symbol, venue);
+                            venue
+                        }
+                        _ => *self
+                            .publisher_venue_map
+                            .get(&msg.hd.publisher_id)
+                            .expect("`Venue` not found `publisher_id`"),
+                    };
+                    let instrument_id = InstrumentId::new(symbol, venue);
 
                     match decode_instrument_def_msg_v1(rec, instrument_id, msg.ts_recv.into()) {
                         Ok(data) => Some(Ok(data)),
@@ -227,6 +255,7 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
+                            &self.symbol_venue_map,
                         )
                         .expect("Failed to decode record"),
                     };
@@ -247,8 +276,12 @@ impl DatabentoDataLoader {
         }))
     }
 
-    pub fn load_instruments(&mut self, filepath: &Path) -> anyhow::Result<Vec<InstrumentAny>> {
-        self.read_definition_records(filepath)?
+    pub fn load_instruments(
+        &mut self,
+        filepath: &Path,
+        use_exchange_as_venue: bool,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.read_definition_records(filepath, use_exchange_as_venue)?
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -424,6 +457,7 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
+                            &self.symbol_venue_map,
                         )
                         .expect("Failed to decode record"),
                     };
@@ -467,6 +501,7 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
+                            &self.symbol_venue_map,
                         )
                         .expect("Failed to decode record"),
                     };
@@ -517,6 +552,7 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
+                            &self.symbol_venue_map,
                         )
                         .expect("Failed to decode record"),
                     };
@@ -565,7 +601,7 @@ mod tests {
     #[case(test_data_path().join("test_data.definition.v1.dbn.zst"))]
     fn test_load_instruments(#[case] path: PathBuf) {
         let mut loader = data_loader();
-        let instruments = loader.load_instruments(&path).unwrap();
+        let instruments = loader.load_instruments(&path, false).unwrap();
 
         assert_eq!(instruments.len(), 2);
     }
