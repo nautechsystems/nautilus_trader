@@ -18,6 +18,7 @@ import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
@@ -97,6 +98,16 @@ NAUTILUS_ARROW_SCHEMA = {
             "ts_init": pa.uint64(),
         },
         metadata={"type": "InstrumentStatus"},
+    ),
+    ShutdownSystem: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int16(), pa.string()),
+            "component_id": pa.dictionary(pa.int16(), pa.string()),
+            "reason": pa.string(),
+            "command_id": pa.string(),
+            "ts_init": pa.uint64(),
+        },
+        metadata={"type": "ShutdownSystem"},
     ),
     ComponentStateChanged: pa.schema(
         {

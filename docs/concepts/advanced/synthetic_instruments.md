@@ -1,17 +1,17 @@
 # Synthetic Instruments
 
-The platform supports creating customized synthetic instruments, which can generate synthetic quote 
+The platform supports creating customized synthetic instruments, which can generate synthetic quote
 and trades. These are useful for:
 
 - Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds
 - Triggering emulated orders
 - Constructing bars from synthetic quotes or trades
 
-Synthetic instruments cannot be traded directly, as they are constructs that only exist locally 
+Synthetic instruments cannot be traded directly, as they are constructs that only exist locally
 within the platform. They serve as analytical tools, providing useful metrics based on their component
 instruments.
 
-In the future, we plan to support order management for synthetic instruments, enabling trading of 
+In the future, we plan to support order management for synthetic instruments, enabling trading of
 their component instruments based on the synthetic instrument's behavior.
 
 :::info
@@ -20,7 +20,7 @@ The venue for a synthetic instrument is always designated as `'SYNTH'`.
 
 ## Formula
 A synthetic instrument is composed of a combination of two or more component instruments (which
-can include instruments from multiple venues), as well as a "derivation formula". 
+can include instruments from multiple venues), as well as a "derivation formula".
 Utilizing the dynamic expression engine powered by the [evalexpr](https://github.com/ISibboI/evalexpr)
 Rust crate, the platform can evaluate the formula to calculate the latest synthetic price tick
 from the incoming component instrument prices.
@@ -32,9 +32,9 @@ Before defining a new synthetic instrument, ensure that all component instrument
 :::
 
 ## Subscribing
-The following example demonstrates the creation of a new synthetic instrument with an actor/strategy. 
-This synthetic instrument will represent a simple spread between Bitcoin and 
-Ethereum spot prices on Binance. For this example, it is assumed that spot instruments for 
+The following example demonstrates the creation of a new synthetic instrument with an actor/strategy.
+This synthetic instrument will represent a simple spread between Bitcoin and
+Ethereum spot prices on Binance. For this example, it is assumed that spot instruments for
 `BTCUSDT.BINANCE` and `ETHUSDT.BINANCE` are already present in the cache.
 
 ```python
@@ -87,9 +87,9 @@ self.update_synthetic(synthetic)
 ```
 
 ## Trigger instrument IDs
-The platform allows for emulated orders to be triggered based on synthetic instrument prices. In 
-the following example, we build upon the previous one to submit a new emulated order. 
-This order will be retained in the emulator until a trigger from synthetic quotes releases it. 
+The platform allows for emulated orders to be triggered based on synthetic instrument prices. In
+the following example, we build upon the previous one to submit a new emulated order.
+This order will be retained in the emulator until a trigger from synthetic quotes releases it.
 It will then be submitted to Binance as a MARKET order:
 
 ```
@@ -106,9 +106,9 @@ self.strategy.submit_order(order)
 ```
 
 ## Error handling
-Considerable effort has been made to validate inputs, including the derivation formula for 
-synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to 
-undefined behavior. 
+Considerable effort has been made to validate inputs, including the derivation formula for
+synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to
+undefined behavior.
 
 :::info
 See the `SyntheticInstrument` [API reference](../../api_reference/model/instruments.md#class-syntheticinstrument-1)

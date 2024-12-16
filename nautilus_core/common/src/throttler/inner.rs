@@ -15,7 +15,7 @@
 
 use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{correctness::FAILED, nanos::UnixNanos};
 
 use super::Throttler;
 use crate::{clock::Clock, timer::TimeEventCallback};
@@ -107,7 +107,9 @@ impl<T, F> InnerThrottler<T, F> {
         }
         let alert_ts = clock.timestamp_ns() + delta;
 
-        clock.set_time_alert_ns(&self.timer_name, alert_ts, callback);
+        clock
+            .set_time_alert_ns(&self.timer_name, alert_ts, callback)
+            .expect(FAILED);
     }
 
     /// Time delta when the next message can be sent.

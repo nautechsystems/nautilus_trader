@@ -10,7 +10,7 @@
    :glob:
    :titlesonly:
    :hidden:
-   
+
    betfair.md
    binance.md
    bybit.md

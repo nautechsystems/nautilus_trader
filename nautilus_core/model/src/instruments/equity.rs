@@ -39,23 +39,39 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct Equity {
+    /// The instrument ID.
     pub id: InstrumentId,
+    /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
-    /// The ISIN (International Securities Identification Number).
+    /// The instruments International Securities Identification Number (ISIN).
     pub isin: Option<Ustr>,
+    /// The futures contract currency.
     pub currency: Currency,
+    /// The price decimal precision.
     pub price_precision: u8,
+    /// The minimum price increment (tick size).
     pub price_increment: Price,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
+    /// The initial (order) margin requirement in percentage of order value.
     pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
+    /// The fee rate for liquidity makers as a percentage of order value.
+    pub maker_fee: Decimal,
+    /// The fee rate for liquidity takers as a percentage of order value.
+    pub taker_fee: Decimal,
+    /// The rounded lot unit size (standard/board).
     pub lot_size: Option<Quantity>,
+    /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
+    /// The minimum allowable order quantity.
     pub min_quantity: Option<Quantity>,
+    /// The maximum allowable quoted price.
     pub max_price: Option<Price>,
+    /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -73,15 +89,15 @@ impl Equity {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -101,15 +117,15 @@ impl Equity {
             currency,
             price_precision,
             price_increment,
-            maker_fee: maker_fee.unwrap_or(0.into()),
-            taker_fee: taker_fee.unwrap_or(0.into()),
-            margin_init: margin_init.unwrap_or(0.into()),
-            margin_maint: margin_maint.unwrap_or(0.into()),
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            margin_init: margin_init.unwrap_or_default(),
+            margin_maint: margin_maint.unwrap_or_default(),
+            maker_fee: maker_fee.unwrap_or_default(),
+            taker_fee: taker_fee.unwrap_or_default(),
             ts_event,
             ts_init,
         })
@@ -124,15 +140,15 @@ impl Equity {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -143,15 +159,15 @@ impl Equity {
             currency,
             price_precision,
             price_increment,
-            maker_fee,
-            taker_fee,
-            margin_init,
-            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         )

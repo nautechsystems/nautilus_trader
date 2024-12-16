@@ -420,15 +420,16 @@ cdef extern from "../includes/model.h":
     #
     # The level maintains a collection of orders as well as tracking insertion order
     # to preserve FIFO queue dynamics.
-    cdef struct Level:
+    cdef struct BookLevel:
         pass
 
     # Provides a high-performance, versatile order book.
     #
-    # Capable of handling various levels of data granularity:
-    # - MBO (market by order) / L3
-    # - MBP (market by price) / L2 aggregated order per level
-    # - MBP (market by price) / L1 top-of-book only
+    # Maintains buy (bid) and sell (ask) orders in price-time priority, supporting multiple
+    # market data formats:
+    # - L3 (MBO): Market By Order - tracks individual orders with unique IDs.
+    # - L2 (MBP): Market By Price - aggregates orders at each price level.
+    # - L1 (MBP): Top-of-Book - maintains only the best bid and ask prices.
     cdef struct OrderBook:
         pass
 
@@ -440,6 +441,8 @@ cdef extern from "../includes/model.h":
 
     # Represents a synthetic instrument with prices derived from component instruments using a
     # formula.
+    #
+    # The `id` for the synthetic will become `{symbol}.{SYNTH}`.
     cdef struct SyntheticInstrument:
         pass
 
@@ -825,8 +828,8 @@ cdef extern from "../includes/model.h":
     # It implements the `Deref` trait, allowing instances of `Level_API` to be
     # dereferenced to `Level`, providing access to `Level`'s methods without
     # having to manually acce wss the underlying `Level` instance.
-    cdef struct Level_API:
-        Level *_0;
+    cdef struct BookLevel_API:
+        BookLevel *_0;
 
     # Represents a medium of exchange in a specified denomination with a fixed decimal precision.
     #
@@ -1687,19 +1690,19 @@ cdef extern from "../includes/model.h":
     # Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
 
-    Level_API level_new(OrderSide order_side, Price_t price, CVec orders);
+    BookLevel_API level_new(OrderSide order_side, Price_t price, CVec orders);
 
-    void level_drop(Level_API level);
+    void level_drop(BookLevel_API level);
 
-    Level_API level_clone(const Level_API *level);
+    BookLevel_API level_clone(const BookLevel_API *level);
 
-    Price_t level_price(const Level_API *level);
+    Price_t level_price(const BookLevel_API *level);
 
-    CVec level_orders(const Level_API *level);
+    CVec level_orders(const BookLevel_API *level);
 
-    double level_size(const Level_API *level);
+    double level_size(const BookLevel_API *level);
 
-    double level_exposure(const Level_API *level);
+    double level_exposure(const BookLevel_API *level);
 
     void vec_levels_drop(CVec v);
 

@@ -15,7 +15,7 @@ currently a number of subclasses representing a range of _asset classes_ and _in
 All instruments should have a unique `InstrumentId`, which is made up of both the native symbol, and venue ID, separated by a period.
 For example, on the Binance Futures crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETHUSDT-PERP.BINANCE`.
 
-All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets), 
+All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets),
 and the `{symbol.venue}` combination _must_ be unique for a Nautilus system.
 
 :::warning
@@ -37,7 +37,7 @@ Exchange specific instruments can be discovered from live exchange data using an
 
 ```python
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 provider = BinanceSpotInstrumentProvider(client=binance_http_client)
 await self.provider.load_all_async()
@@ -57,8 +57,8 @@ See the full instrument [API Reference](../api_reference/model/instruments.md).
 
 ## Live trading
 
-Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the 
-latest instrument definitions for the exchange. Refer to a particular `Instrument` 
+Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the
+latest instrument definitions for the exchange. Refer to a particular `Instrument`
 object by pass the matching `InstrumentId` to data and execution related methods, and classes which require one.
 
 ## Finding instruments
@@ -67,7 +67,7 @@ Since the same actor/strategy classes can be used for both backtest and live tra
 get instruments in exactly the same way through the central cache:
 
 ```python
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 instrument = self.cache.instrument(instrument_id)
@@ -80,7 +80,7 @@ self.subscribe_instrument(instrument_id)
 
 Or subscribe to all instrument changes for an entire venue:
 ```python
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model import Venue
 
 binance = Venue("BINANCE")
 self.subscribe_instruments(binance)
@@ -99,7 +99,7 @@ def on_instrument(instrument: Instrument) -> None:
 ## Precisions and increments
 
 The instrument objects are a convenient way to organize the specification of an
-instrument through _read-only_ properties. Correct price and quantity precisions, as well as 
+instrument through _read-only_ properties. Correct price and quantity precisions, as well as
 minimum price and size increments, multipliers and standard lot sizes, are available.
 
 :::note
@@ -136,12 +136,12 @@ quantity = instrument.make_qty(150)
 ```
 
 :::tip
-The above is the recommended method for creating valid prices and quantities, 
+The above is the recommended method for creating valid prices and quantities,
 such as when passing them to the order factory to create an order.
 :::
 
 ## Margins and fees
-The current initial and maintenance margin requirements, as well as any trading 
+The current initial and maintenance margin requirements, as well as any trading
 fees are also available from an instrument:
 - `margin_init` (initial/order margin rate)
 - `margin_maint` (maintenance/position margin rate)

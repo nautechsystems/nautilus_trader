@@ -78,7 +78,7 @@ To distinguish between different product types on Bybit, Nautilus uses specific 
 - `-INVERSE`: Inverse perpetual and inverse futures contracts
 - `-OPTION`: Options contracts (not currently supported)
 
-These suffixes must be appended to the Bybit raw symbol string to identify the specific product type 
+These suffixes must be appended to the Bybit raw symbol string to identify the specific product type
 for the instrument ID. For example:
 
 - The Ether/Tether spot currency pair is identified with `-SPOT`, such as `ETHUSDT-SPOT`.

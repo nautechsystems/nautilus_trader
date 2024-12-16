@@ -83,8 +83,8 @@ class TestPersistenceStubs:
                 name=str(row["Name"]),
                 impact=getattr(NewsImpact, row["Impact"]),
                 currency=Currency.from_str(row["Currency"]),
-                ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
-                ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+                ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])) or 0,
+                ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])) or 0,
             )
             events.append(data)
         return events

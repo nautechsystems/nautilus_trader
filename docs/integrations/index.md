@@ -1,6 +1,6 @@
 # Integrations
 
-NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues 
+NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
 and data providers by converting their raw APIs into a unified interface.
 
 The following integrations are currently supported:
@@ -13,7 +13,7 @@ The following integrations are currently supported:
 | [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](integrations/binance.md)    |
 | [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](integrations/bybit.md)      |
 | [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](integrations/databento.md)  |
-| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](integrations/dydx.md)       |
+| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](integrations/dydx.md)       |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](integrations/ib.md)         |
 | [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](integrations/okx.md)        |
 | [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](integrations/polymarket.md) |
@@ -30,8 +30,8 @@ The following integrations are currently supported:
 
 ## Implementation goals
 
-The primary goal of NautilusTrader is to provide a unified trading system for 
-use with a variety of integrations. To support the widest range of trading 
+The primary goal of NautilusTrader is to provide a unified trading system for
+use with a variety of integrations. To support the widest range of trading
 strategies, priority will be given to 'standard' functionality:
 
 - Requesting historical market data

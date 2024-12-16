@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{
+    correctness::FAILED,
     ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_as_str},
     nanos::UnixNanos,
 };
@@ -152,7 +153,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, callback);
+    clock
+        .set_time_alert_ns(name, alert_time_ns, callback)
+        .expect(FAILED);
 }
 
 /// # Safety
@@ -183,7 +186,9 @@ pub unsafe extern "C" fn test_clock_set_timer(
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback);
+    clock
+        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback)
+        .expect(FAILED);
 }
 
 /// # Safety
@@ -364,7 +369,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, callback);
+    clock
+        .set_time_alert_ns(name, alert_time_ns, callback)
+        .expect(FAILED);
 }
 
 /// # Safety
@@ -402,7 +409,9 @@ pub unsafe extern "C" fn live_clock_set_timer(
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback);
+    clock
+        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback)
+        .expect(FAILED);
 }
 
 /// # Safety

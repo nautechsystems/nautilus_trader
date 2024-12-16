@@ -20,6 +20,7 @@ from typing import Any
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsSubscriptionMsg
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
@@ -46,6 +47,9 @@ class BybitWebSocketClient:
         The callback handler for message events.
     handler_reconnect : Callable[..., Awaitable[None]], optional
         The callback handler to be called on reconnect.
+    max_reconnection_tries: int, default 3
+        The number of retries to reconnect the websocket connection if the
+        connection is broken.
 
     """
 
@@ -59,6 +63,7 @@ class BybitWebSocketClient:
         api_secret: str,
         loop: asyncio.AbstractEventLoop,
         is_private: bool | None = False,
+        max_reconnection_tries: int | None = 3,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)
@@ -67,6 +72,7 @@ class BybitWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._max_reconnection_tries = max_reconnection_tries
 
         self._client: WebSocketClient | None = None
         self._api_key = api_key
@@ -75,6 +81,9 @@ class BybitWebSocketClient:
         self._is_running = False
 
         self._subscriptions: list[str] = []
+
+        self._is_authenticated = False
+        self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
 
     @property
     def subscriptions(self) -> list[str]:
@@ -88,10 +97,11 @@ class BybitWebSocketClient:
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
-            handler=self._handler,
+            handler=self._msg_handler,
             heartbeat=20,
             heartbeat_msg=msgspec.json.encode({"op": "ping"}).decode(),
             headers=[],
+            max_reconnection_tries=self._max_reconnection_tries,
         )
         client = await WebSocketClient.connect(
             config=config,
@@ -100,12 +110,10 @@ class BybitWebSocketClient:
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
 
-        ## Authenticate
+        # Authenticate
         if self._is_private:
-            signature = self._get_signature()
-            await self._send(signature)
+            await self._authenticate()
 
-    # TODO: Temporarily sync
     def reconnect(self) -> None:
         """
         Reconnect the client to the server and resubscribe to all streams.
@@ -113,18 +121,21 @@ class BybitWebSocketClient:
         if not self._is_running:
             return
 
-        self._log.warning(f"Reconnected to {self._base_url}")
+        self._log.warning(f"Trying to reconnect to {self._base_url}")
+        self._loop.create_task(self._reconnect_wrapper())
 
-        ## Authenticate
+    async def _reconnect_wrapper(self) -> None:
+        # Authenticate
         if self._is_private:
-            signature = self._get_signature()
-            self._loop.create_task(self._send(signature))
+            await self._authenticate()
 
         # Re-subscribe to all streams
-        self._loop.create_task(self._subscribe_all())
+        await self._subscribe_all()
 
         if self._handler_reconnect:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
+            await self._handler_reconnect()
+
+        self._log.warning(f"Reconnected to {self._base_url}")
 
     async def disconnect(self) -> None:
         self._is_running = False
@@ -142,125 +153,113 @@ class BybitWebSocketClient:
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
 
+    def _msg_handler(self, raw: bytes) -> None:
+        """
+        Handle pushed websocket messages.
+
+        Parameters
+        ----------
+        raw : bytes
+            The received message in bytes.
+
+        """
+        if self._is_private and not self._is_authenticated:
+            msg = self._decoder_ws_subscription.decode(raw)
+            if msg.op == "auth":
+                if msg.success is True:
+                    self._is_authenticated = True
+                    self._log.info("Private channel authenticated")
+                else:
+                    raise RuntimeError(f"Private channel authentication failed: {msg}")
+
+        self._handler(raw)
+
+    async def _authenticate(self) -> None:
+        self._is_authenticated = False
+        signature = self._get_signature()
+        await self._send(signature)
+
+        while not self._is_authenticated:
+            self._log.debug("Waiting for private channel authentication")
+            await asyncio.sleep(0.1)
+
+    async def _subscribe(self, subscription: str) -> None:
+        if subscription in self._subscriptions:
+            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
+            return
+
+        self._subscriptions.append(subscription)
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
+
+    async def _unsubscribe(self, subscription: str) -> None:
+        if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
+            return
+
+        self._subscriptions.remove(subscription)
+        msg = {"op": "unsubscribe", "args": [subscription]}
+        await self._send(msg)
+
     ################################################################################
     # Public
     ################################################################################
 
     async def subscribe_order_book(self, symbol: str, depth: int) -> None:
         subscription = f"orderbook.{depth}.{symbol}"
-        if subscription in self._subscriptions:
-            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
-            return
-
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._subscribe(subscription)
 
     async def subscribe_trades(self, symbol: str) -> None:
         subscription = f"publicTrade.{symbol}"
-        if subscription in self._subscriptions:
-            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
-            return
-
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._subscribe(subscription)
 
     async def subscribe_tickers(self, symbol: str) -> None:
         subscription = f"tickers.{symbol}"
-        if subscription in self._subscriptions:
-            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
-            return
-
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._subscribe(subscription)
 
     async def subscribe_klines(self, symbol: str, interval: str) -> None:
         subscription = f"kline.{interval}.{symbol}"
-        if subscription in self._subscriptions:
-            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
-            return
-
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._subscribe(subscription)
 
     async def unsubscribe_order_book(self, symbol: str, depth: int) -> None:
         subscription = f"orderbook.{depth}.{symbol}"
-        if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
-            return
-
-        self._subscriptions.remove(subscription)
-        msg = {"op": "unsubscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._unsubscribe(subscription)
 
     async def unsubscribe_trades(self, symbol: str) -> None:
         subscription = f"publicTrade.{symbol}"
-        if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
-            return
-
-        self._subscriptions.remove(subscription)
-        msg = {"op": "unsubscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._unsubscribe(subscription)
 
     async def unsubscribe_tickers(self, symbol: str) -> None:
         subscription = f"tickers.{symbol}"
-        if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
-            return
-
-        self._subscriptions.remove(subscription)
-        msg = {"op": "unsubscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._unsubscribe(subscription)
 
     async def unsubscribe_klines(self, symbol: str, interval: str) -> None:
         subscription = f"kline.{interval}.{symbol}"
-        if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
-            return
-
-        self._subscriptions.remove(subscription)
-        msg = {"op": "unsubscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._unsubscribe(subscription)
 
     ################################################################################
     # Private
     ################################################################################
-    # async def subscribe_account_position_update(self) -> None:
-    #     subscription = "position"
-    #     msg = {"op": "subscribe", "args": [subscription]}
-    #     await self._send(msg)
-    #     self._subscriptions.append(subscription)
+
+    async def subscribe_account_position_update(self) -> None:
+        subscription = "position"
+        await self._subscribe(subscription)
 
     async def subscribe_orders_update(self) -> None:
         subscription = "order"
-        if subscription in self._subscriptions:
-            return
-
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._subscribe(subscription)
 
     async def subscribe_executions_update(self) -> None:
         subscription = "execution"
-        if subscription in self._subscriptions:
-            return
+        await self._subscribe(subscription)
 
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+    async def subscribe_executions_update_fast(self) -> None:
+        subscription = "execution.fast"
+        await self._subscribe(subscription)
 
     async def subscribe_wallet_update(self) -> None:
         subscription = "wallet"
-        if subscription in self._subscriptions:
-            return
-
-        self._subscriptions.append(subscription)
-        msg = {"op": "subscribe", "args": [subscription]}
-        await self._send(msg)
+        await self._subscribe(subscription)
 
     def _get_signature(self):
         expires = self._clock.timestamp_ms() + 5_000

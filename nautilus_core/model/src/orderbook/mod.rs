@@ -22,3 +22,6 @@ pub mod display;
 pub mod error;
 pub mod ladder;
 pub mod level;
+
+// Re-exports
+pub use crate::orderbook::{book::OrderBook, level::BookLevel};

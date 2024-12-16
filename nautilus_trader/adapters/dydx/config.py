@@ -36,7 +36,7 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the dYdX testnet API.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
-    max_reconnection_tries: int, default 3
+    max_ws_reconnection_tries: int, default 3
         The number of retries to reconnect the websocket connection if the
         connection is broken.
 

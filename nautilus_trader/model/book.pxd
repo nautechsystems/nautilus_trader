@@ -17,8 +17,8 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookType
-from nautilus_trader.core.rust.model cimport Level_API
 from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.data cimport BookOrder
@@ -65,12 +65,12 @@ cdef class OrderBook(Data):
     cpdef str pprint(self, int num_levels=*)
 
 
-cdef class Level:
-    cdef Level_API _mem
+cdef class BookLevel:
+    cdef BookLevel_API _mem
 
     cpdef list orders(self)
     cpdef double size(self)
     cpdef double exposure(self)
 
     @staticmethod
-    cdef Level from_mem_c(Level_API mem)
+    cdef BookLevel from_mem_c(BookLevel_API mem)

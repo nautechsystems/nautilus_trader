@@ -156,7 +156,7 @@ cdef class Actor(Component):
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef dict on_save(self):
+    cpdef dict[str, bytes] on_save(self):
         """
         Actions to be performed when the actor state is saved.
 
@@ -165,7 +165,7 @@ cdef class Actor(Component):
         Returns
         -------
         dict[str, bytes]
-            The strategy state dictionary.
+            The strategy state to save.
 
         Warnings
         --------
@@ -174,11 +174,16 @@ cdef class Actor(Component):
         """
         return {}  # Optionally override in subclass
 
-    cpdef void on_load(self, dict state):
+    cpdef void on_load(self, dict[str, bytes] state):
         """
         Actions to be performed when the actor state is loaded.
 
         Saved state values will be contained in the give state dictionary.
+
+        Parameters
+        ----------
+        state : dict[str, bytes]
+            The strategy state to load.
 
         Warnings
         --------
@@ -722,11 +727,16 @@ cdef class Actor(Component):
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
-    cpdef dict save(self):
+    cpdef dict[str, bytes] save(self):
         """
         Return the actor/strategy state dictionary to be saved.
 
         Calls `on_save`.
+
+        Returns
+        -------
+        dict[str, bytes]
+            The strategy state to save.
 
         Raises
         ------
@@ -755,7 +765,7 @@ cdef class Actor(Component):
             self.log.exception("Error on save", e)
             raise  # Otherwise invalid state information could be saved
 
-    cpdef void load(self, dict state):
+    cpdef void load(self, dict[str, bytes] state):
         """
         Load the actor/strategy state from the give state dictionary.
 
@@ -763,8 +773,8 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        state : dict[str, object]
-            The state dictionary.
+        state : dict[str, bytes]
+            The strategy state to load.
 
         Raises
         ------
@@ -1090,7 +1100,12 @@ cdef class Actor(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, DataType data_type, ClientId client_id = None, params: dict = None):
+    cpdef void subscribe_data(
+        self,
+        DataType data_type,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to data of the given data type.
 
@@ -1120,14 +1135,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=None,
             data_type=data_type,
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id = None, dict params = None):
+    cpdef void subscribe_instruments(
+        self,
+        Venue venue,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to update `Instrument` data for the given venue.
 
@@ -1154,14 +1174,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=venue,
             data_type=DataType(Instrument),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void subscribe_instrument(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to update `Instrument` data for the given instrument ID.
 
@@ -1190,9 +1215,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1205,7 +1230,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         bint managed = True,
         bint pyo3_conversion = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Subscribe to the order book data stream, being a snapshot then deltas
@@ -1255,9 +1280,9 @@ cdef class Actor(Component):
                 "book_type": book_type,
                 "depth": depth,
             }),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1270,7 +1295,7 @@ cdef class Actor(Component):
         int interval_ms = 1000,
         ClientId client_id = None,
         bint managed = True,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Subscribe to an `OrderBook` at a specified interval for the given instrument ID.
@@ -1341,14 +1366,19 @@ cdef class Actor(Component):
                 "book_type": book_type,
                 "depth": depth,
             }),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void subscribe_quote_ticks(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
 
@@ -1377,14 +1407,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void subscribe_trade_ticks(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to streaming `TradeTick` data for the given instrument ID.
 
@@ -1413,9 +1448,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1425,7 +1460,7 @@ cdef class Actor(Component):
         BarType bar_type,
         ClientId client_id = None,
         bint await_partial = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Subscribe to streaming `Bar` data for the given bar type.
@@ -1459,14 +1494,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void subscribe_instrument_status(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to status updates for the given instrument ID.
 
@@ -1493,15 +1533,20 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
         self._log.info(f"Subscribed to {instrument_id} InstrumentStatus")
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void subscribe_instrument_close(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Subscribe to close updates for the given instrument ID.
 
@@ -1528,14 +1573,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentClose, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_data(
+        self,
+        DataType data_type,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe from data of the given data type.
 
@@ -1565,14 +1615,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=None,
             data_type=data_type,
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_instruments(
+        self,
+        Venue venue,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe from update `Instrument` data for the given venue.
 
@@ -1599,14 +1654,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=venue,
             data_type=DataType(Instrument),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_instrument(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe from update `Instrument` data for the given instrument ID.
 
@@ -1635,14 +1695,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_order_book_deltas(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe the order book deltas stream for the given instrument ID.
 
@@ -1671,9 +1736,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBookDelta, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1683,7 +1748,7 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         int interval_ms = 1000,
         ClientId client_id = None,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Unsubscribe from an `OrderBook` at a specified interval for the given instrument ID.
@@ -1721,14 +1786,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBook, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_quote_ticks(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
 
@@ -1757,14 +1827,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_trade_ticks(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe from streaming `TradeTick` data for the given instrument ID.
 
@@ -1793,14 +1868,19 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_bars(
+        self,
+        BarType bar_type,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe from streaming `Bar` data for the given bar type.
 
@@ -1829,15 +1909,20 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": standard_bar_type}),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {standard_bar_type} bar data")
 
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None, dict params = None):
+    cpdef void unsubscribe_instrument_status(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
         """
         Unsubscribe to status updates of the given venue.
 
@@ -1864,9 +1949,9 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentStatus),
-            params=params,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._send_data_cmd(command)
@@ -1955,7 +2040,8 @@ cdef class Actor(Component):
         DataType data_type,
         ClientId client_id,
         callback: Callable[[UUID4], None] | None = None,
-        dict params = None,
+        bint update_catalog = False,
+        dict[str, object] params = None,
     ):
         """
         Request custom data for the given data type from the given data client.
@@ -1988,15 +2074,18 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.callable_or_none(callback, "callback")
 
+        params = params if params else {}
+        params["update_catalog"] = update_catalog
+
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=None,
             data_type=data_type,
-            params=params,
             callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2012,7 +2101,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request `Instrument` data for the given instrument ID.
@@ -2080,10 +2169,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_instrument_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2099,7 +2188,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request all `Instrument` data for the given venue.
@@ -2167,10 +2256,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_instruments_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2184,7 +2273,7 @@ cdef class Actor(Component):
         int limit,
         ClientId client_id=None,
         callback: Callable[[UUID4], None] | None=None,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request an order book snapshot.
@@ -2230,10 +2319,10 @@ cdef class Actor(Component):
                 "instrument_id": instrument_id,
                 "limit": limit,
             }),
-            params=params,
             callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2249,7 +2338,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical `QuoteTick` data.
@@ -2317,10 +2406,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_quote_ticks_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2336,7 +2425,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical `TradeTick` data.
@@ -2404,10 +2493,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_trade_ticks_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2423,7 +2512,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical `Bar` data.
@@ -2491,10 +2580,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_bars_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback
@@ -2512,7 +2601,7 @@ cdef class Actor(Component):
         bint include_external_data = False,
         bint update_existing_subscriptions = False,
         bint update_catalog = False,
-        dict params = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical aggregated `Bar` data for multiple bar types.
@@ -2614,10 +2703,10 @@ cdef class Actor(Component):
                 "start": start,
                 "end": end,
             }),
-            params=params,
             callback=self._handle_aggregated_bars_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._pending_requests[request_id] = callback

@@ -17,7 +17,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
@@ -85,15 +85,27 @@ impl DataClient for MockDataClient {
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
     /// Parse command and call specific function
-    fn subscribe(&mut self, _data_type: &DataType) -> anyhow::Result<()> {
+    fn subscribe(
+        &mut self,
+        _data_type: &DataType,
+        _params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _venue: Option<&Venue>) -> anyhow::Result<()> {
+    fn subscribe_instruments(
+        &mut self,
+        _venue: Option<&Venue>,
+        _params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_instrument(
+        &mut self,
+        _instrument_id: &InstrumentId,
+        _params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -102,6 +114,7 @@ impl DataClient for MockDataClient {
         _instrument_id: &InstrumentId,
         _book_type: BookType,
         _depth: Option<usize>,
+        _params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -111,45 +124,79 @@ impl DataClient for MockDataClient {
         instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_quote_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_trade_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()> {
+    fn subscribe_bars(
+        &mut self,
+        bar_type: &BarType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument_status(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_instrument_status(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_instrument_close(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, data_type: &DataType) -> anyhow::Result<()> {
+    fn unsubscribe(
+        &mut self,
+        data_type: &DataType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instruments(&mut self, venue: Option<&Venue>) -> anyhow::Result<()> {
+    fn unsubscribe_instruments(
+        &mut self,
+        venue: Option<&Venue>,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn unsubscribe_order_book_deltas(
         &mut self,
         instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -157,30 +204,48 @@ impl DataClient for MockDataClient {
     fn unsubscribe_order_book_snapshots(
         &mut self,
         instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_quote_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_trade_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()> {
+    fn unsubscribe_bars(
+        &mut self,
+        bar_type: &BarType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_instrument_close(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -196,6 +261,7 @@ impl DataClient for MockDataClient {
         venue: Venue,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<InstrumentAny> {
         todo!()
     }
@@ -206,6 +272,7 @@ impl DataClient for MockDataClient {
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
+        params: &Option<HashMap<String, String>>,
     ) -> InstrumentAny {
         todo!()
     }
@@ -216,6 +283,7 @@ impl DataClient for MockDataClient {
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         depth: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Payload {
         todo!()
     }
@@ -227,6 +295,7 @@ impl DataClient for MockDataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<QuoteTick> {
         todo!()
     }
@@ -238,6 +307,7 @@ impl DataClient for MockDataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<TradeTick> {
         todo!()
     }
@@ -249,6 +319,7 @@ impl DataClient for MockDataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<Bar> {
         todo!()
     }

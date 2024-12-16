@@ -149,6 +149,7 @@ class BybitDataClient(LiveMarketDataClient):
                 api_key=config.api_key or get_api_key(config.demo, config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
+                max_reconnection_tries=config.max_ws_reconnection_tries,
             )
 
         # WebSocket decoders
@@ -416,7 +417,12 @@ class BybitDataClient(LiveMarketDataClient):
         bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
         return bybit_symbol.to_instrument_id()
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if data_type.type == BybitTickerData:
             symbol = data_type.metadata["symbol"]
             await self._handle_ticker_data_request(symbol, correlation_id)

@@ -22,6 +22,7 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -581,6 +582,23 @@ class TestMsgSpecSerializer:
         assert deserialized == command
         print(b64encode(serialized))
         print(command)
+
+    def test_serialize_and_deserialize_shutdown_system_commands(self):
+        # Arrange
+        command = ShutdownSystem(
+            trader_id=TestIdStubs.trader_id(),
+            component_id=ComponentId("Controller"),
+            reason="Maintenance",
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == command
 
     def test_serialize_and_deserialize_component_state_changed_events(self):
         # Arrange

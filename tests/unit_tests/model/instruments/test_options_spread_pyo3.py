@@ -57,6 +57,8 @@ def test_to_dict():
         "min_price": None,
         "margin_init": "0",
         "margin_maint": "0",
+        "maker_fee": "0",
+        "taker_fee": "0",
         "info": {},
         "ts_event": 0,
         "ts_init": 0,

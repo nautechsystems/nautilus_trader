@@ -135,6 +135,10 @@ cdef class Instrument(Data):
     ValueError
         If `multiplier` is not positive (> 0).
     ValueError
+        If `margin_init` is negative (< 0).
+    ValueError
+        If `margin_maint` is negative (< 0).
+    ValueError
         If `lot size` is not positive (> 0).
     ValueError
         If `max_quantity` is not positive (> 0).
@@ -148,6 +152,7 @@ cdef class Instrument(Data):
         If `max_price` is not positive (> 0).
     ValueError
         If `min_price` is negative (< 0).
+
     """
 
     def __init__(
@@ -178,12 +183,14 @@ cdef class Instrument(Data):
         Price min_price: Price | None = None,
         str tick_scheme_name = None,
         dict info = None,
-    ):
+    ) -> None:
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
         Condition.positive(size_increment, "size_increment")
         Condition.equal(size_precision, size_increment.precision, "size_precision", "size_increment.precision")  # noqa
         Condition.positive(multiplier, "multiplier")
+        Condition.not_negative(margin_init, "margin_init")
+        Condition.not_negative(margin_maint, "margin_maint")
 
         if tick_scheme_name is not None:
             Condition.valid_string(tick_scheme_name, "tick_scheme_name")

@@ -56,7 +56,7 @@ cdef class SyntheticInstrument(Data):
     Represents a synthetic instrument with prices derived from component instruments using a
     formula.
 
-    The `id` for the synthetic will become {symbol}.{SYNTH}.
+    The `id` for the synthetic will become `{symbol}.{SYNTH}`.
 
     Parameters
     ----------
@@ -90,6 +90,7 @@ cdef class SyntheticInstrument(Data):
     --------
     All component instruments should already be defined and exist in the cache prior to defining
     a new synthetic instrument.
+
     """
 
     def __init__(
@@ -100,7 +101,7 @@ cdef class SyntheticInstrument(Data):
         str formula not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         Condition.is_true(price_precision <= 9, f"invalid `price_precision` greater than max 9, was {price_precision}")
         Condition.is_true(len(components) >= 2, "There must be at least two component instruments")
         Condition.list_type(components, InstrumentId, "components")

@@ -11,7 +11,6 @@ name = "nautilus_pyo3"
 crate-type = ["cdylib"]
 
 [dependencies]
-nautilus-adapters = { path = "../adapters", features = ["python", "databento"] }
 nautilus-common = { path = "../common" , features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-cryptography = { path = "../cryptography" , features = ["python"] }
@@ -23,13 +22,14 @@ nautilus-network = { path = "../network" , features = ["python"] }
 nautilus-persistence = { path = "../persistence" , features = ["python"] }
 nautilus-serialization = { path = "../serialization" , features = ["python"] }
 nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
+nautilus-databento = { path = "../adapters/databento", features = ["python"] }
+nautilus-tardis = { path = "../adapters/tardis", features = ["python"] }
 pyo3 = { workspace = true }
 
 [features]
 default = []
 extension-module = [
     "pyo3/extension-module",
-    "nautilus-adapters/extension-module",
     "nautilus-common/extension-module",
     "nautilus-core/extension-module",
     "nautilus-cryptography/extension-module",
@@ -40,9 +40,10 @@ extension-module = [
     "nautilus-persistence/extension-module",
     "nautilus-serialization/extension-module",
     "nautilus-test-kit/extension-module",
+    "nautilus-databento/extension-module",
+    "nautilus-tardis/extension-module",
 ]
 ffi = [
-    "nautilus-adapters/ffi",
     "nautilus-common/ffi",
     "nautilus-core/ffi",
     "nautilus-model/ffi",

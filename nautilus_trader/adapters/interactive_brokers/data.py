@@ -128,7 +128,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
@@ -248,7 +248,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
@@ -323,7 +323,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request` coroutine",  # pragma: no cover
         )

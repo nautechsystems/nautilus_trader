@@ -72,7 +72,7 @@ pytestmark = pytest.mark.skipif(
 
 
 class TestCachePostgresAdapter:
-    def setup(self):
+    def setup(self) -> None:
         # set envs
         os.environ["POSTGRES_HOST"] = "localhost"
         os.environ["POSTGRES_PORT"] = "5432"

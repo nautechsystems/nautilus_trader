@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -29,6 +29,7 @@ pub struct DataRequest {
     pub venue: Venue,
     pub data_type: DataType,
     pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
 }
 
 pub type Payload = Arc<dyn Any + Send + Sync>;
@@ -41,6 +42,7 @@ pub struct DataResponse {
     pub data_type: DataType,
     pub data: Payload,
     pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
 }
 
 impl DataResponse {
@@ -51,6 +53,7 @@ impl DataResponse {
         data_type: DataType,
         data: T,
         ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,
@@ -59,6 +62,7 @@ impl DataResponse {
             data_type,
             data: Arc::new(data),
             ts_init,
+            params,
         }
     }
 }
@@ -77,6 +81,7 @@ pub struct SubscriptionCommand {
     pub action: Action,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
 }
 
 impl SubscriptionCommand {
@@ -89,6 +94,7 @@ impl SubscriptionCommand {
         action: Action,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
             client_id,
@@ -97,6 +103,7 @@ impl SubscriptionCommand {
             action,
             command_id,
             ts_init,
+            params,
         }
     }
 }

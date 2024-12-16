@@ -43,6 +43,9 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the Bybit testnet API.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
+    max_ws_reconnection_tries: int, default 3
+        The number of retries to reconnect the websocket connection if the
+        connection is broken.
 
     """
 
@@ -53,6 +56,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     demo: bool = False
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
+    max_ws_reconnection_tries: int | None = 3
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -85,6 +89,9 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+    max_ws_reconnection_tries: int, default 3
+        The number of retries to reconnect the websocket connection if the
+        connection is broken.
 
     Warnings
     --------
@@ -102,3 +109,4 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_gtd: bool = False  # Not supported on Bybit
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
+    max_ws_reconnection_tries: int | None = 3

@@ -34,7 +34,7 @@ use crate::{
 impl FuturesContract {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (id, raw_symbol, asset_class, underlying, activation_ns, expiration_ns, currency, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, margin_init=None, margin_maint=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, exchange=None))]
+    #[pyo3(signature = (id, raw_symbol, asset_class, underlying, activation_ns, expiration_ns, currency, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, exchange=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,
@@ -49,12 +49,14 @@ impl FuturesContract {
         lot_size: Quantity,
         ts_event: u64,
         ts_init: u64,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
         exchange: Option<String>,
     ) -> PyResult<Self> {
         Self::new_checked(
@@ -76,6 +78,8 @@ impl FuturesContract {
             min_price,
             margin_init,
             margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event.into(),
             ts_init.into(),
         )
@@ -263,6 +267,8 @@ impl FuturesContract {
         dict.set_item("lot_size", self.lot_size.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
+        dict.set_item("maker_fee", self.maker_fee.to_string())?;
+        dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("info", PyDict::new_bound(py))?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;

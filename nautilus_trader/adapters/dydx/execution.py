@@ -79,7 +79,6 @@ from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
@@ -885,19 +884,19 @@ class DYDXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
-        elif order_msg.status in (DYDXOrderStatus.BEST_EFFORT_CANCELED, DYDXOrderStatus.CANCELED):
-            if order.status != OrderStatus.CANCELED:
-                self.generate_order_canceled(
-                    strategy_id=strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    ts_event=report.ts_last,
-                )
-        elif order_msg.status == DYDXOrderStatus.FILLED:
-            # Skip order filled message. The _handle_fill_message generates
+        elif order_msg.status == DYDXOrderStatus.CANCELED:
+            self.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif order_msg.status in (DYDXOrderStatus.FILLED, DYDXOrderStatus.BEST_EFFORT_CANCELED):
+            # Skip order filled message and best effort canceled message. The _handle_fill_message generates
             # a fill report.
-            self._log.debug(f"Skip order fill message: {order_msg}")
+            # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
+            self._log.debug(f"Skip order message: {order_msg}")
         else:
             message = f"Unknown order status `{order_msg.status}`"
             self._log.error(message)
