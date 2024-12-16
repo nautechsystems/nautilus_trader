@@ -38,8 +38,8 @@ jobs:
         uses: docker/login-action@v3.1.0
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get branch name
         id: branch-name
@@ -52,7 +52,7 @@ jobs:
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:nightly
+          tags: ghcr.io/${{ github.actor }}/nautilus_trader:nightly
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
@@ -65,7 +65,7 @@ jobs:
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest
+          tags: ghcr.io/${{ github.actor }}/nautilus_trader:latest
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
