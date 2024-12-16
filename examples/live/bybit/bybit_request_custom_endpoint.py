@@ -75,7 +75,7 @@ class RequestDemoStrategy(Strategy):
     def send_tickers_request(self, time_event: TimeEvent) -> None:
         data_type = DataType(
             BybitTickerData,
-            metadata={"symbol": self.cconfig.instrument_id.symbol},
+            metadata={"symbol": self.config.instrument_id.symbol},
         )
         self.request_data(data_type, ClientId("BYBIT"))
 
