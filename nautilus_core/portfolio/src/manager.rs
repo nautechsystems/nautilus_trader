@@ -23,7 +23,7 @@ use nautilus_model::{
     accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
     events::{account::state::AccountState, order::OrderFilled},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
     types::{balance::AccountBalance, money::Money},

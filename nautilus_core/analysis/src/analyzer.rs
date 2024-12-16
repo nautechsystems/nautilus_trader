@@ -373,7 +373,7 @@ mod tests {
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
             AccountId, ClientOrderId,
         },
-        instruments::any::InstrumentAny,
+        instruments::InstrumentAny,
         types::{balance::AccountBalance, money::Money, quantity::Quantity},
     };
 

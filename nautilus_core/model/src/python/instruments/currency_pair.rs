@@ -24,7 +24,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     identifiers::{InstrumentId, Symbol},
-    instruments::currency_pair::CurrencyPair,
+    instruments::CurrencyPair,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 

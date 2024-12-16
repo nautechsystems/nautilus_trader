@@ -79,7 +79,7 @@ use nautilus_model::{
     },
     enums::{AggregationSource, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::book::OrderBook,
 };
 use ustr::Ustr;

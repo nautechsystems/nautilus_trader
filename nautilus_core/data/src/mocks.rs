@@ -34,7 +34,7 @@ use nautilus_model::{
     },
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
 };
 
 use crate::client::DataClient;

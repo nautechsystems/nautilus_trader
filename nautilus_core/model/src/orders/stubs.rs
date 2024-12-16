@@ -22,7 +22,7 @@ use crate::{
     enums::LiquiditySide,
     events::order::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{AccountId, PositionId, TradeId, VenueOrderId},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     types::{money::Money, price::Price, quantity::Quantity},
 };
 

@@ -365,7 +365,7 @@ impl Instrument for OptionsSpread {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{options_spread::OptionsSpread, stubs::*};
+    use crate::instruments::{stubs::*, OptionsSpread};
 
     #[rstest]
     fn test_equality(options_spread: OptionsSpread) {

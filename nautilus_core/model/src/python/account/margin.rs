@@ -20,7 +20,7 @@ use crate::{
     accounts::margin::MarginAccount,
     events::account::state::AccountState,
     identifiers::{AccountId, InstrumentId},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     python::instruments::pyobject_to_instrument_any,
     types::{money::Money, price::Price, quantity::Quantity},
 };

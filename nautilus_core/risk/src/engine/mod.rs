@@ -34,7 +34,7 @@ use nautilus_model::{
     enums::{InstrumentClass, OrderSide, OrderStatus, TradingState},
     events::order::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     orders::{any::OrderAny, list::OrderList},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -1102,10 +1102,8 @@ mod tests {
             TraderId, VenueOrderId,
         },
         instruments::{
-            any::InstrumentAny,
-            crypto_perpetual::CryptoPerpetual,
-            currency_pair::CurrencyPair,
             stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
+            CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
         orders::{any::OrderAny, builder::OrderTestBuilder, list::OrderList},
         types::{balance::AccountBalance, money::Money, price::Price, quantity::Quantity},

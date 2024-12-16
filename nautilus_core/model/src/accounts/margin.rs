@@ -30,7 +30,7 @@ use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::{AccountId, InstrumentId},
-    instruments::{any::InstrumentAny, Instrument},
+    instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{
         balance::{AccountBalance, MarginBalance},
@@ -415,7 +415,7 @@ mod tests {
         accounts::{base::Account, margin::MarginAccount, stubs::*},
         events::account::{state::AccountState, stubs::*},
         identifiers::{stubs::*, InstrumentId},
-        instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},
+        instruments::{stubs::*, CryptoPerpetual, CurrencyPair},
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
 

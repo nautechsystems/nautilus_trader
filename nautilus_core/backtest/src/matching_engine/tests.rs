@@ -38,10 +38,8 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
     instruments::{
-        any::InstrumentAny,
-        crypto_perpetual::CryptoPerpetual,
-        equity::Equity,
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
+        CryptoPerpetual, Equity, InstrumentAny,
     },
     orders::{any::OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
     position::Position,

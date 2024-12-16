@@ -17,7 +17,7 @@ use std::{env, time::Duration};
 
 use chrono::Utc;
 use nautilus_core::{nanos::UnixNanos, version::USER_AGENT};
-use nautilus_model::instruments::any::InstrumentAny;
+use nautilus_model::instruments::InstrumentAny;
 
 use super::{
     parse::parse_instrument_any,

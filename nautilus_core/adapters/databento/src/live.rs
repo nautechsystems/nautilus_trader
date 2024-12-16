@@ -34,7 +34,7 @@ use nautilus_model::{
     },
     enums::RecordFlag,
     identifiers::{InstrumentId, Symbol, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
 };
 use tokio::{
     sync::mpsc::error::TryRecvError,

@@ -39,12 +39,11 @@ mod serial_tests {
             VenueOrderId,
         },
         instruments::{
-            any::InstrumentAny,
             stubs::{
                 audusd_sim, binary_option, crypto_future_btcusdt, crypto_perpetual_ethusdt,
                 currency_pair_ethusdt, equity_aapl, futures_contract_es, options_contract_appl,
             },
-            Instrument,
+            Instrument, InstrumentAny,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},

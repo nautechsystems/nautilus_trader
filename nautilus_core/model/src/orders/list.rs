@@ -91,7 +91,7 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType},
         identifiers::{OrderListId, StrategyId},
-        instruments::{currency_pair::CurrencyPair, stubs::*},
+        instruments::{stubs::*, CurrencyPair},
         orders::builder::OrderTestBuilder,
         types::{price::Price, quantity::Quantity},
     };

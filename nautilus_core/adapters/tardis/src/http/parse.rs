@@ -21,10 +21,7 @@ use nautilus_model::{
     currencies::CURRENCY_MAP,
     enums::{AssetClass, CurrencyType},
     identifiers::Symbol,
-    instruments::{
-        any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, options_contract::OptionsContract,
-    },
+    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionsContract},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 use rust_decimal::Decimal;

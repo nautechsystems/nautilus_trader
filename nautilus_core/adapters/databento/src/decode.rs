@@ -34,9 +34,7 @@ use nautilus_model::{
     },
     identifiers::{InstrumentId, TradeId},
     instruments::{
-        any::InstrumentAny, equity::Equity, futures_contract::FuturesContract,
-        futures_spread::FuturesSpread, options_contract::OptionsContract,
-        options_spread::OptionsSpread,
+        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
     types::{currency::Currency, fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };

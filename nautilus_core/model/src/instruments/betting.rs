@@ -433,7 +433,7 @@ impl Instrument for BettingInstrument {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{betting::BettingInstrument, stubs::*};
+    use crate::instruments::{stubs::*, BettingInstrument};
 
     #[rstest]
     fn test_equality(betting: BettingInstrument) {
