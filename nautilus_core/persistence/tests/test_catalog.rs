@@ -23,14 +23,14 @@ use nautilus_persistence::{
     backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
+use nautilus_serialization::arrow::ArrowSchemaProvider;
 use nautilus_test_kit::common::get_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
 use rstest::rstest;
-use serde_json;
+use std::io::Write;
 use std::path::PathBuf;
-use tempfile;
 
 /// Memory leak test
 ///
@@ -330,9 +330,42 @@ fn test_catalog_serialization_json_round_trip() {
     use pretty_assertions::assert_eq;
 
     // Setup
-    // let temp_dir = tempfile::tempdir().unwrap();
     let temp_dir = PathBuf::from(".");
     let catalog = ParquetDataCatalog::new(temp_dir.clone(), Some(1000));
+
+    // Read original data from parquet
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+    // let file_path = "test.parquet";
+    let mut session = DataBackendSession::new(1000);
+    session
+        .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
+        .unwrap();
+    let query_result: QueryResult = session.get_query_result();
+    let quote_ticks: Vec<Data> = query_result.collect();
+    let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
+
+    // Write to JSON using catalog
+    catalog.write_to_json(quote_ticks.clone());
+
+    // Read back from JSON
+    let json_path = temp_dir.join("data/nautilus_model_data_quote_quote_tick/data.json");
+    let json_str = std::fs::read_to_string(json_path).unwrap();
+    let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
+
+    // Compare
+    assert_eq!(quote_ticks.len(), loaded_data_variants.len());
+    for (orig, loaded) in quote_ticks.iter().zip(loaded_data_variants.iter()) {
+        assert_eq!(orig, loaded);
+    }
+}
+
+#[rstest]
+fn fix_parquet_data_quantity_values() {
+    use datafusion::parquet::arrow::ArrowWriter;
+    use nautilus_model::types::quantity::Quantity;
+    use nautilus_serialization::arrow::EncodeToRecordBatch;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashMap;
 
     // Read original data from parquet
     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
@@ -341,38 +374,46 @@ fn test_catalog_serialization_json_round_trip() {
         .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
-    let original_data: Vec<Data> = query_result.collect();
-    let original_data_variants: Vec<QuoteTick> = to_variant(original_data);
+    let quote_ticks: Vec<Data> = query_result.collect();
+    let mut quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
-    // Write to JSON using catalog
-    catalog.write_to_json(original_data_variants.clone());
+    // fix bid and ask size
+    for data in quote_ticks.iter_mut() {
+        data.bid_size = Quantity::new(data.bid_size.raw as f64, data.bid_size.precision);
+        data.ask_size = Quantity::new(data.ask_size.raw as f64, data.ask_size.precision);
+    }
 
-    // Read back from JSON
-    let json_path = temp_dir.join("data/nautilus_model_data_quote_quote_tick/data.json");
-    dbg!(&json_path);
-    let json_str = std::fs::read_to_string(json_path).unwrap();
-    let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
+    let metadata = HashMap::from([
+        ("price_precision".to_string(), "5".to_string()),
+        ("size_precision".to_string(), "0".to_string()),
+        ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
+    ]);
+    let schema = QuoteTick::get_schema(Some(metadata.clone()));
 
-    // Compare
-    assert_eq!(original_data_variants.len(), loaded_data_variants.len());
-    for (orig, loaded) in original_data_variants
-        .iter()
-        .zip(loaded_data_variants.iter())
+    // Write the record batch to a buffer
+    let file_path = PathBuf::from("test.parquet");
+    let mut file = std::fs::File::create(&file_path).unwrap();
     {
-        dbg!(&orig.bid_size);
-        dbg!(&orig.bid_size.raw);
-        dbg!(&orig.bid_size.precision);
-        dbg!(&loaded.bid_size);
-        dbg!(&loaded.bid_size.raw);
-        dbg!(&loaded.bid_size.precision);
-        assert_eq!(orig.instrument_id, loaded.instrument_id);
-        assert_eq!(orig.bid_price, loaded.bid_price);
-        assert_eq!(orig.ask_price, loaded.ask_price);
-        assert_eq!(orig.bid_size.raw, loaded.bid_size.raw);
-        assert_eq!(orig.bid_size.precision, loaded.bid_size.precision);
-        assert_eq!(orig.ask_size.raw, loaded.ask_size.raw);
-        assert_eq!(orig.ask_size.precision, loaded.ask_size.precision);
-        assert_eq!(orig.ts_event, loaded.ts_event);
-        assert_eq!(orig.ts_init, loaded.ts_init);
+        let mut writer = ArrowWriter::try_new(&mut file, schema.into(), None).unwrap();
+        for chunk in quote_ticks.chunks(1000) {
+            let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
+            writer.write(&batch).unwrap();
+        }
+        writer.close().unwrap();
+    }
+
+    let mut session = DataBackendSession::new(1000);
+    session
+        .add_file::<QuoteTick>("test_data", file_path.to_str().unwrap(), None)
+        .unwrap();
+    let query_result: QueryResult = session.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
+    let ticks_variants: Vec<QuoteTick> = to_variant(ticks);
+
+    assert_eq!(quote_ticks.len(), ticks_variants.len());
+    dbg!(&quote_ticks[0]);
+    dbg!(&ticks_variants[0]);
+    for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
+        assert_eq!(orig, loaded)
     }
 }
