@@ -43,6 +43,7 @@ COPY README.md ./
 RUN poetry install --only main --all-extras
 RUN poetry build -f wheel
 RUN python -m pip install ./dist/*whl --force --no-deps
+RUN python -m pip install numba
 RUN find /usr/local/lib/python3.12/site-packages -name "*.pyc" -exec rm -f {} \;
 
 # Final application image

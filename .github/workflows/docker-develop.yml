@@ -1,0 +1,102 @@
+name: docker
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  build-docker-images:
+    name: build-docker-images
+    runs-on: ubuntu-latest
+    env:
+      BUILD_MODE: release
+
+    steps:
+      - name: Free disk space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.PACKAGES_TOKEN }}
+
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v8.0.1
+
+      - name: Build nautilus_trader image (nightly)
+        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
+        id: docker_build_trader_nightly
+        uses: docker/build-push-action@v5
+        with:
+          file: ".docker/nautilus_trader.dockerfile"
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:nightly
+          cache-from: type=gha
+          cache-to: type=gha
+      - name: Digest nautilus_trader image
+        run: echo ${{ steps.docker_build_trader_nightly.outputs.digest }}
+
+      - name: Build nautilus_trader image (latest)
+        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+        id: docker_build_trader_latest
+        uses: docker/build-push-action@v5
+        with:
+          file: ".docker/nautilus_trader.dockerfile"
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest
+          cache-from: type=gha
+          cache-to: type=gha
+      - name: Digest nautilus_trader image
+        run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
+
+      - name: Build jupyterlab image (nightly)
+        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
+        id: docker_build_jupyterlab_nightly
+        uses: docker/build-push-action@v5
+        with:
+          file: ".docker/jupyterlab.dockerfile"
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:nightly
+          cache-from: type=gha
+          cache-to: type=gha
+          build-args: |
+            GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
+      - name: Digest jupyterlab image
+        run: echo ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
+
+      - name: Build jupyterlab image (latest)
+        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+        id: docker_build_jupyterlab_latest
+        uses: docker/build-push-action@v5
+        with:
+          file: ".docker/jupyterlab.dockerfile"
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:latest
+          cache-from: type=gha
+          cache-to: type=gha
+          build-args: |
+            GIT_TAG=latest
+      - name: Digest jupyterlab image
+        run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
