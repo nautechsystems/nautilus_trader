@@ -52,8 +52,12 @@ class DockerizedIBGateway:
             self.log.error("`password` not set nor available in env `TWS_PASSWORD`")
             raise ValueError("`password` not set nor available in env `TWS_PASSWORD`")
 
+        self.trading_mode = config.trading_mode
+        self.read_only_api = config.read_only_api
         self.host = "127.0.0.1"
         self.port = self.PORTS[config.trading_mode]
+        self.timeout = config.timeout
+        self.container_image = config.container_image
 
         try:
             import docker
@@ -130,7 +134,7 @@ class DockerizedIBGateway:
 
         self.log.debug("Starting new container")
         self._container = self._docker.containers.run(
-            image=self.config.container_image,
+            image=self.container_image,
             name=f"{self.CONTAINER_NAME}-{self.port}",
             restart_policy={"Name": "always"},
             detach=True,
@@ -143,13 +147,13 @@ class DockerizedIBGateway:
             environment={
                 "TWS_USERID": self.username,
                 "TWS_PASSWORD": self.password,
-                "TRADING_MODE": self.config.trading_mode,
-                "READ_ONLY_API": {True: "yes", False: "no"}[self.config.read_only_api],
+                "TRADING_MODE": self.trading_mode,
+                "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
             },
         )
         self.log.info(f"Container `{self.CONTAINER_NAME}-{self.port}` starting, waiting for ready")
 
-        for _ in range(wait or self.config.timeout):
+        for _ in range(wait or self.timeout):
             if self.is_logged_in(container=self._container):
                 break
             self.log.debug("Waiting for IB Gateway to start")
