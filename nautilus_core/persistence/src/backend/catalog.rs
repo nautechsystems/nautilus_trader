@@ -119,6 +119,7 @@ impl ParquetDataCatalog {
                 type_name,
                 path
             );
+            // TODO: Set writer to property to limit max row group size
             write_batches_to_parquet(&batches, &path, None)
                 .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
         }
