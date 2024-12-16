@@ -20,6 +20,7 @@ from typing import Any
 import pandas as pd
 import pytz
 
+from nautilus_trader.adapters.databento.common import to_py03_instrument_id
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_FILEPATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
@@ -152,7 +153,9 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         live_client.subscribe(
             schema=DatabentoSchema.DEFINITION.value,
-            symbols=sorted([i.symbol.value for i in instrument_ids]),
+            instrument_ids=sorted(  # type: ignore[type-var]
+                [to_py03_instrument_id(instrument_id) for instrument_id in instrument_ids],
+            ),
             start=0,  # From start of current week (latest definitions)
         )
 
@@ -160,7 +163,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             self._log.info(f"Requesting parent symbols {parent_symbols}", LogColor.BLUE)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                symbols=parent_symbols,
+                instrument_ids=[
+                    to_py03_instrument_id(InstrumentId.from_str(f"{parent_symbol}.GLBX"))
+                    for parent_symbol in parent_symbols
+                ],
                 start=0,  # From start of current week (latest definitions)
             )
 
@@ -259,7 +265,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            symbols=[ALL_SYMBOLS],
+            instrument_ids=[to_py03_instrument_id(InstrumentId.from_str(f"{ALL_SYMBOLS}.GLBX"))],
             start=pd.Timestamp(start, tz=pytz.utc).value,
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
         )

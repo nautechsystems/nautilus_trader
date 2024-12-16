@@ -4202,7 +4202,7 @@ class DatabentoDataLoader:
     def get_publishers(self) -> dict[int, DatabentoPublisher]: ...
     def get_dataset_for_venue(self, venue: Venue) -> str: ...
     def schema_for_file(self, filepath: str) -> str: ...
-    def load_instruments(self, filepath: str) -> list[Instrument]: ...
+    def load_instruments(self, filepath: str, use_exchange_as_venue: bool) -> list[Instrument]: ...
     def load_order_book_deltas(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> list[OrderBookDelta]: ...  # noqa: E501
     def load_order_book_deltas_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None, include_trades: bool | None = None) -> object: ...  # noqa: E501
     def load_order_book_depth10(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> list[OrderBookDepth10]: ...  # noqa: E501
@@ -4231,7 +4231,7 @@ class DatabentoHistoricalClient:
     async def get_range_instruments(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -4239,7 +4239,7 @@ class DatabentoHistoricalClient:
     async def get_range_quotes(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -4249,7 +4249,7 @@ class DatabentoHistoricalClient:
     async def get_range_trades(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -4257,7 +4257,7 @@ class DatabentoHistoricalClient:
     async def get_range_bars(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         aggregation: BarAggregation,
         start: int,
         end: int | None = None,
@@ -4266,7 +4266,7 @@ class DatabentoHistoricalClient:
     async def get_range_imbalance(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -4274,7 +4274,7 @@ class DatabentoHistoricalClient:
     async def get_range_statistics(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -4282,7 +4282,7 @@ class DatabentoHistoricalClient:
     async def get_range_status(
         self,
         dataset: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -4304,7 +4304,7 @@ class DatabentoLiveClient:
     def subscribe(
         self,
         schema: str,
-        symbols: list[str],
+        instrument_ids: list[InstrumentId],
         stype_in: str | None = None,
         start: int | None = None,
         snapshot: bool | None = False,

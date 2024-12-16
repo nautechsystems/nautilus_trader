@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap, fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc, sync::RwLock,
+};
 
 use databento::{
     dbn::{self, SType},
@@ -44,7 +46,10 @@ use crate::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
         decode_status_msg,
     },
-    symbology::{check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type},
+    symbology::{
+        check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type,
+        instrument_id_to_symbol_string,
+    },
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
@@ -58,6 +63,7 @@ pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
+    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
 }
 
 #[pymethods]
@@ -83,6 +89,7 @@ impl DatabentoHistoricalClient {
             clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
+            symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
             key,
         })
     }
@@ -113,17 +120,24 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_instruments")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None))]
     fn py_get_range_instruments<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -140,6 +154,7 @@ impl DatabentoHistoricalClient {
             .build();
 
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -152,17 +167,18 @@ impl DatabentoHistoricalClient {
 
             decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
 
+            let metadata = decoder.metadata().clone();
             let mut instruments = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let raw_symbol = msg.raw_symbol().expect("Error decoding `raw_symbol`");
-                let symbol = Symbol::from(raw_symbol);
-
-                let publisher = msg.hd.publisher().expect("Invalid `publisher` for record");
-                let venue = publisher_venue_map
-                    .get(&msg.hd.publisher_id)
-                    .unwrap_or_else(|| panic!("`Venue` not found for `publisher` {publisher}"));
-                let instrument_id = InstrumentId::new(symbol, *venue);
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
                 match result {
@@ -183,13 +199,13 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_quotes")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None, schema=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None, schema=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_get_range_quotes<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
@@ -197,6 +213,13 @@ impl DatabentoHistoricalClient {
         schema: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -224,6 +247,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -238,9 +262,13 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<QuoteTick> = Vec::new();
 
             let mut process_record = |record: dbn::RecordRef| -> PyResult<()> {
-                let instrument_id =
-                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
-                        .map_err(to_pyvalue_err)?;
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
                     &record,
@@ -284,19 +312,26 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_trades")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_get_range_trades<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -314,6 +349,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -329,9 +365,13 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
                 let record = dbn::RecordRef::from(msg);
-                let instrument_id =
-                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
-                        .map_err(to_pyvalue_err)?;
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
                     &record,
@@ -356,12 +396,12 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_bars")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None, price_precision=None))]
+    #[pyo3(signature = (dataset, instrument_ids, aggregation, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_bars<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         aggregation: BarAggregation,
         start: u64,
         end: Option<u64>,
@@ -369,6 +409,13 @@ impl DatabentoHistoricalClient {
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -393,6 +440,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -408,9 +456,13 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
                 let record = dbn::RecordRef::from(msg);
-                let instrument_id =
-                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
-                        .map_err(to_pyvalue_err)?;
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
                     &record,
@@ -435,18 +487,25 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_imbalance")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_imbalance<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -464,6 +523,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -479,9 +539,13 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::ImbalanceMsg>().await {
                 let record = dbn::RecordRef::from(msg);
-                let instrument_id =
-                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
-                        .map_err(to_pyvalue_err)?;
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, ts_init)
                     .map_err(to_pyvalue_err)?;
@@ -495,18 +559,25 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_statistics")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_statistics<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -524,6 +595,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -539,9 +611,13 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatMsg>().await {
                 let record = dbn::RecordRef::from(msg);
-                let instrument_id =
-                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
-                        .map_err(to_pyvalue_err)?;
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let statistics =
                     decode_statistics_msg(msg, instrument_id, price_precision, ts_init)
@@ -556,17 +632,24 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_status")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None))]
     fn py_get_range_status<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
+            })
+            .collect();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
@@ -584,6 +667,7 @@ impl DatabentoHistoricalClient {
 
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
+        let symbol_venue_map = self.symbol_venue_map.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -598,9 +682,13 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatusMsg>().await {
                 let record = dbn::RecordRef::from(msg);
-                let instrument_id =
-                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
-                        .map_err(to_pyvalue_err)?;
+                let instrument_id = decode_nautilus_instrument_id(
+                    &record,
+                    &metadata,
+                    &publisher_venue_map,
+                    &symbol_venue_map.read().unwrap(),
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let status =
                     decode_status_msg(msg, instrument_id, ts_init).map_err(to_pyvalue_err)?;

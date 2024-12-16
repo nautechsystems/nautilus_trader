@@ -15,9 +15,18 @@
 
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId as py03_InstrumentId
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+def to_py03_instrument_id(instrument_id: InstrumentId | py03_InstrumentId) -> py03_InstrumentId:
+    if type(instrument_id) is py03_InstrumentId:
+        return instrument_id
+
+    return py03_InstrumentId.from_str(str(instrument_id))
 
 
 def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> DatabentoSchema:

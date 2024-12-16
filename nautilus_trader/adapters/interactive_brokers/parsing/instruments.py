@@ -50,9 +50,46 @@ from nautilus_trader.model.objects import Quantity
 # fmt: on
 
 VENUE_MEMBERS: Final[dict[str, list[str]]] = {
+    # CME Group Exchanges
     "GLBX": ["CME", "CBOT", "NYMEX", "NYBOT"],
+    # ICE Europe Exchanges
     "IFEU": ["ICEEU", "ICEEUSOFT", "IPE"],
+    # ICE Endex
     "NDEX": ["ENDEX"],
+    # Chicago Mercantile Exchange Segments
+    "XCME": ["CME"],
+    "XCEC": ["CME"],
+    "XFXS": ["CME"],
+    # Chicago Board of Trade Segments
+    "XCBT": ["CBOT"],
+    "CBCM": ["CBOT"],
+    # New York Mercantile Exchange Segments
+    "XNYM": ["NYMEX"],
+    "NYUM": ["NYMEX"],
+    # ICE Futures US (formerly NYBOT)
+    "IFUS": ["NYBOT"],
+    # US Major Exchanges
+    "XNAS": ["NASDAQ"],
+    "XNYS": ["NYSE"],
+    "ARCX": ["ARCA"],
+    "BATS": ["BATS"],
+    "IEXG": ["IEX"],
+    # European Exchanges
+    "XLON": ["LSE"],  # London Stock Exchange
+    "XPAR": ["SBF"],  # Euronext Paris
+    "XETR": ["IBIS"],  # Deutsche Börse
+    # Canadian Exchanges
+    "XTSE": ["TSE"],  # Toronto Stock Exchange
+    "XTSX": ["VENTURE"],  # TSX Venture Exchange
+    # Asia-Pacific Exchanges
+    "XASX": ["ASX"],  # Australian Securities Exchange
+    "XHKF": ["HKFE"],  # Hong Kong Futures Exchange
+    "XSES": ["SGX"],  # Singapore Exchange
+    "XOSE": ["OSE.JPN"],  # Osaka Securities Exchange
+    # Other Derivatives Exchanges
+    "XEUR": ["SOFFEX"],  # Eurex
+    "XSFE": ["SNFE"],  # Sydney Futures Exchange
+    "XMEX": ["MEXDER"],  # Mexican Derivatives Exchange
 }
 
 FUTURES_MONTH_TO_CODE: dict[str, str] = {
