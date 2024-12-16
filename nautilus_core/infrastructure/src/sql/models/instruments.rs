@@ -615,8 +615,8 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             min_price,
             margin_init,
             margin_maint,
-            taker_fee,
             maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
