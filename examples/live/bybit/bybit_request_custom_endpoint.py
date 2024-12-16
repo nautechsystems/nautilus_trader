@@ -63,11 +63,9 @@ class RequestDemoStrategy(Strategy):
 
     def __init__(self, config: RequestDemoStrategyConfig):
         super().__init__()
-        self.interval = config.interval
-        self.instrument_id = config.instrument_id
 
     def on_start(self):
-        seconds_delta = timedelta(seconds=self.interval)
+        seconds_delta = timedelta(seconds=self.config.interval)
         self.clock.set_timer(
             name="fetch_ticker",
             interval=seconds_delta,
@@ -77,7 +75,7 @@ class RequestDemoStrategy(Strategy):
     def send_tickers_request(self, time_event: TimeEvent) -> None:
         data_type = DataType(
             BybitTickerData,
-            metadata={"symbol": self.instrument_id.symbol},
+            metadata={"symbol": self.config.instrument_id.symbol},
         )
         self.request_data(data_type, ClientId("BYBIT"))
 

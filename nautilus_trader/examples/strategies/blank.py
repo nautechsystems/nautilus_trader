@@ -52,9 +52,6 @@ class MyStrategy(Strategy):
     def __init__(self, config: MyStrategyConfig) -> None:
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-
     def on_start(self) -> None:
         """
         Actions to be performed when the strategy is started.

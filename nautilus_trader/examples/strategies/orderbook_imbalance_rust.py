@@ -88,20 +88,14 @@ class OrderBookImbalance(Strategy):
         assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-        self.max_trade_size = config.max_trade_size
-        self.trigger_min_size = config.trigger_min_size
-        self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
-        self.min_seconds_between_triggers = config.min_seconds_between_triggers
-        self._last_trigger_timestamp: datetime.datetime | None = None
         self.instrument: Instrument | None = None
         if self.config.use_quote_ticks:
             assert self.config.book_type == "L1_MBP"
         self.book_type: nautilus_pyo3.BookType = nautilus_pyo3.BookType(self.config.book_type)
+        self._last_trigger_timestamp: datetime.datetime | None = None
 
         # We need to initialize the Rust pyo3 objects
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(self.config.instrument_id.value)
         self.book = nautilus_pyo3.OrderBook(pyo3_instrument_id, self.book_type)
         self.imbalance = nautilus_pyo3.BookImbalanceRatio()
 
@@ -109,9 +103,9 @@ class OrderBookImbalance(Strategy):
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
@@ -178,13 +172,13 @@ class OrderBookImbalance(Strategy):
             self.clock.utc_now() - self._last_trigger_timestamp
         ).total_seconds()
 
-        if larger > self.trigger_min_size and ratio < self.trigger_imbalance_ratio:
+        if larger > self.config.trigger_min_siz and ratio < self.config.trigger_imbalance_ratio:
             self.log.info(
                 "Trigger conditions met, checking for existing orders and time since last order",
             )
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
                 self.log.info("Already have orders in flight - skipping.")
-            elif seconds_since_last_trigger < self.min_seconds_between_triggers:
+            elif seconds_since_last_trigger < self.config.min_seconds_between_triggers:
                 self.log.info("Time since last order < min_seconds_between_triggers - skipping")
             elif bid_size.as_double() > ask_size.as_double():
                 order = self.order_factory.limit(
