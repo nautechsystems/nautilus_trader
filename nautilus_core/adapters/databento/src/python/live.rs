@@ -174,7 +174,7 @@ impl DatabentoLiveClient {
             })
             .collect();
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
+        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
             .symbols(symbols)
