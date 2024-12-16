@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 #![allow(clippy::legacy_numeric_constants)]
-use std::{fs, i128, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, fs, i128, path::PathBuf, str::FromStr};
 
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    identifiers::Venue,
+    identifiers::{InstrumentId, Symbol, Venue},
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;
@@ -27,7 +27,7 @@ use time::OffsetDateTime;
 
 use crate::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
-    symbology::{check_consistent_symbology, infer_symbology_type},
+    symbology::{check_consistent_symbology, infer_symbology_type, instrument_id_to_symbol_string},
     types::DatabentoPublisher,
 };
 
@@ -46,6 +46,7 @@ pub struct DatabentoLiveClient {
     cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<LiveCommand>>,
     buffer_size: usize,
     publisher_venue_map: IndexMap<u16, Venue>,
+    symbol_venue_map: HashMap<Symbol, Venue>,
 }
 
 impl DatabentoLiveClient {
@@ -143,6 +144,7 @@ impl DatabentoLiveClient {
             is_running: false,
             is_closed: false,
             publisher_venue_map,
+            symbol_venue_map: HashMap::new(),
         })
     }
 
@@ -157,14 +159,20 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "subscribe")]
-    #[pyo3(signature = (schema, symbols, start=None, snapshot=None))]
+    #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None))]
     fn py_subscribe(
         &mut self,
         schema: String,
-        symbols: Vec<String>,
+        instrument_ids: Vec<InstrumentId>,
         start: Option<u64>,
         snapshot: Option<bool>,
     ) -> PyResult<()> {
+        let symbols: Vec<String> = instrument_ids
+            .iter()
+            .map(|instrument_id| {
+                instrument_id_to_symbol_string(*instrument_id, &mut self.symbol_venue_map)
+            })
+            .collect();
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;

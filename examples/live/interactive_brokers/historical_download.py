@@ -21,7 +21,7 @@ import os
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
-from nautilus_trader.adapters.interactive_brokers.historic import HistoricInteractiveBrokersClient
+from nautilus_trader.adapters.interactive_brokers.historical import HistoricInteractiveBrokersClient
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 

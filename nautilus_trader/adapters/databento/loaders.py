@@ -119,6 +119,7 @@ class DatabentoDataLoader:
         price_precision: int | None = None,
         as_legacy_cython: bool = True,
         include_trades: bool = False,
+        use_exchange_as_venue: bool = False,
     ) -> list[Data]:
         """
         Return a list of data objects decoded from the DBN file at the given `path`.
@@ -145,6 +146,8 @@ class DatabentoDataLoader:
         include_trades : bool, default False
             If separate `TradeTick` elements will be included in the data for MBO and MBP-1 schemas
             when applicable (your code will have to handle these two types in the returned list).
+        use_exchange_as_venue : bool, optional
+            Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
 
         Returns
         -------
@@ -175,7 +178,7 @@ class DatabentoDataLoader:
 
         match schema:
             case DatabentoSchema.DEFINITION.value:
-                data = self._pyo3_loader.load_instruments(str(path))
+                data = self._pyo3_loader.load_instruments(str(path), use_exchange_as_venue)
                 if as_legacy_cython:
                     data = instruments_from_pyo3(data)
                 return data

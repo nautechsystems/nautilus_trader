@@ -87,6 +87,36 @@ def test_loader_definition_glbx_futures() -> None:
     assert instrument.ts_init == 1680451436501583647
 
 
+def test_loader_definition_xcme_futures() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-fut.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=True, use_exchange_as_venue=True)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], FuturesContract)
+    assert isinstance(data[1], FuturesContract)
+    instrument = data[0]
+    assert instrument.id == InstrumentId.from_str("ESM3.XCME")
+    assert instrument.raw_symbol == Symbol("ESM3")
+    assert instrument.asset_class == AssetClass.INDEX
+    assert instrument.instrument_class == InstrumentClass.FUTURE
+    assert instrument.quote_currency == USD
+    assert not instrument.is_inverse
+    assert instrument.underlying == "ES"
+    assert instrument.price_precision == 2
+    assert instrument.price_increment == Price.from_str("0.25")
+    assert instrument.size_precision == 0
+    assert instrument.size_increment == 1
+    assert instrument.multiplier == 50
+    assert instrument.lot_size == 1
+    assert instrument.ts_event == 1680451436501583647
+    assert instrument.ts_init == 1680451436501583647
+
+
 def test_loader_definition_glbx_options() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -586,24 +616,61 @@ def test_loader_ohlcv_1s() -> None:
     assert bar.ts_init == 1609160401000000000
 
 
-@pytest.mark.skip("requires updated test data")
 def test_loader_with_ohlcv_1m() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = DATABENTO_TEST_DATA_DIR / "ohlcv-1m.dbn.zst"
+    path = (
+        DATABENTO_TEST_DATA_DIR
+        / "options_catalog"
+        / "databento"
+        / "futures_ohlcv-1m_2024-05-09T10h00_2024-05-09T10h05.dbn.zst"
+    )
 
     # Act
     data = loader.from_dbn_file(path, as_legacy_cython=True)
 
     # Assert
-    assert len(data) == 2
+    assert len(data) == 5
     assert isinstance(data[0], Bar)
     assert isinstance(data[1], Bar)
     bar = data[0]
-    assert bar.bar_type == BarType.from_str("ESH1.GLBX-1-MINUTE-LAST-EXTERNAL")
-    assert bar.open == Price.from_str("3720.25")
-    assert bar.ts_event == 1609160400000000000
-    assert bar.ts_init == 1609160460000000000
+    assert bar.bar_type == BarType.from_str("ESM4.GLBX-1-MINUTE-LAST-EXTERNAL")
+    assert bar.open == Price.from_str("5199.75")
+    assert bar.ts_event == 1715248800000000000
+    assert bar.ts_init == 1715248860000000000
+
+
+def test_loader_with_ohlcv_1m_and_xcme() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    definition_path = (
+        DATABENTO_TEST_DATA_DIR / "options_catalog" / "databento" / "futures_definition.dbn.zst"
+    )
+    path = (
+        DATABENTO_TEST_DATA_DIR
+        / "options_catalog"
+        / "databento"
+        / "futures_ohlcv-1m_2024-05-09T10h00_2024-05-09T10h05.dbn.zst"
+    )
+
+    # Act
+    # using use_exchange_as_venue=True leads to using the exchange name as the venue for subsequently loaded data
+    _ = loader.from_dbn_file(
+        definition_path,
+        as_legacy_cython=True,
+        use_exchange_as_venue=True,
+    )
+    data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 5
+    assert isinstance(data[0], Bar)
+    assert isinstance(data[1], Bar)
+    bar = data[0]
+    assert bar.bar_type == BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+    assert bar.open == Price.from_str("5199.75")
+    assert bar.ts_event == 1715248800000000000
+    assert bar.ts_init == 1715248860000000000
 
 
 @pytest.mark.skip("requires updated test data")
