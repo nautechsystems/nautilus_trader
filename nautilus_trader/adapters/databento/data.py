@@ -943,7 +943,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.GLBX"))],
+            instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.{venue}"))],
             start=start.value,
             end=end.value,
         )
