@@ -117,7 +117,9 @@ class GreeksCalculator(Actor):
                 handler=self.on_bar,
             )
 
-        self.subscribe_data(DataType(InterestRateData, metadata={"curve_name": self.config.curve_name}))
+        self.subscribe_data(
+            DataType(InterestRateData, metadata={"curve_name": self.config.curve_name}),
+        )
         self.subscribe_data(
             DataType(InterestRateCurveData, metadata={"curve_name": self.config.curve_name}),
         )

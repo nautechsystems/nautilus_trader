@@ -123,9 +123,15 @@ class TestHistoricalAggStrategy(Strategy):
         # external_bar_type = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-EXTERNAL")
         # self.subscribe_bars(external_bar_type)
 
-        bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
-        bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
-        bar_type_3 = BarType.from_str(f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+        bar_type_1 = BarType.from_str(
+            f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        )
+        bar_type_2 = BarType.from_str(
+            f"{self.config.symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL",
+        )
+        bar_type_3 = BarType.from_str(
+            f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        )
 
         self.subscribe_bars(bar_type_1)
         self.subscribe_bars(bar_type_2)

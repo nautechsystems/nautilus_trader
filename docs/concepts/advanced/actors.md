@@ -22,16 +22,16 @@ class MyActorConfig(ActorConfig):
     instrument_id: InstrumentId   # example value: "ETHUSDT-PERP.BINANCE"
     bar_type: BarType             # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-INTERNAL"
     lookback_period: int = 10
-    
+
 
 class MyActor(Actor):
     def __init__(self, config: MyActorConfig) -> None:
         super().__init__(config)
-        
+
         # Custom state variables
         self.count_of_processed_bars: int = 0
 
-    def on_start(self) -> None:        
+    def on_start(self) -> None:
         # Subscribe to all incoming bars
         self.subscribe_bars(self.config.bar_type)   # You can access configuration directly via `self.config`
 

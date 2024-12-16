@@ -102,7 +102,7 @@ class EMACrossLongOnly(Strategy):
         )
         super().__init__(config)
 
-        self.instrument: Instrument = None   # Initialized in on_start
+        self.instrument: Instrument = None  # Initialized in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
@@ -124,7 +124,10 @@ class EMACrossLongOnly(Strategy):
 
         # Get historical data
         if self.config.request_historical_bars:
-            self.request_bars(self.config.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
+            self.request_bars(
+                self.config.bar_type,
+                start=self._clock.utc_now() - pd.Timedelta(days=1),
+            )
         # self.request_quote_ticks(self.config.instrument_id)
         # self.request_trade_ticks(self.config.instrument_id)
 

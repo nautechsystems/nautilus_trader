@@ -350,7 +350,7 @@ class EMACross(Strategy):
         super().__init__(config)
 
         self.instrument: Instrument | None = None  # Initialized in on_start
-        
+
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)

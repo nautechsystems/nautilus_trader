@@ -544,23 +544,23 @@ class MyStrategyConfig(StrategyConfig):
 
 # Strategy definition
 class MyStrategy(Strategy):
-    def __init__(self, config: MyStrategyConfig) -> None:  
+    def __init__(self, config: MyStrategyConfig) -> None:
         # Always initialize the parent Strategy class
         # After this, configuration is stored and available via `self.config`
-        super().__init__(config)   
+        super().__init__(config)
 
         # Custom state variables
         self.time_started = None
         self.count_of_processed_bars: int = 0
-        
+
     def on_start(self) -> None:
         self.time_started = self.clock.utc_now()    # Remember time, when strategy started
         self.subscribe_bars(self.config.bar_type)   # See how configuration data are exposed via `self.config`
 
     def on_bar(self, bar: Bar):
         self.count_of_processed_bars += 1           # Update count of processed bars
-        
-        
+
+
 # Instantiate configuration with specific values. By setting:
 #   - InstrumentId - we parameterize the instrument the strategy will trade.
 #   - BarType - we parameterize bar-data, that strategy will trade.
@@ -575,7 +575,7 @@ config = MyStrategyConfig(
 strategy = MyStrategy(config=config)
 ```
 
-When implementing strategies, it's recommended to access configuration values directly through `self.config`. 
+When implementing strategies, it's recommended to access configuration values directly through `self.config`.
 This provides clear separation between:
 
 - Configuration data (accessed via `self.config`):
