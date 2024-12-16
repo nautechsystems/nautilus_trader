@@ -101,31 +101,27 @@ class GreeksCalculator(Actor):
     def __init__(self, config: GreeksCalculatorConfig):
         super().__init__(config)
 
-        self.load_greeks = config.load_greeks
-
-        self.underlying = config.underlying
-        self.bar_spec = config.bar_spec
-
-        self.curve_name = config.curve_name
         self.interest_rate = InterestRateData(
-            curve_name=self.curve_name,
+            curve_name=config.curve_name,
             interest_rate=config.interest_rate,
         )
 
     def on_start(self):
-        if self.load_greeks:
+        if self.config.load_greeks:
             self.subscribe_data(
-                DataType(GreeksData, metadata={"instrument_id": f"{self.underlying}*"}),
+                DataType(GreeksData, metadata={"instrument_id": f"{self.config.underlying}*"}),
             )
         else:
             self.msgbus.subscribe(
-                topic=f"data.bars.{self.underlying}*-{self.bar_spec}*",
+                topic=f"data.bars.{self.config.underlying}*-{self.config.bar_spec}*",
                 handler=self.on_bar,
             )
 
-        self.subscribe_data(DataType(InterestRateData, metadata={"curve_name": self.curve_name}))
         self.subscribe_data(
-            DataType(InterestRateCurveData, metadata={"curve_name": self.curve_name}),
+            DataType(InterestRateData, metadata={"curve_name": self.config.curve_name}),
+        )
+        self.subscribe_data(
+            DataType(InterestRateCurveData, metadata={"curve_name": self.config.curve_name}),
         )
 
     def on_data(self, data):
@@ -254,9 +250,6 @@ class InterestRateProvider(Actor):
 
     def __init__(self, config: InterestRateProviderConfig):
         super().__init__(config)
-
-        self.interest_rates_file = config.interest_rates_file
-        self.curve_name = config.curve_name
         self.interest_rates_df = None
 
     def on_start(self):
@@ -265,7 +258,7 @@ class InterestRateProvider(Actor):
     def update_interest_rate(self, alert=None):
         # import interest rates the first time
         if self.interest_rates_df is None:
-            self.interest_rates_df = import_interest_rates(self.interest_rates_file)
+            self.interest_rates_df = import_interest_rates(self.config.interest_rates_file)
 
         # get the interest rate for the current month
         utc_now_ns = alert.ts_init if alert is not None else self.clock.timestamp_ns()
@@ -276,7 +269,7 @@ class InterestRateProvider(Actor):
         interest_rate = InterestRateData(
             utc_now_ns,
             utc_now_ns,
-            self.curve_name,
+            self.config.curve_name,
             interest_rate_value,
         )
 
