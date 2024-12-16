@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
 None
