@@ -34,6 +34,7 @@ impl ParquetDataCatalog {
         }
     }
 
+    // TODO: fix path creation
     fn make_path(&self, type_name: &str, instrument_id: Option<&String>) -> PathBuf {
         let mut path = self.base_path.join("data").join(type_name.to_lowercase());
 
@@ -72,7 +73,7 @@ impl ParquetDataCatalog {
             .collect()
     }
 
-    pub fn write_to_json<T>(&self, data: Vec<T>)
+    pub fn write_to_json<T>(&self, data: Vec<T>) -> PathBuf
     where
         T: GetTsInit + Serialize,
     {
@@ -94,6 +95,8 @@ impl ParquetDataCatalog {
 
         serde_json::to_writer(file, &data)
             .unwrap_or_else(|_| panic!("Failed to write {} to JSON", type_name));
+
+        json_path
     }
 
     pub fn write_data<T>(&self, data: Vec<T>)

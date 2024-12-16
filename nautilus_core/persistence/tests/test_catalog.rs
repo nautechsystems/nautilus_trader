@@ -29,7 +29,6 @@ use nautilus_test_kit::common::get_test_data_file_path;
 use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
 use rstest::rstest;
-use std::io::Write;
 use std::path::PathBuf;
 
 /// Memory leak test
@@ -330,8 +329,8 @@ fn test_catalog_serialization_json_round_trip() {
     use pretty_assertions::assert_eq;
 
     // Setup
-    let temp_dir = PathBuf::from(".");
-    let catalog = ParquetDataCatalog::new(temp_dir.clone(), Some(1000));
+    let temp_dir = tempfile::tempdir().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), Some(1000));
 
     // Read original data from parquet
     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
@@ -345,10 +344,9 @@ fn test_catalog_serialization_json_round_trip() {
     let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
     // Write to JSON using catalog
-    catalog.write_to_json(quote_ticks.clone());
+    let json_path = catalog.write_to_json(quote_ticks.clone());
 
     // Read back from JSON
-    let json_path = temp_dir.join("data/nautilus_model_data_quote_quote_tick/data.json");
     let json_str = std::fs::read_to_string(json_path).unwrap();
     let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
 
@@ -360,9 +358,8 @@ fn test_catalog_serialization_json_round_trip() {
 }
 
 #[rstest]
-fn fix_parquet_data_quantity_values() {
+fn test_datafusion_parquet_round_trip() {
     use datafusion::parquet::arrow::ArrowWriter;
-    use nautilus_model::types::quantity::Quantity;
     use nautilus_serialization::arrow::EncodeToRecordBatch;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
@@ -375,13 +372,7 @@ fn fix_parquet_data_quantity_values() {
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let quote_ticks: Vec<Data> = query_result.collect();
-    let mut quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
-
-    // fix bid and ask size
-    for data in quote_ticks.iter_mut() {
-        data.bid_size = Quantity::new(data.bid_size.raw as f64, data.bid_size.precision);
-        data.ask_size = Quantity::new(data.ask_size.raw as f64, data.ask_size.precision);
-    }
+    let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
     let metadata = HashMap::from([
         ("price_precision".to_string(), "5".to_string()),
@@ -390,11 +381,12 @@ fn fix_parquet_data_quantity_values() {
     ]);
     let schema = QuoteTick::get_schema(Some(metadata.clone()));
 
-    // Write the record batch to a buffer
-    let file_path = PathBuf::from("test.parquet");
-    let mut file = std::fs::File::create(&file_path).unwrap();
+    // Write the record batches to a parquet file
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_file_path = temp_dir.path().join("test.parquet");
+    let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
     {
-        let mut writer = ArrowWriter::try_new(&mut file, schema.into(), None).unwrap();
+        let mut writer = ArrowWriter::try_new(&mut temp_file, schema.into(), None).unwrap();
         for chunk in quote_ticks.chunks(1000) {
             let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
             writer.write(&batch).unwrap();
@@ -402,17 +394,16 @@ fn fix_parquet_data_quantity_values() {
         writer.close().unwrap();
     }
 
+    // Read back from parquet
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", file_path.to_str().unwrap(), None)
+        .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
     let ticks_variants: Vec<QuoteTick> = to_variant(ticks);
 
     assert_eq!(quote_ticks.len(), ticks_variants.len());
-    dbg!(&quote_ticks[0]);
-    dbg!(&ticks_variants[0]);
     for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
         assert_eq!(orig, loaded)
     }
