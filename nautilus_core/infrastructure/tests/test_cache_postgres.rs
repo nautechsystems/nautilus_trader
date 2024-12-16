@@ -32,9 +32,8 @@ mod serial_tests {
         enums::{CurrencyType, OrderSide, OrderType},
         identifiers::ClientOrderId,
         instruments::{
-            any::InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
-            Instrument,
+            Instrument, InstrumentAny,
         },
         orders::builder::OrderTestBuilder,
         types::{currency::Currency, quantity::Quantity},

@@ -366,7 +366,7 @@ impl Instrument for BinaryOption {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{binary_option::BinaryOption, stubs::*};
+    use crate::instruments::{stubs::*, BinaryOption};
 
     #[rstest]
     fn test_equality(binary_option: BinaryOption) {

@@ -26,7 +26,7 @@ use ustr::Ustr;
 use crate::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
-    instruments::options_spread::OptionsSpread,
+    instruments::OptionsSpread,
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 

@@ -31,7 +31,7 @@ use nautilus_model::{
         status::InstrumentStatus, trade::TradeTick, Data,
     },
     identifiers::{InstrumentId, Symbol, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     types::currency::Currency,
 };
 use ustr::Ustr;

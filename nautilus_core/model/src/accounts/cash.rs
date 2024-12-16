@@ -30,7 +30,7 @@ use crate::{
         stubs::{account_id, uuid4},
         AccountId,
     },
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     position::Position,
     types::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
@@ -288,10 +288,7 @@ mod tests {
         enums::{AccountType, LiquiditySide, OrderSide, OrderType},
         events::account::{state::AccountState, stubs::*},
         identifiers::{position_id::PositionId, AccountId},
-        instruments::{
-            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
-            equity::Equity, stubs::*, Instrument,
-        },
+        instruments::{stubs::*, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},

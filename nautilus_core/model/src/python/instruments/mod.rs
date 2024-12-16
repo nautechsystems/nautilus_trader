@@ -19,10 +19,8 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPy, PyObject, PyResult, Python};
 
 use crate::instruments::{
-    any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
-    crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
-    equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    options_contract::OptionsContract, options_spread::OptionsSpread,
+    BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
+    FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
 };
 
 pub mod betting;

@@ -26,7 +26,7 @@ use ustr::Ustr;
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{InstrumentId, Symbol},
-    instruments::betting::BettingInstrument,
+    instruments::BettingInstrument,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -422,7 +422,7 @@ mod tests {
     use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
     use rstest::rstest;
 
-    use crate::instruments::{betting::BettingInstrument, stubs::*};
+    use crate::instruments::{stubs::*, BettingInstrument};
 
     #[rstest]
     fn test_dict_round_trip(betting: BettingInstrument) {

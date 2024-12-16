@@ -36,7 +36,14 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-use self::any::InstrumentAny;
+// Re-exports
+pub use crate::instruments::{
+    any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
+    crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+    equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    options_contract::OptionsContract, options_spread::OptionsSpread,
+    synthetic::SyntheticInstrument,
+};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},

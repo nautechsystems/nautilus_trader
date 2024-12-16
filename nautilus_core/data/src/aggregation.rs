@@ -37,7 +37,7 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::AggregationSource,
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
 
@@ -652,7 +652,7 @@ mod tests {
     use nautilus_model::{
         data::bar::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
-        instruments::{any::InstrumentAny, equity::Equity, stubs::*},
+        instruments::{stubs::*, Equity, InstrumentAny},
         types::{price::Price, quantity::Quantity},
     };
     use rstest::rstest;

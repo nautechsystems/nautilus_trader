@@ -365,7 +365,7 @@ impl Instrument for FuturesSpread {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{futures_spread::FuturesSpread, stubs::*};
+    use crate::instruments::{stubs::*, FuturesSpread};
 
     #[rstest]
     fn test_equality(futures_spread_es: FuturesSpread) {
