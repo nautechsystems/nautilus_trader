@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Add support for `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108), thanks @faysou
+- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108), thanks @faysou
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
