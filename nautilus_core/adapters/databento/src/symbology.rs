@@ -26,17 +26,16 @@ pub fn instrument_id_to_symbol_string(
     instrument_id: InstrumentId,
     symbol_venue_map: &mut HashMap<Symbol, Venue>,
 ) -> String {
-    if let Some(venue) = symbol_venue_map.get(&instrument_id.symbol) {
-        if venue == &Venue::CBCM()
-            || venue == &Venue::NYUM()
-            || venue == &Venue::XCBT()
-            || venue == &Venue::XCEC()
-            || venue == &Venue::XCME()
-            || venue == &Venue::XFXS()
-            || venue == &Venue::XNYM()
-        {
-            symbol_venue_map.insert(instrument_id.symbol, Venue::GLBX());
-        }
+    let venue = instrument_id.venue;
+    if venue == Venue::CBCM()
+        || venue == Venue::NYUM()
+        || venue == Venue::XCBT()
+        || venue == Venue::XCEC()
+        || venue == Venue::XCME()
+        || venue == Venue::XFXS()
+        || venue == Venue::XNYM()
+    {
+        symbol_venue_map.insert(instrument_id.symbol, venue);
     }
 
     instrument_id.symbol.to_string()
@@ -55,8 +54,6 @@ pub fn decode_nautilus_instrument_id(
         .ok_or_else(|| anyhow::anyhow!("`Venue` not found for `publisher_id` {publisher_id}"))?;
     let mut instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
     if publisher == Publisher::GlbxMdp3Glbx {
-        // Source actual exchange from GLBX instrument
-        // definitions if they were loaded.
         if let Some(venue) = symbol_venue_map.get(&instrument_id.symbol) {
             instrument_id.venue = *venue;
         }

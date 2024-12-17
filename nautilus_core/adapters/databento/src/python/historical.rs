@@ -119,8 +119,9 @@ impl DatabentoHistoricalClient {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "get_range_instruments")]
-    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, use_exchange_as_venue=false))]
     fn py_get_range_instruments<'py>(
         &self,
         py: Python<'py>,
@@ -129,6 +130,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        use_exchange_as_venue: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
         let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
@@ -172,13 +174,20 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
                 let record = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
+                let mut instrument_id = decode_nautilus_instrument_id(
                     &record,
                     &metadata,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
                 .map_err(to_pyvalue_err)?;
+
+                if use_exchange_as_venue && instrument_id.venue == Venue::GLBX() {
+                    let exchange = msg.exchange().unwrap();
+                    let venue = Venue::from_code(exchange)
+                        .unwrap_or_else(|_| panic!("`Venue` not found for exchange {exchange}"));
+                    instrument_id.venue = venue;
+                }
 
                 let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
                 match result {

@@ -941,11 +941,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
+        use_exchange_as_venue = params is not None and params.get("use_exchange_as_venue", False)
+
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
             instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.{venue}"))],
             start=start.value,
             end=end.value,
+            use_exchange_as_venue=use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
