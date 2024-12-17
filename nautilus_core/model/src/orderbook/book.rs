@@ -15,8 +15,9 @@
 
 //! A performant, generic, multi-purpose order book.
 
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
+use indexmap::IndexMap;
 use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
 
@@ -201,26 +202,26 @@ impl OrderBook {
     }
 
     /// Returns bid price levels as a map of price to size.
-    pub fn bids_as_map(&self) -> HashMap<Decimal, Decimal> {
+    pub fn bids_as_map(&self) -> IndexMap<Decimal, Decimal> {
         self.bids()
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect()
     }
 
     /// Returns ask price levels as a map of price to size.
-    pub fn asks_as_map(&self) -> HashMap<Decimal, Decimal> {
+    pub fn asks_as_map(&self) -> IndexMap<Decimal, Decimal> {
         self.asks()
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect()
     }
 
     /// Groups bid levels by price, up to specified depth.
-    pub fn group_bids(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+    pub fn group_bids(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
         self.group_levels(self.bids(), group_size, depth, true)
     }
 
     /// Groups ask levels by price, up to specified depth.
-    pub fn group_asks(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+    pub fn group_asks(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
         self.group_levels(self.asks(), group_size, depth, false)
     }
 
@@ -230,25 +231,29 @@ impl OrderBook {
         group_size: Decimal,
         depth: usize,
         is_bid: bool,
-    ) -> HashMap<Decimal, Decimal> {
-        levels_iter
-            .take(depth) // Only process up to `depth` levels
-            .fold(HashMap::new(), |mut levels, level| {
-                let price = level.price.value.as_decimal();
-                let grouped_price = if is_bid {
-                    (price / group_size).floor() * group_size
-                } else {
-                    (price / group_size).ceil() * group_size
-                };
-                let size = level.size_decimal();
+    ) -> IndexMap<Decimal, Decimal> {
+        let mut levels = IndexMap::new();
 
-                levels
-                    .entry(grouped_price)
-                    .and_modify(|total| *total += size)
-                    .or_insert(size);
+        for level in levels_iter {
+            let price = level.price.value.as_decimal();
+            let grouped_price = if is_bid {
+                (price / group_size).floor() * group_size
+            } else {
+                (price / group_size).ceil() * group_size
+            };
+            let size = level.size_decimal();
 
-                levels
-            })
+            levels
+                .entry(grouped_price)
+                .and_modify(|total| *total += size)
+                .or_insert(size);
+
+            if levels.len() >= depth {
+                break; // Only process up to `depth` levels
+            }
+        }
+
+        levels
     }
 
     /// Returns true if the book has any bid orders.

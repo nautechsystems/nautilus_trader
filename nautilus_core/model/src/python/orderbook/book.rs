@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -162,22 +161,22 @@ impl OrderBook {
     }
 
     #[pyo3(name = "bids_to_dict")]
-    fn py_bids_to_dict(&self) -> HashMap<Decimal, Decimal> {
+    fn py_bids_to_dict(&self) -> IndexMap<Decimal, Decimal> {
         self.bids_as_map()
     }
 
     #[pyo3(name = "asks_to_dict")]
-    fn py_asks_to_dict(&self) -> HashMap<Decimal, Decimal> {
+    fn py_asks_to_dict(&self) -> IndexMap<Decimal, Decimal> {
         self.asks_as_map()
     }
 
     #[pyo3(name = "group_bids")]
-    pub fn py_group_bids(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+    pub fn py_group_bids(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
         self.group_bids(group_size, depth)
     }
 
     #[pyo3(name = "group_asks")]
-    pub fn py_group_asks(&self, group_size: Decimal, depth: usize) -> HashMap<Decimal, Decimal> {
+    pub fn py_group_asks(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
         self.group_asks(group_size, depth)
     }
 
