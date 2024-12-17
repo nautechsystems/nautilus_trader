@@ -4235,6 +4235,7 @@ class DatabentoHistoricalClient:
         start: int,
         end: int | None = None,
         limit: int | None = None,
+        use_exchange_as_venue: bool = False
     ) -> list[Instrument]: ...
     async def get_range_quotes(
         self,
