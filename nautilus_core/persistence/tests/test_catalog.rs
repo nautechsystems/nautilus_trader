@@ -29,7 +29,6 @@ use nautilus_test_kit::common::get_test_data_file_path;
 use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
 use rstest::rstest;
-use std::path::PathBuf;
 
 /// Memory leak test
 ///
@@ -359,7 +358,11 @@ fn test_catalog_serialization_json_round_trip() {
 
 #[rstest]
 fn test_datafusion_parquet_round_trip() {
-    use datafusion::parquet::arrow::ArrowWriter;
+    use datafusion::parquet::{
+        arrow::ArrowWriter,
+        basic::{Compression, ZstdLevel},
+        file::properties::WriterProperties,
+    };
     use nautilus_serialization::arrow::EncodeToRecordBatch;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
@@ -386,7 +389,13 @@ fn test_datafusion_parquet_round_trip() {
     let temp_file_path = temp_dir.path().join("test.parquet");
     let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
     {
-        let mut writer = ArrowWriter::try_new(&mut temp_file, schema.into(), None).unwrap();
+        let writer_props = WriterProperties::builder()
+            .set_compression(Compression::ZSTD(ZstdLevel::default()))
+            .set_max_row_group_size(1000)
+            .build();
+
+        let mut writer =
+            ArrowWriter::try_new(&mut temp_file, schema.into(), Some(writer_props)).unwrap();
         for chunk in quote_ticks.chunks(1000) {
             let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
             writer.write(&batch).unwrap();
