@@ -192,44 +192,51 @@ impl OrderBook {
     }
 
     /// Returns an iterator over bid price levels.
-    pub fn bids(&self) -> impl Iterator<Item = &BookLevel> {
-        self.bids.levels.values()
+    pub fn bids(&self, depth: Option<usize>) -> impl Iterator<Item = &BookLevel> {
+        self.bids.levels.values().take(depth.unwrap_or(usize::MAX))
     }
 
     /// Returns an iterator over ask price levels.
-    pub fn asks(&self) -> impl Iterator<Item = &BookLevel> {
-        self.asks.levels.values()
+    pub fn asks(&self, depth: Option<usize>) -> impl Iterator<Item = &BookLevel> {
+        self.asks.levels.values().take(depth.unwrap_or(usize::MAX))
     }
 
     /// Returns bid price levels as a map of price to size.
-    pub fn bids_as_map(&self) -> IndexMap<Decimal, Decimal> {
-        self.bids()
+    pub fn bids_as_map(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
+        self.bids(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect()
     }
 
     /// Returns ask price levels as a map of price to size.
-    pub fn asks_as_map(&self) -> IndexMap<Decimal, Decimal> {
-        self.asks()
+    pub fn asks_as_map(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
+        self.asks(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect()
     }
 
     /// Groups bid levels by price, up to specified depth.
-    pub fn group_bids(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
-        self.group_levels(self.bids(), group_size, depth, true)
+    pub fn group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_levels(self.bids(depth), group_size, true)
     }
 
     /// Groups ask levels by price, up to specified depth.
-    pub fn group_asks(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
-        self.group_levels(self.asks(), group_size, depth, false)
+    pub fn group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_levels(self.asks(depth), group_size, false)
     }
 
     fn group_levels<'a>(
         &self,
         levels_iter: impl Iterator<Item = &'a BookLevel>,
         group_size: Decimal,
-        depth: usize,
         is_bid: bool,
     ) -> IndexMap<Decimal, Decimal> {
         let mut levels = IndexMap::new();
@@ -247,10 +254,6 @@ impl OrderBook {
                 .entry(grouped_price)
                 .and_modify(|total| *total += size)
                 .or_insert(size);
-
-            if levels.len() >= depth {
-                break; // Only process up to `depth` levels
-            }
         }
 
         levels
@@ -978,8 +981,8 @@ mod tests {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
-        let grouped_bids = book.group_bids(dec!(1), 10);
-        let grouped_asks = book.group_asks(dec!(1), 10);
+        let grouped_bids = book.group_bids(dec!(1), None);
+        let grouped_asks = book.group_asks(dec!(1), None);
 
         assert!(grouped_bids.is_empty());
         assert!(grouped_asks.is_empty());
@@ -1001,8 +1004,8 @@ mod tests {
             book.add(order, 0, i as u64, 100.into());
         }
 
-        let grouped_bids = book.group_bids(dec!(0.5), 10);
-        let grouped_asks = book.group_asks(dec!(0.5), 10);
+        let grouped_bids = book.group_bids(dec!(0.5), Some(10));
+        let grouped_asks = book.group_asks(dec!(0.5), Some(10));
 
         assert_eq!(grouped_bids.len(), 2);
         assert_eq!(grouped_asks.len(), 2);
@@ -1030,8 +1033,8 @@ mod tests {
             book.add(order, 0, i as u64, 100.into());
         }
 
-        let grouped_bids = book.group_bids(dec!(1), 2);
-        let grouped_asks = book.group_asks(dec!(1), 2);
+        let grouped_bids = book.group_bids(dec!(1), Some(2));
+        let grouped_asks = book.group_asks(dec!(1), Some(2));
 
         assert_eq!(grouped_bids.len(), 2); // Should only have levels at 2.0 and 3.0
         assert_eq!(grouped_asks.len(), 2); // Should only have levels at 5.0 and 6.0
@@ -1087,8 +1090,8 @@ mod tests {
             book.add(order, 0, i as u64, 100.into());
         }
 
-        let grouped_bids = book.group_bids(dec!(2), 10);
-        let grouped_asks = book.group_asks(dec!(2), 10);
+        let grouped_bids = book.group_bids(dec!(2), Some(10));
+        let grouped_asks = book.group_asks(dec!(2), Some(10));
 
         assert_eq!(grouped_bids.len(), 2);
         assert_eq!(grouped_asks.len(), 2);

@@ -148,35 +148,51 @@ impl OrderBook {
         book_check_integrity(self).map_err(to_pyruntime_err)
     }
 
+    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "bids")]
-    fn py_bids(&self) -> Vec<BookLevel> {
-        // TODO: Improve efficiency
-        self.bids().map(|level_ref| (*level_ref).clone()).collect()
+    fn py_bids(&self, depth: Option<usize>) -> Vec<BookLevel> {
+        self.bids(depth)
+            .map(|level_ref| (*level_ref).clone())
+            .collect()
     }
 
+    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "asks")]
-    fn py_asks(&self) -> Vec<BookLevel> {
-        // TODO: Improve efficiency
-        self.asks().map(|level_ref| (*level_ref).clone()).collect()
+    fn py_asks(&self, depth: Option<usize>) -> Vec<BookLevel> {
+        self.asks(depth)
+            .map(|level_ref| (*level_ref).clone())
+            .collect()
     }
 
+    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "bids_to_dict")]
-    fn py_bids_to_dict(&self) -> IndexMap<Decimal, Decimal> {
-        self.bids_as_map()
+    fn py_bids_to_dict(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
+        self.bids_as_map(depth)
     }
 
+    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "asks_to_dict")]
-    fn py_asks_to_dict(&self) -> IndexMap<Decimal, Decimal> {
-        self.asks_as_map()
+    fn py_asks_to_dict(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
+        self.asks_as_map(depth)
     }
 
+    #[pyo3(signature = (group_size, depth=None))]
     #[pyo3(name = "group_bids")]
-    pub fn py_group_bids(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
+    pub fn py_group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
         self.group_bids(group_size, depth)
     }
 
+    #[pyo3(signature = (group_size, depth=None))]
     #[pyo3(name = "group_asks")]
-    pub fn py_group_asks(&self, group_size: Decimal, depth: usize) -> IndexMap<Decimal, Decimal> {
+    pub fn py_group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
         self.group_asks(group_size, depth)
     }
 
