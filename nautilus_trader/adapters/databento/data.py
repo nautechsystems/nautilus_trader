@@ -612,11 +612,16 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
+            start = params.get("start") if params else None
+            start = start.value + 1 if start else None  # time in nanoseconds from pd.Timestamp
+            start = start if params and params.get("subscribe_from_start") else None
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
                 instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                start=start,
             )
 
             # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
@@ -637,11 +642,16 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._ensure_subscribed_for_instrument(instrument_id)
 
+            start = params.get("start") if params else None
+            start = start.value + 1 if start else None  # time in nanoseconds from pd.Timestamp
+            start = start if params and params.get("subscribe_from_start") else None
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.TRADES.value,
                 instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -661,10 +671,15 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
+            start = params.get("start") if params else None
+            start = start.value + 1 if start else None  # time in nanoseconds from pd.Timestamp
+            start = start if params and params.get("subscribe_from_start") else None
+
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema.value,
                 instrument_ids=[instrument_id_to_pyo3(bar_type.instrument_id)],
+                start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:

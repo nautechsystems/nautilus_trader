@@ -984,6 +984,15 @@ cdef class DataEngine(Component):
             return
         Condition.not_none(client, "client")
 
+        if not params.get("start"):
+            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                QuoteTick,
+                instrument_id,
+            )[0]
+
+            params = params if params else {}
+            params["start"] = last_timestamp
+
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id, params)
 
@@ -1024,6 +1033,15 @@ cdef class DataEngine(Component):
             self._handle_subscribe_synthetic_trade_ticks(instrument_id)
             return
         Condition.not_none(client, "client")
+
+        if not params.get("start"):
+            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                TradeTick,
+                instrument_id,
+            )[0]
+
+            params = params if params else {}
+            params["start"] = last_timestamp
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id, params)
@@ -1076,6 +1094,15 @@ cdef class DataEngine(Component):
                 )
                 return
 
+            if not params.get("start"):
+                last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                    Bar,
+                    bar_type=bar_type,
+                )[0]
+
+                params = params if params else {}
+                params["start"] = last_timestamp
+
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type, params)
 
@@ -1090,6 +1117,12 @@ cdef class DataEngine(Component):
 
         try:
             if data_type not in client.subscribed_custom_data():
+                if not params.get("start"):
+                    last_timestamp: datetime | None = self._catalogs_last_timestamp(data_type.type)[0]
+
+                    params = params if params else {}
+                    params["start"] = last_timestamp
+
                 client.subscribe(data_type, params)
         except NotImplementedError:
             self._log.error(
@@ -1419,10 +1452,10 @@ cdef class DataEngine(Component):
         datetime end,
         dict params,
     ):
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             Instrument,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             self._query_catalog(request)
@@ -1474,10 +1507,10 @@ cdef class DataEngine(Component):
     ):
         instrument_id = request.data_type.metadata.get("instrument_id")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             QuoteTick,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1515,10 +1548,10 @@ cdef class DataEngine(Component):
     ):
         instrument_id = request.data_type.metadata.get("instrument_id")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             TradeTick,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1556,10 +1589,10 @@ cdef class DataEngine(Component):
     ):
         bar_type = request.data_type.metadata.get("bar_type")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             Bar,
             bar_type=bar_type,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1595,9 +1628,9 @@ cdef class DataEngine(Component):
         datetime now,
         dict params,
     ):
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             request.data_type.type,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
