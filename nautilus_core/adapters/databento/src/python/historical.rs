@@ -14,7 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap, fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc, sync::RwLock,
+    collections::HashMap,
+    fs,
+    num::NonZeroU64,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, RwLock},
 };
 
 use databento::{
