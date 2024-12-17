@@ -97,7 +97,7 @@ class DataSubscriber(Strategy):
         start_time = time_object_to_dt("2024-05-09T10:00")
         end_time = time_object_to_dt("2024-05-09T10:05")
         self.request_quote_ticks(
-            InstrumentId.from_str("ESM4.GLBX"),
+            InstrumentId.from_str("ESM4.XCME"),  # or "ESM4.GLBX"
             start_time,
             end_time,
             params={"schema": "bbo-1m"},
