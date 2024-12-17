@@ -99,7 +99,7 @@ impl ParquetDataCatalog {
         json_path
     }
 
-    pub fn write_data<T>(&self, data: Vec<T>)
+    pub fn write_to_parquet<T>(&self, data: Vec<T>)
     where
         T: GetTsInit + EncodeToRecordBatch,
     {
@@ -120,7 +120,7 @@ impl ParquetDataCatalog {
                 path
             );
             // TODO: Set writer to property to limit max row group size
-            write_batches_to_parquet(&batches, &path, None)
+            write_batches_to_parquet(&batches, &path, None, Some(5000))
                 .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
         }
     }
@@ -184,10 +184,10 @@ impl ParquetDataCatalog {
             }
         }
 
-        self.write_data(delta);
-        self.write_data(depth10);
-        self.write_data(quote);
-        self.write_data(trade);
-        self.write_data(bar);
+        self.write_to_parquet(delta);
+        self.write_to_parquet(depth10);
+        self.write_to_parquet(quote);
+        self.write_to_parquet(trade);
+        self.write_to_parquet(bar);
     }
 }
