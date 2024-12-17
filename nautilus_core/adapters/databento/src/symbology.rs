@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use databento::dbn;
 use dbn::{Publisher, Record};
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_slice_not_empty;
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
-use std::collections::HashMap;
 
 use super::types::PublisherId;
 
