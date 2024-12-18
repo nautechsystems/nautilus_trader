@@ -104,6 +104,8 @@ cdef class SimulatedExchange:
         If the account for this exchange is frozen (balances will not change).
     bar_execution : bool, default True
         If bars should be processed by the matching engine(s) (and move the market).
+    trade_execution : bool, default False
+        If trades should be processed by the matching engine(s) (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
@@ -160,6 +162,7 @@ cdef class SimulatedExchange:
         BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
         bint bar_execution = True,
+        bint trade_execution = False,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
@@ -198,6 +201,7 @@ cdef class SimulatedExchange:
 
         # Execution
         self.bar_execution = bar_execution
+        self.trade_execution = trade_execution
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
         self.support_contingent_orders = support_contingent_orders
@@ -345,6 +349,7 @@ cdef class SimulatedExchange:
             cache=self.cache,
             clock=self._clock,
             bar_execution=self.bar_execution,
+            trade_execution=self.trade_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
             support_contingent_orders=self.support_contingent_orders,

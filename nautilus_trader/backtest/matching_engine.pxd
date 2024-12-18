@@ -25,6 +25,7 @@ from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
@@ -84,6 +85,7 @@ cdef class OrderMatchingEngine:
     # cdef object _auction_match_algo
     cdef bint _instrument_has_expiration
     cdef bint _bar_execution
+    cdef bint _trade_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
     cdef bint _support_contingent_orders
@@ -180,7 +182,7 @@ cdef class OrderMatchingEngine:
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
-    cpdef void iterate(self, uint64_t timestamp_ns)
+    cpdef void iterate(self, uint64_t timestamp_ns, AggressorSide aggressor_side=*)
     cpdef list determine_limit_price_and_volume(self, Order order)
     cpdef list determine_market_price_and_volume(self, Order order)
     cpdef void fill_market_order(self, Order order)

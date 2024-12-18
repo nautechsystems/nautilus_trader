@@ -76,6 +76,7 @@ from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport aggressor_side_to_str
 from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
@@ -137,7 +138,9 @@ cdef class OrderMatchingEngine:
     logger : Logger
         The logger for the matching engine.
     bar_execution : bool, default True
-        If bars should be processed by the matching engine(s) (and move the market).
+        If bars should be processed by the matching engine (and move the market).
+    trade_execution : bool, default False
+        If trades should be processed by the matching engine (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
@@ -153,6 +156,7 @@ cdef class OrderMatchingEngine:
         If the `reduce_only` execution instruction on orders will be honored.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
+
     """
 
     def __init__(
@@ -168,6 +172,7 @@ cdef class OrderMatchingEngine:
         CacheFacade cache not None,
         TestClock clock not None,
         bint bar_execution = True,
+        bint trade_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
@@ -192,6 +197,7 @@ cdef class OrderMatchingEngine:
         self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
         self._instrument_close = None
         self._bar_execution = bar_execution
+        self._trade_execution = trade_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._support_contingent_orders = support_contingent_orders
@@ -460,7 +466,21 @@ cdef class OrderMatchingEngine:
 
         self._core.set_last_raw(tick._mem.price.raw)
 
-        self.iterate(tick.ts_init)
+        cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
+
+        if self._trade_execution:
+            aggressor_side = tick.aggressor_side
+            if tick.aggressor_side == AggressorSide.BUYER:
+                self._core.set_ask_raw(tick._mem.price.raw)
+            elif tick.aggressor_side == AggressorSide.SELLER:
+                self._core.set_bid_raw(tick._mem.price.raw)
+            else:
+                aggressor_side_str = aggressor_side_to_str(tick.aggressor_side)
+                raise RuntimeError(  # pragma: no cover (design-time error)
+                    f"invalid `AggressorSide` for trade execution, was {aggressor_side_str}",  # pragma: no cover
+                )
+
+        self.iterate(tick.ts_init, aggressor_side)
 
     cpdef void process_bar(self, Bar bar):
         """
@@ -1296,7 +1316,7 @@ cdef class OrderMatchingEngine:
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
-    cpdef void iterate(self, uint64_t timestamp_ns):
+    cpdef void iterate(self, uint64_t timestamp_ns, AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR):
         """
         Iterate the matching engine by processing the bid and ask order sides
         and advancing time up to the given UNIX `timestamp_ns`.
@@ -1305,6 +1325,8 @@ cdef class OrderMatchingEngine:
         ----------
         timestamp_ns : uint64_t
             UNIX timestamp to advance the matching engine time to.
+        aggressor_side : AggressorSide, default 'NO_AGGRESSOR'
+            The aggressor side for trade execution processing.
 
         """
         self._clock.set_time(timestamp_ns)
@@ -1312,10 +1334,10 @@ cdef class OrderMatchingEngine:
         cdef Price_t bid
         cdef Price_t ask
 
-        if orderbook_has_bid(&self._book._mem):
+        if orderbook_has_bid(&self._book._mem) and not aggressor_side == AggressorSide.SELLER:
             bid = orderbook_best_bid_price(&self._book._mem)
             self._core.set_bid_raw(bid.raw)
-        if orderbook_has_ask(&self._book._mem):
+        if orderbook_has_ask(&self._book._mem) and not aggressor_side == AggressorSide.BUYER:
             ask = orderbook_best_ask_price(&self._book._mem)
             self._core.set_ask_raw(ask.raw)
 
