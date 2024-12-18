@@ -101,7 +101,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     max_ws_reconnection_tries: int, default 3
         The number of retries to reconnect the websocket connection if the
         connection is broken.
-    ws_trade_timeout_secs: float, default 5.0
+    ws_trade_timeout_secs : float, default 5.0
         The timeout for trade websocket messages.
 
     Warnings
