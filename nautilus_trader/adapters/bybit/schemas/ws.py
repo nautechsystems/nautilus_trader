@@ -32,7 +32,14 @@ from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
+from nautilus_trader.adapters.bybit.common.enums import BybitWsOrderRequestMsgOP
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
+from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderPostParams
+from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
+from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
+from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -77,6 +84,27 @@ class BybitWsSubscriptionMsg(msgspec.Struct):
     conn_id: str
     ret_msg: str | None = None
     req_id: str | None = None
+
+
+class BybitWsPrivateChannelAuthMsg(msgspec.Struct, kw_only=True):
+    success: bool
+    ret_msg: str | None = None
+    op: str
+    conn_id: str
+
+    def is_auth_success(self) -> bool:
+        return (self.op == "auth") and (self.success is True)
+
+
+class BybitWsTradeAuthMsg(msgspec.Struct, kw_only=True):
+    reqId: str | None = None
+    retCode: int
+    retMsg: str
+    op: str
+    connId: str
+
+    def is_auth_success(self) -> bool:
+        return (self.op == "auth") and (self.retCode == 0)
 
 
 ################################################################################
@@ -514,16 +542,21 @@ class BybitWsAccountPosition(msgspec.Struct):
     takeProfit: str
     stopLoss: str
     trailingStop: str
+    sessionAvgPrice: str
     unrealisedPnl: str
     cumRealisedPnl: str
     createdTime: str
     updatedTime: str
     liqPrice: str
     bustPrice: str
-    category: str
+    category: BybitProductType
     positionStatus: str
     adlRankIndicator: int
     seq: int
+    autoAddMargin: int
+    leverageSysUpdatedTime: str
+    mmrSysUpdatedTime: str
+    isReduceOnly: bool
     tpslMode: str | None = None
 
 
@@ -765,3 +798,38 @@ class BybitWsAccountWalletMsg(msgspec.Struct):
                 reported=True,
                 ts_event=millis_to_nanos(self.creationTime),
             )
+
+
+################################################################################
+# Trade
+################################################################################
+
+
+class BybitWsOrderRequestMsg(msgspec.Struct, kw_only=True):
+    reqId: str | None = None
+    header: dict[str, str]
+    op: BybitWsOrderRequestMsgOP
+    args: list[
+        BybitPlaceOrderPostParams | BybitAmendOrderPostParams | BybitCancelOrderPostParams
+    ] = []
+
+
+class BybitWsOrderResponseMsg(msgspec.Struct, kw_only=True):
+    reqId: str | None = None
+    retCode: int
+    retMsg: str
+    op: str
+    header: dict[str, str] | None = None
+    connId: str
+
+
+class BybitWsPlaceOrderResponseMsg(BybitWsOrderResponseMsg):
+    data: BybitPlaceOrder
+
+
+class BybitWsAmendOrderResponseMsg(BybitWsOrderResponseMsg):
+    data: BybitAmendOrder
+
+
+class BybitWsCancelOrderResponseMsg(BybitWsOrderResponseMsg):
+    data: BybitCancelOrder

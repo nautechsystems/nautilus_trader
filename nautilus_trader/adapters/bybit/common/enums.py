@@ -117,6 +117,13 @@ class BybitPositionSide(Enum):
 
 
 @unique
+class BybitWsOrderRequestMsgOP(Enum):
+    CREATE = "order.create"
+    AMEND = "order.amend"
+    CANCEL = "order.cancel"
+
+
+@unique
 class BybitKlineInterval(Enum):
     MINUTE_1 = "1"
     MINUTE_3 = "3"
@@ -149,6 +156,7 @@ class BybitOrderStatus(Enum):
 
 @unique
 class BybitOrderSide(Enum):
+    UNKNOWN = ""  # It will be an empty string in some cases
     BUY = "Buy"
     SELL = "Sell"
 

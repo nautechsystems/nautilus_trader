@@ -79,7 +79,6 @@ from nautilus_trader.core.correctness import PyCondition
 
 if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.common.enums import BybitMarginMode
-    from nautilus_trader.adapters.bybit.common.enums import BybitProductType
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
     from nautilus_trader.adapters.bybit.schemas.account.info import BybitAccountInfo
     from nautilus_trader.adapters.bybit.schemas.account.set_leverage import BybitSetLeverageResponse
