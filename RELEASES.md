@@ -6,7 +6,7 @@ Released on TBD (UTC).
 - Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
 - Added optional `depth` param for some `OrderBook` methods
 - Added margin and commission docs (#2128), thanks @stefansimik
-- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124), thanks @faysou
+- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124, #2126), thanks @faysou
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
