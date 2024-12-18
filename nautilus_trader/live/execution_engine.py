@@ -972,7 +972,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Calculate last px
         if order.avg_px is None:
-            last_px: Price = instrument.make_price(report.avg_px)
+            last_px: Price = instrument.make_price(report.avg_px or 0.0)
         else:
             report_cost: float = float(report.avg_px or 0.0) * float(report.filled_qty)
             filled_cost = order.avg_px * float(order.filled_qty)
