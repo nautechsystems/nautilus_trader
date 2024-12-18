@@ -23,6 +23,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.urls import get_http_base_url
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_private
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_public
+from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_trade
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
@@ -255,7 +256,10 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             product_types=frozenset(config.product_types or BYBIT_ALL_PRODUCTS),
             config=config.instrument_provider,
         )
-        base_url_ws: str = get_ws_base_url_private(config.testnet)
+
+        base_url_ws_private: str = get_ws_base_url_private(config.testnet)
+        base_url_ws_trade: str = get_ws_base_url_trade(config.testnet)
+
         return BybitExecutionClient(
             loop=loop,
             client=client,
@@ -264,7 +268,8 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             clock=clock,
             instrument_provider=provider,
             product_types=config.product_types or [BybitProductType.SPOT],
-            base_url_ws=config.base_url_ws or base_url_ws,
+            base_url_ws_private=config.base_url_ws_private or base_url_ws_private,
+            base_url_ws_trade=config.base_url_ws_trade or base_url_ws_trade,
             config=config,
             name=name,
         )
