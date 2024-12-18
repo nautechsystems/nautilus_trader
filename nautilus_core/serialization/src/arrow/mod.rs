@@ -95,6 +95,14 @@ where
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError>;
+
+    fn metadata(&self) -> HashMap<String, String>;
+    fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
+        chunk
+            .first()
+            .map(|elem| elem.metadata())
+            .expect("Chunk must have atleast one element to encode")
+    }
 }
 
 pub trait DecodeFromRecordBatch
@@ -159,28 +167,8 @@ pub fn order_book_deltas_to_arrow_record_batch_bytes(
         return Err(EncodingError::EmptyData);
     }
 
-    // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
-    let first = data.first().unwrap();
-    let mut price_precision = first.order.price.precision;
-    let mut size_precision = first.order.size.precision;
-
-    // Check if price and size precision are both zero
-    if price_precision == 0 && size_precision == 0 {
-        // If both are zero, try the second delta if available
-        if data.len() > 1 {
-            let second = &data[1];
-            price_precision = second.order.price.precision;
-            size_precision = second.order.size.precision;
-        } else {
-            // If there is no second delta, use zero precision
-            price_precision = 0;
-            size_precision = 0;
-        }
-    }
-
-    let metadata =
-        OrderBookDelta::get_metadata(&first.instrument_id, price_precision, size_precision);
+    // Extract metadata from chunk
+    let metadata = OrderBookDelta::chunk_metadata(&data);
     OrderBookDelta::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
@@ -194,12 +182,7 @@ pub fn order_book_depth10_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
-    let metadata = OrderBookDepth10::get_metadata(
-        &first.instrument_id,
-        first.bids[0].price.precision,
-        first.bids[0].size.precision,
-    );
-
+    let metadata = first.metadata();
     OrderBookDepth10::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
@@ -213,12 +196,7 @@ pub fn quote_ticks_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
-    let metadata = QuoteTick::get_metadata(
-        &first.instrument_id,
-        first.bid_price.precision,
-        first.bid_size.precision,
-    );
-
+    let metadata = first.metadata();
     QuoteTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
@@ -232,12 +210,7 @@ pub fn trade_ticks_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
-    let metadata = TradeTick::get_metadata(
-        &first.instrument_id,
-        first.price.precision,
-        first.size.precision,
-    );
-
+    let metadata = first.metadata();
     TradeTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
@@ -249,11 +222,6 @@ pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, E
     // Take first element and extract metadata
     // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
-    let metadata = Bar::get_metadata(
-        &first.bar_type,
-        first.open.precision,
-        first.volume.precision,
-    );
-
+    let metadata = first.metadata();
     Bar::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
