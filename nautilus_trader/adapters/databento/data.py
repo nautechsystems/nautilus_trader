@@ -21,6 +21,7 @@ from typing import Any
 import pandas as pd
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
+from nautilus_trader.adapters.databento.common import instrument_id_to_pyo3
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO
@@ -392,7 +393,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.IMBALANCE.value,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -406,7 +407,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.STATISTICS.value,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -426,7 +427,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -435,13 +436,18 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_parent_symbols(
         self,
         dataset: Dataset,
-        parent_symbols: set[str],
+        parent_instrument_ids: set[InstrumentId],
     ) -> None:
         try:
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                symbols=sorted(parent_symbols),
+                instrument_ids=sorted(  # type: ignore[type-var]
+                    [
+                        instrument_id_to_pyo3(instrument_id)
+                        for instrument_id in parent_instrument_ids
+                    ],
+                ),
                 stype_in="parent",
             )
             await self._check_live_client_started(dataset, live_client)
@@ -457,7 +463,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                symbols=[i.symbol.value for i in instrument_ids],
+                instrument_ids=[
+                    instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids
+                ],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -533,7 +541,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             live_client.subscribe(
                 schema=DatabentoSchema.MBO.value,
-                symbols=[i.symbol.value for i in instrument_ids],
+                instrument_ids=[
+                    instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids
+                ],
                 start=start,
                 snapshot=snapshot,
             )
@@ -579,7 +589,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -602,11 +612,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
+            start: int | None = params.get("start") if params else None
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                start=start,
             )
 
             # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
@@ -627,11 +640,14 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._ensure_subscribed_for_instrument(instrument_id)
 
+            start: int | None = params.get("start") if params else None
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.TRADES.value,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -651,10 +667,13 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
+            start: int | None = params.get("start") if params else None
+
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema.value,
-                symbols=[bar_type.instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(bar_type.instrument_id)],
+                start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -671,7 +690,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.STATUS.value,
-                symbols=[instrument_id.symbol.value],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -798,7 +817,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_status_list = await self._http_client.get_range_status(
             dataset=dataset,
-            symbols=[instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
         )
@@ -831,7 +850,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_imbalances = await self._http_client.get_range_imbalance(
             dataset=dataset,
-            symbols=[instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
         )
@@ -862,7 +881,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_statistics = await self._http_client.get_range_statistics(
             dataset=dataset,
-            symbols=[instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
         )
@@ -897,7 +916,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         # Request single instrument
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            symbols=[instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
         )
@@ -931,11 +950,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
+        use_exchange_as_venue = params is not None and params.get("use_exchange_as_venue", False)
+
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            symbols=[ALL_SYMBOLS],
+            instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.{venue}"))],
             start=start.value,
             end=end.value,
+            use_exchange_as_venue=use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
@@ -978,7 +1000,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_quotes = await self._http_client.get_range_quotes(
             dataset=dataset,
-            symbols=[instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
             schema=schema,
@@ -1015,7 +1037,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_trades = await self._http_client.get_range_trades(
             dataset=dataset,
-            symbols=[instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
         )
@@ -1052,7 +1074,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_bars = await self._http_client.get_range_bars(
             dataset=dataset,
-            symbols=[bar_type.instrument_id.symbol.value],
+            instrument_ids=[instrument_id_to_pyo3(bar_type.instrument_id)],
             aggregation=nautilus_pyo3.BarAggregation(
                 bar_aggregation_to_str(bar_type.spec.aggregation),
             ),

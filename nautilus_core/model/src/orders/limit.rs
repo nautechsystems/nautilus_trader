@@ -485,7 +485,7 @@ mod tests {
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        instruments::{currency_pair::CurrencyPair, stubs::*},
+        instruments::{stubs::*, CurrencyPair},
         orders::builder::OrderTestBuilder,
         types::{price::Price, quantity::Quantity},
     };

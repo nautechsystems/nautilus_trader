@@ -13,25 +13,52 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use databento::dbn;
-use dbn::Record;
+use dbn::{Publisher, Record};
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_slice_not_empty;
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 
 use super::types::PublisherId;
 
+pub fn instrument_id_to_symbol_string(
+    instrument_id: InstrumentId,
+    symbol_venue_map: &mut HashMap<Symbol, Venue>,
+) -> String {
+    let venue = instrument_id.venue;
+    if venue == Venue::CBCM()
+        || venue == Venue::NYUM()
+        || venue == Venue::XCBT()
+        || venue == Venue::XCEC()
+        || venue == Venue::XCME()
+        || venue == Venue::XFXS()
+        || venue == Venue::XNYM()
+    {
+        symbol_venue_map.insert(instrument_id.symbol, venue);
+    }
+
+    instrument_id.symbol.to_string()
+}
+
 pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &dbn::Metadata,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    symbol_venue_map: &HashMap<Symbol, Venue>,
 ) -> anyhow::Result<InstrumentId> {
     let publisher = record.publisher().expect("Invalid `publisher` for record");
     let publisher_id = publisher as PublisherId;
     let venue = publisher_venue_map
         .get(&publisher_id)
         .ok_or_else(|| anyhow::anyhow!("`Venue` not found for `publisher_id` {publisher_id}"))?;
-    let instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
+    let mut instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
+    if publisher == Publisher::GlbxMdp3Glbx {
+        if let Some(venue) = symbol_venue_map.get(&instrument_id.symbol) {
+            instrument_id.venue = *venue;
+        }
+    };
 
     Ok(instrument_id)
 }
@@ -60,6 +87,8 @@ pub fn get_nautilus_instrument_id_for_record(
     } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::StatMsg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
+    } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
         (msg.hd.instrument_id, msg.ts_recv)
     } else {
         anyhow::bail!("DBN message type is not currently supported")

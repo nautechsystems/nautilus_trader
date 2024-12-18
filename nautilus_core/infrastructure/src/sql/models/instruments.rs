@@ -24,11 +24,8 @@ use nautilus_model::{
     enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::{
-        any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        futures_spread::FuturesSpread, options_contract::OptionsContract,
-        options_spread::OptionsSpread,
+        BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
+        FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -615,8 +612,8 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             min_price,
             margin_init,
             margin_maint,
-            taker_fee,
             maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );

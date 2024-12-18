@@ -41,7 +41,7 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     orderbook::book::OrderBook,
     orders::any::PassiveOrderAny,
     types::{currency::Currency, money::Money, price::Price},
@@ -533,9 +533,7 @@ mod tests {
             OmsType, OrderSide,
         },
         identifiers::{TradeId, Venue},
-        instruments::{
-            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
-        },
+        instruments::{stubs::crypto_perpetual_ethusdt, CryptoPerpetual, InstrumentAny},
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
     use rstest::rstest;

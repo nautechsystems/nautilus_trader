@@ -46,6 +46,7 @@ from nautilus_trader.trading.strategy import Strategy
 # subscribed for as part of the data client configuration
 instrument_ids = [
     InstrumentId.from_str("ES.c.0.GLBX"),
+    # InstrumentId.from_str("ESZ4.GLBX"),
     # InstrumentId.from_str("ES.FUT.GLBX"),
     # InstrumentId.from_str("CL.FUT.GLBX"),
     # InstrumentId.from_str("LO.OPT.GLBX"),
@@ -130,9 +131,6 @@ class DataSubscriber(Strategy):
     def __init__(self, config: DataSubscriberConfig) -> None:
         super().__init__(config)
 
-        # Configuration
-        self.instrument_ids = config.instrument_ids
-
     def on_start(self) -> None:
         """
         Actions to be performed when the strategy is started.
@@ -140,7 +138,7 @@ class DataSubscriber(Strategy):
         Here we specify the 'DATABENTO' client_id for subscriptions.
 
         """
-        for instrument_id in self.instrument_ids:
+        for instrument_id in self.config.instrument_ids:
             # from nautilus_trader.model.enums import BookType
 
             # self.subscribe_order_book_deltas(

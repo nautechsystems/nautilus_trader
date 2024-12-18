@@ -527,43 +527,66 @@ Here is an example configuration:
 ```python
 from decimal import Decimal
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model import BarType
+from nautilus_trader.model import Bar, BarType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
 
+# Configuration definition
 class MyStrategyConfig(StrategyConfig):
-    instrument_id: InstrumentId
-    bar_type: BarType
+    instrument_id: InstrumentId   # example value: "ETHUSDT-PERP.BINANCE"
+    bar_type: BarType             # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-EXTERNAL"
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
     order_id_tag: str
 
-# Here we simply add an instrument ID as a string, to
-# parameterize the instrument the strategy will trade.
 
+# Strategy definition
 class MyStrategy(Strategy):
     def __init__(self, config: MyStrategyConfig) -> None:
+        # Always initialize the parent Strategy class
+        # After this, configuration is stored and available via `self.config`
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        # Custom state variables
+        self.time_started = None
+        self.count_of_processed_bars: int = 0
+
+    def on_start(self) -> None:
+        self.time_started = self.clock.utc_now()    # Remember time, when strategy started
+        self.subscribe_bars(self.config.bar_type)   # See how configuration data are exposed via `self.config`
+
+    def on_bar(self, bar: Bar):
+        self.count_of_processed_bars += 1           # Update count of processed bars
 
 
-# Once a configuration is defined and instantiated, we can pass this to our
-# trading strategy to initialize.
-
+# Instantiate configuration with specific values. By setting:
+#   - InstrumentId - we parameterize the instrument the strategy will trade.
+#   - BarType - we parameterize bar-data, that strategy will trade.
 config = MyStrategyConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1000-TICK[LAST]-INTERNAL"),
+    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-EXTERNAL"),
     trade_size=Decimal(1),
     order_id_tag="001",
 )
 
+# Pass configuration to our trading strategy.
 strategy = MyStrategy(config=config)
-
 ```
+
+When implementing strategies, it's recommended to access configuration values directly through `self.config`.
+This provides clear separation between:
+
+- Configuration data (accessed via `self.config`):
+  - Contains initial settings, that define how the strategy works
+  - Example: `self.config.trade_size`, `self.config.instrument_id`
+
+- Strategy state variables (as direct attributes):
+  - Track any custom state of the strategy
+  - Example: `self.time_started`, `self.count_of_processed_bars`
+
+This separation makes code easier to understand and maintain.
 
 :::note
 Even though it often makes sense to define a strategy which will trade a single

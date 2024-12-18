@@ -379,7 +379,7 @@ impl Instrument for CryptoPerpetual {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{crypto_perpetual::CryptoPerpetual, stubs::*};
+    use crate::instruments::{stubs::*, CryptoPerpetual};
 
     #[rstest]
     fn test_equality(crypto_perpetual_ethusdt: CryptoPerpetual) {

@@ -317,7 +317,7 @@ impl Instrument for Equity {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{equity::Equity, stubs::*};
+    use crate::instruments::{stubs::*, Equity};
 
     #[rstest]
     fn test_equality(equity_aapl: Equity) {

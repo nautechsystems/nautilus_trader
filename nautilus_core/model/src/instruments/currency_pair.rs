@@ -198,8 +198,8 @@ impl CurrencyPair {
             min_price,
             margin_init,
             margin_maint,
-            taker_fee,
             maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         )
@@ -364,7 +364,7 @@ impl Instrument for CurrencyPair {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{currency_pair::CurrencyPair, stubs::*};
+    use crate::instruments::{stubs::*, CurrencyPair};
 
     #[rstest]
     fn test_equality(currency_pair_btcusdt: CurrencyPair) {

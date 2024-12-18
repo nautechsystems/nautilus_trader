@@ -378,7 +378,7 @@ impl Instrument for CryptoFuture {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{crypto_future::CryptoFuture, stubs::*};
+    use crate::instruments::{stubs::*, CryptoFuture};
 
     #[rstest]
     fn test_equality(crypto_future_btcusdt: CryptoFuture) {

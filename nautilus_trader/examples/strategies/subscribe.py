@@ -65,16 +65,15 @@ class SubscribeStrategy(Strategy):
 
     def __init__(self, config: SubscribeStrategyConfig) -> None:
         super().__init__(config)
-        self.instrument_id = self.config.instrument_id
         self.book: OrderBook | None = None
 
     def on_start(self) -> None:
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
@@ -85,22 +84,22 @@ class SubscribeStrategy(Strategy):
             )
             if self.config.snapshots:
                 self.subscribe_order_book_at_interval(
-                    instrument_id=self.instrument_id,
+                    instrument_id=self.config.instrument_id,
                     book_type=self.config.book_type,
                 )
             else:
                 self.subscribe_order_book_deltas(
-                    instrument_id=self.instrument_id,
+                    instrument_id=self.config.instrument_id,
                     book_type=self.config.book_type,
                 )
 
         if self.config.trade_ticks:
-            self.subscribe_trade_ticks(instrument_id=self.instrument_id)
+            self.subscribe_trade_ticks(instrument_id=self.config.instrument_id)
         if self.config.quote_ticks:
-            self.subscribe_quote_ticks(instrument_id=self.instrument_id)
+            self.subscribe_quote_ticks(instrument_id=self.config.instrument_id)
         if self.config.bars:
             bar_type: BarType = BarType(
-                instrument_id=self.instrument_id,
+                instrument_id=self.config.instrument_id,
                 bar_spec=BarSpecification(
                     step=5,
                     aggregation=BarAggregation.SECOND,

@@ -38,7 +38,7 @@ use nautilus_model::{
     enums::{OmsType, OrderSide},
     events::order::{filled::OrderFilled, OrderEvent, OrderEventAny},
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
     types::{price::Price, quantity::Quantity},

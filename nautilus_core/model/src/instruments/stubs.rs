@@ -28,9 +28,7 @@ use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        options_contract::OptionsContract,
+        CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, OptionsContract,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };

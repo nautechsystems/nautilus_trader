@@ -25,7 +25,7 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
-    instruments::{any::InstrumentAny, Instrument},
+    instruments::{Instrument, InstrumentAny},
     orders::{any::OrderAny, base::Order},
     types::{
         balance::{AccountBalance, MarginBalance},

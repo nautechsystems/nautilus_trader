@@ -1,3 +1,25 @@
+# NautilusTrader 1.209.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
+- Added optional `depth` param for some `OrderBook` methods
+- Added margin and commission docs (#2128), thanks @stefansimik
+- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124, #2126), thanks @faysou
+- Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
+
+### Internal Improvements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.208.0 Beta
 
 Released on 15th December 2024 (UTC).
@@ -38,10 +60,10 @@ Released on 15th December 2024 (UTC).
 ### Breaking Changes
 - Renamed `Level` to `BookLevel` (standardizes order book type naming conventions)
 - Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
-- Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
-- Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
-- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
-- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_main`, `maker_fee`, `taker_fee`)
+- Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)

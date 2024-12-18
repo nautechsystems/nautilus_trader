@@ -40,7 +40,7 @@ use nautilus_model::{
     },
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
 };
 
 pub trait DataClient {

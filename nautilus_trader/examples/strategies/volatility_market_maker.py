@@ -99,13 +99,6 @@ class VolatilityMarketMaker(Strategy):
     def __init__(self, config: VolatilityMarketMakerConfig) -> None:
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-        self.bar_type = config.bar_type
-        self.atr_multiple = config.atr_multiple
-        self.trade_size = Decimal(config.trade_size)
-        self.emulation_trigger = TriggerType[config.emulation_trigger]
-
         self.instrument: Instrument | None = None  # Initialized in on_start
         self.client_id = config.client_id
 
@@ -120,25 +113,25 @@ class VolatilityMarketMaker(Strategy):
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.atr)
+        self.register_indicator_for_bars(self.config.bar_type, self.atr)
 
         # Get historical data
-        self.request_bars(self.bar_type, client_id=self.client_id)
+        self.request_bars(self.config.bar_type, client_id=self.client_id)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type, client_id=self.client_id)
-        self.subscribe_quote_ticks(self.instrument_id, client_id=self.client_id)
-        self.subscribe_trade_ticks(self.instrument_id, client_id=self.client_id)
-        # self.subscribe_order_book_deltas(self.instrument_id, client_id=self.client_id)  # For debugging
+        self.subscribe_bars(self.config.bar_type, client_id=self.client_id)
+        self.subscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
+        self.subscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
+        # self.subscribe_order_book_deltas(self.config.instrument_id, client_id=self.client_id)  # For debugging
         # self.subscribe_order_book_at_interval(
-        #     self.instrument_id,
+        #     self.config.instrument_id,
         #     depth=20,
         #     interval_ms=1000,
         #     client_id=self.client_id,
@@ -258,19 +251,19 @@ class VolatilityMarketMaker(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.config.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
-        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.config.instrument_id)
         if last is None:
             self.log.info("No quotes yet")
             return
 
         # Maintain buy orders
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
+            # price: Decimal = last.bid_price - (self.atr.value * self.config.atr_multiple)
             # self.modify_order(
             #     order=self.buy_order,
             #     price=self.instrument.make_price(price),
@@ -281,7 +274,7 @@ class VolatilityMarketMaker(Strategy):
 
         # Maintain sell orders
         if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # price = last.ask_price + (self.atr.value * self.atr_multiple)
+            # price = last.ask_price + (self.atr.value * self.config.atr_multiple)
             # self.modify_order(
             #     order=self.sell_order,
             #     price=self.instrument.make_price(price),
@@ -298,17 +291,17 @@ class VolatilityMarketMaker(Strategy):
             self.log.error("No instrument loaded")
             return
 
-        price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
+        price: Decimal = last.bid_price - (self.atr.value * self.config.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTD,
             expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=True,  # default value is True
-            # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
-            emulation_trigger=self.emulation_trigger,
+            # display_qty=self.instrument.make_qty(self.config.trade_size / 2),  # iceberg
+            emulation_trigger=TriggerType[self.config.emulation_trigger],
         )
 
         self.buy_order = order
@@ -324,17 +317,17 @@ class VolatilityMarketMaker(Strategy):
             self.log.error("No instrument loaded")
             return
 
-        price: Decimal = last.ask_price + (self.atr.value * self.atr_multiple)
+        price: Decimal = last.ask_price + (self.atr.value * self.config.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTD,
             expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=True,  # default value is True
-            # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
-            emulation_trigger=self.emulation_trigger,
+            # display_qty=self.instrument.make_qty(self.config.trade_size / 2),  # iceberg
+            emulation_trigger=TriggerType[self.config.emulation_trigger],
         )
 
         self.sell_order = order
@@ -352,7 +345,7 @@ class VolatilityMarketMaker(Strategy):
             The event received.
 
         """
-        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.config.instrument_id)
         if last is None:
             self.log.info("No quotes yet")
             return
@@ -371,25 +364,25 @@ class VolatilityMarketMaker(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.instrument_id, client_id=self.client_id)
+        self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
 
         # # Uncomment to test individual cancels
-        # for order in self.cache.orders_open(instrument_id=self.instrument_id):
+        # for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
         #     self.cancel_order(order)
 
         # # Uncomment to test batch cancel
-        # open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
+        # open_orders = self.cache.orders_open(instrument_id=self.config.instrument_id)
         # if open_orders:
         #     self.cancel_orders(open_orders, client_id=self.client_id)
 
-        self.close_all_positions(self.instrument_id, client_id=self.client_id)
+        self.close_all_positions(self.config.instrument_id, client_id=self.client_id)
 
         # Unsubscribe from data
-        self.unsubscribe_bars(self.bar_type, client_id=self.client_id)
-        self.unsubscribe_quote_ticks(self.instrument_id, client_id=self.client_id)
-        self.unsubscribe_trade_ticks(self.instrument_id, client_id=self.client_id)
-        # self.unsubscribe_order_book_deltas(self.instrument_id, client_id=self.client_id)  # For debugging
-        # self.unsubscribe_order_book_at_interval(self.instrument_id, client_id=self.client_id)  # For debugging
+        self.unsubscribe_bars(self.config.bar_type, client_id=self.client_id)
+        self.unsubscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
+        self.unsubscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
+        # self.unsubscribe_order_book_deltas(self.config.instrument_id, client_id=self.client_id)  # For debugging
+        # self.unsubscribe_order_book_at_interval(self.config.instrument_id, client_id=self.client_id)  # For debugging
 
     def on_reset(self) -> None:
         """

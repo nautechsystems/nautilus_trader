@@ -15,7 +15,7 @@
 
 //! Position sizing calculation functions.
 use nautilus_model::{
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     types::{money::Money, price::Price, quantity::Quantity},
 };
 use rust_decimal::{

@@ -371,7 +371,7 @@ impl Instrument for OptionsContract {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{options_contract::OptionsContract, stubs::*};
+    use crate::instruments::{stubs::*, OptionsContract};
 
     #[rstest]
     fn test_equality(options_contract_appl: OptionsContract) {
