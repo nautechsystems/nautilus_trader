@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 #![allow(clippy::legacy_numeric_constants)]
-use std::{collections::HashMap, fs, i128, path::PathBuf, str::FromStr};
-
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -23,6 +21,13 @@ use nautilus_model::{
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;
+use std::{
+    collections::HashMap,
+    fs, i128,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 use time::OffsetDateTime;
 
 use crate::{
@@ -46,7 +51,7 @@ pub struct DatabentoLiveClient {
     cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<LiveCommand>>,
     buffer_size: usize,
     publisher_venue_map: IndexMap<u16, Venue>,
-    symbol_venue_map: HashMap<Symbol, Venue>,
+    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
 }
 
 impl DatabentoLiveClient {
@@ -144,7 +149,7 @@ impl DatabentoLiveClient {
             is_running: false,
             is_closed: false,
             publisher_venue_map,
-            symbol_venue_map: HashMap::new(),
+            symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -167,10 +172,11 @@ impl DatabentoLiveClient {
         start: Option<u64>,
         snapshot: Option<bool>,
     ) -> PyResult<()> {
+        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
         let symbols: Vec<String> = instrument_ids
             .iter()
             .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut self.symbol_venue_map)
+                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
             })
             .collect();
         let stype_in = infer_symbology_type(symbols.first().unwrap());
@@ -223,6 +229,7 @@ impl DatabentoLiveClient {
             cmd_rx,
             msg_tx,
             self.publisher_venue_map.clone(),
+            self.symbol_venue_map.clone(),
         );
 
         self.send_command(LiveCommand::Start)?;
