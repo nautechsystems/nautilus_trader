@@ -612,7 +612,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
-            start = params.get("start") if params and params.get("subscribe_from_start") else None
+            start: int | None = params.get("start") if params else None
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
@@ -640,7 +640,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._ensure_subscribed_for_instrument(instrument_id)
 
-            start = params.get("start") if params and params.get("subscribe_from_start") else None
+            start: int | None = params.get("start") if params else None
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
@@ -667,7 +667,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
-            start = params.get("start") if params and params.get("subscribe_from_start") else None
+            start: int | None = params.get("start") if params else None
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(

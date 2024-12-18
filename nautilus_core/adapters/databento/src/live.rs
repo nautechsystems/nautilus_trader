@@ -267,7 +267,7 @@ impl DatabentoFeedHandler {
                     record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.symbol_venue_map.read().unwrap(),
+                    &self.symbol_venue_map.read().unwrap(), // TODO: Optimize this bottleneck
                     &mut instrument_id_map,
                     clock,
                 ) {
