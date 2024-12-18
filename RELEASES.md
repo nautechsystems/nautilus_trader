@@ -4,7 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added optional `depth` param for some `OrderBook` methods
-- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108), thanks @faysou
+- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124), thanks @faysou
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
