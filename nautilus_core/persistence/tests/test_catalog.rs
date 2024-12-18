@@ -16,12 +16,14 @@
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
-    trade::TradeTick, Data,
+    to_variant, trade::TradeTick, Data,
 };
+use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_persistence::{
     backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
+use nautilus_serialization::arrow::ArrowSchemaProvider;
 use nautilus_test_kit::common::get_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
@@ -319,4 +321,99 @@ fn test_bar_query() {
 
     assert_eq!(ticks.len(), expected_length);
     assert!(is_monotonically_increasing_by_init(&ticks));
+}
+
+#[rstest]
+fn test_catalog_serialization_json_round_trip() {
+    use pretty_assertions::assert_eq;
+
+    // Setup
+    let temp_dir = tempfile::tempdir().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), Some(1000));
+
+    // Read original data from parquet
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+    // let file_path = "test.parquet";
+    let mut session = DataBackendSession::new(1000);
+    session
+        .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
+        .unwrap();
+    let query_result: QueryResult = session.get_query_result();
+    let quote_ticks: Vec<Data> = query_result.collect();
+    let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
+
+    // Write to JSON using catalog
+    let json_path = catalog.write_to_json(quote_ticks.clone());
+
+    // Read back from JSON
+    let json_str = std::fs::read_to_string(json_path).unwrap();
+    let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
+
+    // Compare
+    assert_eq!(quote_ticks.len(), loaded_data_variants.len());
+    for (orig, loaded) in quote_ticks.iter().zip(loaded_data_variants.iter()) {
+        assert_eq!(orig, loaded);
+    }
+}
+
+#[rstest]
+fn test_datafusion_parquet_round_trip() {
+    use datafusion::parquet::{
+        arrow::ArrowWriter,
+        basic::{Compression, ZstdLevel},
+        file::properties::WriterProperties,
+    };
+    use nautilus_serialization::arrow::EncodeToRecordBatch;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashMap;
+
+    // Read original data from parquet
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+    let mut session = DataBackendSession::new(1000);
+    session
+        .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
+        .unwrap();
+    let query_result: QueryResult = session.get_query_result();
+    let quote_ticks: Vec<Data> = query_result.collect();
+    let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
+
+    let metadata = HashMap::from([
+        ("price_precision".to_string(), "5".to_string()),
+        ("size_precision".to_string(), "0".to_string()),
+        ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
+    ]);
+    let schema = QuoteTick::get_schema(Some(metadata.clone()));
+
+    // Write the record batches to a parquet file
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_file_path = temp_dir.path().join("test.parquet");
+    let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
+    {
+        let writer_props = WriterProperties::builder()
+            .set_compression(Compression::ZSTD(ZstdLevel::default()))
+            .set_max_row_group_size(1000)
+            .build();
+
+        let mut writer =
+            ArrowWriter::try_new(&mut temp_file, schema.into(), Some(writer_props)).unwrap();
+        for chunk in quote_ticks.chunks(1000) {
+            let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
+            writer.write(&batch).unwrap();
+        }
+        writer.close().unwrap();
+    }
+
+    // Read back from parquet
+    let mut session = DataBackendSession::new(1000);
+    session
+        .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None)
+        .unwrap();
+    let query_result: QueryResult = session.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
+    let ticks_variants: Vec<QuoteTick> = to_variant(ticks);
+
+    assert_eq!(quote_ticks.len(), ticks_variants.len());
+    for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
+        assert_eq!(orig, loaded)
+    }
 }

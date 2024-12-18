@@ -20,9 +20,19 @@ use parquet::{arrow::ArrowWriter, basic::ZstdLevel, file::properties::WriterProp
 
 /// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
 pub fn write_batch_to_parquet(
-    batch: &RecordBatch,
+    batch: RecordBatch,
     filepath: &Path,
     compression: Option<parquet::basic::Compression>,
+) -> Result<(), Box<dyn Error>> {
+    write_batches_to_parquet(&[batch], filepath, compression, None)
+}
+
+/// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
+pub fn write_batches_to_parquet(
+    batches: &[RecordBatch],
+    filepath: &Path,
+    compression: Option<parquet::basic::Compression>,
+    max_row_group_size: Option<usize>,
 ) -> Result<(), Box<dyn Error>> {
     // Ensure the parent directory exists
     if let Some(parent) = filepath.parent() {
@@ -35,10 +45,13 @@ pub fn write_batch_to_parquet(
     let default_compression = parquet::basic::Compression::ZSTD(ZstdLevel::default());
     let writer_props = WriterProperties::builder()
         .set_compression(compression.unwrap_or(default_compression))
+        .set_max_row_group_size(max_row_group_size.unwrap_or(5000))
         .build();
 
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(writer_props))?;
-    writer.write(batch)?;
+    let mut writer = ArrowWriter::try_new(file, batches[0].schema(), Some(writer_props))?;
+    for batch in batches {
+        writer.write(batch)?;
+    }
     writer.close()?;
 
     Ok(())

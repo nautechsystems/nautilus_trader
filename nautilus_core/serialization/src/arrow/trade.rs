@@ -116,6 +116,14 @@ impl EncodeToRecordBatch for TradeTick {
             ],
         )
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        TradeTick::get_metadata(
+            &self.instrument_id,
+            self.price.precision,
+            self.size.precision,
+        )
+    }
 }
 
 impl DecodeFromRecordBatch for TradeTick {
