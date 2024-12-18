@@ -984,13 +984,11 @@ cdef class DataEngine(Component):
             return
         Condition.not_none(client, "client")
 
-        if not params.get("start"):
+        if "start" not in params:
             last_timestamp: datetime | None = self._catalogs_last_timestamp(
                 QuoteTick,
                 instrument_id,
             )[0]
-
-            params = params if params else {}
             params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
         if instrument_id not in client.subscribed_quote_ticks():
@@ -1034,13 +1032,11 @@ cdef class DataEngine(Component):
             return
         Condition.not_none(client, "client")
 
-        if not params.get("start"):
+        if "start" not in params:
             last_timestamp: datetime | None = self._catalogs_last_timestamp(
                 TradeTick,
                 instrument_id,
             )[0]
-
-            params = params if params else {}
             params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
         if instrument_id not in client.subscribed_trade_ticks():
@@ -1094,13 +1090,11 @@ cdef class DataEngine(Component):
                 )
                 return
 
-            if not params.get("start"):
+            if "start" not in params:
                 last_timestamp: datetime | None = self._catalogs_last_timestamp(
                     Bar,
                     bar_type=bar_type,
                 )[0]
-
-                params = params if params else {}
                 params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
             if bar_type not in client.subscribed_bars():
@@ -1117,10 +1111,8 @@ cdef class DataEngine(Component):
 
         try:
             if data_type not in client.subscribed_custom_data():
-                if not params.get("start"):
+                if "start" not in params:
                     last_timestamp: datetime | None = self._catalogs_last_timestamp(data_type.type)[0]
-
-                    params = params if params else {}
                     params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
                 client.subscribe(data_type, params)
