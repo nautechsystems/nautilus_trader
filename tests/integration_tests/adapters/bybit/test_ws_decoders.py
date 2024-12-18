@@ -575,6 +575,7 @@ class TestBybitWsDecoders:
             takeProfit="0",
             stopLoss="0",
             trailingStop="0",
+            sessionAvgPrice="0",
             unrealisedPnl="-1.8075",
             cumRealisedPnl="0.64782276",
             createdTime="1672121182216",
@@ -585,6 +586,10 @@ class TestBybitWsDecoders:
             category="linear",
             positionStatus="Normal",
             adlRankIndicator=2,
+            autoAddMargin=0,
+            leverageSysUpdatedTime="",
+            mmrSysUpdatedTime="",
+            isReduceOnly=False,
             seq=4688002127,
         )
         assert result.data == [target_data]
