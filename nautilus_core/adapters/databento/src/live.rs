@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
+
 use databento::{
     dbn,
     dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
@@ -33,10 +38,6 @@ use nautilus_model::{
     enums::RecordFlag,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
-};
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
 };
 use tokio::{
     sync::mpsc::error::TryRecvError,
@@ -89,7 +90,7 @@ pub struct DatabentoFeedHandler {
 impl DatabentoFeedHandler {
     /// Creates a new [`DatabentoFeedHandler`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         key: String,
         dataset: String,
         rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,

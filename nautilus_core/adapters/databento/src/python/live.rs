@@ -12,7 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-#![allow(clippy::legacy_numeric_constants)]
+
+use std::{
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
+
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -21,13 +29,6 @@ use nautilus_model::{
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;
-use std::{
-    collections::HashMap,
-    fs, i128,
-    path::PathBuf,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
 use time::OffsetDateTime;
 
 use crate::{
@@ -189,8 +190,8 @@ impl DatabentoLiveClient {
             .build();
 
         if let Some(start) = start {
-            let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
-                .map_err(to_pyvalue_err)?;
+            let start =
+                OffsetDateTime::from_unix_timestamp_nanos(start as i128).map_err(to_pyvalue_err)?;
             sub.start = Some(start);
         };
         sub.use_snapshot = snapshot.unwrap_or(false);
