@@ -583,7 +583,7 @@ class TestBybitWsDecoders:
             tpslMode="Full",
             liqPrice="",
             bustPrice="",
-            category="linear",
+            category=BybitProductType.LINEAR,
             positionStatus="Normal",
             adlRankIndicator=2,
             autoAddMargin=0,
