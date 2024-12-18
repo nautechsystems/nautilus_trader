@@ -1669,7 +1669,7 @@ dependencies = [
  "json-writer",
  "num_enum",
  "serde",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "time",
  "tokio",
  "zstd",
@@ -2281,9 +2281,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.27.3"
+version = "0.27.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08afdbb5c31130e3034af566421053ab03787c640246a446327f550d11bcb333"
+checksum = "f6884a48c6826ec44f524c7456b163cebe9e55a18d7b5e307cb4f100371cc767"
 dependencies = [
  "futures-util",
  "http",
@@ -3044,7 +3044,7 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "tokio",
  "ustr",
 ]
@@ -3070,7 +3070,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "time",
  "tokio",
  "tracing",
@@ -3096,7 +3096,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
 ]
 
 [[package]]
@@ -3169,7 +3169,7 @@ dependencies = [
  "serde_json",
  "strum",
  "tabled",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "thousands",
  "ustr",
 ]
@@ -3194,7 +3194,7 @@ dependencies = [
  "rstest",
  "rustls",
  "serde_json",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
@@ -3223,7 +3223,7 @@ dependencies = [
  "quickcheck_macros",
  "rand",
  "rstest",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "tokio",
 ]
 
@@ -3248,7 +3248,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "ustr",
  "uuid",
 ]
@@ -3288,7 +3288,7 @@ dependencies = [
  "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "ustr",
 ]
 
@@ -3304,7 +3304,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "rstest",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
 ]
 
 [[package]]
@@ -3334,7 +3334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.7",
+ "thiserror 2.0.8",
  "thousands",
  "tokio",
  "tokio-tungstenite",
@@ -4559,7 +4559,7 @@ dependencies = [
  "openssl-probe",
  "rustls-pki-types",
  "schannel",
- "security-framework 3.0.1",
+ "security-framework 3.1.0",
 ]
 
 [[package]]
@@ -4686,9 +4686,9 @@ dependencies = [
 
 [[package]]
 name = "security-framework"
-version = "3.0.1"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1415a607e92bec364ea2cf9264646dcce0f91e6d65281bd6f2819cca3bf39c8"
+checksum = "81d3f8c9bfcc3cbb6b0179eb57042d75b1582bdc65c3cb95f3fa999509c03cbc"
 dependencies = [
  "bitflags 2.6.0",
  "core-foundation 0.10.0",
@@ -4699,9 +4699,9 @@ dependencies = [
 
 [[package]]
 name = "security-framework-sys"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa39c7303dc58b5543c94d22c1766b0d31f2ee58306363ea622b10bbc075eaa2"
+checksum = "1863fd3768cd83c56a7f60faa4dc0d403f1b6df0a38c3c25f44b7894e45370d5"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -5360,11 +5360,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.7"
+version = "2.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93605438cbd668185516ab499d589afb7ee1859ea3d5fc8f6b0755e1c7443767"
+checksum = "08f5383f3e0071702bf93ab5ee99b52d26936be9dedd9413067cbdcddcb6141a"
 dependencies = [
- "thiserror-impl 2.0.7",
+ "thiserror-impl 2.0.8",
 ]
 
 [[package]]
@@ -5380,9 +5380,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.7"
+version = "2.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d8749b4531af2117677a5fcd12b1348a3fe2b81e36e61ffeac5c4aa3273e36"
+checksum = "f2f357fcec90b3caef6623a099691be676d033b40a058ac95d2a6ade6fa0c943"
 dependencies = [
  "proc-macro2",
  "quote",
