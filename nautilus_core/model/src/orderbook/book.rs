@@ -221,7 +221,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_levels(self.bids(depth), group_size, true)
+        self.group_levels(self.bids(None), group_size, true, depth)
     }
 
     /// Groups ask levels by price, up to specified depth.
@@ -230,7 +230,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_levels(self.asks(depth), group_size, false)
+        self.group_levels(self.asks(None), group_size, false, depth)
     }
 
     fn group_levels<'a>(
@@ -238,8 +238,10 @@ impl OrderBook {
         levels_iter: impl Iterator<Item = &'a BookLevel>,
         group_size: Decimal,
         is_bid: bool,
+        depth: Option<usize>,
     ) -> IndexMap<Decimal, Decimal> {
         let mut levels = IndexMap::new();
+        let depth = depth.unwrap_or(usize::MAX);
 
         for level in levels_iter {
             let price = level.price.value.as_decimal();
@@ -254,6 +256,11 @@ impl OrderBook {
                 .entry(grouped_price)
                 .and_modify(|total| *total += size)
                 .or_insert(size);
+
+            if levels.len() > depth {
+                levels.pop();
+                break;
+            }
         }
 
         levels
