@@ -32,6 +32,12 @@ BYBIT_ALL_PRODUCTS: Final[list[BybitProductType]] = [
 # Set of Bybit error codes for which Nautilus will attempt retries,
 # potentially temporary conditions where a retry might make sense.
 BYBIT_RETRY_ERRORS_UTA: Final[set[int]] = {
+    # > ------------------------------------------------------------
+    # > Self defined error codes
+    -10_408,  # Client request timed out
+    # > ------------------------------------------------------------
+    # > Bybit defined error codes
+    # > https://bybit-exchange.github.io/docs/v5/error
     10_000,  # Server Timeout
     10_002,  # The request time exceeds the time window range
     10_006,  # Too many visits. Exceeded the API Rate Limit
