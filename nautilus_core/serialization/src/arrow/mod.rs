@@ -167,10 +167,8 @@ pub fn order_book_deltas_to_arrow_record_batch_bytes(
         return Err(EncodingError::EmptyData);
     }
 
-    // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
+    // Extract metadata from chunk
+    let metadata = OrderBookDelta::chunk_metadata(&data);
     OrderBookDelta::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 

@@ -140,13 +140,16 @@ impl EncodeToRecordBatch for OrderBookDelta {
         )
     }
 
+    /// Extract metadata from first two deltas
+    ///
+    /// Use the second delta if the first one has 0 precision
     fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
         let delta = chunk
             .first()
             .expect("Chunk should have alteast one element to encode");
 
         if delta.order.price.precision == 0 && delta.order.size.precision == 0 {
-            if let Some(delta) = chunk.get(2) {
+            if let Some(delta) = chunk.get(1) {
                 return EncodeToRecordBatch::metadata(delta);
             }
         }
