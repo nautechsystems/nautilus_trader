@@ -91,7 +91,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         (this is useful if managing GTD orders locally).
     use_ws_trade_api : bool, default False
         If the client is using websocket to send order requests.
-    use_http_batch_api: bool, default False
+    use_http_batch_api : bool, default False
         If the client is using http api to send batch order requests.
         Effective only when `use_ws_trade_api` is set to `True`.
     max_retries : PositiveInt, optional
