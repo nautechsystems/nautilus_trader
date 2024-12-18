@@ -991,7 +991,7 @@ cdef class DataEngine(Component):
             )[0]
 
             params = params if params else {}
-            params["start"] = last_timestamp
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id, params)
@@ -1041,7 +1041,7 @@ cdef class DataEngine(Component):
             )[0]
 
             params = params if params else {}
-            params["start"] = last_timestamp
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id, params)
@@ -1101,7 +1101,7 @@ cdef class DataEngine(Component):
                 )[0]
 
                 params = params if params else {}
-                params["start"] = last_timestamp
+                params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type, params)
@@ -1121,7 +1121,7 @@ cdef class DataEngine(Component):
                     last_timestamp: datetime | None = self._catalogs_last_timestamp(data_type.type)[0]
 
                     params = params if params else {}
-                    params["start"] = last_timestamp
+                    params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
                 client.subscribe(data_type, params)
         except NotImplementedError:

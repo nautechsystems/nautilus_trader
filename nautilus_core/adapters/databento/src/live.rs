@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use databento::{
     dbn,
     dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
@@ -35,6 +33,10 @@ use nautilus_model::{
     enums::RecordFlag,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
+};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
 };
 use tokio::{
     sync::mpsc::error::TryRecvError,
@@ -80,7 +82,7 @@ pub struct DatabentoFeedHandler {
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
     msg_tx: tokio::sync::mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    symbol_venue_map: HashMap<Symbol, Venue>,
+    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
     replay: bool,
 }
 
@@ -93,6 +95,7 @@ impl DatabentoFeedHandler {
         rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
         tx: tokio::sync::mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
+        symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
     ) -> Self {
         Self {
             key,
@@ -100,7 +103,7 @@ impl DatabentoFeedHandler {
             cmd_rx: rx,
             msg_tx: tx,
             publisher_venue_map,
-            symbol_venue_map: HashMap::new(),
+            symbol_venue_map,
             replay: false,
         }
     }
@@ -220,7 +223,7 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.symbol_venue_map,
+                    &self.symbol_venue_map.read().unwrap(),
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -231,7 +234,7 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.symbol_venue_map,
+                    &self.symbol_venue_map.read().unwrap(),
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -242,7 +245,7 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.symbol_venue_map,
+                    &self.symbol_venue_map.read().unwrap(),
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -253,7 +256,7 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.symbol_venue_map,
+                    &self.symbol_venue_map.read().unwrap(),
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -263,7 +266,7 @@ impl DatabentoFeedHandler {
                     record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.symbol_venue_map,
+                    &self.symbol_venue_map.read().unwrap(),
                     &mut instrument_id_map,
                     clock,
                 ) {
