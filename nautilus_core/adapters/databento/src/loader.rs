@@ -183,7 +183,7 @@ impl DatabentoDataLoader {
         use_exchange_as_venue: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
         let mut decoder = Decoder::from_zstd_file(filepath)?;
-        decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
+        decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 
         Ok(std::iter::from_fn(move || {

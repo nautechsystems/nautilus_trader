@@ -125,7 +125,7 @@ impl DatabentoFeedHandler {
             databento::LiveClient::builder()
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
-                .upgrade_policy(VersionUpgradePolicy::Upgrade)
+                .upgrade_policy(VersionUpgradePolicy::UpgradeToV2)
                 .build(),
         )
         .await?;

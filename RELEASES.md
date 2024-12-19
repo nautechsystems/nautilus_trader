@@ -11,7 +11,7 @@ Released on TBD (UTC).
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
-None
+- Upgraded `databento` crate to v0.17.0
 
 ### Breaking Changes
 - Moved `BinanceOrderBookDeltaDataLoader from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
