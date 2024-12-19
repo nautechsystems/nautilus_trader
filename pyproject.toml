@@ -54,7 +54,7 @@ cython = "==3.0.11"  # Build dependency (pinned for stability)
 numpy = ">=1.26.4"  # Build dependency
 setuptools = ">=75" # Build dependency
 click = "^8.1.7"
-fsspec = "^2024.10.0"
+fsspec = "^2024.12.0"
 msgspec = "^0.18.6"
 pandas = "^2.2.3"
 pyarrow = ">=18.1.0"
@@ -93,7 +93,7 @@ mypy = "^1.13.0"
 pandas-stubs = "^2.2.2"
 pre-commit = "^4.0.1"
 requests = "^2.32.3"  # Required for fsspec github FS
-ruff = "^0.8.3"
+ruff = "^0.8.4"
 types-pytz = "^2024.1"
 types-requests = "^2.32"
 types-toml = "^0.10.2"
