@@ -36,7 +36,7 @@ use nautilus_model::{
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
     python::instruments::instrument_any_to_pyobject,
-    types::currency::Currency,
+    types::Currency,
 };
 use pyo3::{
     exceptions::PyException,

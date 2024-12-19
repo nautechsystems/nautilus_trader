@@ -27,7 +27,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::quantity::Quantity;
+use crate::types::Quantity;
 
 #[pymethods]
 impl Quantity {

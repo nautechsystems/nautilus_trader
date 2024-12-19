@@ -24,7 +24,7 @@ use nautilus_model::{
     accounts::base::Account,
     identifiers::PositionId,
     position::Position,
-    types::{currency::Currency, money::Money},
+    types::{Currency, Money},
 };
 use rust_decimal::Decimal;
 
@@ -374,7 +374,7 @@ mod tests {
             AccountId, ClientOrderId,
         },
         instruments::InstrumentAny,
-        types::{balance::AccountBalance, money::Money, quantity::Quantity},
+        types::{AccountBalance, Money, Price, Quantity},
     };
 
     use super::*;
@@ -474,7 +474,7 @@ mod tests {
         fn account_type(&self) -> AccountType {
             todo!()
         }
-        fn base_currency(&self) -> std::option::Option<nautilus_model::types::currency::Currency> {
+        fn base_currency(&self) -> Option<Currency> {
             todo!()
         }
         fn is_cash_account(&self) -> bool {
@@ -486,35 +486,22 @@ mod tests {
         fn calculated_account_state(&self) -> bool {
             todo!()
         }
-        fn balance_total(
-            &self,
-            _: std::option::Option<nautilus_model::types::currency::Currency>,
-        ) -> std::option::Option<Money> {
+        fn balance_total(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balance_free(
-            &self,
-            _: std::option::Option<nautilus_model::types::currency::Currency>,
-        ) -> std::option::Option<Money> {
+        fn balance_free(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balances_free(
-            &self,
-        ) -> std::collections::HashMap<nautilus_model::types::currency::Currency, Money> {
+        fn balances_free(&self) -> HashMap<Currency, Money> {
             todo!()
         }
-        fn balance_locked(
-            &self,
-            _: std::option::Option<nautilus_model::types::currency::Currency>,
-        ) -> std::option::Option<Money> {
+        fn balance_locked(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balances_locked(
-            &self,
-        ) -> std::collections::HashMap<nautilus_model::types::currency::Currency, Money> {
+        fn balances_locked(&self) -> HashMap<Currency, Money> {
             todo!()
         }
-        fn last_event(&self) -> std::option::Option<AccountState> {
+        fn last_event(&self) -> Option<AccountState> {
             todo!()
         }
         fn events(&self) -> Vec<AccountState> {
@@ -523,13 +510,10 @@ mod tests {
         fn event_count(&self) -> usize {
             todo!()
         }
-        fn currencies(&self) -> Vec<nautilus_model::types::currency::Currency> {
+        fn currencies(&self) -> Vec<Currency> {
             todo!()
         }
-        fn balances(
-            &self,
-        ) -> std::collections::HashMap<nautilus_model::types::currency::Currency, AccountBalance>
-        {
+        fn balances(&self) -> HashMap<Currency, AccountBalance> {
             todo!()
         }
         fn apply(&mut self, _: AccountState) {
@@ -540,8 +524,8 @@ mod tests {
             _: InstrumentAny,
             _: OrderSide,
             _: Quantity,
-            _: nautilus_model::types::price::Price,
-            _: std::option::Option<bool>,
+            _: Price,
+            _: Option<bool>,
         ) -> Result<Money, anyhow::Error> {
             todo!()
         }
@@ -549,7 +533,7 @@ mod tests {
             &self,
             _: InstrumentAny,
             _: OrderFilled,
-            _: std::option::Option<nautilus_model::position::Position>,
+            _: Option<Position>,
         ) -> Result<Vec<Money>, anyhow::Error> {
             todo!()
         }
@@ -557,9 +541,9 @@ mod tests {
             &self,
             _: InstrumentAny,
             _: Quantity,
-            _: nautilus_model::types::price::Price,
+            _: Price,
             _: LiquiditySide,
-            _: std::option::Option<bool>,
+            _: Option<bool>,
         ) -> Result<Money, anyhow::Error> {
             todo!()
         }

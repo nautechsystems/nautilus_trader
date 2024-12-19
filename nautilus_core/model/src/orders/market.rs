@@ -500,7 +500,7 @@ mod tests {
         enums::{OrderSide, OrderType, TimeInForce},
         instruments::{stubs::*, CurrencyPair},
         orders::builder::OrderTestBuilder,
-        types::quantity::Quantity,
+        types::Quantity,
     };
 
     #[rstest]

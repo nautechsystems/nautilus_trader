@@ -97,7 +97,7 @@ fn calculate_riskable_money(equity: Decimal, risk: Decimal, commission_rate: Dec
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        identifiers::Symbol, instruments::stubs::default_fx_ccy, types::currency::Currency,
+        identifiers::Symbol, instruments::stubs::default_fx_ccy, types::Currency,
     };
     use rstest::*;
 

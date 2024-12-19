@@ -22,7 +22,7 @@ use crate::{
         OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    types::price::Price,
+    types::Price,
 };
 
 /// # Safety

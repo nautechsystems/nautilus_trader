@@ -23,7 +23,7 @@ use std::{
 use once_cell::sync::Lazy;
 use ustr::Ustr;
 
-use crate::{enums::CurrencyType, types::currency::Currency};
+use crate::{enums::CurrencyType, types::Currency};
 
 ///////////////////////////////////////////////////////////////////////////////
 // Fiat currencies

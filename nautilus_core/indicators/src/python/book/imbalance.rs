@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::{orderbook::book::OrderBook, types::quantity::Quantity};
+use nautilus_model::{orderbook::book::OrderBook, types::Quantity};
 use pyo3::prelude::*;
 
 use crate::{book::imbalance::BookImbalanceRatio, indicator::Indicator};

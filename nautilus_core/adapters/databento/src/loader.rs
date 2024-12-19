@@ -34,7 +34,7 @@ use nautilus_model::{
     },
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
-    types::currency::Currency,
+    types::Currency,
 };
 use ustr::Ustr;
 

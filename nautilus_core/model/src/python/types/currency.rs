@@ -23,7 +23,7 @@ use pyo3::{
 };
 use ustr::Ustr;
 
-use crate::{enums::CurrencyType, types::currency::Currency};
+use crate::{enums::CurrencyType, types::Currency};
 
 #[pymethods]
 impl Currency {

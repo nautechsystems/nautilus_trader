@@ -17,7 +17,7 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::PositionSide,
     identifiers::{AccountId, InstrumentId, PositionId},
-    types::quantity::Quantity,
+    types::Quantity,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

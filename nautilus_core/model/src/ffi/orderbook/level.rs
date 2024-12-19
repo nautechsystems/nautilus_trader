@@ -21,7 +21,7 @@ use crate::{
     data::order::BookOrder,
     enums::OrderSide,
     orderbook::{ladder::BookPrice, level::BookLevel},
-    types::price::Price,
+    types::Price,
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].

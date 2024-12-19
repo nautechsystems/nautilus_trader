@@ -30,7 +30,7 @@ use nautilus_model::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
         orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
     },
-    types::currency::Currency,
+    types::Currency,
 };
 use pyo3::prelude::*;
 

@@ -15,7 +15,7 @@
 
 use pyo3::prelude::*;
 
-use crate::{data::order::BookOrder, orderbook::level::BookLevel, types::price::Price};
+use crate::{data::order::BookOrder, orderbook::BookLevel, types::Price};
 
 #[pymethods]
 impl BookLevel {
