@@ -172,7 +172,7 @@ impl DatabentoHistoricalClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
+            decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2);
 
             let metadata = decoder.metadata().clone();
             let mut instruments = Vec::new();
