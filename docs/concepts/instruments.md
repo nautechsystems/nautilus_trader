@@ -142,39 +142,47 @@ such as when passing them to the order factory to create an order.
 
 ## Margins and fees
 
-Margin calculations are handled by the `MarginAccount` class. Let's explore how margins work in our trading system and understand all the key concepts.
+Margin calculations are handled by the `MarginAccount` class. This section explains how margins work and introduces key concepts you need to know.
 
 ### When margins apply?
 
-Each exchange (like CME or Binance) operates with a specific account type that determines whether margin calculations are relevant for your trading. When setting up an exchange connection, you'll specify one of these account types:
-- `AccountType.MARGIN`: Uses margin calculations we'll discuss below
-- `AccountType.CASH`: Simple accounts where margins don't apply
-- `AccountType.BETTING`: Also doesn't use margin calculations
+Each exchange (e.g., CME or Binance) operates with a specific account types that determine whether margin calculations are applicable.
+When setting up an exchange venue, you'll specify one of these account types:
+
+- `AccountType.MARGIN`: Accounts that use margin calculations, which are explained below.
+- `AccountType.CASH`: Simple accounts where margin calculations do not apply.
+- `AccountType.BETTING`: Accounts designed for betting, which also do not involve margin calculations.
 
 ### Vocabulary
 
-Let's start with the key terms you'll need to understand trading on margin:
+To understand trading on margin, let’s start with some key terms:
 
-**Notional Value** is the full contract value in base currency. The instrument's notional value represents the total market value of your position. For example, with EUR/USD futures on CME (symbol 6E):
-- Each contract represents 125,000 EUR (EUR is quote currency, USD is base currency)
-- When the current market price is 1.1000, then the notional value equals 125,000 EUR × `1.1000` (price of EUR/USD) = 137,500 USD
+**Notional Value**: The total contract value in the quote currency. It represents the full market value of your position. For example, with EUR/USD futures on CME (symbol 6E).
+- Each contract represents 125,000 EUR (EUR is base currency, USD is quote currency).
+- If the current market price is 1.1000, the notional value equals 125,000 EUR × 1.1000 (price of EUR/USD) = 137,500 USD.
 
-**Leverage** (`leverage`) is an attribute of your trading account that defines how much market exposure you can control with your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with just 1,000 USD in your account.
+**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with just 1,000 USD in your account.
 
-**Initial Margin** (`margin_init`) is the initial margin rate required to open positions. It represents the amount of money that must be available in your account to open new positions. This is just an entry check requirement - no money is actually locked in your account.
+**Initial Margin** (`margin_init`): The margin rate required to open a position. It represents the minimum amount of funds that must be available in your account to open new positions. This is only a pre-check — no funds are actually locked.
 
-**Maintenance Margin** (`margin_maint`) is the maintenance margin rate to keep positions open. This is the amount of money that gets locked and must remain in your account to keep positions open. It's always lower than the initial margin, and you can view all blocked funds (sum of maintenance margins) from open positions using `self.portfolio.balances_locked(venue)` in your strategy.
+**Maintenance Margin** (`margin_maint`): The margin rate required to keep a position open. This amount is locked in your account to maintain the position. It is always lower than the initial margin. You can view the total blocked funds (sum of maintenance margins for open positions) using the following in your strategy:
 
-**Maker/Taker Fees** describe how exchanges charge trading fees based on how you interact with the market. When you place an order, you're either a "maker" or a "taker" of liquidity:
+```python
+self.portfolio.balances_locked(venue)
+```
 
-- **Maker Fee** (`maker_fee`): This is the lower fee you pay when you "make" liquidity by placing orders that sit on the order book. For example, if you place a limit buy order below the current market price, you're adding liquidity to the market and will pay the maker fee when your order eventually fills.
-- **Taker Fee** (`taker_fee`): This is typically a higher fee charged when you "take" liquidity by placing orders that execute immediately against existing orders. For instance, if you place a market buy order or a limit buy above the current price, you're removing liquidity from the market and will pay the taker fee.
+**Maker/Taker Fees**: The fees charged by exchanges based on your order's interaction with the market:
 
-Not all exchanges / instruments implement maker/taker fees. In these cases, both `maker_fee` and `taker_fee` should be set to 0 in `Instrument` and all its subclasses (such as `FuturesContract`, `Equity`, `CurrencyPair`, `Commodity`, `Cfd`, `BinaryOption`, `BettingInstrument`, and others).
+- Maker Fee (`maker_fee`): A fee (typically lower) charged when you "make" liquidity by placing an order that remains on the order book. For example, a limit buy order below the current price adds liquidity, and the *maker* fee applies when it fills.
+- Taker Fee (`taker_fee`): A fee (typically higher) charged when you "take" liquidity by placing an order that executes immediately. For instance, a market buy order or a limit buy above the current price removes liquidity, and the *taker* fee applies.
+
+:::tip
+Not all exchanges or instruments implement maker/taker fees. If absent, set both `maker_fee` and `taker_fee` to 0 for the `Instrument` (e.g., `FuturesContract`, `Equity`, `CurrencyPair`, `Commodity`, `Cfd`, `BinaryOption`, `BettingInstrument`).
+:::
 
 ### Margin calculation formula
 
-When examining the code in `MarginAccount`, you'll find the margin calculations follow these formulas:
+The `MarginAccount` class calculates margins using the following formulas:
 
 ```python
 # Initial margin calculation
@@ -184,26 +192,30 @@ margin_init = (notional_value / leverage * margin_init) + (notional_value / leve
 margin_maint = (notional_value / leverage * margin_maint) + (notional_value / leverage * taker_fee)
 ```
 
-Notes:
-- Notice that both formulas follow the same structure but use their respective margin rates (`margin_init` / `margin_maint`).
-- Each formula consists of two parts: First is the main margin calculation ; Second is an addition for maker/taker fees
+**Key Points**:
+
+- Both formulas follow the same structure but use their respective margin rates (`margin_init` and `margin_maint`).
+- Each formula consists of two parts:
+  - **Primary margin calculation**: Based on notional value, leverage, and margin rate.
+  - **Fee Adjustment**: Accounts for the maker/taker fee.
 
 ### Implementation details
 
 For those interested in exploring the technical implementation:
-- File location: `nautilus_trader/accounting/accounts/margin.pyx`
+
+- [nautilus_trader/accounting/accounts/margin.pyx](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/accounting/accounts/margin.pyx)
 - Key methods: `calculate_margin_init(self, ...)` and `calculate_margin_maint(self, ...)`
 
 ## Commissions
 
-Trading commissions represent the fees charged by exchanges or brokers for executing trades. While maker/taker fees
-are common in cryptocurrency markets, traditional exchanges like CME often use different fee structures,
-such as per-contract commissions. Nautilus Trader supports multiple commission models to accommodate various
-fee structures across different markets.
+Trading commissions represent the fees charged by exchanges or brokers for executing trades.
+While maker/taker fees are common in cryptocurrency markets, traditional exchanges like CME often
+employ other fee structures, such as per-contract commissions.
+NautilusTrader supports multiple commission models to accommodate diverse fee structures across different markets.
 
 ### Built-in Fee Models
 
-The framework provides two official fee model implementations:
+The framework provides two built-in fee model implementations:
 
 1. `MakerTakerFeeModel`: Implements the maker/taker fee structure common in cryptocurrency exchanges, where fees are
     calculated as a percentage of the trade value.
@@ -212,7 +224,7 @@ The framework provides two official fee model implementations:
 ### Creating Custom Fee Models
 
 While the built-in fee models cover common scenarios, you might encounter situations requiring specific commission structures.
-Nautilus Trader's flexible architecture allows you to implement custom fee models by inheriting from the base `FeeModel` class.
+NautilusTrader's flexible architecture allows you to implement custom fee models by inheriting from the base `FeeModel` class.
 
 For example, if you're trading futures on exchanges that charge per-contract commissions (like CME), you can implement
 a custom fee model. When creating custom fee models, we inherit from the `FeeModel` base class, which is implemented
@@ -240,12 +252,12 @@ and instrument, allowing for flexible commission calculations based on these par
 Our new class `PerContractFeeModel` inherits class `FeeModel`, which is implemented in Cython,
 so notice the Cython-style parameter names in the method signature:
 
-- `Order_order`: The order object, with type prefix `Order_`
-- `Quantity_fill_qty`: The fill quantity, with type prefix `Quantity_`
-- `Price_fill_px`: The fill price, with type prefix `Price_`
-- `Instrument_instrument`: The instrument object, with type prefix `Instrument_`
+- `Order_order`: The order object, with type prefix `Order_`.
+- `Quantity_fill_qty`: The fill quantity, with type prefix `Quantity_`.
+- `Price_fill_px`: The fill price, with type prefix `Price_`.
+- `Instrument_instrument`: The instrument object, with type prefix `Instrument_`.
 
-These parameter names follow Nautilus Trader's Cython naming conventions, where the prefix indicates the expected type.
+These parameter names follow NautilusTrader's Cython naming conventions, where the prefix indicates the expected type.
 While this might seem verbose compared to typical Python naming conventions, it ensures type safety and consistency
 with the framework's Cython codebase.
 
@@ -269,7 +281,6 @@ engine.add_venue(
 When implementing custom fee models, ensure they accurately reflect the fee structure of your target exchange.
 Even small discrepancies in commission calculations can significantly impact strategy performance metrics during backtesting.
 :::
-
 
 ## Additional info
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
