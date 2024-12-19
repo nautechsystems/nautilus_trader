@@ -115,10 +115,15 @@ class DatabentoDataClient(LiveMarketDataClient):
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
-        self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
-        self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
+        self._use_exchange_as_venue: bool = config.use_exchange_as_venue
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
+        self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
+        self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
+
+        self._log.info(f"{config.use_exchange_as_venue=}", LogColor.BLUE)
+        self._log.info(f"{config.timeout_initial_load=}", LogColor.BLUE)
+        self._log.info(f"{config.mbo_subscriptions_delay=}", LogColor.BLUE)
 
         # Clients
         self._http_client = http_client
@@ -161,7 +166,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         coros: list[Coroutine] = []
         for dataset, instrument_ids in self._instrument_ids.items():
             loading_ids: list[InstrumentId] = sorted(instrument_ids)
-            filters = {"parent_symbols": list(self._parent_symbols.get(dataset, []))}
+            filters = {
+                "use_exchange_as_venue": self._use_exchange_as_venue,
+                "parent_symbols": list(self._parent_symbols.get(dataset, [])),
+            }
             coro = self._instrument_provider.load_ids_async(
                 instrument_ids=loading_ids,
                 filters=filters,
@@ -424,10 +432,13 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            start: int | None = params.get("start") if params else None
+
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
                 instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -436,17 +447,14 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_parent_symbols(
         self,
         dataset: Dataset,
-        parent_instrument_ids: set[InstrumentId],
+        parent_symbols: set[InstrumentId],
     ) -> None:
         try:
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
                 instrument_ids=sorted(  # type: ignore[type-var]
-                    [
-                        instrument_id_to_pyo3(instrument_id)
-                        for instrument_id in parent_instrument_ids
-                    ],
+                    [instrument_id_to_pyo3(instrument_id) for instrument_id in parent_symbols],
                 ),
                 stype_in="parent",
             )
@@ -919,6 +927,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=[instrument_id_to_pyo3(instrument_id)],
             start=start.value,
             end=end.value,
+            use_exchange_as_venue=self._use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)

@@ -45,11 +45,11 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ES.c.0.GLBX"),
-    # InstrumentId.from_str("ESZ4.GLBX"),
-    # InstrumentId.from_str("ES.FUT.GLBX"),
-    # InstrumentId.from_str("CL.FUT.GLBX"),
-    # InstrumentId.from_str("LO.OPT.GLBX"),
+    InstrumentId.from_str("ES.c.0.GLBX"),  # TODO: Continuous contracts only work with GLBX for now
+    # InstrumentId.from_str("ESZ4.XCME"),
+    # InstrumentId.from_str("ES.FUT.XCME"),
+    # InstrumentId.from_str("CL.FUT.NYMEX"),
+    # InstrumentId.from_str("LO.OPT.NYMEX"),
     # InstrumentId.from_str("AAPL.XNAS"),
     # InstrumentId.from_str("AAPL.IEXG"),
 ]
@@ -87,9 +87,10 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'DATABENTO_API_KEY' env var
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            use_exchange_as_venue=True,
+            mbo_subscriptions_delay=10.0,
             instrument_ids=instrument_ids,
             parent_symbols={"GLBX.MDP3": {"ES.FUT"}},
-            mbo_subscriptions_delay=10.0,
         ),
     },
     timeout_connection=30.0,
@@ -154,6 +155,7 @@ class DataSubscriber(Strategy):
             #     interval_ms=1000,
             # )
 
+            # self.subscribe_instrument(parent_symbol, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.subscribe_bars(BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
