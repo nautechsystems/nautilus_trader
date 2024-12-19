@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
-    types::{balance::AccountBalance, money::Money},
+    types::{AccountBalance, Money},
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 pub struct AccountsManager {

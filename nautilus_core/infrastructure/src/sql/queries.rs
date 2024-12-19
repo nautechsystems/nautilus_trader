@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    data::{Bar, DataType, QuoteTick, TradeTick},
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
@@ -27,10 +27,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{any::OrderAny, base::Order},
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-    },
+    types::{AccountBalance, Currency, MarginBalance},
 };
 use sqlx::{PgPool, Row};
 

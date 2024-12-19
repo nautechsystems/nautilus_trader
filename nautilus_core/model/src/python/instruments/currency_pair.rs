@@ -25,7 +25,7 @@ use rust_decimal::Decimal;
 use crate::{
     identifiers::{InstrumentId, Symbol},
     instruments::CurrencyPair,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]

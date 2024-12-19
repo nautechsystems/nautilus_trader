@@ -15,8 +15,8 @@
 
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
-    to_variant, trade::TradeTick, Data,
+    is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
+    TradeTick,
 };
 use nautilus_persistence::{
     backend::{

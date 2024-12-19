@@ -31,14 +31,14 @@ use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    data::{Bar, DataType, QuoteTick, TradeTick},
     events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::Currency,

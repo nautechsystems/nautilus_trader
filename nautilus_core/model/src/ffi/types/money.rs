@@ -15,7 +15,7 @@
 
 use std::ops::{AddAssign, SubAssign};
 
-use crate::types::{currency::Currency, money::Money};
+use crate::types::{Currency, Money};
 
 // TODO: Document panic
 #[no_mangle]

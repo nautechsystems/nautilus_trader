@@ -30,7 +30,7 @@ use crate::{
         stop_market::StopMarketOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

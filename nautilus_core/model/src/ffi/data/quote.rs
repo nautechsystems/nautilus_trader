@@ -22,9 +22,9 @@ use std::{
 use nautilus_core::{ffi::string::str_to_cstr, nanos::UnixNanos};
 
 use crate::{
-    data::quote::QuoteTick,
+    data::QuoteTick,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[no_mangle]

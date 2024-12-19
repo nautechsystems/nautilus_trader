@@ -18,7 +18,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use futures_util::{pin_mut, Stream, StreamExt};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{bar::Bar, Data},
+    data::{Bar, Data},
     python::data::data_to_pycapsule,
 };
 use pyo3::{prelude::*, types::PyList};

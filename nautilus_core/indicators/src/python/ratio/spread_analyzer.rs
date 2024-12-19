@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId};
+use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 use pyo3::prelude::*;
 
 use crate::{indicator::Indicator, ratio::spread_analyzer::SpreadAnalyzer};

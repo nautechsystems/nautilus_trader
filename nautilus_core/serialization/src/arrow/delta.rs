@@ -22,10 +22,10 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::{delta::OrderBookDelta, order::BookOrder},
+    data::{BookOrder, OrderBookDelta},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{

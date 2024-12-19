@@ -28,7 +28,7 @@ use crate::{
     data::order::{BookOrder, OrderId},
     enums::OrderSide,
     python::common::PY_MODULE_MODEL,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

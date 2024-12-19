@@ -30,7 +30,7 @@ use crate::{
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, OptionsContract,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 impl Default for SyntheticInstrument {

@@ -20,7 +20,7 @@ use nautilus_model::{
     enums::{OrderSide, PositionSide},
     events::position::snapshot::PositionSnapshot,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{currency::Currency, money::Money, quantity::Quantity},
+    types::{Currency, Money, Quantity},
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
 

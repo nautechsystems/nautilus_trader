@@ -44,14 +44,14 @@ use nautilus_common::{
 };
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{quote::QuoteTick, Data},
+    data::{Data, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
     events::{account::state::AccountState, order::OrderEventAny, position::PositionEvent},
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
-    types::{currency::Currency, money::Money, price::Price},
+    types::{Currency, Money, Price},
 };
 use rust_decimal::{
     prelude::{FromPrimitive, ToPrimitive},
@@ -1491,7 +1491,7 @@ mod tests {
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
-        data::quote::QuoteTick,
+        data::QuoteTick,
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{
             account::{state::AccountState, stubs::cash_account_state},
@@ -1514,10 +1514,7 @@ mod tests {
         },
         orders::{any::OrderAny, builder::OrderTestBuilder},
         position::Position,
-        types::{
-            balance::AccountBalance, currency::Currency, money::Money, price::Price,
-            quantity::Quantity,
-        },
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
     use rust_decimal::{prelude::FromPrimitive, Decimal};

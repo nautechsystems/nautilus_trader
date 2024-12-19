@@ -27,7 +27,7 @@ use nautilus_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{delta::OrderBookDelta, GetTsInit};
+use super::{GetTsInit, OrderBookDelta};
 use crate::identifiers::InstrumentId;
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
@@ -181,7 +181,7 @@ mod tests {
     use crate::{
         data::{order::BookOrder, stubs::stub_deltas},
         enums::{BookAction, OrderSide},
-        types::{price::Price, quantity::Quantity},
+        types::{Price, Quantity},
     };
 
     #[rstest]

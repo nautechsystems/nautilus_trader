@@ -37,7 +37,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::base::OrderError,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

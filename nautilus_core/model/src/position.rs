@@ -32,7 +32,7 @@ use crate::{
         Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a position in a market.
@@ -536,7 +536,7 @@ mod tests {
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         stubs::*,
-        types::{money::Money, price::Price, quantity::Quantity},
+        types::{Money, Price, Quantity},
     };
 
     #[rstest]

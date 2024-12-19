@@ -26,10 +26,7 @@ use crate::{
     enums::AccountType,
     events::account::state::AccountState,
     identifiers::AccountId,
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-    },
+    types::{AccountBalance, Currency, MarginBalance},
 };
 
 #[pymethods]

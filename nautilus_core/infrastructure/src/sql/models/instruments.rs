@@ -27,7 +27,7 @@ use nautilus_model::{
         BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
         FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};

@@ -18,10 +18,7 @@ use std::{collections::HashMap, path::PathBuf};
 use databento::dbn;
 use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
 use nautilus_model::{
-    data::{
-        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        status::InstrumentStatus, trade::TradeTick, Data,
-    },
+    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Venue},
     python::instruments::instrument_any_to_pyobject,
 };

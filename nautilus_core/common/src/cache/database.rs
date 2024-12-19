@@ -25,14 +25,14 @@ use bytes::Bytes;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    data::{Bar, DataType, QuoteTick, TradeTick},
     events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::Currency,

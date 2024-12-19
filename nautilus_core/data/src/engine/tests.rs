@@ -37,13 +37,9 @@ use nautilus_common::{
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        depth::OrderBookDepth10,
-        quote::QuoteTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
-        trade::TradeTick,
-        Data, DataType,
+        Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     enums::BookType,
     identifiers::{ClientId, TraderId, Venue},

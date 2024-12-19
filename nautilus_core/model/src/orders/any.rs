@@ -40,7 +40,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
         VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -22,7 +22,7 @@ use nautilus_core::python::serialization::from_dict_pyo3;
 use nautilus_model::{
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 

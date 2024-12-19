@@ -18,7 +18,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -131,7 +131,7 @@ fn fast_mad_with_mean(values: VecDeque<f64>, mean: f64) -> f64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::bar::Bar;
+    use nautilus_model::data::Bar;
     use rstest::rstest;
 
     use crate::{

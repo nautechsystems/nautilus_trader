@@ -22,10 +22,10 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::trade::TradeTick,
+    data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{

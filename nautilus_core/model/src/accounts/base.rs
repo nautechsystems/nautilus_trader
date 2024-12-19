@@ -24,9 +24,7 @@ use crate::{
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,
-    types::{
-        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

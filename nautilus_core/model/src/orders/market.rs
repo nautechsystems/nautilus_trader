@@ -42,10 +42,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::base::OrderError,
-    types::{
-        price::Price,
-        quantity::{check_quantity_positive, Quantity},
-    },
+    types::{quantity::check_quantity_positive, Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

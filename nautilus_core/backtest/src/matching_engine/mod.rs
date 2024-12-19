@@ -29,13 +29,7 @@ use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_execution::matching_core::OrderMatchingCore;
 use nautilus_model::{
-    data::{
-        bar::{Bar, BarType},
-        delta::OrderBookDelta,
-        deltas::OrderBookDeltas,
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, ContingencyType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus,
@@ -50,14 +44,14 @@ use nautilus_model::{
         VenueOrderId,
     },
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
     orders::{
         any::{OrderAny, PassiveOrderAny, StopOrderAny},
         trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },
     position::Position,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;
 use uuid::Uuid;

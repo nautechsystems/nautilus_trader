@@ -24,11 +24,7 @@ use pyo3::{prelude::*, pyclass::CompareOp, types::PyCapsule};
 
 use super::data_to_pycapsule;
 use crate::{
-    data::{
-        delta::OrderBookDelta,
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        Data,
-    },
+    data::{Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
 };

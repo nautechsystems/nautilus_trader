@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
@@ -121,7 +121,7 @@ impl MovingAverage for SimpleMovingAverage {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        data::{quote::QuoteTick, trade::TradeTick},
+        data::{QuoteTick, TradeTick},
         enums::PriceType,
     };
     use rstest::rstest;

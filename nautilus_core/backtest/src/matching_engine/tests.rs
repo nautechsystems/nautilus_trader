@@ -28,7 +28,7 @@ use nautilus_common::{
 };
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
-    data::{delta::OrderBookDelta, order::BookOrder},
+    data::{BookOrder, OrderBookDelta},
     enums::{
         AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
         OrderType,
@@ -43,7 +43,7 @@ use nautilus_model::{
     },
     orders::{any::OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
     position::Position,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
 use ustr::Ustr;

@@ -41,7 +41,7 @@ use crate::{
         limit::LimitOrder,
     },
     python::{common::commissions_from_hashmap, events::order::pyobject_to_order_event},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

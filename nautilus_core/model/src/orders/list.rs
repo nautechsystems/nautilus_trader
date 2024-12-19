@@ -93,7 +93,7 @@ mod tests {
         identifiers::{OrderListId, StrategyId},
         instruments::{stubs::*, CurrencyPair},
         orders::builder::OrderTestBuilder,
-        types::{price::Price, quantity::Quantity},
+        types::{Price, Quantity},
     };
 
     #[rstest]

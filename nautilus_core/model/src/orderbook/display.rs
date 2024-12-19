@@ -17,7 +17,7 @@
 
 use tabled::{settings::Style, Table, Tabled};
 
-use super::{ladder::BookPrice, level::BookLevel};
+use super::{BookLevel, BookPrice};
 use crate::orderbook::ladder::BookLadder;
 
 #[derive(Tabled)]

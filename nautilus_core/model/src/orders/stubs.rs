@@ -23,7 +23,7 @@ use crate::{
     events::order::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{AccountId, PositionId, TradeId, VenueOrderId},
     instruments::InstrumentAny,
-    types::{money::Money, price::Price, quantity::Quantity},
+    types::{Money, Price, Quantity},
 };
 
 // Test Event Stubs

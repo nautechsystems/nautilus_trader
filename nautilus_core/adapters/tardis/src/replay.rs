@@ -26,13 +26,8 @@ use heck::ToSnakeCase;
 use nautilus_core::{nanos::UnixNanos, parsing::precision_from_str};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
-        delta::OrderBookDelta,
-        deltas::OrderBookDeltas_API,
-        depth::OrderBookDepth10,
-        quote::QuoteTick,
-        trade::TradeTick,
-        Data,
+        Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
+        TradeTick,
     },
     identifiers::InstrumentId,
 };

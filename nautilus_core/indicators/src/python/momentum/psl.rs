@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
 use crate::{average::MovingAverageType, indicator::Indicator, momentum::psl::PsychologicalLine};

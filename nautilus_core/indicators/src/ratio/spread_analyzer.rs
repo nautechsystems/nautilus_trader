@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId};
+use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 
 use crate::indicator::Indicator;
 

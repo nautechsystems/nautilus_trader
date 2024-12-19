@@ -22,7 +22,7 @@ use crate::{
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
     python::instruments::pyobject_to_instrument_any,
-    types::{money::Money, price::Price, quantity::Quantity},
+    types::{Money, Price, Quantity},
 };
 
 #[pymethods]

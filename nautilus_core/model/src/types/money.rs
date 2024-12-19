@@ -30,8 +30,8 @@ use thousands::Separable;
 
 use super::fixed::FIXED_PRECISION;
 use crate::types::{
-    currency::Currency,
     fixed::{f64_to_fixed_i64, fixed_i64_to_f64},
+    Currency,
 };
 
 /// The maximum valid money amount which can be represented.

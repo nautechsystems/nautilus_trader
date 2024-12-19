@@ -23,10 +23,10 @@ use crate::{
     enums::{BookType, LiquiditySide, OrderSide, OrderType},
     identifiers::InstrumentId,
     instruments::{stubs::audusd_sim, CurrencyPair, InstrumentAny},
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
     orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
-    types::{money::Money, price::Price, quantity::Quantity},
+    types::{Money, Price, Quantity},
 };
 
 /// Calculate commission for testing

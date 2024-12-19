@@ -28,7 +28,7 @@ use nautilus_model::{
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{

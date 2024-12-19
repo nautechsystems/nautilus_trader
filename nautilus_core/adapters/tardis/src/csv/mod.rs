@@ -22,15 +22,11 @@ use flate2::read::GzDecoder;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{
-        delta::OrderBookDelta,
-        depth::{OrderBookDepth10, DEPTH10_LEN},
-        order::{BookOrder, NULL_ORDER},
-        quote::QuoteTick,
-        trade::TradeTick,
+        BookOrder, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN, NULL_ORDER,
     },
     enums::{OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{

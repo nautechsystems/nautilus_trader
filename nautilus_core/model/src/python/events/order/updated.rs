@@ -19,7 +19,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use crate::{
     events::order::OrderUpdated,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

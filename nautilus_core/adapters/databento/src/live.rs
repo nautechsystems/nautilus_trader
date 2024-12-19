@@ -25,12 +25,7 @@ use databento::{
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::{
-        delta::OrderBookDelta,
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        status::InstrumentStatus,
-        Data,
-    },
+    data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,

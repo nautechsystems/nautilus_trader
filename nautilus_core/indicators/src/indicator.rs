@@ -18,11 +18,8 @@
 use std::fmt::Debug;
 
 use nautilus_model::{
-    data::{
-        bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
-        quote::QuoteTick, trade::TradeTick,
-    },
-    orderbook::book::OrderBook,
+    data::{Bar, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    orderbook::OrderBook,
 };
 
 const IMPL_ERR: &str = "is not implemented for";

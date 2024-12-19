@@ -69,18 +69,13 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
-        delta::OrderBookDelta,
-        deltas::OrderBookDeltas,
-        depth::OrderBookDepth10,
-        quote::QuoteTick,
-        trade::TradeTick,
-        Data, DataType,
+        Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
+        TradeTick,
     },
     enums::{AggregationSource, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{InstrumentAny, SyntheticInstrument},
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
 };
 use ustr::Ustr;
 

@@ -20,7 +20,7 @@ use crate::{
     enums::LiquiditySide,
     events::account::{state::AccountState, stubs::*},
     instruments::InstrumentAny,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[fixture]

@@ -19,14 +19,11 @@ use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
 use crate::{
-    data::{
-        delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
-        quote::QuoteTick, trade::TradeTick,
-    },
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, book::OrderBook, level::BookLevel},
-    types::{price::Price, quantity::Quantity},
+    orderbook::{analysis::book_check_integrity, BookLevel, OrderBook},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

@@ -47,7 +47,7 @@ pub use crate::instruments::{
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 pub trait Instrument: 'static + Send {

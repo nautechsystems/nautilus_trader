@@ -21,10 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::AccountType,
     identifiers::AccountId,
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-    },
+    types::{AccountBalance, Currency, MarginBalance},
 };
 
 #[repr(C)]

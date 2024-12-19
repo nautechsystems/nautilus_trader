@@ -22,9 +22,9 @@ use std::{
 use nautilus_core::ffi::string::str_to_cstr;
 
 use crate::{
-    data::order::BookOrder,
+    data::BookOrder,
     enums::OrderSide,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[no_mangle]

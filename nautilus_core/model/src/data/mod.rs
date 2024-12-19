@@ -45,10 +45,11 @@ use serde_json::to_string;
 pub use bar::{Bar, BarSpecification, BarType};
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
-pub use depth::OrderBookDepth10;
+pub use depth::{OrderBookDepth10, DEPTH10_LEN};
 pub use greeks::{black_scholes_greeks, BlackScholesGreeksResult};
-pub use order::BookOrder;
+pub use order::{BookOrder, NULL_ORDER};
 pub use quote::QuoteTick;
+pub use status::InstrumentStatus;
 pub use trade::TradeTick;
 
 use crate::{

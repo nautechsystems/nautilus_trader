@@ -23,7 +23,7 @@ use pyo3::{
 use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use crate::types::{currency::Currency, money::Money};
+use crate::types::{Currency, Money};
 
 pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 

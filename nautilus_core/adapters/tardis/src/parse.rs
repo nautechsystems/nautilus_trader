@@ -15,7 +15,7 @@
 
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
-    data::bar::BarSpecification,
+    data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol},
 };
