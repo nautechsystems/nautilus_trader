@@ -567,7 +567,8 @@ cdef class DataEngine(Component):
         Stop the registered clients.
         """
         for client in self._clients.values():
-            client.stop()
+            if client.is_running:
+                client.stop()
 
     cpdef void execute(self, DataCommand command):
         """
