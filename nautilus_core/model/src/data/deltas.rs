@@ -25,10 +25,10 @@ use nautilus_core::{
     correctness::{check_predicate_true, FAILED},
     nanos::UnixNanos,
 };
+use serde::{Deserialize, Serialize};
 
 use super::{delta::OrderBookDelta, GetTsInit};
 use crate::identifiers::InstrumentId;
-use serde::{Deserialize, Serialize};
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 ///
