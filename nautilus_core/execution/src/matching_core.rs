@@ -27,7 +27,7 @@ use nautilus_model::{
         base::OrderError,
         market::MarketOrder,
     },
-    types::price::Price,
+    types::Price,
 };
 
 /// A generic order matching core.
@@ -239,7 +239,7 @@ mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         orders::builder::OrderTestBuilder,
-        types::quantity::Quantity,
+        types::Quantity,
     };
     use rstest::rstest;
 

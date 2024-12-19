@@ -30,7 +30,7 @@ use crate::{
         market_to_limit::MarketToLimitOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
-    types::quantity::Quantity,
+    types::Quantity,
 };
 
 #[pymethods]

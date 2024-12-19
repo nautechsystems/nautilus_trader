@@ -24,7 +24,7 @@ use nautilus_model::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{any::OrderAny, market::MarketOrder},
-    types::quantity::Quantity,
+    types::Quantity,
 };
 use ustr::Ustr;
 

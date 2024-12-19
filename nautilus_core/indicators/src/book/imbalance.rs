@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_model::{orderbook::book::OrderBook, types::quantity::Quantity};
+use nautilus_model::{orderbook::book::OrderBook, types::Quantity};
 
 use crate::indicator::Indicator;
 

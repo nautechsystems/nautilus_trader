@@ -41,7 +41,7 @@ use nautilus_model::{
     orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
-    types::currency::Currency,
+    types::Currency,
 };
 use redis::{Commands, Connection, Pipeline, RedisError};
 use ustr::Ustr;

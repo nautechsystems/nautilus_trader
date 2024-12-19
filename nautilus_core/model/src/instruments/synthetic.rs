@@ -24,7 +24,7 @@ use nautilus_core::{correctness::FAILED, nanos::UnixNanos};
 
 use crate::{
     identifiers::{InstrumentId, Symbol, Venue},
-    types::price::Price,
+    types::Price,
 };
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
