@@ -39,6 +39,7 @@ pub struct ParquetDataCatalog {
 }
 
 impl ParquetDataCatalog {
+    #[must_use]
     pub fn new(base_path: PathBuf, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(5000);
         Self {
@@ -65,11 +66,11 @@ impl ParquetDataCatalog {
     fn check_ascending_timestamps<T: GetTsInit>(data: &[T], type_name: &str) {
         assert!(
             data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()),
-            "{} timestamps must be in ascending order",
-            type_name
+            "{type_name} timestamps must be in ascending order"
         );
     }
 
+    #[must_use]
     pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Vec<RecordBatch>
     where
         T: GetTsInit + EncodeToRecordBatch,
@@ -87,12 +88,13 @@ impl ParquetDataCatalog {
             .collect()
     }
 
+    #[must_use]
     pub fn write_to_json<T>(&self, data: Vec<T>) -> PathBuf
     where
         T: GetTsInit + Serialize,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
-        ParquetDataCatalog::check_ascending_timestamps(&data, &type_name);
+        Self::check_ascending_timestamps(&data, &type_name);
 
         let path = self.make_path(&type_name, None);
         let json_path = path.with_extension("json");
@@ -105,10 +107,10 @@ impl ParquetDataCatalog {
         );
 
         let file = std::fs::File::create(&json_path)
-            .unwrap_or_else(|_| panic!("Failed to create JSON file at {:?}", json_path));
+            .unwrap_or_else(|_| panic!("Failed to create JSON file at {json_path:?}"));
 
         serde_json::to_writer(file, &data)
-            .unwrap_or_else(|_| panic!("Failed to write {} to JSON", type_name));
+            .unwrap_or_else(|_| panic!("Failed to write {type_name} to JSON"));
 
         json_path
     }
@@ -118,7 +120,7 @@ impl ParquetDataCatalog {
         T: GetTsInit + EncodeToRecordBatch,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
-        ParquetDataCatalog::check_ascending_timestamps(&data, &type_name);
+        Self::check_ascending_timestamps(&data, &type_name);
 
         let batches = self.data_to_record_batches(data);
         if let Some(batch) = batches.first() {
@@ -135,7 +137,7 @@ impl ParquetDataCatalog {
             );
             // TODO: Set writer to property to limit max row group size
             write_batches_to_parquet(&batches, &path, None, Some(5000))
-                .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
+                .unwrap_or_else(|_| panic!("Failed to write {type_name} to parquet"));
         }
     }
 
@@ -152,7 +154,7 @@ impl ParquetDataCatalog {
         T: DecodeDataFromRecordBatch,
     {
         let mut paths = Vec::new();
-        for instrument_id in instrument_ids.iter() {
+        for instrument_id in &instrument_ids {
             paths.push(self.make_path("TODO", Some(instrument_id)));
         }
 
@@ -161,7 +163,7 @@ impl ParquetDataCatalog {
             paths.push(self.make_path("TODO", None));
         }
 
-        for path in paths.iter() {
+        for path in &paths {
             let path = path.to_str().unwrap();
             let query = build_query(path, start, end, where_clause);
             self.session.add_file::<T>(path, path, Some(&query))?;

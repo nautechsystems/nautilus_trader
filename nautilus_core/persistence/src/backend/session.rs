@@ -176,6 +176,7 @@ impl DataBackendSession {
 // Note: Intended to be used on a single Python thread
 unsafe impl Send for DataBackendSession {}
 
+#[must_use]
 pub fn build_query(
     table: &str,
     start: Option<UnixNanos>,
@@ -191,16 +192,16 @@ pub fn build_query(
 
     // Add start condition if provided
     if let Some(start_ts) = start {
-        conditions.push(format!("ts_init >= {}", start_ts));
+        conditions.push(format!("ts_init >= {start_ts}"));
     }
 
     // Add end condition if provided
     if let Some(end_ts) = end {
-        conditions.push(format!("ts_init <= {}", end_ts));
+        conditions.push(format!("ts_init <= {end_ts}"));
     }
 
     // Build base query
-    let mut query = format!("SELECT * FROM {}", table);
+    let mut query = format!("SELECT * FROM {table}");
 
     // Add WHERE clause if there are conditions
     if !conditions.is_empty() {

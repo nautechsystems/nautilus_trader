@@ -417,6 +417,6 @@ fn test_datafusion_parquet_round_trip() {
 
     assert_eq!(quote_ticks.len(), ticks_variants.len());
     for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
-        assert_eq!(orig, loaded)
+        assert_eq!(orig, loaded);
     }
 }
