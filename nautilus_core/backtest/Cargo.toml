@@ -35,23 +35,23 @@ cbindgen = { workspace = true, optional = true }
 [features]
 default = ["ffi", "python"]
 extension-module = [
-    "pyo3/extension-module",
-    "nautilus-common/extension-module",
-    "nautilus-core/extension-module",
-    "nautilus-execution/extension-module",
-    "nautilus-model/extension-module",
+  "pyo3/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-execution/extension-module",
+  "nautilus-model/extension-module",
 ]
 ffi = [
-    "cbindgen",
-    "nautilus-core/ffi",
-    "nautilus-common/ffi",
-    "nautilus-execution/ffi",
-    "nautilus-model/ffi",
+  "cbindgen",
+  "nautilus-core/ffi",
+  "nautilus-common/ffi",
+  "nautilus-execution/ffi",
+  "nautilus-model/ffi",
 ]
 python = [
-    "pyo3",
-    "nautilus-core/python",
-    "nautilus-common/python",
-    "nautilus-execution/python",
-    "nautilus-model/python",
+  "pyo3",
+  "nautilus-core/python",
+  "nautilus-common/python",
+  "nautilus-execution/python",
+  "nautilus-model/python",
 ]
