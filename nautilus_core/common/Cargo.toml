@@ -45,9 +45,9 @@ cbindgen = { workspace = true, optional = true }
 [features]
 default = ["rstest"]
 extension-module = [
-    "pyo3/extension-module",
-    "nautilus-core/extension-module",
-    "nautilus-model/extension-module",
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
 "clock_v2" = []
