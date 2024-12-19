@@ -17,7 +17,7 @@ Released on TBD (UTC).
 - Moved `BinanceOrderBookDeltaDataLoader from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
 
 ### Fixes
-None
+- Fixed timeout error code for Bybit (#2130), thanks @sunlei
 
 ---
 
