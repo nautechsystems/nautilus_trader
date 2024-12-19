@@ -29,7 +29,7 @@ use crate::{
     data::bar::{Bar, BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[no_mangle]

@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use nautilus_model::{
-    data::{bar::BarType, DataType},
+    data::{BarType, DataType},
     identifiers::InstrumentId,
 };
 use ustr::Ustr;
@@ -148,7 +148,7 @@ impl MessagingSwitchboard {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        data::{bar::BarType, DataType},
+        data::{BarType, DataType},
         identifiers::InstrumentId,
     };
     use rstest::*;

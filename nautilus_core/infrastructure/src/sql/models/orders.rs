@@ -31,7 +31,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;

@@ -15,7 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -117,7 +117,7 @@ impl PsychologicalLine {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::bar::Bar;
+    use nautilus_model::data::Bar;
     use rstest::rstest;
 
     use crate::{

@@ -17,7 +17,7 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
-    types::{money::Money, price::Price, quantity::Quantity},
+    types::{Money, Price, Quantity},
 };
 use serde::{Deserialize, Serialize};
 

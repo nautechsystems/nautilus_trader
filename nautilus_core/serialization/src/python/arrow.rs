@@ -18,10 +18,7 @@ use std::io::Cursor;
 use arrow::{ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::{
-        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     python::data::{
         pyobjects_to_bars, pyobjects_to_order_book_deltas, pyobjects_to_quote_ticks,
         pyobjects_to_trade_ticks,

@@ -15,7 +15,7 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 use pyo3::prelude::*;

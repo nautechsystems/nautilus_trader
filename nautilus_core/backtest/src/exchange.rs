@@ -31,20 +31,15 @@ use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{
-        bar::Bar,
-        delta::OrderBookDelta,
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        quote::QuoteTick,
-        status::InstrumentStatus,
-        trade::TradeTick,
-        Data,
+        Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
+        QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
     orders::any::PassiveOrderAny,
-    types::{currency::Currency, money::Money, price::Price},
+    types::{Currency, Money, Price},
 };
 use rust_decimal::Decimal;
 
@@ -520,13 +515,8 @@ mod tests {
     use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
         data::{
-            bar::{Bar, BarType},
-            delta::OrderBookDelta,
-            deltas::OrderBookDeltas,
-            order::BookOrder,
-            quote::QuoteTick,
-            status::InstrumentStatus,
-            trade::TradeTick,
+            Bar, BarType, BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, QuoteTick,
+            TradeTick,
         },
         enums::{
             AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
@@ -534,7 +524,7 @@ mod tests {
         },
         identifiers::{TradeId, Venue},
         instruments::{stubs::crypto_perpetual_ethusdt, CryptoPerpetual, InstrumentAny},
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
 

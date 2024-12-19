@@ -31,7 +31,7 @@ use crate::{
     },
     position::Position,
     python::instruments::pyobject_to_instrument_any,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]

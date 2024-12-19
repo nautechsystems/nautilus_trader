@@ -26,7 +26,7 @@ use ustr::Ustr;
 use crate::{
     identifiers::{InstrumentId, Symbol},
     instruments::Equity,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{Currency, Price, Quantity},
 };
 
 #[pymethods]

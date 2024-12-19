@@ -21,7 +21,7 @@ use nautilus_common::{
 };
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    data::{Bar, DataType, QuoteTick, TradeTick},
     events::position::snapshot::PositionSnapshot,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     python::{

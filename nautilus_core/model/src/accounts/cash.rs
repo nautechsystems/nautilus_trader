@@ -32,9 +32,7 @@ use crate::{
     },
     instruments::InstrumentAny,
     position::Position,
-    types::{
-        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,7 +289,7 @@ mod tests {
         instruments::{stubs::*, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]

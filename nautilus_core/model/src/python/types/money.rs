@@ -29,7 +29,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{currency::Currency, money::Money};
+use crate::types::{Currency, Money};
 
 #[pymethods]
 impl Money {

@@ -33,12 +33,11 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
+        QuoteTick, TradeTick,
     },
     enums::AggregationSource,
     instruments::InstrumentAny,
-    types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
+    types::{fixed::FIXED_SCALAR, Price, Quantity},
 };
 
 pub trait BarAggregator {
@@ -650,10 +649,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use nautilus_model::{
-        data::bar::{BarSpecification, BarType},
+        data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
         instruments::{stubs::*, Equity, InstrumentAny},
-        types::{price::Price, quantity::Quantity},
+        types::{Price, Quantity},
     };
     use rstest::rstest;
 

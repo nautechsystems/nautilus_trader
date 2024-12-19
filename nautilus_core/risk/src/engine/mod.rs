@@ -36,7 +36,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::InstrumentAny,
     orders::{any::OrderAny, list::OrderList},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use ustr::Ustr;
@@ -1087,7 +1087,7 @@ mod tests {
             any::AccountAny,
             stubs::{cash_account, margin_account},
         },
-        data::{quote::QuoteTick, stubs::quote_audusd},
+        data::{stubs::quote_audusd, QuoteTick},
         enums::{AccountType, OrderSide, OrderType, TradingState},
         events::{
             account::{state::AccountState, stubs::cash_account_state_million_usd},
@@ -1106,7 +1106,7 @@ mod tests {
             CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
         orders::{any::OrderAny, builder::OrderTestBuilder, list::OrderList},
-        types::{balance::AccountBalance, money::Money, price::Price, quantity::Quantity},
+        types::{AccountBalance, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
     use rust_decimal::{prelude::FromPrimitive, Decimal};

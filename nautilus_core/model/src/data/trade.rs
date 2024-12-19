@@ -30,7 +30,7 @@ use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 /// Represents a single trade tick in a market.
@@ -143,7 +143,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::stub_trade_ethusdt_buyer, trade::TradeTick},
+        data::{stubs::stub_trade_ethusdt_buyer, TradeTick},
         enums::AggressorSide,
     };
 

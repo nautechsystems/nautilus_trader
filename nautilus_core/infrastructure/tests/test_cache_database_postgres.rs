@@ -46,7 +46,7 @@ mod serial_tests {
             Instrument, InstrumentAny,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        types::{currency::Currency, price::Price, quantity::Quantity},
+        types::{Currency, Price, Quantity},
     };
     use serde::Serialize;
     use ustr::Ustr;

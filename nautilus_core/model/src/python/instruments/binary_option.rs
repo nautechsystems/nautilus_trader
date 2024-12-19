@@ -27,7 +27,7 @@ use crate::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::BinaryOption,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]

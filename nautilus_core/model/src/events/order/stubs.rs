@@ -34,7 +34,7 @@ use crate::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
         VenueOrderId,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[fixture]

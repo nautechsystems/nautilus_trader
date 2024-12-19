@@ -22,8 +22,8 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::bar::{Bar, BarType},
-    types::{price::Price, quantity::Quantity},
+    data::{Bar, BarType},
+    types::{Price, Quantity},
 };
 
 use super::{

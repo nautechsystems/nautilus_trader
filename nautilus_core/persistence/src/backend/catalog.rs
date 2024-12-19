@@ -21,8 +21,7 @@ use itertools::Itertools;
 use log::info;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
-    Data, GetTsInit,
+    Bar, Data, GetTsInit, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
 };
 use nautilus_serialization::{
     arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch},

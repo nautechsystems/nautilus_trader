@@ -32,13 +32,7 @@ use crate::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-        money::Money,
-        price::Price,
-        quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,7 +410,7 @@ mod tests {
         events::account::{state::AccountState, stubs::*},
         identifiers::{stubs::*, InstrumentId},
         instruments::{stubs::*, CryptoPerpetual, CurrencyPair},
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]

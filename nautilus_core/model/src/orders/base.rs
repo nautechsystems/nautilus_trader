@@ -36,7 +36,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 const STOP_ORDER_TYPES: &[OrderType] = &[

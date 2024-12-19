@@ -15,7 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 
 use super::kc::KeltnerChannel;
 use crate::{average::MovingAverageType, indicator::Indicator};

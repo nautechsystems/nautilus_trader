@@ -16,7 +16,7 @@
 use std::fmt::{Display, Formatter};
 
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
@@ -151,7 +151,7 @@ impl MovingAverage for MovingAverageConvergenceDivergence {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+    use nautilus_model::data::{Bar, QuoteTick, TradeTick};
     use rstest::rstest;
 
     use crate::{

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::{OrderSide, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{currency::Currency, money::Money, quantity::Quantity},
+    types::{Currency, Money, Quantity},
 };
 
 /// Represents a position state snapshot as a certain instant.

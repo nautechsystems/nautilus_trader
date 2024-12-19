@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::{data::bar::BarSpecification, identifiers::InstrumentId};
+use nautilus_model::{data::BarSpecification, identifiers::InstrumentId};
 use pyo3::prelude::*;
 use ustr::Ustr;
 

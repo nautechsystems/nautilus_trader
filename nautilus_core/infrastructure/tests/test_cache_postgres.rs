@@ -36,7 +36,7 @@ mod serial_tests {
             Instrument, InstrumentAny,
         },
         orders::builder::OrderTestBuilder,
-        types::{currency::Currency, quantity::Quantity},
+        types::{Currency, Quantity},
     };
 
     use crate::get_cache;

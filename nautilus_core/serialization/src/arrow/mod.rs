@@ -33,10 +33,7 @@ use arrow::{
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
-use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
-    Data,
-};
+use nautilus_model::data::{Bar, Data, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
 // Define metadata key constants constants

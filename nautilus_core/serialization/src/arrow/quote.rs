@@ -22,9 +22,9 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::quote::QuoteTick,
+    data::QuoteTick,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{

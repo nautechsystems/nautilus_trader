@@ -32,7 +32,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, AtomicTime},
 };
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, status::InstrumentStatus, trade::TradeTick, Data},
+    data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
     python::instruments::instrument_any_to_pyobject,

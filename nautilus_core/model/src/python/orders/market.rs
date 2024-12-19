@@ -42,7 +42,7 @@ use crate::{
         common::commissions_from_hashmap,
         events::order::{order_event_to_pyobject, pyobject_to_order_event},
     },
-    types::{currency::Currency, money::Money, quantity::Quantity},
+    types::{Currency, Money, Quantity},
 };
 
 #[pymethods]

@@ -41,7 +41,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use crate::{

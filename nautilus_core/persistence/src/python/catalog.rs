@@ -15,9 +15,7 @@
 
 use std::path::PathBuf;
 
-use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
-};
+use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
 use crate::backend::catalog::ParquetDataCatalog;

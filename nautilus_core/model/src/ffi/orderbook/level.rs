@@ -20,7 +20,7 @@ use nautilus_core::ffi::cvec::CVec;
 use crate::{
     data::order::BookOrder,
     enums::OrderSide,
-    orderbook::{ladder::BookPrice, level::BookLevel},
+    orderbook::{BookLevel, BookPrice},
     types::Price,
 };
 

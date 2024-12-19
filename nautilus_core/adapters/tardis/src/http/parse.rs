@@ -22,7 +22,7 @@ use nautilus_model::{
     enums::{AssetClass, CurrencyType},
     identifiers::Symbol,
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionsContract},
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;

@@ -22,10 +22,10 @@ use std::{
 use nautilus_core::ffi::string::str_to_cstr;
 
 use crate::{
-    data::trade::TradeTick,
+    data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[no_mangle]

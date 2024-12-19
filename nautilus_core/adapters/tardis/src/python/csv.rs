@@ -17,9 +17,7 @@ use std::path::PathBuf;
 
 use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
 use nautilus_model::{
-    data::{
-        delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick, Data,
-    },
+    data::{Data, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::InstrumentId,
 };
 use pyo3::{prelude::*, types::PyCapsule};

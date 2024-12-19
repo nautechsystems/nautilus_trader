@@ -23,14 +23,11 @@ use rust_decimal::Decimal;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel};
 use crate::{
-    data::{
-        delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
-        quote::QuoteTick, trade::TradeTick,
-    },
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{error::InvalidBookOperation, ladder::BookLadder},
-    types::{price::Price, quantity::Quantity},
+    orderbook::{ladder::BookLadder, InvalidBookOperation},
+    types::{Price, Quantity},
 };
 
 /// Provides a high-performance, versatile order book.
@@ -462,16 +459,11 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use crate::{
-        data::{
-            depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick, stubs::*, trade::TradeTick,
-        },
+        data::{depth::OrderBookDepth10, order::BookOrder, stubs::*, QuoteTick, TradeTick},
         enums::{AggressorSide, BookType, OrderSide},
         identifiers::{InstrumentId, TradeId},
-        orderbook::{
-            analysis::book_check_integrity, book::OrderBook, error::BookIntegrityError,
-            ladder::BookPrice,
-        },
-        types::{price::Price, quantity::Quantity},
+        orderbook::{analysis::book_check_integrity, BookIntegrityError, BookPrice, OrderBook},
+        types::{Price, Quantity},
     };
 
     #[rstest]

@@ -19,17 +19,12 @@ use chrono::{DateTime, Utc};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
-        delta::OrderBookDelta,
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        order::BookOrder,
-        quote::QuoteTick,
-        trade::TradeTick,
-        Data,
+        Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
+        QuoteTick, TradeTick,
     },
     enums::{AggregationSource, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use uuid::Uuid;
 

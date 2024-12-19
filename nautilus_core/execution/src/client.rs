@@ -38,13 +38,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
     },
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-        money::Money,
-        price::Price,
-        quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
 use crate::messages::{

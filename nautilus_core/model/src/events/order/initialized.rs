@@ -34,7 +34,7 @@ use crate::{
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
     orders::any::OrderAny,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[repr(C)]

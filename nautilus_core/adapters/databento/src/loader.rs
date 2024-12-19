@@ -28,10 +28,7 @@ use dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
-    data::{
-        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        status::InstrumentStatus, trade::TradeTick, Data,
-    },
+    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
     types::Currency,

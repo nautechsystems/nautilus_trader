@@ -36,21 +36,17 @@ use nautilus_core::correctness::{
 };
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{
-        bar::{Bar, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{Bar, BarType, QuoteTick, TradeTick},
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Symbol, Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
-    orderbook::book::OrderBook,
+    orderbook::OrderBook,
     orders::{any::OrderAny, list::OrderList},
     position::Position,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

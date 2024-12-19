@@ -23,7 +23,7 @@ use crate::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]

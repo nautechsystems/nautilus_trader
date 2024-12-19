@@ -28,7 +28,7 @@ use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::Instrument,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).

@@ -18,7 +18,7 @@ use nautilus_core::nanos::UnixNanos;
 use crate::{
     enums::{OrderSide, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[repr(C)]
