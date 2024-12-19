@@ -186,7 +186,7 @@ impl DatabentoLiveClient {
         let mut sub = Subscription::builder()
             .symbols(symbols)
             .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
-            .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .build();
 
         if let Some(start) = start {

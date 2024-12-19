@@ -23,7 +23,7 @@ use std::{
 };
 
 use databento::{
-    dbn::{self, SType},
+    dbn::{self},
     historical::timeseries::GetRangeParams,
 };
 use indexmap::IndexMap;
@@ -155,7 +155,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(dbn::Schema::Definition)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -254,7 +254,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(dbn_schema)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -356,7 +356,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(dbn::Schema::Trades)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -447,7 +447,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(schema)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -530,7 +530,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(dbn::Schema::Imbalance)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -602,7 +602,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(dbn::Schema::Statistics)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -674,7 +674,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
-            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .stype_in(stype_in)
             .schema(dbn::Schema::Status)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
