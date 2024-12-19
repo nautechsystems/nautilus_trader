@@ -18,9 +18,11 @@ use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
     to_variant, trade::TradeTick, Data,
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_persistence::{
-    backend::session::{DataBackendSession, DataQueryResult, QueryResult},
+    backend::{
+        catalog::ParquetDataCatalog,
+        session::{DataBackendSession, DataQueryResult, QueryResult},
+    },
     python::backend::session::NautilusDataType,
 };
 use nautilus_serialization::arrow::ArrowSchemaProvider;
@@ -358,6 +360,8 @@ fn test_catalog_serialization_json_round_trip() {
 
 #[rstest]
 fn test_datafusion_parquet_round_trip() {
+    use std::collections::HashMap;
+
     use datafusion::parquet::{
         arrow::ArrowWriter,
         basic::{Compression, ZstdLevel},
@@ -365,7 +369,6 @@ fn test_datafusion_parquet_round_trip() {
     };
     use nautilus_serialization::arrow::EncodeToRecordBatch;
     use pretty_assertions::assert_eq;
-    use std::collections::HashMap;
 
     // Read original data from parquet
     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
