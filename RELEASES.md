@@ -14,7 +14,7 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Moved `BinanceOrderBookDeltaDataLoader from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
 
 ### Fixes
 None
