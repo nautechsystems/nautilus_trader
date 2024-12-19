@@ -12,14 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pandas as pd
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
+from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
-from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
