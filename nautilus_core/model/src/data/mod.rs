@@ -35,16 +35,22 @@ use std::{
     str::FromStr,
 };
 
-use bar::BarType;
 use indexmap::IndexMap;
 use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 
-use self::{
-    bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
-    quote::QuoteTick, trade::TradeTick,
-};
+// Re-exports
+#[rustfmt::skip]  // Keep these grouped
+pub use bar::{Bar, BarSpecification, BarType};
+pub use delta::OrderBookDelta;
+pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
+pub use depth::OrderBookDepth10;
+pub use greeks::{black_scholes_greeks, BlackScholesGreeksResult};
+pub use order::BookOrder;
+pub use quote::QuoteTick;
+pub use trade::TradeTick;
+
 use crate::{
     enums::BookType,
     identifiers::{InstrumentId, Venue},
