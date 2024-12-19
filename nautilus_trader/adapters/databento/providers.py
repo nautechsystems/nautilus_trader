@@ -126,6 +126,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
 
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
+        # use_exchange_as_venue = filters.get("use_exchange_as_venue", True) if filters else True
 
         pyo3_instruments = []
 
@@ -157,6 +158,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 [instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
             ),
             start=0,  # From start of current week (latest definitions)
+            # use_exchange_as_venue=use_exchange_as_venue,  # TODO
         )
 
         if parent_symbols:
@@ -226,7 +228,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         Calling this method will incur a cost to your Databento account in USD.
 
         """
-        await self.load_ids_async([instrument_id])
+        await self.load_ids_async([instrument_id], filters=filters)
 
     async def get_range(
         self,
@@ -262,12 +264,16 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         dataset = self._check_all_datasets_equal(instrument_ids)
+        use_exchange_as_venue = filters.get("use_exchange_as_venue", True) if filters else True
 
+        # Here the NULL venue is overridden and so is used as a
+        # placeholder to conform to instrument ID conventions.
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.GLBX"))],
+            instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.NULL"))],
             start=pd.Timestamp(start, tz=pytz.utc).value,
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
+            use_exchange_as_venue=use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
