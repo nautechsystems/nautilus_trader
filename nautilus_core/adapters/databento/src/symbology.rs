@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use databento::dbn;
+use databento::dbn::{self, SType};
 use dbn::{Publisher, Record};
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_slice_not_empty;
@@ -110,21 +110,21 @@ pub fn get_nautilus_instrument_id_for_record(
 }
 
 #[must_use]
-pub fn infer_symbology_type(symbol: &str) -> String {
+pub fn infer_symbology_type(symbol: &str) -> SType {
     if symbol.ends_with(".FUT") || symbol.ends_with(".OPT") {
-        return "parent".to_string();
+        return SType::Parent;
     }
 
     let parts: Vec<&str> = symbol.split('.').collect();
     if parts.len() == 3 && parts[2].chars().all(|c| c.is_ascii_digit()) {
-        return "continuous".to_string();
+        return SType::Continuous;
     }
 
     if symbol.chars().all(|c| c.is_ascii_digit()) {
-        return "instrument_id".to_string();
+        return SType::InstrumentId;
     }
 
-    "raw_symbol".to_string()
+    SType::RawSymbol
 }
 
 pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
@@ -173,7 +173,7 @@ mod tests {
     #[case("SPX.OPT", "parent")]
     #[case("ES.c.0", "continuous")]
     #[case("SPX.n.0", "continuous")]
-    fn test_infer_symbology_type(#[case] symbol: String, #[case] expected: String) {
+    fn test_infer_symbology_type(#[case] symbol: String, #[case] expected: SType) {
         let result = infer_symbology_type(&symbol);
         assert_eq!(result, expected);
     }
