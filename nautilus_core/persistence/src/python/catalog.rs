@@ -33,6 +33,7 @@ impl PyParquetDataCatalogV2 {
     /// Create a new ParquetCatalog with the given base path and optional batch size.
     #[new]
     #[pyo3(signature = (base_path, batch_size=None))]
+    #[must_use]
     pub fn new(base_path: String, batch_size: Option<usize>) -> Self {
         Self {
             inner: ParquetDataCatalog::new(PathBuf::from(base_path), batch_size),

@@ -190,8 +190,8 @@ impl DatabentoLiveClient {
             .build();
 
         if let Some(start) = start {
-            let start =
-                OffsetDateTime::from_unix_timestamp_nanos(start as i128).map_err(to_pyvalue_err)?;
+            let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
+                .map_err(to_pyvalue_err)?;
             sub.start = Some(start);
         };
         sub.use_snapshot = snapshot.unwrap_or(false);
