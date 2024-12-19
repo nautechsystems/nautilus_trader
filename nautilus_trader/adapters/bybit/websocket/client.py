@@ -452,7 +452,7 @@ class BybitWebSocketClient:
             self._log.error(f"Order request `{req_id}` timed out. op={op}, args={args}")
             future.cancel()
             self._pending_order_requests.pop(req_id, None)
-            raise BybitError(code=-10_000, message="Request timed out") from e
+            raise BybitError(code=-10_408, message="Request timed out") from e
 
         return ack_resp
 
