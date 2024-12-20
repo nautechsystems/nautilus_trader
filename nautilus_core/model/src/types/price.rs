@@ -203,7 +203,7 @@ impl FromStr for Price {
             .parse::<f64>()
             .map_err(|e| format!("Error parsing `input` string '{value}' as f64: {e}"))?;
 
-        Ok(Self::new(float_from_input, precision_from_str(value)))
+        Self::new_checked(float_from_input, precision_from_str(value)).map_err(|e| e.to_string())
     }
 }
 

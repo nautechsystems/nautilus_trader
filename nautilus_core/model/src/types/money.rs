@@ -146,8 +146,7 @@ impl FromStr for Money {
 
         // Parse currency
         let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
-
-        Ok(Self::new(amount, currency))
+        Self::new_checked(amount, currency).map_err(|e| e.to_string())
     }
 }
 
