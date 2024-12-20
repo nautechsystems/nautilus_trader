@@ -30,12 +30,12 @@ use nautilus_execution::messages::{
     modify::ModifyOrder, submit::SubmitOrder, submit_list::SubmitOrderList, TradingCommand,
 };
 use nautilus_model::{
-    accounts::{any::AccountAny, base::Account},
+    accounts::{Account, AccountAny},
     enums::{InstrumentClass, OrderSide, OrderStatus, TradingState},
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::InstrumentAny,
-    orders::{any::OrderAny, list::OrderList},
+    orders::{OrderAny, OrderList},
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -1105,7 +1105,7 @@ mod tests {
             stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
             CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
-        orders::{any::OrderAny, builder::OrderTestBuilder, list::OrderList},
+        orders::{OrderAny, OrderList, OrderTestBuilder},
         types::{AccountBalance, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};

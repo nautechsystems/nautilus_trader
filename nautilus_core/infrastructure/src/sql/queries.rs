@@ -22,7 +22,7 @@ use nautilus_model::{
     events::{position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    orders::{any::OrderAny, base::Order},
+    orders::{Order, OrderAny},
     types::{AccountBalance, Currency, MarginBalance},
 };
 use sqlx::{PgPool, Row};

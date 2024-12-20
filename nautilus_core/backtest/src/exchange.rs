@@ -38,7 +38,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
-    orders::any::PassiveOrderAny,
+    orders::PassiveOrderAny,
     types::{Currency, Money, Price},
 };
 use rust_decimal::Decimal;

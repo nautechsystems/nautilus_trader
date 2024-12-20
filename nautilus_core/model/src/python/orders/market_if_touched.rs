@@ -27,7 +27,7 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},
-        market_if_touched::MarketIfTouchedOrder,
+        MarketIfTouchedOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::{Price, Quantity},

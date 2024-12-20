@@ -49,7 +49,7 @@ use nautilus_model::{
     events::{position::PositionEvent, AccountState, OrderEventAny},
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
-    orders::any::OrderAny,
+    orders::OrderAny,
     position::Position,
     types::{Currency, Money, Price},
 };
@@ -1507,7 +1507,7 @@ mod tests {
             stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
             CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
-        orders::{any::OrderAny, builder::OrderTestBuilder},
+        orders::{OrderAny, OrderTestBuilder},
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };

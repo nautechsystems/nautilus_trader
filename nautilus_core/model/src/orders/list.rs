@@ -92,7 +92,7 @@ mod tests {
         enums::{OrderSide, OrderType},
         identifiers::{OrderListId, StrategyId},
         instruments::{stubs::*, CurrencyPair},
-        orders::builder::OrderTestBuilder,
+        orders::OrderTestBuilder,
         types::{Price, Quantity},
     };
 

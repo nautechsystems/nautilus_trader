@@ -36,7 +36,7 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order, OrderCore},
-        market::MarketOrder,
+        MarketOrder,
     },
     python::{
         common::commissions_from_hashmap,

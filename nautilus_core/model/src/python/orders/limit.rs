@@ -38,7 +38,7 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order, OrderCore},
-        limit::LimitOrder,
+        LimitOrder,
     },
     python::{common::commissions_from_hashmap, events::order::pyobject_to_order_event},
     types::{Price, Quantity},

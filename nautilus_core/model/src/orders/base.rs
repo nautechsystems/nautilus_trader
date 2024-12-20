@@ -692,7 +692,7 @@ mod tests {
             accepted::OrderAcceptedBuilder, denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
             initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
         },
-        orders::market::MarketOrder,
+        orders::MarketOrder,
     };
 
     fn test_initialize_market_order() {

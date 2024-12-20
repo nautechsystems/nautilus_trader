@@ -24,7 +24,7 @@ use nautilus_model::{
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
     events::{AccountState, OrderFilled},
     instruments::InstrumentAny,
-    orders::any::OrderAny,
+    orders::OrderAny,
     position::Position,
     types::{AccountBalance, Money},
 };
