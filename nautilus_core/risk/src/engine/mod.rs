@@ -26,9 +26,7 @@ use nautilus_common::{
     throttler::Throttler,
 };
 use nautilus_core::uuid::UUID4;
-use nautilus_execution::messages::{
-    modify::ModifyOrder, submit::SubmitOrder, submit_list::SubmitOrderList, TradingCommand,
-};
+use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     enums::{InstrumentClass, OrderSide, OrderStatus, TradingState},
@@ -1084,8 +1082,8 @@ mod tests {
     use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
     use nautilus_model::{
         accounts::{
-            any::AccountAny,
             stubs::{cash_account, margin_account},
+            AccountAny,
         },
         data::{stubs::quote_audusd, QuoteTick},
         enums::{AccountType, OrderSide, OrderType, TradingState},

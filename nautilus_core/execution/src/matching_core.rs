@@ -22,11 +22,7 @@
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{
-        any::{LimitOrderAny, PassiveOrderAny, StopOrderAny},
-        base::OrderError,
-        market::MarketOrder,
-    },
+    orders::{LimitOrderAny, MarketOrder, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
 };
 

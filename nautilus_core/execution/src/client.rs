@@ -39,8 +39,7 @@ use nautilus_model::{
 };
 
 use crate::messages::{
-    cancel::CancelOrder, cancel_batch::BatchCancelOrders, modify::ModifyOrder, query::QueryOrder,
-    submit::SubmitOrder, submit_list::SubmitOrderList,
+    BatchCancelOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
 };
 
 pub struct ExecutionClient {
