@@ -519,7 +519,7 @@ impl DataEngine {
         // TODO: Handle synthetics
 
         let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_quote_topic(quote.instrument_id);
+        let topic = msgbus.switchboard.get_quotes_topic(quote.instrument_id);
         msgbus.publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
@@ -531,7 +531,7 @@ impl DataEngine {
         // TODO: Handle synthetics
 
         let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_trade_topic(trade.instrument_id);
+        let topic = msgbus.switchboard.get_trades_topic(trade.instrument_id);
         msgbus.publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
@@ -562,7 +562,7 @@ impl DataEngine {
         }
 
         let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_bar_topic(bar.bar_type);
+        let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
         msgbus.publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
@@ -626,7 +626,7 @@ impl DataEngine {
             if !self.book_intervals.contains_key(&interval_ms) {
                 let interval_ns = millis_to_nanos(interval_ms.get() as f64);
                 let mut msgbus = self.msgbus.borrow_mut();
-                let topic = msgbus.switchboard.get_snapshots_topic(instrument_id);
+                let topic = msgbus.switchboard.get_book_snapshots_topic(instrument_id);
 
                 let snap_info = BookSnapshotInfo {
                     instrument_id,
@@ -715,7 +715,7 @@ impl DataEngine {
             vec![
                 msgbus.switchboard.get_deltas_topic(instrument_id),
                 msgbus.switchboard.get_depth_topic(instrument_id),
-                msgbus.switchboard.get_snapshots_topic(instrument_id),
+                msgbus.switchboard.get_book_snapshots_topic(instrument_id),
             ]
         };
 
@@ -746,7 +746,7 @@ impl DataEngine {
             vec![
                 msgbus.switchboard.get_deltas_topic(instrument_id),
                 msgbus.switchboard.get_depth_topic(instrument_id),
-                msgbus.switchboard.get_snapshots_topic(instrument_id),
+                msgbus.switchboard.get_book_snapshots_topic(instrument_id),
             ]
         };
 
@@ -791,7 +791,7 @@ impl DataEngine {
         if let Some(snapshotter) = self.book_snapshotters.get(instrument_id) {
             let mut msgbus = self.msgbus.borrow_mut();
 
-            let topic = msgbus.switchboard.get_snapshots_topic(*instrument_id);
+            let topic = msgbus.switchboard.get_book_snapshots_topic(*instrument_id);
 
             // Check remaining snapshot subscriptions, if none then remove snapshotter
             if msgbus.subscriptions_count(topic) == 0 {

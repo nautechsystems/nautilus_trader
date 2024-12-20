@@ -788,7 +788,7 @@ fn test_process_quote_tick(
     let handler = get_message_saving_handler::<QuoteTick>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_quote_topic(quote.instrument_id);
+        let topic = msgbus.switchboard.get_quotes_topic(quote.instrument_id);
         msgbus.subscribe(topic, handler.clone(), None);
     }
 
@@ -840,7 +840,7 @@ fn test_process_trade_tick(
     let handler = get_message_saving_handler::<TradeTick>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_trade_topic(trade.instrument_id);
+        let topic = msgbus.switchboard.get_trades_topic(trade.instrument_id);
         msgbus.subscribe(topic, handler.clone(), None);
     }
 
@@ -891,7 +891,7 @@ fn test_process_bar(
     let handler = get_message_saving_handler::<Bar>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_bar_topic(bar.bar_type);
+        let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
         msgbus.subscribe(topic, handler.clone(), None);
     }
 
