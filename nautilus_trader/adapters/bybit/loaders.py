@@ -13,14 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from os import PathLike
-from zipfile import ZipFile, is_zipfile
 import json
+from os import PathLike
+from zipfile import ZipFile
+from zipfile import is_zipfile
 
 import pandas as pd
 
-from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.model.enums import RecordFlag
+
 
 class BybitOrderBookDeltaDataLoader:
     """
@@ -49,10 +51,10 @@ class BybitOrderBookDeltaDataLoader:
         Returns
         -------
         pd.DataFrame
-        """
 
+        """
         assert is_zipfile(file_path), "depth_file must be zip file provided by ByBit"
-        
+
         orderbook_keys = ["a", "b"]
         rows = []
 
@@ -64,51 +66,57 @@ class BybitOrderBookDeltaDataLoader:
                     obj = json.loads(row.strip())
                     timestamp_ns = int(float(obj["ts"]) * 1_000_000)
                     timestamp = pd.to_datetime(timestamp_ns, unit="ns", utc=True)
-                    
+
                     data = obj["data"]
                     instrument_id = f"{data['s']}-{product_type.value.upper()}.BYBIT"
                     update_type = obj["type"]
                     sequence = data["seq"]
-                    
+
                     for key in orderbook_keys:
                         if key in data:
                             if update_type == "snapshot":
-                                rows.append({
-                                    "timestamp": timestamp,
-                                    "instrument_id": instrument_id,
-                                    "action": "CLEAR",
-                                    "side": cls.map_sides(key),
-                                    "order_id": 0,
-                                    "flags": 0,
-                                    "price": data[key][-1][0],
-                                    "size": 0,
-                                    "sequence": sequence,
-                                })
-                            
-                            rows.extend([
-                                {
-                                    "timestamp": timestamp,
-                                    "instrument_id": instrument_id,
-                                    "action": cls.map_actions(update_type, float(qty)),
-                                    "side": cls.map_sides(key),
-                                    "order_id": 0,
-                                    "flags": cls.map_flags(update_type),
-                                    "price": px,
-                                    "size": qty,
-                                    "sequence": sequence,
-                                }
-                                for px, qty in data[key]
-                            ])
+                                rows.append(
+                                    {
+                                        "timestamp": timestamp,
+                                        "instrument_id": instrument_id,
+                                        "action": "CLEAR",
+                                        "side": cls.map_sides(key),
+                                        "order_id": 0,
+                                        "flags": 0,
+                                        "price": data[key][-1][0],
+                                        "size": 0,
+                                        "sequence": sequence,
+                                    },
+                                )
+
+                            rows.extend(
+                                [
+                                    {
+                                        "timestamp": timestamp,
+                                        "instrument_id": instrument_id,
+                                        "action": cls.map_actions(update_type, float(qty)),
+                                        "side": cls.map_sides(key),
+                                        "order_id": 0,
+                                        "flags": cls.map_flags(update_type),
+                                        "price": px,
+                                        "size": qty,
+                                        "sequence": sequence,
+                                    }
+                                    for px, qty in data[key]
+                                ],
+                            )
 
         df = pd.DataFrame(rows)
 
-        df = df.set_index('timestamp')
+        df = df.set_index("timestamp")
 
-        df = df.astype({
-            "size": float,
-            "price": float,
-            "flags": int
-        })
+        df = df.astype(
+            {
+                "size": float,
+                "price": float,
+                "flags": int,
+            },
+        )
 
         return df
 

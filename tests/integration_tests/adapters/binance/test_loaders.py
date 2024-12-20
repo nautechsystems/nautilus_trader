@@ -15,11 +15,12 @@
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
-from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
 
 def test_load_binance_deltas() -> None:
     # Arrange

@@ -34,12 +34,12 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
-from nautilus_trader.model.currencies import XRP
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.currencies import XRP
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -372,7 +372,7 @@ class TestInstrumentProvider:
             ),
             raw_symbol=Symbol("XRPUSDT"),
             base_currency=XRP,
-            quote_currency=USDT, 
+            quote_currency=USDT,
             settlement_currency=USDT,
             is_inverse=False,
             price_precision=4,
