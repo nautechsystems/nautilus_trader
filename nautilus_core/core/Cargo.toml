@@ -42,3 +42,7 @@ python = ["pyo3"]
 [[bench]]
 name = "bench_time"
 harness = false
+
+[[bench]]
+name = "bench_correctness"
+harness = false
