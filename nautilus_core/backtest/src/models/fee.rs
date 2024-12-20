@@ -16,7 +16,7 @@
 use nautilus_model::{
     enums::LiquiditySide,
     instruments::InstrumentAny,
-    orders::any::OrderAny,
+    orders::OrderAny,
     types::{Money, Price, Quantity},
 };
 use rust_decimal::prelude::ToPrimitive;

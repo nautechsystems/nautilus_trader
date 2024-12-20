@@ -15,7 +15,7 @@
 
 use std::{collections::BTreeMap, fmt::Debug};
 
-use nautilus_model::{orders::base::Order, position::Position};
+use nautilus_model::{orders::Order, position::Position};
 
 use crate::Returns;
 

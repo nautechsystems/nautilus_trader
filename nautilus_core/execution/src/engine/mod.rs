@@ -39,7 +39,7 @@ use nautilus_model::{
     events::{OrderEvent, OrderEventAny, OrderFilled},
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
-    orders::any::OrderAny,
+    orders::OrderAny,
     position::Position,
     types::{Price, Quantity},
 };

@@ -109,14 +109,14 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::identifiers::Venue>()?;
     m.add_class::<crate::identifiers::VenueOrderId>()?;
     // Orders
-    m.add_class::<crate::orders::limit::LimitOrder>()?;
-    m.add_class::<crate::orders::limit_if_touched::LimitIfTouchedOrder>()?;
-    m.add_class::<crate::orders::market::MarketOrder>()?;
-    m.add_class::<crate::orders::market_to_limit::MarketToLimitOrder>()?;
-    m.add_class::<crate::orders::stop_limit::StopLimitOrder>()?;
-    m.add_class::<crate::orders::stop_market::StopMarketOrder>()?;
-    m.add_class::<crate::orders::trailing_stop_limit::TrailingStopLimitOrder>()?;
-    m.add_class::<crate::orders::trailing_stop_market::TrailingStopMarketOrder>()?;
+    m.add_class::<crate::orders::LimitOrder>()?;
+    m.add_class::<crate::orders::LimitIfTouchedOrder>()?;
+    m.add_class::<crate::orders::MarketOrder>()?;
+    m.add_class::<crate::orders::MarketToLimitOrder>()?;
+    m.add_class::<crate::orders::StopLimitOrder>()?;
+    m.add_class::<crate::orders::StopMarketOrder>()?;
+    m.add_class::<crate::orders::TrailingStopLimitOrder>()?;
+    m.add_class::<crate::orders::TrailingStopMarketOrder>()?;
     // Position
     m.add_class::<crate::position::Position>()?;
     // Instruments

@@ -42,7 +42,7 @@ use nautilus_model::{
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
         CryptoPerpetual, Equity, InstrumentAny,
     },
-    orders::{any::OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
+    orders::{stubs::TestOrderStubs, OrderAny, OrderTestBuilder},
     position::Position,
     types::{Price, Quantity},
 };

@@ -46,9 +46,7 @@ use nautilus_model::{
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
     orderbook::OrderBook,
     orders::{
-        any::{OrderAny, PassiveOrderAny, StopOrderAny},
-        trailing_stop_limit::TrailingStopLimitOrder,
-        trailing_stop_market::TrailingStopMarketOrder,
+        OrderAny, PassiveOrderAny, StopOrderAny, TrailingStopLimitOrder, TrailingStopMarketOrder,
     },
     position::Position,
     types::{Currency, Money, Price, Quantity},

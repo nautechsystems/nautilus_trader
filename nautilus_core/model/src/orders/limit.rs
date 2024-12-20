@@ -37,7 +37,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    orders::base::OrderError,
+    orders::OrderError,
     types::{quantity::check_quantity_positive, Price, Quantity},
 };
 
@@ -483,7 +483,7 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
         instruments::{stubs::*, CurrencyPair},
-        orders::builder::OrderTestBuilder,
+        orders::OrderTestBuilder,
         types::{Price, Quantity},
     };
 

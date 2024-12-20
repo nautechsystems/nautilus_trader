@@ -27,7 +27,7 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},
-        trailing_stop_limit::TrailingStopLimitOrder,
+        TrailingStopLimitOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::{Price, Quantity},

@@ -27,7 +27,7 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},
-        stop_limit::StopLimitOrder,
+        StopLimitOrder,
     },
     python::{
         common::commissions_from_hashmap,

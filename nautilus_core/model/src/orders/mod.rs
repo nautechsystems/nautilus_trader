@@ -34,3 +34,20 @@ pub mod trailing_stop_market;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
+
+// Re-exports
+pub use crate::orders::{
+    any::{LimitOrderAny, OrderAny, PassiveOrderAny, StopOrderAny},
+    base::{Order, OrderError},
+    builder::OrderTestBuilder,
+    limit::LimitOrder,
+    limit_if_touched::LimitIfTouchedOrder,
+    list::OrderList,
+    market::MarketOrder,
+    market_if_touched::MarketIfTouchedOrder,
+    market_to_limit::MarketToLimitOrder,
+    stop_limit::StopLimitOrder,
+    stop_market::StopMarketOrder,
+    trailing_stop_limit::TrailingStopLimitOrder,
+    trailing_stop_market::TrailingStopMarketOrder,
+};
