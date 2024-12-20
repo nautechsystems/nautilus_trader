@@ -17,7 +17,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.17.0
 
 ### Breaking Changes
-- Moved `BinanceOrderBookDeltaDataLoader from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
+- Moved `BinanceOrderBookDeltaDataLoader` from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
 
 ### Fixes
 - Fixed timeout error code for Bybit (#2130), thanks @sunlei
