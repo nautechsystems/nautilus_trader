@@ -24,7 +24,7 @@ use nautilus_common::{
 };
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
     events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
     identifiers::{

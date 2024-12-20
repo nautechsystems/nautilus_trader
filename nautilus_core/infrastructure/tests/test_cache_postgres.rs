@@ -28,7 +28,7 @@ mod serial_tests {
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
-        accounts::any::AccountAny,
+        accounts::AccountAny,
         enums::{CurrencyType, OrderSide, OrderType},
         identifiers::ClientOrderId,
         instruments::{

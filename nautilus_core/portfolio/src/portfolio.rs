@@ -43,7 +43,7 @@ use nautilus_common::{
     },
 };
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{Data, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
     events::{account::state::AccountState, order::OrderEventAny, position::PositionEvent},
@@ -332,7 +332,7 @@ impl Portfolio {
                 );
                 HashMap::new()
             },
-            nautilus_model::accounts::any::AccountAny::balances_locked,
+            AccountAny::balances_locked,
         )
     }
 

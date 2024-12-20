@@ -17,7 +17,7 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    accounts::margin::MarginAccount,
+    accounts::MarginAccount,
     events::account::state::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,

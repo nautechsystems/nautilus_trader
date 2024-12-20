@@ -22,3 +22,11 @@ pub mod margin;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
+
+// Re-exports
+pub use crate::accounts::{
+    any::AccountAny,
+    base::{Account, BaseAccount},
+    cash::CashAccount,
+    margin::MarginAccount,
+};

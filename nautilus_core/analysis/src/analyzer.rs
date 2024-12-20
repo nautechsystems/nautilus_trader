@@ -21,7 +21,7 @@ use std::{
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    accounts::base::Account,
+    accounts::Account,
     identifiers::PositionId,
     position::Position,
     types::{Currency, Money},

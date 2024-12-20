@@ -17,7 +17,7 @@
 
 use bytes::Bytes;
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{Bar, QuoteTick, TradeTick},
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType},
     events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},

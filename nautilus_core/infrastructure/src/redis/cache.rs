@@ -30,7 +30,7 @@ use nautilus_common::{
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
     events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
     identifiers::{
