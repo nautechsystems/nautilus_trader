@@ -47,9 +47,8 @@ use nautilus_model::{
 use crate::{
     client::ExecutionClient,
     messages::{
-        cancel::CancelOrder, cancel_all::CancelAllOrders, cancel_batch::BatchCancelOrders,
-        modify::ModifyOrder, query::QueryOrder, submit::SubmitOrder, submit_list::SubmitOrderList,
-        TradingCommand,
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
+        SubmitOrderList, TradingCommand,
     },
 };
 
