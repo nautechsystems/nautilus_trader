@@ -53,6 +53,7 @@ impl UUID4 {
         let c_string =
             CString::new(uuid.to_string()).expect("Expected UUID to convert to valid `CString`");
         let bytes = c_string.as_bytes_with_nul();
+
         let mut value = [0; UUID4_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
 
@@ -76,10 +77,10 @@ impl FromStr for UUID4 {
     /// The string should be a valid UUID in the standard format (e.g., "6ba7b810-9dad-11d1-80b4-00c04fd430c8").
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(s)?;
-        let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
-        let bytes = c_string.as_bytes_with_nul();
         let mut value = [0; UUID4_LEN];
-        value[..bytes.len()].copy_from_slice(bytes);
+        let uuid_str = uuid.to_string();
+        value[..uuid_str.len()].copy_from_slice(uuid_str.as_bytes());
+        value[uuid_str.len()] = 0; // Add null terminator
 
         Ok(Self { value })
     }
@@ -135,7 +136,7 @@ impl Serialize for UUID4 {
     where
         S: Serializer,
     {
-        self.value.serialize(serializer)
+        self.to_string().serialize(serializer)
     }
 }
 
@@ -164,7 +165,7 @@ mod tests {
     fn test_new() {
         let uuid = UUID4::new();
         let uuid_string = uuid.to_string();
-        let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
+        let uuid_parsed = Uuid::parse_str(&uuid_string).unwrap();
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
         assert_eq!(uuid_parsed.to_string().len(), 36);
     }
@@ -179,7 +180,7 @@ mod tests {
     fn test_default() {
         let uuid: UUID4 = UUID4::default();
         let uuid_string = uuid.to_string();
-        let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
+        let uuid_parsed = Uuid::parse_str(&uuid_string).unwrap();
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
     }
 
@@ -188,8 +189,8 @@ mod tests {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
         let result_string = uuid.to_string();
-        let result_parsed = Uuid::parse_str(&result_string).expect("Uuid::parse_str failed");
-        let expected_parsed = Uuid::parse_str(uuid_string).expect("Uuid::parse_str failed");
+        let result_parsed = Uuid::parse_str(&result_string).unwrap();
+        let expected_parsed = Uuid::parse_str(uuid_string).unwrap();
         assert_eq!(result_parsed, expected_parsed);
     }
 
@@ -213,5 +214,34 @@ mod tests {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
         assert_eq!(format!("{uuid}"), uuid_string);
+    }
+
+    #[rstest]
+    fn test_serialize_json() {
+        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+        let uuid = UUID4::from(uuid_string);
+
+        let serialized = serde_json::to_string(&uuid).unwrap();
+        let expected_json = format!("\"{}\"", uuid_string);
+        assert_eq!(serialized, expected_json);
+    }
+
+    #[rstest]
+    fn test_deserialize_json() {
+        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+        let serialized = format!("\"{}\"", uuid_string);
+
+        let deserialized: UUID4 = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.to_string(), uuid_string);
+    }
+
+    #[rstest]
+    fn test_serialize_deserialize_round_trip() {
+        let uuid = UUID4::new();
+
+        let serialized = serde_json::to_string(&uuid).unwrap();
+        let deserialized: UUID4 = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(uuid, deserialized);
     }
 }
