@@ -15,10 +15,9 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use nautilus_core::uuid::UUID4;
-use serde_json;
 
 fn bench_uuid4_creation(c: &mut Criterion) {
-    c.bench_function("UUID4::new", |b| b.iter(|| UUID4::new()));
+    c.bench_function("UUID4::new", |b| b.iter(UUID4::new));
 }
 
 fn bench_uuid4_to_string(c: &mut Criterion) {
@@ -34,7 +33,7 @@ fn bench_uuid4_from_str(c: &mut Criterion) {
 fn bench_uuid4_serialize(c: &mut Criterion) {
     let uuid = UUID4::new();
     c.bench_function("UUID4::serialize", |b| {
-        b.iter(|| serde_json::to_string(&uuid).expect("Serialization failed"))
+        b.iter(|| serde_json::to_string(&uuid).expect("Serialization failed"));
     });
 }
 
@@ -44,7 +43,7 @@ fn bench_uuid4_deserialize(c: &mut Criterion) {
     c.bench_function("UUID4::deserialize", |b| {
         b.iter(|| {
             let _: UUID4 = serde_json::from_str(&serialized).expect("Deserialization failed");
-        })
+        });
     });
 }
 
@@ -54,7 +53,7 @@ fn bench_uuid4_round_trip(c: &mut Criterion) {
         b.iter(|| {
             let serialized = serde_json::to_string(&uuid).expect("Serialization failed");
             let _: UUID4 = serde_json::from_str(&serialized).expect("Deserialization failed");
-        })
+        });
     });
 }
 

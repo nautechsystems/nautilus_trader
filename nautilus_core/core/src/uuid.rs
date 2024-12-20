@@ -16,11 +16,11 @@
 //! A `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
 //! label (RFC 4122).
 
-use std::io::{Cursor, Write};
 use std::{
     ffi::CStr,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
+    io::{Cursor, Write},
     str::FromStr,
 };
 
@@ -241,14 +241,14 @@ mod tests {
         let uuid = UUID4::from(uuid_string);
 
         let serialized = serde_json::to_string(&uuid).unwrap();
-        let expected_json = format!("\"{}\"", uuid_string);
+        let expected_json = format!("\"{uuid_string}\"");
         assert_eq!(serialized, expected_json);
     }
 
     #[rstest]
     fn test_deserialize_json() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-        let serialized = format!("\"{}\"", uuid_string);
+        let serialized = format!("\"{uuid_string}\"");
 
         let deserialized: UUID4 = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized.to_string(), uuid_string);

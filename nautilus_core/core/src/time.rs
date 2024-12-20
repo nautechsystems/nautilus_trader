@@ -17,8 +17,9 @@
 //!
 //! This module provides an atomic time abstraction that supports both real-time and static
 //! clocks. It ensures thread-safe operations and monotonic time retrieval with nanosecond
-//! precision, leveraging hardware timestamp counters on supported architectures (x86_64)
-//! and falling back to system time on others.
+//! precision. On Linux, it uses a fast system call (`CLOCK_REALTIME_COARSE`) to optimize
+//! time retrieval, achieving significant performance improvements. On other platforms, it
+//! falls back to using `SystemTime`.
 
 use std::{
     ops::Deref,
@@ -110,6 +111,7 @@ pub fn nanos_since_unix_epoch() -> u64 {
 /// ```
 #[cfg(target_os = "linux")]
 #[inline(always)]
+#[must_use]
 pub fn nanos_since_unix_epoch() -> u64 {
     let mut ts = timespec {
         tv_sec: 0,
