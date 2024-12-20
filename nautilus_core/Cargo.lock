@@ -3007,6 +3007,7 @@ dependencies = [
  "indexmap",
  "libc",
  "pyo3",
+ "rand",
  "rmp-serde",
  "rstest",
  "serde",

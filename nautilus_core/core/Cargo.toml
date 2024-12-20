@@ -17,6 +17,7 @@ chrono = { workspace = true }
 heck = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -40,9 +41,13 @@ ffi = ["cbindgen"]
 python = ["pyo3"]
 
 [[bench]]
+name = "bench_correctness"
+harness = false
+
+[[bench]]
 name = "bench_time"
 harness = false
 
 [[bench]]
-name = "bench_correctness"
+name = "bench_uuid"
 harness = false

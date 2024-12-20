@@ -16,13 +16,15 @@
 //! A `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
 //! label (RFC 4122).
 
+use std::io::{Cursor, Write};
 use std::{
-    ffi::{CStr, CString},
+    ffi::CStr,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
     str::FromStr,
 };
 
+use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -49,13 +51,30 @@ impl UUID4 {
     /// The UUID is stored as a fixed-length C string byte array.
     #[must_use]
     pub fn new() -> Self {
-        let uuid = Uuid::new_v4();
-        let c_string =
-            CString::new(uuid.to_string()).expect("Expected UUID to convert to valid `CString`");
-        let bytes = c_string.as_bytes_with_nul();
+        let mut rng = rand::thread_rng();
+        let mut bytes = [0u8; 16];
+        rng.fill_bytes(&mut bytes);
 
-        let mut value = [0; UUID4_LEN];
-        value[..bytes.len()].copy_from_slice(bytes);
+        bytes[6] = (bytes[6] & 0x0F) | 0x40; // Set the version to 4
+        bytes[8] = (bytes[8] & 0x3F) | 0x80; // Set the variant to RFC 4122
+
+        let mut value = [0u8; UUID4_LEN];
+        let mut cursor = Cursor::new(&mut value[..36]);
+
+        write!(
+            cursor,
+            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+            u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            u16::from_be_bytes([bytes[4], bytes[5]]),
+            u16::from_be_bytes([bytes[6], bytes[7]]),
+            u16::from_be_bytes([bytes[8], bytes[9]]),
+            u64::from_be_bytes([
+                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15], 0, 0
+            ]) >> 16
+        )
+        .expect("Failed to write UUID string to buffer");
+
+        value[36] = 0; // Add the null terminator
 
         Self { value }
     }
