@@ -16,20 +16,19 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use nautilus_core::time::{duration_since_unix_epoch, nanos_since_unix_epoch};
 
-// Benchmark `duration_since_unix_epoch` (SystemTime under the hood)
+// Using `SystemTime` under the hood
 fn bench_system_time(c: &mut Criterion) {
     c.bench_function("duration_since_unix_epoch", |b| {
         b.iter(|| duration_since_unix_epoch());
     });
 }
 
-// Benchmark `nanos_since_unix_epoch` (libc syscall under the hood)
+// Using libc `clock_gettime` syscall
 fn bench_rdtscp(c: &mut Criterion) {
     c.bench_function("nanos_since_unix_epoch", |b| {
         b.iter(|| nanos_since_unix_epoch());
     });
 }
 
-// Group benchmarks
 criterion_group!(benches, bench_system_time, bench_rdtscp);
 criterion_main!(benches);
