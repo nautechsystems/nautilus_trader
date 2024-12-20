@@ -120,17 +120,17 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Position
     m.add_class::<crate::position::Position>()?;
     // Instruments
-    m.add_class::<crate::instruments::betting::BettingInstrument>()?;
-    m.add_class::<crate::instruments::binary_option::BinaryOption>()?;
-    m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
-    m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
-    m.add_class::<crate::instruments::currency_pair::CurrencyPair>()?;
-    m.add_class::<crate::instruments::equity::Equity>()?;
-    m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
-    m.add_class::<crate::instruments::futures_spread::FuturesSpread>()?;
-    m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
-    m.add_class::<crate::instruments::options_spread::OptionsSpread>()?;
-    m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
+    m.add_class::<crate::instruments::BettingInstrument>()?;
+    m.add_class::<crate::instruments::BinaryOption>()?;
+    m.add_class::<crate::instruments::CryptoFuture>()?;
+    m.add_class::<crate::instruments::CryptoPerpetual>()?;
+    m.add_class::<crate::instruments::CurrencyPair>()?;
+    m.add_class::<crate::instruments::Equity>()?;
+    m.add_class::<crate::instruments::FuturesContract>()?;
+    m.add_class::<crate::instruments::FuturesSpread>()?;
+    m.add_class::<crate::instruments::OptionsContract>()?;
+    m.add_class::<crate::instruments::OptionsSpread>()?;
+    m.add_class::<crate::instruments::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;
     m.add_class::<crate::orderbook::level::BookLevel>()?;
@@ -143,28 +143,28 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     // Events
-    m.add_class::<crate::events::account::state::AccountState>()?;
-    m.add_class::<crate::events::order::OrderDenied>()?;
-    m.add_class::<crate::events::order::OrderFilled>()?;
-    m.add_class::<crate::events::order::OrderInitialized>()?;
-    m.add_class::<crate::events::order::OrderRejected>()?;
-    m.add_class::<crate::events::order::OrderTriggered>()?;
-    m.add_class::<crate::events::order::OrderSubmitted>()?;
-    m.add_class::<crate::events::order::OrderEmulated>()?;
-    m.add_class::<crate::events::order::OrderReleased>()?;
-    m.add_class::<crate::events::order::OrderUpdated>()?;
-    m.add_class::<crate::events::order::OrderPendingUpdate>()?;
-    m.add_class::<crate::events::order::OrderPendingCancel>()?;
-    m.add_class::<crate::events::order::OrderModifyRejected>()?;
-    m.add_class::<crate::events::order::OrderAccepted>()?;
-    m.add_class::<crate::events::order::OrderCancelRejected>()?;
-    m.add_class::<crate::events::order::OrderCanceled>()?;
-    m.add_class::<crate::events::order::OrderExpired>()?;
-    m.add_class::<crate::events::order::OrderSnapshot>()?;
-    m.add_class::<crate::events::position::snapshot::PositionSnapshot>()?;
+    m.add_class::<crate::events::AccountState>()?;
+    m.add_class::<crate::events::OrderDenied>()?;
+    m.add_class::<crate::events::OrderFilled>()?;
+    m.add_class::<crate::events::OrderInitialized>()?;
+    m.add_class::<crate::events::OrderRejected>()?;
+    m.add_class::<crate::events::OrderTriggered>()?;
+    m.add_class::<crate::events::OrderSubmitted>()?;
+    m.add_class::<crate::events::OrderEmulated>()?;
+    m.add_class::<crate::events::OrderReleased>()?;
+    m.add_class::<crate::events::OrderUpdated>()?;
+    m.add_class::<crate::events::OrderPendingUpdate>()?;
+    m.add_class::<crate::events::OrderPendingCancel>()?;
+    m.add_class::<crate::events::OrderModifyRejected>()?;
+    m.add_class::<crate::events::OrderAccepted>()?;
+    m.add_class::<crate::events::OrderCancelRejected>()?;
+    m.add_class::<crate::events::OrderCanceled>()?;
+    m.add_class::<crate::events::OrderExpired>()?;
+    m.add_class::<crate::events::OrderSnapshot>()?;
+    m.add_class::<crate::events::PositionSnapshot>()?;
     // Accounts
-    m.add_class::<crate::accounts::cash::CashAccount>()?;
-    m.add_class::<crate::accounts::margin::MarginAccount>()?;
+    m.add_class::<crate::accounts::CashAccount>()?;
+    m.add_class::<crate::accounts::MarginAccount>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::account::transformer::cash_account_from_account_events,
         m

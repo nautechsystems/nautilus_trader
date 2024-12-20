@@ -18,7 +18,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     accounts::MarginAccount,
-    events::account::state::AccountState,
+    events::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
     python::instruments::pyobject_to_instrument_any,

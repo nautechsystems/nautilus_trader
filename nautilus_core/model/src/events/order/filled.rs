@@ -25,7 +25,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::OrderEvent,
+    events::OrderEvent,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
@@ -420,7 +420,7 @@ impl OrderEvent for OrderFilled {
 mod tests {
     use rstest::rstest;
 
-    use crate::events::order::{filled::OrderFilled, stubs::*};
+    use crate::events::{order::stubs::*, OrderFilled};
 
     #[rstest]
     fn test_order_filled_display(order_filled: OrderFilled) {

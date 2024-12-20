@@ -19,11 +19,7 @@ use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{
-        account::state::AccountState,
-        order::{OrderEvent, OrderEventAny},
-        position::snapshot::PositionSnapshot,
-    },
+    events::{position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{any::OrderAny, base::Order},

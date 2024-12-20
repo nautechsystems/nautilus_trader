@@ -18,7 +18,7 @@ use std::str::FromStr;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, PositionSide},
-    events::position::snapshot::PositionSnapshot,
+    events::PositionSnapshot,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
     types::{Currency, Money, Quantity},
 };

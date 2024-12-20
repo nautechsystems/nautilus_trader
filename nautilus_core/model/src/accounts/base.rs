@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,

@@ -46,7 +46,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{Data, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
-    events::{account::state::AccountState, order::OrderEventAny, position::PositionEvent},
+    events::{position::PositionEvent, AccountState, OrderEventAny},
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
     orders::any::OrderAny,
@@ -1494,15 +1494,10 @@ mod tests {
         data::QuoteTick,
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{
-            account::{state::AccountState, stubs::cash_account_state},
-            order::{
-                stubs::{order_accepted, order_filled, order_submitted},
-                OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
-            },
-            position::{
-                changed::PositionChanged, closed::PositionClosed, opened::PositionOpened,
-                PositionEvent,
-            },
+            account::stubs::cash_account_state,
+            order::stubs::{order_accepted, order_filled, order_submitted},
+            AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
+            PositionChanged, PositionClosed, PositionEvent, PositionOpened,
         },
         identifiers::{
             stubs::{account_id, uuid4},

@@ -18,7 +18,7 @@ use std::ffi::c_char;
 use nautilus_core::{ffi::string::cstr_to_ustr, nanos::UnixNanos, uuid::UUID4};
 
 use crate::{
-    events::order::{
+    events::{
         OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},

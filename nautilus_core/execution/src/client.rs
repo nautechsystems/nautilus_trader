@@ -27,12 +27,9 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
     events::{
-        account::state::AccountState,
-        order::{
-            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
-            OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
-            OrderUpdated,
-        },
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
+        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted,
+        OrderTriggered, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,

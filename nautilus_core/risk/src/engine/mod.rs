@@ -32,7 +32,7 @@ use nautilus_execution::messages::{
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
     enums::{InstrumentClass, OrderSide, OrderStatus, TradingState},
-    events::order::{OrderDenied, OrderEventAny, OrderModifyRejected},
+    events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::InstrumentAny,
     orders::{any::OrderAny, list::OrderList},
@@ -1090,8 +1090,8 @@ mod tests {
         data::{stubs::quote_audusd, QuoteTick},
         enums::{AccountType, OrderSide, OrderType, TradingState},
         events::{
-            account::{state::AccountState, stubs::cash_account_state_million_usd},
-            order::{OrderDenied, OrderEventAny, OrderEventType},
+            account::stubs::cash_account_state_million_usd, AccountState, OrderDenied,
+            OrderEventAny, OrderEventType,
         },
         identifiers::{
             stubs::{

@@ -26,7 +26,7 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,

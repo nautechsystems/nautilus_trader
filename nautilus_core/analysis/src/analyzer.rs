@@ -368,7 +368,7 @@ mod tests {
 
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
-        events::{account::state::AccountState, order::OrderFilled},
+        events::{AccountState, OrderFilled},
         identifiers::{
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
             AccountId, ClientOrderId,

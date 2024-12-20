@@ -21,7 +21,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use crate::{
     accounts::{base::Account, cash::CashAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::AccountId,
     position::Position,
     python::instruments::pyobject_to_instrument_any,

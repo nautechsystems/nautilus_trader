@@ -17,8 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::AccountType, events::account::state::AccountState, identifiers::AccountId,
-    types::Currency,
+    enums::AccountType, events::AccountState, identifiers::AccountId, types::Currency,
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
 
