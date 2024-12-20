@@ -350,7 +350,10 @@ mod tests {
 
                 for i in 0..iterations {
                     let current = time_clone.time_since_epoch().as_u64();
-                    assert!(current > previous, "Thread {thread_id}: iteration {i}: time did not increase: previous={previous}, current={current}");
+                    assert!(
+                        current > previous,
+                        "Thread {thread_id}: iteration {i}: time did not increase: previous={previous}, current={current}",
+                    );
                     previous = current;
                 }
             });
