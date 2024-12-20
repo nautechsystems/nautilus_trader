@@ -21,6 +21,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Debug,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -247,6 +248,45 @@ impl Deref for DataClientAdapter {
 impl DerefMut for DataClientAdapter {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.client
+    }
+}
+
+impl Debug for DataClientAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataClientAdapter")
+            .field("client_id", &self.client_id)
+            .field("venue", &self.venue)
+            .field("handles_order_book_deltas", &self.handles_order_book_deltas)
+            .field(
+                "handles_order_book_snapshots",
+                &self.handles_order_book_snapshots,
+            )
+            .field("subscriptions_generic", &self.subscriptions_generic)
+            .field(
+                "subscriptions_order_book_delta",
+                &self.subscriptions_order_book_delta,
+            )
+            .field(
+                "subscriptions_order_book_snapshot",
+                &self.subscriptions_order_book_snapshot,
+            )
+            .field("subscriptions_quote_tick", &self.subscriptions_quote_tick)
+            .field("subscriptions_trade_tick", &self.subscriptions_trade_tick)
+            .field("subscriptions_bar", &self.subscriptions_bar)
+            .field(
+                "subscriptions_instrument_status",
+                &self.subscriptions_instrument_status,
+            )
+            .field(
+                "subscriptions_instrument_close",
+                &self.subscriptions_instrument_close,
+            )
+            .field("subscriptions_instrument", &self.subscriptions_instrument)
+            .field(
+                "subscriptions_instrument_venue",
+                &self.subscriptions_instrument_venue,
+            )
+            .finish()
     }
 }
 
