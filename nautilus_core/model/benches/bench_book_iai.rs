@@ -27,7 +27,8 @@ fn bench_orderbook_add() {
     let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
     let order = BookOrder::new(OrderSide::Buy, Price::from("100.0"), Quantity::from(100), 1);
 
-    black_box(book.add(order, 0, 1, 1.into()));
+    book.add(order, 0, 1, 1.into());
+    black_box(());
 }
 
 fn bench_orderbook_update() {
@@ -43,7 +44,8 @@ fn bench_orderbook_update() {
         1,
     );
 
-    black_box(book.update(updated_order, 0, 2, 2.into()));
+    book.update(updated_order, 0, 2, 2.into());
+    black_box(());
 }
 
 fn bench_orderbook_delete() {
@@ -52,7 +54,8 @@ fn bench_orderbook_delete() {
     let order = BookOrder::new(OrderSide::Buy, Price::from("100.0"), Quantity::from(100), 1);
     book.add(order, 0, 1, 1.into());
 
-    black_box(book.delete(order, 0, 2, 2.into()));
+    book.delete(order, 0, 2, 2.into());
+    black_box(());
 }
 
 fn bench_orderbook_apply_deltas() {
@@ -75,7 +78,8 @@ fn bench_orderbook_apply_deltas() {
         ts_init: 2.into(),
     };
 
-    black_box(book.apply_deltas(&deltas));
+    book.apply_deltas(&deltas);
+    black_box(());
 }
 
 iai::main!(
