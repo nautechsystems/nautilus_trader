@@ -22,6 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+libc = "0.2.169"
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -37,3 +38,7 @@ default = ["python"]
 extension-module = ["pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3"]
+
+[[bench]]
+name = "bench_time"
+harness = false
