@@ -30,7 +30,7 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderType, PositionSide, TimeInForce},
-    events::order::OrderInitialized,
+    events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },

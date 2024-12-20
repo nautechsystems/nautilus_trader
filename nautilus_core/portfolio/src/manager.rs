@@ -22,7 +22,7 @@ use nautilus_core::{ffi::uuid::uuid4_new, nanos::UnixNanos};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
-    events::{account::state::AccountState, order::OrderFilled},
+    events::{AccountState, OrderFilled},
     instruments::InstrumentAny,
     orders::any::OrderAny,
     position::Position,

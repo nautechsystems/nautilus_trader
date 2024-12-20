@@ -19,13 +19,10 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::{
-        order::{
-            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-            OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-            OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-            OrderTriggered, OrderUpdated,
-        },
-        position::snapshot::PositionSnapshot,
+        position::snapshot::PositionSnapshot, OrderAccepted, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderEventAny, OrderExpired, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,

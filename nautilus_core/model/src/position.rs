@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::{OrderSide, OrderSideSpecified, PositionSide},
-    events::order::filled::OrderFilled,
+    events::OrderFilled,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
@@ -530,7 +530,7 @@ mod tests {
 
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
-        events::order::OrderFilled,
+        events::OrderFilled,
         identifiers::{stubs::uuid4, AccountId, PositionId, StrategyId, TradeId, VenueOrderId},
         instruments::{stubs::*, CryptoPerpetual, CurrencyPair, InstrumentAny},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},

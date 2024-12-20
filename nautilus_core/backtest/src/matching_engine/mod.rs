@@ -35,7 +35,7 @@ use nautilus_model::{
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus,
         OrderType, PriceType,
     },
-    events::order::{
+    events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
         OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
     },

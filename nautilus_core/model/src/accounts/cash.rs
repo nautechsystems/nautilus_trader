@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::{
         stubs::{account_id, uuid4},
         AccountId,
@@ -284,7 +284,7 @@ mod tests {
     use crate::{
         accounts::{base::Account, cash::CashAccount, stubs::*},
         enums::{AccountType, LiquiditySide, OrderSide, OrderType},
-        events::account::{state::AccountState, stubs::*},
+        events::{account::stubs::*, AccountState},
         identifiers::{position_id::PositionId, AccountId},
         instruments::{stubs::*, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},

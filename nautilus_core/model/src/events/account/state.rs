@@ -102,9 +102,9 @@ impl PartialEq for AccountState {
 mod tests {
     use rstest::rstest;
 
-    use crate::events::account::{
-        state::AccountState,
-        stubs::{cash_account_state, margin_account_state},
+    use crate::events::{
+        account::stubs::{cash_account_state, margin_account_state},
+        AccountState,
     };
 
     #[rstest]

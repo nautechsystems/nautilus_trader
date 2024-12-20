@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
     enums::AccountType,
-    events::{account::state::AccountState, order::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,

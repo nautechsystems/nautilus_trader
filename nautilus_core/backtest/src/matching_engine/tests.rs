@@ -33,8 +33,9 @@ use nautilus_model::{
         AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
         OrderType,
     },
-    events::order::{
-        rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
+    events::{
+        order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
+        OrderRejected,
     },
     identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
     instruments::{

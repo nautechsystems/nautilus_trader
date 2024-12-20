@@ -21,7 +21,7 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
-    events::order::{
+    events::{
         OrderAccepted, OrderCancelRejected, OrderDenied, OrderEmulated, OrderExpired, OrderFilled,
         OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
         OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,

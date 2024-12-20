@@ -36,7 +36,7 @@ use nautilus_common::{
 };
 use nautilus_model::{
     enums::{OmsType, OrderSide},
-    events::order::{filled::OrderFilled, OrderEvent, OrderEventAny},
+    events::{OrderEvent, OrderEventAny, OrderFilled},
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
     orders::any::OrderAny,

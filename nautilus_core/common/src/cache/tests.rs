@@ -20,7 +20,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, QuoteTick, TradeTick},
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType},
-    events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
+    events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{AccountId, ClientOrderId, PositionId, Venue},
     instruments::{stubs::*, CurrencyPair, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,

@@ -26,7 +26,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TrailingOffsetType, TriggerType,
     },
-    events::order::{
+    events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
         OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,

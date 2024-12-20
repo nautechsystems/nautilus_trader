@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
@@ -406,8 +406,8 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        accounts::{base::Account, margin::MarginAccount, stubs::*},
-        events::account::{state::AccountState, stubs::*},
+        accounts::{stubs::*, Account, MarginAccount},
+        events::{account::stubs::*, AccountState},
         identifiers::{stubs::*, InstrumentId},
         instruments::{stubs::*, CryptoPerpetual, CurrencyPair},
         types::{Currency, Money, Price, Quantity},
