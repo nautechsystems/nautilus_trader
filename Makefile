@@ -56,6 +56,7 @@ pre-commit:
 ruff:
 	ruff check . --fix
 
+# Requires cargo-outdated v0.16.0+
 .PHONY: outdated
 outdated:
 	(cd nautilus_core && cargo outdated && poetry show --outdated)
