@@ -29,7 +29,7 @@ use nautilus_core::{
 };
 use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{
         Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
         QuoteTick, TradeTick,

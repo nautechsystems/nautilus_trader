@@ -35,7 +35,7 @@ use nautilus_core::correctness::{
     check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string, FAILED,
 };
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{Bar, BarType, QuoteTick, TradeTick},
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
