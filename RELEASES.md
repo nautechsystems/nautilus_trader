@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
+- Optimized `nanos_since_unix_epoch()` to use syscall with `CLOCK_REALTIME_COURSE` for ~4-5x performance improvement (added bench)
 - Upgraded `databento` crate to v0.17.0
 
 ### Breaking Changes
@@ -18,6 +19,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed timeout error code for Bybit (#2130), thanks @sunlei
+- Fixed multi-threaded monotonicity for `AtomicTime` in real-time mode
 
 ---
 

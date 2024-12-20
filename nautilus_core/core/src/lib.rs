@@ -43,3 +43,6 @@ pub mod ffi;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and Windows");
