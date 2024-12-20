@@ -28,7 +28,7 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-def test_load_binance_deltas() -> None:
+def test_load_deltas() -> None:
     # Arrange
     instrument = TestInstrumentProvider.btcusdt_binance()
     data_path = TEST_DATA_DIR / "binance" / "btcusdt-depth-snap.csv"
