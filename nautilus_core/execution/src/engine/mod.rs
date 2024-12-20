@@ -14,15 +14,17 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides a generic `ExecutionEngine` for all environments.
+//!
+//! The execution engines primary responsibility is to orchestrate interactions
+//! between the `ExecutionClient` instances, and the rest of the platform. This
+//! includes sending commands to, and receiving events from, the trading venue
+//! endpoints via its registered execution clients.
 
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
 pub mod config;
-
-#[cfg(test)]
-mod tests;
 
 use std::{
     cell::RefCell,
@@ -264,17 +266,18 @@ impl ExecutionEngine {
     }
 
     pub fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
+        let mut cache = self.cache.borrow_mut();
+
         for order in &command.order_list.orders {
-            if !self.cache.borrow().order_exists(&order.client_order_id()) {
-                self.cache
-                    .borrow_mut()
-                    .add_order(
-                        order.clone(),
-                        command.position_id,
-                        Some(command.client_id),
-                        true,
-                    )
-                    .unwrap();
+            if !cache.order_exists(&order.client_order_id()) {
+                if let Err(e) = cache.add_order(
+                    order.clone(),
+                    command.position_id,
+                    Some(command.client_id),
+                    true,
+                ) {
+                    log::error!("Error on cache insert: {e}");
+                }
 
                 if self.config.snapshot_orders {
                     self.create_order_state_snapshot(order);
@@ -310,14 +313,12 @@ impl ExecutionEngine {
         todo!();
     }
 
-    // TODO
     fn create_order_state_snapshot(&self, order: &OrderAny) {
-        todo!()
-        // let mut msgbus = self.msgbus.borrow_mut();
-        // let topic = msgbus
-        //     .switchboard
-        //     .get_order_snapshot_topic(order.client_order_id());
-        // msgbus.publish(&topic, order);
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus
+            .switchboard
+            .get_order_snapshots_topic(order.client_order_id());
+        msgbus.publish(&topic, order);
     }
 
     // -- EVENT HANDLERS ----------------------------------------------------

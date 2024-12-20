@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::InstrumentId,
+    identifiers::{ClientOrderId, InstrumentId},
 };
 use ustr::Ustr;
 
@@ -31,11 +31,12 @@ pub struct MessagingSwitchboard {
     custom_topics: HashMap<DataType, Ustr>,
     instrument_topics: HashMap<InstrumentId, Ustr>,
     deltas_topics: HashMap<InstrumentId, Ustr>,
-    snapshots_topics: HashMap<InstrumentId, Ustr>,
+    book_snapshots_topics: HashMap<InstrumentId, Ustr>,
     depth_topics: HashMap<InstrumentId, Ustr>,
     quote_topics: HashMap<InstrumentId, Ustr>,
     trade_topics: HashMap<InstrumentId, Ustr>,
     bar_topics: HashMap<BarType, Ustr>,
+    order_snapshots_topics: HashMap<ClientOrderId, Ustr>,
 }
 
 impl Default for MessagingSwitchboard {
@@ -49,11 +50,12 @@ impl Default for MessagingSwitchboard {
             custom_topics: HashMap::new(),
             instrument_topics: HashMap::new(),
             deltas_topics: HashMap::new(),
-            snapshots_topics: HashMap::new(),
+            book_snapshots_topics: HashMap::new(),
             depth_topics: HashMap::new(),
             quote_topics: HashMap::new(),
             trade_topics: HashMap::new(),
             bar_topics: HashMap::new(),
+            order_snapshots_topics: HashMap::new(),
         }
     }
 }
@@ -101,9 +103,9 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_snapshots_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+    pub fn get_book_snapshots_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
         *self
-            .snapshots_topics
+            .book_snapshots_topics
             .entry(instrument_id)
             .or_insert_with(|| {
                 Ustr::from(&format!(
@@ -114,7 +116,7 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_quote_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+    pub fn get_quotes_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
         *self.quote_topics.entry(instrument_id).or_insert_with(|| {
             Ustr::from(&format!(
                 "data.quotes.{}.{}",
@@ -124,7 +126,7 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_trade_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+    pub fn get_trades_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
         *self.trade_topics.entry(instrument_id).or_insert_with(|| {
             Ustr::from(&format!(
                 "data.trades.{}.{}",
@@ -134,11 +136,19 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_bar_topic(&mut self, bar_type: BarType) -> Ustr {
+    pub fn get_bars_topic(&mut self, bar_type: BarType) -> Ustr {
         *self
             .bar_topics
             .entry(bar_type)
             .or_insert_with(|| Ustr::from(&format!("data.bars.{bar_type}")))
+    }
+
+    #[must_use]
+    pub fn get_order_snapshots_topic(&mut self, client_order_id: ClientOrderId) -> Ustr {
+        *self
+            .order_snapshots_topics
+            .entry(client_order_id)
+            .or_insert_with(|| Ustr::from(&format!("order.snapshots.{client_order_id}")))
     }
 }
 
@@ -194,14 +204,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_snapshots_topic(
+    fn test_get_book_snapshots_topic(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
     ) {
         let expected_topic = Ustr::from("data.book.snapshots.XCME.ESZ24");
-        let result = switchboard.get_snapshots_topic(instrument_id);
+        let result = switchboard.get_book_snapshots_topic(instrument_id);
         assert_eq!(result, expected_topic);
-        assert!(switchboard.snapshots_topics.contains_key(&instrument_id));
+        assert!(switchboard
+            .book_snapshots_topics
+            .contains_key(&instrument_id));
     }
 
     #[rstest]
@@ -213,27 +225,38 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_quote_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
+    fn test_get_quotes_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
         let expected_topic = Ustr::from("data.quotes.XCME.ESZ24");
-        let result = switchboard.get_quote_topic(instrument_id);
+        let result = switchboard.get_quotes_topic(instrument_id);
         assert_eq!(result, expected_topic);
         assert!(switchboard.quote_topics.contains_key(&instrument_id));
     }
 
     #[rstest]
-    fn test_get_trade_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
+    fn test_get_trades_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
         let expected_topic = Ustr::from("data.trades.XCME.ESZ24");
-        let result = switchboard.get_trade_topic(instrument_id);
+        let result = switchboard.get_trades_topic(instrument_id);
         assert_eq!(result, expected_topic);
         assert!(switchboard.trade_topics.contains_key(&instrument_id));
     }
 
     #[rstest]
-    fn test_get_bar_topic(mut switchboard: MessagingSwitchboard) {
+    fn test_get_bars_topic(mut switchboard: MessagingSwitchboard) {
         let bar_type = BarType::from("ESZ24.XCME-1-MINUTE-LAST-INTERNAL");
         let expected_topic = Ustr::from(&format!("data.bars.{bar_type}"));
-        let result = switchboard.get_bar_topic(bar_type);
+        let result = switchboard.get_bars_topic(bar_type);
         assert_eq!(result, expected_topic);
         assert!(switchboard.bar_topics.contains_key(&bar_type));
+    }
+
+    #[rstest]
+    fn test_get_order_snapshots_topic(mut switchboard: MessagingSwitchboard) {
+        let client_order_id = ClientOrderId::from("O-123456789");
+        let expected_topic = Ustr::from(&format!("order.snapshots.{client_order_id}"));
+        let result = switchboard.get_order_snapshots_topic(client_order_id);
+        assert_eq!(result, expected_topic);
+        assert!(switchboard
+            .order_snapshots_topics
+            .contains_key(&client_order_id));
     }
 }
