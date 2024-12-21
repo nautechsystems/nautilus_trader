@@ -1269,7 +1269,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "time",
  "tokio",
  "tokio-util",
@@ -1669,7 +1669,7 @@ dependencies = [
  "json-writer",
  "num_enum",
  "serde",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "time",
  "tokio",
  "zstd",
@@ -3054,7 +3054,7 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "ustr",
 ]
@@ -3080,7 +3080,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "time",
  "tokio",
  "tracing",
@@ -3106,7 +3106,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -3179,7 +3179,7 @@ dependencies = [
  "serde_json",
  "strum",
  "tabled",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "thousands",
  "ustr",
 ]
@@ -3204,7 +3204,7 @@ dependencies = [
  "rstest",
  "rustls",
  "serde_json",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
@@ -3239,7 +3239,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "tokio",
 ]
 
@@ -3264,7 +3264,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "ustr",
  "uuid",
 ]
@@ -3304,7 +3304,7 @@ dependencies = [
  "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "ustr",
 ]
 
@@ -3320,7 +3320,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "rstest",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -3350,7 +3350,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.8",
+ "thiserror 2.0.9",
  "thousands",
  "tokio",
  "tokio-tungstenite",
@@ -3555,9 +3555,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.36.5"
+version = "0.36.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedf0a2d09c573ed1d8d85b30c119153926a2b36dce0ab28322c09a117a4683e"
+checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
 dependencies = [
  "memchr",
 ]
@@ -4766,9 +4766,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.133"
+version = "1.0.134"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7fceb2473b9166b2294ef05efcb65a3db80803f0b03ef86a5fc88a2b85ee377"
+checksum = "d00f4175c42ee48b15416f6193a959ba3a0d67fc699a0db9ad12df9f83991c7d"
 dependencies = [
  "itoa",
  "memchr",
@@ -5385,11 +5385,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.8"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08f5383f3e0071702bf93ab5ee99b52d26936be9dedd9413067cbdcddcb6141a"
+checksum = "f072643fd0190df67a8bab670c20ef5d8737177d6ac6b2e9a236cb096206b2cc"
 dependencies = [
- "thiserror-impl 2.0.8",
+ "thiserror-impl 2.0.9",
 ]
 
 [[package]]
@@ -5405,9 +5405,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.8"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f357fcec90b3caef6623a099691be676d033b40a058ac95d2a6ade6fa0c943"
+checksum = "7b50fa271071aae2e6ee85f842e2e28ba8cd2c5fb67f11fcb1fd70b276f9e7d4"
 dependencies = [
  "proc-macro2",
  "quote",

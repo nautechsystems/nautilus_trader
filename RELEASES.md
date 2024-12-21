@@ -20,8 +20,9 @@ Released on TBD (UTC).
 - Moved `BinanceOrderBookDeltaDataLoader` from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
 
 ### Fixes
-- Fixed timeout error code for Bybit (#2130), thanks @sunlei
 - Fixed multi-threaded monotonicity for `AtomicTime` in real-time mode
+- Fixed timeout error code for Bybit (#2130), thanks @sunlei
+- Fixed instruments info retrieval for Bybit (#2134), thanks @sunlei
 
 ---
 
