@@ -17,18 +17,16 @@
 
 use bytes::Bytes;
 use nautilus_model::{
-    accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    accounts::AccountAny,
+    data::{Bar, QuoteTick, TradeTick},
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType},
-    events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
+    events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{AccountId, ClientOrderId, PositionId, Venue},
-    instruments::{
-        any::InstrumentAny, currency_pair::CurrencyPair, stubs::*, synthetic::SyntheticInstrument,
-    },
-    orderbook::book::OrderBook,
+    instruments::{stubs::*, CurrencyPair, InstrumentAny, SyntheticInstrument},
+    orderbook::OrderBook,
     orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
 

@@ -1,23 +1,85 @@
-# NautilusTrader 1.208.0 Beta
+# NautilusTrader 1.209.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
-- Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083), thanks @faysou
-- Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
+- Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
+- Added optional `depth` param for some `OrderBook` methods
+- Added margin and commission docs (#2128), thanks @stefansimik
+- Added `BybitOrderBookDeltaDataLoader` with tutorial for Bybit backtesting (#2131), thanks @DeevsDeevs
+- Added trade execution support where trades are processed by the matching engine (can be useful backtesting with throttled book and trades data)
+- Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124, #2126), thanks @faysou
+- Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
-- Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
+- Optimized `nanos_since_unix_epoch()` to use syscall with `CLOCK_REALTIME_COURSE`, achieving a ~4-5x performance improvement (added benches)
+- Optimized `UUID4::new()` avoiding unnecessary string allocation, achieving a ~2.8x performance improvement (added benches)
+- Upgraded `databento` crate to v0.17.0
+
+### Breaking Changes
+- Moved `BinanceOrderBookDeltaDataLoader` from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
+
+### Fixes
+- Fixed timeout error code for Bybit (#2130), thanks @sunlei
+- Fixed multi-threaded monotonicity for `AtomicTime` in real-time mode
+
+---
+
+# NautilusTrader 1.208.0 Beta
+
+Released on 15th December 2024 (UTC).
+
+### Enhancements
+- Added specific `params` for data subscriptions and requests which supports Databento `bbo-1s` and `bbo-1m` quotes (#2083, #2094), thanks @faysou
+- Added support for `STOP_LIMIT` entry order type for `OrderFactory.bracket(...)`
+- Added `.group_bids(...)` and `.group_asks(...)` for `OrderBook`
+- Added `.bids_to_dict()` and `.asks_to_dict()` for `OrderBook`
+- Added `ShutdownSystem` command and `shutdown_system(...)` method for components (system-wide shutdown for backtest, sandbox, or live environments)
+- Added `max_ws_reconnection_tries` to `BybitDataClientConfig` (#2100), thanks @sunlei
+- Added additional API functionality for Bybit (#2102), thanks @sunlei
+- Added position and execution.fast subscriptions for Bybit (#2104), thanks @sunlei
+- Added `max_ws_reconnection_tries` to `BybitExecClientConfig` (#2109), thanks @sunlei
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesContract`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesSpread`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsContract`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsSpread`
+- Improved Databento symbology support for Interactive Brokers (#2113), thanks @rsmb7z
+- Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
+- Improved timer validation for `interval_ns` (avoids panicking from Rust)
+
+### Internal Improvements
+- Added `.bids_as_map()` and `.asks_as_map()` for `OrderBook` in Rust
+- Added type stubs for `core` subpackage
+- Added type stubs for `common` and `model` enums
+- Added type stubs for `common.messages`
+- Added re-exports and module declarations to enhance code ergonomics and improve import discoverability
+- Added subscriptions for block height websocket messages for dYdX (#2085), thanks @davidsblom
+- Added sccache in CI (#2093), thanks @sunlei
+- Refined `BybitWebSocketClient` private channel authentication (#2101), thanks @sunlei
+- Refined `BybitWebSocketClient` subscribe and unsubscribe (#2105), thanks @sunlei
+- Refined place order class definitions for Bybit (#2106), thanks @sunlei
+- Refined `BybitEnumParser` (#2107), thanks @sunlei
+- Refined batch cancel orders for Bybit (#2111), thanks @sunlei
 - Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
-None
+- Renamed `Level` to `BookLevel` (standardizes order book type naming conventions)
+- Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
+- Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
 - Fixed `BEST_EFFORT_CANCELED` order status report for dYdX (#2082), thanks @davidsblom
+- Fixed order handling for `BEST_EFFORT_CANCELED` messages of dYdX (#2095), thanks @davidsblom
 - Fixed specifying price for market orders on dYdX (#2088), thanks @davidsblom
 - Fixed interest rate curve custom data and interpolation (#2090), thanks @gcheshkov
+- Fixed `BybitHttpClient` error handling when not a JSON string (#2096), thanks @sunlei
+- Fixed `BybitWebSocketClient` private channel reconnect (#2097), thanks @sunlei
+- Fixed incorrect order side use in `BybitExecutionClient` (#2098), thanks @sunlei
+- Fixed default `http_base_url` for Bybit (#2110), thanks @sunlei
 
 ---
 
@@ -1113,8 +1175,8 @@ None
 
 Released on 26th August 2023 (UTC).
 
-This release includes a large breaking change to quote tick bid and ask price property and 
-parameter naming. This was done in the interest of maintaining our generally explicit naming 
+This release includes a large breaking change to quote tick bid and ask price property and
+parameter naming. This was done in the interest of maintaining our generally explicit naming
 standards, and has caused confusion for some users in the past. Data using 'bid' and 'ask' columns should
 still work with the legacy data wranglers, as columns are renamed under the hood to accommodate
 this change.
@@ -1401,7 +1463,7 @@ Released on 18th February 2023 (UTC).
 - `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
 - Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
 - Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
-- Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
+- Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param)
 - Renamed `OrderFactory.set_order_count()` -> `set_client_order_id_count()` (clarity)
 - Renamed `TradingNode.start()` to `TradingNode.run()`
 
@@ -1491,7 +1553,7 @@ Released on 17th January 2023 (UTC).
 
 Released on 14th January 2023 (UTC).
 
-A number of enum variant names have been changed in favour of explicitness, 
+A number of enum variant names have been changed in favour of explicitness,
 and also to avoid C naming collisions.
 
 ### Breaking Changes
@@ -1553,7 +1615,7 @@ None
 - Fixed `OrderEmulator` trigger event handling for live trading
 - Fixed `OrderEmulator` transformation to market orders which had a GTD time in force
 - Fixed serialization of `OrderUpdated` events
-- Fixed typing and edge cases for new `msgspec`, thanks @limx0 
+- Fixed typing and edge cases for new `msgspec`, thanks @limx0
 - Fixed data wrangler processing with missing data, thanks @rsmb7z
 
 ---
@@ -1661,7 +1723,7 @@ Released on 18th November 2022 (UTC).
 
 ### Fixes
 - Fixed dealloc of Rust backing struct on Python exceptions causing segfaults
-- Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc) 
+- Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc)
 - Fixed backtest engine main loop ordering of time events with identically timestamped data
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
 - Fixed OCO contingent orders which were actually implemented as OUO for backtests
@@ -1702,7 +1764,7 @@ Released on 24th October 2022 (UTC).
 
 ### Breaking Changes
 - None
- 
+
 ### Enhancements
 - Added experimental local order emulation for all order types (except `MARKET` and `MARKET_TO_LIMIT`) see docs
 - Added `min_latency`, `max_latency` and `avg_latency` to `HttpClient` base class
@@ -2131,8 +2193,8 @@ Released on 13th March 2022 (UTC).
 This is a patch release which fixes a moderate severity security vulnerability in
 pillow < 9.0.1:
 
-    If the path to the temporary directory on Linux or macOS contained a space, 
-    this would break removal of the temporary image file after im.show() (and related actions), 
+    If the path to the temporary directory on Linux or macOS contained a space,
+    this would break removal of the temporary image file after im.show() (and related actions),
     and potentially remove an unrelated file. This been present since PIL.
 
 This release upgrades to pillow 9.0.1.
@@ -2188,9 +2250,9 @@ Released on 15th February 2022 (UTC).
 
 **This release contains numerous method, parameter and property name changes**
 
-For consistency and standardization with other protocols, the `ExecutionId` type 
-has been renamed to `TradeId` as they express the same concept with a more 
-standardized terminology. In the interests of enforcing correctness and 
+For consistency and standardization with other protocols, the `ExecutionId` type
+has been renamed to `TradeId` as they express the same concept with a more
+standardized terminology. In the interests of enforcing correctness and
 safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Breaking Changes
@@ -2497,7 +2559,7 @@ Released on 12th September 2021.
 Released on 30th August 2021.
 
 This release continues the focus on the core system, with upgrades and cleanups
-to the component base class. The concept of an `active` order has been introduced, 
+to the component base class. The concept of an `active` order has been introduced,
 which is an order whose state can change (is not a `completed` order).
 
 ### Breaking Changes
@@ -2539,9 +2601,9 @@ which is an order whose state can change (is not a `completed` order).
 
 Released on 17th August 2021.
 
-This release has again focused on core areas of the platform, including a 
-significant overhaul of accounting and portfolio components. The wiring between 
-the `DataEngine` and `DataClient`(s) has also received attention, and should now 
+This release has again focused on core areas of the platform, including a
+significant overhaul of accounting and portfolio components. The wiring between
+the `DataEngine` and `DataClient`(s) has also received attention, and should now
 exhibit correct subscription mechanics.
 
 The Betfair adapter has been completely re-written, providing various fixes and
@@ -2583,8 +2645,8 @@ as closely as possible with established terminology in the domain.
 
 Released on 3rd August 2021.
 
-This is a patch release which fixes a bug involving `NotImplementedError` 
-exception handling when subscribing to order book deltas when not supported by 
+This is a patch release which fixes a bug involving `NotImplementedError`
+exception handling when subscribing to order book deltas when not supported by
 a client. This bug affected CCXT order book subscriptions.
 
 ### Breaking Changes
@@ -2604,36 +2666,36 @@ None
 
 Released on 2nd August 2021.
 
-This release sees the completion of the initial implementation of the 
-`MessageBus`, with data now being handled by Pub/Sub patterns, along with the 
+This release sees the completion of the initial implementation of the
+`MessageBus`, with data now being handled by Pub/Sub patterns, along with the
 additions of point-to-point and Req/Rep messaging functionality.
 
 An `Actor` base class has been abstracted from `TradingStrategy` which allows
-custom components to be added to a `Trader` which aren't necessarily trading 
-strategies, opening up further possibilities for extending NautilusTrader with 
+custom components to be added to a `Trader` which aren't necessarily trading
+strategies, opening up further possibilities for extending NautilusTrader with
 custom functionality.
 
 For the sake of simplicity and to favour more idiomatic Python, the null object
 pattern is no longer utilized for handling identifiers. This has removed a layer
-of 'logical indirection' in certain parts of the codebase, and allows for simpler 
+of 'logical indirection' in certain parts of the codebase, and allows for simpler
 code.
 
-An order is now considered 'in-flight' if it is actively pending a state 
+An order is now considered 'in-flight' if it is actively pending a state
 transition i.e. in the `SUBMITTED`,`PENDING_UPDATE` or `PENDING_CANCEL` states.
 
-It is now a well established convention that all integer based timestamps are 
-expressed in UNIX nanoseconds, therefore the `_ns` postfix has now been dropped. 
-For clarity - time periods/intervals/objects where the units may not be obvious 
+It is now a well established convention that all integer based timestamps are
+expressed in UNIX nanoseconds, therefore the `_ns` postfix has now been dropped.
+For clarity - time periods/intervals/objects where the units may not be obvious
 have retained the `_ns` postfix.
 
 The opportunity was identified to unify the parameter naming for the concept
 of object instantiation by renaming `timestamp_ns` and `ts_recv_ns` to `ts_init`.
-Along the same lines, the timestamps for both event and data occurrence have 
+Along the same lines, the timestamps for both event and data occurrence have
 been standardized to `ts_event`.
 
-It is acknowledged that the frequent name changes and modifications to core 
-concepts may be frustrating, however whilst still in a beta phase - we're taking 
-the opportunity to lay a solid foundation for this project to continue to growth 
+It is acknowledged that the frequent name changes and modifications to core
+concepts may be frustrating, however whilst still in a beta phase - we're taking
+the opportunity to lay a solid foundation for this project to continue to growth
 in the years ahead.
 
 ### Breaking Changes
@@ -2665,12 +2727,12 @@ in the years ahead.
 Released on 18th July 2021.
 
 This release introduces a major re-architecture of the internal messaging system.
-A common message bus has been implemented which now handles all events via a 
-Pub/Sub messaging pattern. The next release will see all data being handled by 
+A common message bus has been implemented which now handles all events via a
+Pub/Sub messaging pattern. The next release will see all data being handled by
 the message bus, see the related issue for further details on this enhancement.
 
-Another notable feature is the introduction of the order 'in-flight' concept, 
-which is a submitted order which has not yet been acknowledged by the 
+Another notable feature is the introduction of the order 'in-flight' concept,
+which is a submitted order which has not yet been acknowledged by the
 trading venue. Several properties on `Order`, and methods on `Cache`, now exist
 to support this.
 
@@ -2711,8 +2773,8 @@ on events, along with numerous 'under the hood' cleanups and two bug fixes.
 
 Released on 6th July 2021.
 
-This release sees the expansion of pre-trade risk check options (see 
-`RiskEngine` class documentation). There has also been extensive 'under the 
+This release sees the expansion of pre-trade risk check options (see
+`RiskEngine` class documentation). There has also been extensive 'under the
 hood' code cleanup and consolidation.
 
 ### Breaking Changes
@@ -2744,9 +2806,9 @@ A major feature of this release is a complete re-design of serialization for the
 platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
 The MessagePack serialization functionality has been refined and retained.
 
-In the interests of explicitness there is now a convention that timestamps are 
-named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
-represented with an `int64` are always in nanosecond resolution, and appended 
+In the interests of explicitness there is now a convention that timestamps are
+named either `timestamp_ns`, or prepended with `ts`. Timestamps which are
+represented with an `int64` are always in nanosecond resolution, and appended
 with `_ns` accordingly.
 
 Initial scaffolding for new backtest data tooling has been added.
@@ -2797,9 +2859,9 @@ Initial scaffolding for new backtest data tooling has been added.
 Released on 6th June 2021.
 
 This release includes numerous breaking changes with a view to enhancing the core
-functionality and API of the platform. The data and execution caches have been 
-unified for simplicity. There have also been large changes to the accounting 
-functionality, with 'hooks' added in preparation for accurate calculation and 
+functionality and API of the platform. The data and execution caches have been
+unified for simplicity. There have also been large changes to the accounting
+functionality, with 'hooks' added in preparation for accurate calculation and
 handling of margins.
 
 ### Breaking Changes
@@ -2848,9 +2910,9 @@ so the compiler won’t be able to inline them in almost all cases."_.
 https://cython.readthedocs.io/en/latest/src/userguide/pyrex_differences.html?highlight=inline.
 
 It has been found that adding `inline` to method signatures makes no difference
-to the performance of the system - and so they have been removed to reduce 
-'noise' and simplify the codebase. Note that the use of `inline` for 
-module level functions will be passed to the C compiler with the expected 
+to the performance of the system - and so they have been removed to reduce
+'noise' and simplify the codebase. Note that the use of `inline` for
+module level functions will be passed to the C compiler with the expected
 result of inlining the function.
 
 ### Breaking Changes
@@ -2919,7 +2981,7 @@ is implicitly zero for ints, or implied in the number of digits after the '.'
 point for strings. Convenience methods have also been added to `Instrument` to
 assist the UX.
 
-The serialization of `Money` has been improved with the inclusion of the 
+The serialization of `Money` has been improved with the inclusion of the
 currency code in the string delimited by whitespace. This avoids an additional
 field for the currency code.
 
@@ -2954,7 +3016,7 @@ natural flow of command and event messages.
 
 ## Release Notes
 
-This release simplifies the backtesting workflow by removing the need for the 
+This release simplifies the backtesting workflow by removing the need for the
 intermediate `BacktestDataContainer`. There has also been some simplifications
 for `OrderFill` events, as well as additional order states and events.
 
@@ -2998,7 +3060,7 @@ for `OrderFill` events, as well as additional order states and events.
 The major thrust of this release is added support for order book data in
 backtests. The `SimulatedExchange` now maintains order books of each instrument
 and will accurately simulate market impact with L2/L3 data. For quote and trade
-tick data a L1 order book is used as a proxy. A future release will include 
+tick data a L1 order book is used as a proxy. A future release will include
 improved fill modelling assumptions and customizations.
 
 ### Breaking Changes

@@ -28,16 +28,15 @@ mod serial_tests {
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
-        accounts::any::AccountAny,
+        accounts::AccountAny,
         enums::{CurrencyType, OrderSide, OrderType},
         identifiers::ClientOrderId,
         instruments::{
-            any::InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
-            Instrument,
+            Instrument, InstrumentAny,
         },
         orders::builder::OrderTestBuilder,
-        types::{currency::Currency, quantity::Quantity},
+        types::{Currency, Quantity},
     };
 
     use crate::get_cache;

@@ -18,9 +18,9 @@ use std::str::FromStr;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, PositionSide},
-    events::position::snapshot::PositionSnapshot,
+    events::PositionSnapshot,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{currency::Currency, money::Money, quantity::Quantity},
+    types::{Currency, Money, Quantity},
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
 

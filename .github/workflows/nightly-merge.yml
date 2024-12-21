@@ -3,11 +3,77 @@ name: nightly-merge
 on:
   push:
     branches: [nightly-merge-test]
-  # schedule:
-  #   - cron: '0 14 * * *'  # At 14:00 UTC every day
+  schedule:
+    - cron: '0 14 * * *'  # At 14:00 UTC every day
 
 jobs:
+  check-develop-status:
+    runs-on: ubuntu-latest
+    outputs:
+      develop_status: ${{ steps.check-workflow.outputs.status }}
+    steps:
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Fetch develop branch workflows
+        id: fetch-workflows
+        run: |
+          set -eo pipefail
+
+          url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=20"
+          echo "Fetching workflows from: $url"
+          if ! curl -s --max-time 30 -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
+              echo "Failed to fetch workflows, exiting"
+              exit 1
+          fi
+
+          echo "Fetched workflow runs:"
+          jq '.' workflow_runs.json
+
+      - name: Check develop branch workflow status
+        id: check-workflow
+        run: |
+          set -eo pipefail
+
+          matching_workflows=$(jq '.workflow_runs | map(select(.name == "build" and .head_branch == "develop"))' workflow_runs.json)
+          if [[ -z "$matching_workflows" ]]; then
+            echo "No matching workflows found for the develop branch"
+            exit 1
+          fi
+
+          echo "Matching workflows:"
+          echo "$matching_workflows" | jq '.'
+
+          first_workflow=$(echo "$matching_workflows" | jq -r 'first')
+          if [[ "$first_workflow" == "null" || -z "$first_workflow" ]]; then
+              echo "No valid workflows found, exiting"
+              exit 1
+          fi
+
+          echo "First matching workflow:"
+          echo "$first_workflow"
+
+          status=$(echo "$first_workflow" | jq -r 'if .status == "in_progress" then "in_progress" else .conclusion end')
+
+          echo "status=$status" >> $GITHUB_OUTPUT
+          echo "Last develop branch workflow status: $status"
+
+          if [[ "$status" == "in_progress" ]]; then
+            echo "The latest workflow for the develop branch is still in progress, exiting"
+            exit 1
+          elif [[ "$status" != "success" ]]; then
+            echo "The latest workflow for the develop branch did not succeed, exiting"
+            exit 1
+          fi
+
+          echo "The latest workflow for the develop branch succeeded, proceeding"
+
+      - name: Cleanup temporary files
+        run: rm -f workflow_runs.json
+
   nightly-merge:
+    needs: check-develop-status
+    if: needs.check-develop-status.outputs.develop_status == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -16,15 +82,30 @@ jobs:
           token: ${{ secrets.NIGHTLY_TOKEN }}
           fetch-depth: 0  # Fetch all history for all tags and branches
 
+      - name: Configure Git user
+        run: |
+          git config --global user.name "nautilus-trader-bot"
+          git config --global user.email "bot@nautechsystems.io"
+
       - name: Nightly merge
-        uses: robotology/gh-action-nightly-merge@v1.4.0
+        id: merge
+        uses: robotology/gh-action-nightly-merge@v1.5.2
         with:
           stable_branch: 'develop'  # Branch to merge from
           development_branch: 'nightly'  # Branch to merge to
-          allow_ff: false
-          user_name: 'Chris Sellers'
-          user_email: 'chris@cjdsellers.io'
+          allow_ff: true
+          ff_only: true
+          user_name: 'nautilus-trader-bot'
+          user_email: 'bot@nautechsystems.io'
           push_token: 'NIGHTLY_TOKEN'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}
+
+      - name: Check merge result
+        run: |
+          if [[ $(git rev-parse HEAD) == $(git merge-base HEAD develop) ]]; then
+            echo "No changes needed to be merged"
+          else
+            echo "Changes were merged"
+          fi

@@ -15,13 +15,9 @@
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    data::{
-        bar::{Bar, BarSpecification, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{Bar, BarSpecification, BarType, QuoteTick, TradeTick},
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use sqlx::{postgres::PgRow, Error, FromRow, Row};
 

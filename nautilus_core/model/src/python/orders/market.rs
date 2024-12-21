@@ -30,19 +30,19 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderType, PositionSide, TimeInForce},
-    events::order::OrderInitialized,
+    events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
         base::{str_hashmap_to_ustr, Order, OrderCore},
-        market::MarketOrder,
+        MarketOrder,
     },
     python::{
         common::commissions_from_hashmap,
         events::order::{order_event_to_pyobject, pyobject_to_order_event},
     },
-    types::{currency::Currency, money::Money, quantity::Quantity},
+    types::{Currency, Money, Quantity},
 };
 
 #[pymethods]

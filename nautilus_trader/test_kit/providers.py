@@ -39,6 +39,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.currencies import XRP
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -188,7 +189,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_perp_binance() -> CurrencyPair:
+    def btcusdt_perp_binance() -> CryptoPerpetual:
         """
         Return the Binance Futures BTCUSDT instrument for backtesting.
 
@@ -352,6 +353,44 @@ class TestInstrumentProvider:
             taker_fee=Decimal("0.001"),
             ts_event=0,
             ts_init=0,
+        )
+
+    @staticmethod
+    def xrpusdt_linear_bybit() -> CryptoPerpetual:
+        """
+        Return the ByBit Linear XRPUSDT instrument for backtesting.
+
+        Returns
+        -------
+        CryptoPerpetual
+
+        """
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(
+                symbol=Symbol("XRPUSDT-LINEAR"),
+                venue=Venue("BYBIT"),
+            ),
+            raw_symbol=Symbol("XRPUSDT"),
+            base_currency=XRP,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=4,
+            price_increment=Price.from_str("0.0001"),
+            size_precision=0,
+            size_increment=Quantity.from_str("1"),
+            max_quantity=Quantity.from_str("10965300"),
+            min_quantity=Quantity.from_str("1"),
+            max_notional=None,
+            min_notional=Money(1.0, USDT),
+            max_price=Price.from_str("199.9998"),
+            min_price=Price.from_str("0.0001"),
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal("0.0002"),
+            taker_fee=Decimal("0.00055"),
+            ts_event=1646199312128000000,
+            ts_init=1646199342953849862,
         )
 
     @staticmethod

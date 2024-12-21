@@ -789,15 +789,16 @@ typedef enum TriggerType {
  * The level maintains a collection of orders as well as tracking insertion order
  * to preserve FIFO queue dynamics.
  */
-typedef struct Level Level;
+typedef struct BookLevel BookLevel;
 
 /**
  * Provides a high-performance, versatile order book.
  *
- * Capable of handling various levels of data granularity:
- * - MBO (market by order) / L3
- * - MBP (market by price) / L2 aggregated order per level
- * - MBP (market by price) / L1 top-of-book only
+ * Maintains buy (bid) and sell (ask) orders in price-time priority, supporting multiple
+ * market data formats:
+ * - L3 (MBO): Market By Order - tracks individual orders with unique IDs.
+ * - L2 (MBP): Market By Price - aggregates orders at each price level.
+ * - L1 (MBP): Top-of-Book - maintains only the best bid and ask prices.
  */
 typedef struct OrderBook OrderBook;
 
@@ -811,6 +812,8 @@ typedef struct OrderBookDeltas_t OrderBookDeltas_t;
 /**
  * Represents a synthetic instrument with prices derived from component instruments using a
  * formula.
+ *
+ * The `id` for the synthetic will become `{symbol}.{SYNTH}`.
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 
@@ -1434,9 +1437,9 @@ typedef struct OrderBook_API {
  * dereferenced to `Level`, providing access to `Level`'s methods without
  * having to manually acce wss the underlying `Level` instance.
  */
-typedef struct Level_API {
-    struct Level *_0;
-} Level_API;
+typedef struct BookLevel_API {
+    struct BookLevel *_0;
+} BookLevel_API;
 
 /**
  * Represents a medium of exchange in a specified denomination with a fixed decimal precision.
@@ -2458,19 +2461,19 @@ void vec_fills_drop(CVec v);
  */
 const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
 
-struct Level_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
+struct BookLevel_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
 
-void level_drop(struct Level_API level);
+void level_drop(struct BookLevel_API level);
 
-struct Level_API level_clone(const struct Level_API *level);
+struct BookLevel_API level_clone(const struct BookLevel_API *level);
 
-struct Price_t level_price(const struct Level_API *level);
+struct Price_t level_price(const struct BookLevel_API *level);
 
-CVec level_orders(const struct Level_API *level);
+CVec level_orders(const struct BookLevel_API *level);
 
-double level_size(const struct Level_API *level);
+double level_size(const struct BookLevel_API *level);
 
-double level_exposure(const struct Level_API *level);
+double level_exposure(const struct BookLevel_API *level);
 
 void vec_levels_drop(CVec v);
 

@@ -13,18 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
 use crate::{
-    data::{
-        delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
-        quote::QuoteTick, trade::TradeTick,
-    },
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, book::OrderBook, level::Level},
-    types::{price::Price, quantity::Quantity},
+    orderbook::{analysis::book_check_integrity, BookLevel, OrderBook},
+    types::{Price, Quantity},
 };
 
 #[pymethods]
@@ -146,16 +145,52 @@ impl OrderBook {
         book_check_integrity(self).map_err(to_pyruntime_err)
     }
 
+    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "bids")]
-    fn py_bids(&self) -> Vec<Level> {
-        // TODO: Improve efficiency
-        self.bids().map(|level_ref| (*level_ref).clone()).collect()
+    fn py_bids(&self, depth: Option<usize>) -> Vec<BookLevel> {
+        self.bids(depth)
+            .map(|level_ref| (*level_ref).clone())
+            .collect()
     }
 
+    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "asks")]
-    fn py_asks(&self) -> Vec<Level> {
-        // TODO: Improve efficiency
-        self.asks().map(|level_ref| (*level_ref).clone()).collect()
+    fn py_asks(&self, depth: Option<usize>) -> Vec<BookLevel> {
+        self.asks(depth)
+            .map(|level_ref| (*level_ref).clone())
+            .collect()
+    }
+
+    #[pyo3(signature = (depth=None))]
+    #[pyo3(name = "bids_to_dict")]
+    fn py_bids_to_dict(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
+        self.bids_as_map(depth)
+    }
+
+    #[pyo3(signature = (depth=None))]
+    #[pyo3(name = "asks_to_dict")]
+    fn py_asks_to_dict(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
+        self.asks_as_map(depth)
+    }
+
+    #[pyo3(signature = (group_size, depth=None))]
+    #[pyo3(name = "group_bids")]
+    pub fn py_group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_bids(group_size, depth)
+    }
+
+    #[pyo3(signature = (group_size, depth=None))]
+    #[pyo3(name = "group_asks")]
+    pub fn py_group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_asks(group_size, depth)
     }
 
     #[pyo3(name = "best_bid_price")]

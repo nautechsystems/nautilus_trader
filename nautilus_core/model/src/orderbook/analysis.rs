@@ -17,11 +17,11 @@
 
 use std::collections::BTreeMap;
 
-use super::{book::OrderBook, ladder::BookPrice, level::Level};
+use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
-    orderbook::error::BookIntegrityError,
-    types::{price::Price, quantity::Quantity},
+    orderbook::BookIntegrityError,
+    types::{Price, Quantity},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
@@ -30,7 +30,7 @@ use crate::{
 pub fn get_quantity_for_price(
     price: Price,
     order_side: OrderSide,
-    levels: &BTreeMap<BookPrice, Level>,
+    levels: &BTreeMap<BookPrice, BookLevel>,
 ) -> f64 {
     let mut matched_size: f64 = 0.0;
 
@@ -57,7 +57,7 @@ pub fn get_quantity_for_price(
 /// Calculates the estimated average price for a specified quantity from a set of
 /// order book levels.
 #[must_use]
-pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level>) -> f64 {
+pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookLevel>) -> f64 {
     let mut cumulative_size_raw = 0u64;
     let mut cumulative_value = 0.0;
 
@@ -83,7 +83,7 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level
 #[must_use]
 pub fn get_avg_px_qty_for_exposure(
     target_exposure: Quantity,
-    levels: &BTreeMap<BookPrice, Level>,
+    levels: &BTreeMap<BookPrice, BookLevel>,
 ) -> (f64, f64, f64) {
     let mut cumulative_exposure = 0.0;
     let mut cumulative_size_raw = 0u64;

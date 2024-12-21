@@ -37,17 +37,13 @@ use nautilus_common::{
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        depth::OrderBookDepth10,
-        quote::QuoteTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
-        trade::TradeTick,
-        Data, DataType,
+        Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     enums::BookType,
     identifiers::{ClientId, TraderId, Venue},
-    instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
+    instruments::{stubs::audusd_sim, CurrencyPair, InstrumentAny},
 };
 use rstest::*;
 
@@ -159,6 +155,7 @@ fn test_execute_subscribe_custom_data(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -175,6 +172,7 @@ fn test_execute_subscribe_custom_data(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -217,6 +215,7 @@ fn test_execute_subscribe_order_book_deltas(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -233,6 +232,7 @@ fn test_execute_subscribe_order_book_deltas(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -275,6 +275,7 @@ fn test_execute_subscribe_order_book_snapshots(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -291,6 +292,7 @@ fn test_execute_subscribe_order_book_snapshots(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -331,6 +333,7 @@ fn test_execute_subscribe_instrument(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -347,6 +350,7 @@ fn test_execute_subscribe_instrument(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -387,6 +391,7 @@ fn test_execute_subscribe_quote_ticks(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -403,6 +408,7 @@ fn test_execute_subscribe_quote_ticks(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -443,6 +449,7 @@ fn test_execute_subscribe_trade_ticks(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -459,6 +466,7 @@ fn test_execute_subscribe_trade_ticks(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -505,6 +513,7 @@ fn test_execute_subscribe_bars(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -518,6 +527,7 @@ fn test_execute_subscribe_bars(
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
@@ -557,6 +567,7 @@ fn test_process_instrument(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
 
@@ -605,6 +616,7 @@ fn test_process_order_book_delta(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -656,6 +668,7 @@ fn test_process_order_book_deltas(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -709,6 +722,7 @@ fn test_process_order_book_depth10(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -759,6 +773,7 @@ fn test_process_quote_tick(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -773,7 +788,7 @@ fn test_process_quote_tick(
     let handler = get_message_saving_handler::<QuoteTick>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_quote_topic(quote.instrument_id);
+        let topic = msgbus.switchboard.get_quotes_topic(quote.instrument_id);
         msgbus.subscribe(topic, handler.clone(), None);
     }
 
@@ -810,6 +825,7 @@ fn test_process_trade_tick(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -824,7 +840,7 @@ fn test_process_trade_tick(
     let handler = get_message_saving_handler::<TradeTick>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_trade_topic(trade.instrument_id);
+        let topic = msgbus.switchboard.get_trades_topic(trade.instrument_id);
         msgbus.subscribe(topic, handler.clone(), None);
     }
 
@@ -861,6 +877,7 @@ fn test_process_bar(
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     let endpoint = switchboard.data_engine_execute;
@@ -874,7 +891,7 @@ fn test_process_bar(
     let handler = get_message_saving_handler::<Bar>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_bar_topic(bar.bar_type);
+        let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
         msgbus.subscribe(topic, handler.clone(), None);
     }
 

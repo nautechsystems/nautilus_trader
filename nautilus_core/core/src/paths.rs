@@ -15,8 +15,8 @@
 
 use std::path::PathBuf;
 
-#[must_use]
 /// Returns the workspace root directory path.
+#[must_use]
 pub fn get_workspace_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -24,8 +24,8 @@ pub fn get_workspace_root_path() -> PathBuf {
         .to_path_buf()
 }
 
-#[must_use]
 /// Returns the project root directory path.
+#[must_use]
 pub fn get_project_root_path() -> PathBuf {
     get_workspace_root_path()
         .parent()
@@ -33,14 +33,14 @@ pub fn get_project_root_path() -> PathBuf {
         .to_path_buf()
 }
 
-#[must_use]
 /// Returns the tests root directory path.
+#[must_use]
 pub fn get_tests_root_path() -> PathBuf {
     get_project_root_path().join("tests")
 }
 
-#[must_use]
 /// Returns the test data directory path.
+#[must_use]
 pub fn get_test_data_path() -> PathBuf {
     if let Ok(test_data_root_path) = std::env::var("TEST_DATA_ROOT_PATH") {
         get_project_root_path()

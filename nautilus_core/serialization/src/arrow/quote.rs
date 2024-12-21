@@ -22,9 +22,9 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::quote::QuoteTick,
+    data::QuoteTick,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{
@@ -153,6 +153,14 @@ impl EncodeToRecordBatch for QuoteTick {
                 ts_event_array,
                 ts_init_array,
             ],
+        )
+    }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        QuoteTick::get_metadata(
+            &self.instrument_id,
+            self.bid_price.precision,
+            self.bid_size.precision,
         )
     }
 }

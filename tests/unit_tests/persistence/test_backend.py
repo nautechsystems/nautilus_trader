@@ -56,7 +56,7 @@ def test_backend_session_quotes() -> None:
 
     # Assert
     assert len(ticks) == 9_500
-    assert str(ticks[-1]) == "EUR/USD.SIM,1.12130,1.12132,0,0,1577919652000000125"
+    assert str(ticks[-1]) == "EUR/USD.SIM,1.12130,1.12132,100000,100000,1577919652000000125"
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 

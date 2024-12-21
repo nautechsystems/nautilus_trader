@@ -20,16 +20,15 @@ use std::{
 
 use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
-use super::level::Level_API;
+use super::level::BookLevel_API;
 use crate::{
     data::{
-        delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
-        order::BookOrder, quote::QuoteTick, trade::TradeTick,
+        BookOrder, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, book::OrderBook},
-    types::{price::Price, quantity::Quantity},
+    orderbook::{analysis::book_check_integrity, OrderBook},
+    types::{Price, Quantity},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
@@ -170,8 +169,8 @@ pub extern "C" fn orderbook_bids(book: &mut OrderBook_API) -> CVec {
     book.bids
         .levels
         .values()
-        .map(|level| Level_API::new(level.clone()))
-        .collect::<Vec<Level_API>>()
+        .map(|level| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
         .into()
 }
 
@@ -180,8 +179,8 @@ pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
     book.asks
         .levels
         .values()
-        .map(|level| Level_API::new(level.clone()))
-        .collect::<Vec<Level_API>>()
+        .map(|level| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
         .into()
 }
 

@@ -249,7 +249,7 @@ impl<'de> Deserialize<'de> for Currency {
 mod tests {
     use rstest::rstest;
 
-    use crate::{enums::CurrencyType, types::currency::Currency};
+    use crate::{enums::CurrencyType, types::Currency};
 
     #[rstest]
     fn test_debug() {

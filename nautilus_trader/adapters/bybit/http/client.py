@@ -124,15 +124,22 @@ class BybitHttpClient:
             ratelimiter_keys,
         )
 
+        response_body = response.body
+
         if response.status >= 400:
+            try:
+                message = msgspec.json.decode(response_body) if response_body else None
+            except msgspec.DecodeError:
+                message = response_body.decode()
+
             raise BybitError(
                 code=response.status,
-                message=msgspec.json.decode(response.body) if response.body else None,
+                message=message,
             )
 
-        bybit_resp: BybitResponse = self._decoder_response.decode(response.body)
+        bybit_resp: BybitResponse = self._decoder_response.decode(response_body)
         if bybit_resp.retCode == 0:
-            return response.body
+            return response_body
         else:
             raise BybitError(code=bybit_resp.retCode, message=bybit_resp.retMsg)
 

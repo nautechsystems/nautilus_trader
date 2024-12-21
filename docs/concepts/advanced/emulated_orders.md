@@ -1,8 +1,8 @@
 # Emulated Orders
 
 The platform makes it possible to emulate most order types locally, regardless
-of whether the type is supported on a trading venue. The logic and code paths for 
-order emulation are exactly the same for all [environment contexts](/concepts/architecture.md#environment-contexts) 
+of whether the type is supported on a trading venue. The logic and code paths for
+order emulation are exactly the same for all [environment contexts](/concepts/architecture.md#environment-contexts)
 and utilize a common `OrderEmulator` component.
 
 :::info
@@ -47,7 +47,7 @@ _release_ actions will occur:
 - If not denied, then the command will continue to the `ExecutionEngine` and on to the trading venue via an `ExecutionClient` as normal
 
 The following table lists which order types are possible to emulate, and
-which order type they transform to when being released for submission to the 
+which order type they transform to when being released for submission to the
 trading venue.
 
 ## Order types

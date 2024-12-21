@@ -24,14 +24,14 @@ use rust_decimal::prelude::ToPrimitive;
 use super::common::commissions_from_vec;
 use crate::{
     enums::{OrderSide, PositionSide},
-    events::order::OrderFilled,
+    events::OrderFilled,
     identifiers::{
         ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
         VenueOrderId,
     },
     position::Position,
     python::instruments::pyobject_to_instrument_any,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]

@@ -567,7 +567,8 @@ cdef class DataEngine(Component):
         Stop the registered clients.
         """
         for client in self._clients.values():
-            client.stop()
+            if client.is_running:
+                client.stop()
 
     cpdef void execute(self, DataCommand command):
         """
@@ -719,7 +720,11 @@ cdef class DataEngine(Component):
                 command.params,
             )
         else:
-            self._handle_subscribe_data(client, command.data_type)
+            self._handle_subscribe_data(
+                client,
+                command.data_type,
+                command.params,
+            )
 
     cpdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command):
         if command.data_type.type == Instrument:
@@ -759,7 +764,11 @@ cdef class DataEngine(Component):
                 command.params,
             )
         else:
-            self._handle_unsubscribe_data(client, command.data_type)
+            self._handle_unsubscribe_data(
+                client,
+                command.data_type,
+                command.params,
+            )
 
     cpdef void _handle_subscribe_instrument(
         self,
@@ -976,6 +985,13 @@ cdef class DataEngine(Component):
             return
         Condition.not_none(client, "client")
 
+        if "start" not in params:
+            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                QuoteTick,
+                instrument_id,
+            )[0]
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id, params)
 
@@ -1016,6 +1032,13 @@ cdef class DataEngine(Component):
             self._handle_subscribe_synthetic_trade_ticks(instrument_id)
             return
         Condition.not_none(client, "client")
+
+        if "start" not in params:
+            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                TradeTick,
+                instrument_id,
+            )[0]
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id, params)
@@ -1068,6 +1091,13 @@ cdef class DataEngine(Component):
                 )
                 return
 
+            if "start" not in params:
+                last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                    Bar,
+                    bar_type=bar_type,
+                )[0]
+                params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type, params)
 
@@ -1075,13 +1105,18 @@ cdef class DataEngine(Component):
         self,
         DataClient client,
         DataType data_type,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
 
         try:
             if data_type not in client.subscribed_custom_data():
-                client.subscribe(data_type)
+                if "start" not in params:
+                    last_timestamp: datetime | None = self._catalogs_last_timestamp(data_type.type)[0]
+                    params["start"] = last_timestamp.value + 1 if last_timestamp else None
+
+                client.subscribe(data_type, params)
         except NotImplementedError:
             self._log.error(
                 f"Cannot subscribe: {client.id.value} "
@@ -1288,6 +1323,7 @@ cdef class DataEngine(Component):
         self,
         DataClient client,
         DataType data_type,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
@@ -1295,7 +1331,7 @@ cdef class DataEngine(Component):
         try:
             if not self._msgbus.has_subscribers(f"data.{data_type}"):
                 if data_type in client.subscribed_custom_data():
-                    client.unsubscribe(data_type)
+                    client.unsubscribe(data_type, params)
         except NotImplementedError:
             self._log.error(
                 f"Cannot unsubscribe: {client.id.value} "
@@ -1370,7 +1406,7 @@ cdef class DataEngine(Component):
         elif request.data_type.type == Bar or bars_market_data_type == "bars":
             self._handle_request_bars(request, client, start, end, now, params)
         else:
-            self._handle_request_data(request, client, start, end, now)
+            self._handle_request_data(request, client, start, end, now, params)
 
     cpdef void _handle_request_instruments(
         self,
@@ -1409,10 +1445,10 @@ cdef class DataEngine(Component):
         datetime end,
         dict params,
     ):
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             Instrument,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             self._query_catalog(request)
@@ -1464,10 +1500,10 @@ cdef class DataEngine(Component):
     ):
         instrument_id = request.data_type.metadata.get("instrument_id")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             QuoteTick,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1505,10 +1541,10 @@ cdef class DataEngine(Component):
     ):
         instrument_id = request.data_type.metadata.get("instrument_id")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             TradeTick,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1546,10 +1582,10 @@ cdef class DataEngine(Component):
     ):
         bar_type = request.data_type.metadata.get("bar_type")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             Bar,
             bar_type=bar_type,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1583,10 +1619,11 @@ cdef class DataEngine(Component):
         datetime start,
         datetime end,
         datetime now,
+        dict params,
     ):
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             request.data_type.type,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1604,7 +1641,11 @@ cdef class DataEngine(Component):
             self._query_catalog(request)
 
         try:
-            client.request(request.data_type, request.id)
+            client.request(
+                request.data_type,
+                request.id,
+                params
+            )
         except NotImplementedError:
             self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}")
 

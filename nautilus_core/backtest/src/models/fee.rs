@@ -15,9 +15,9 @@
 
 use nautilus_model::{
     enums::LiquiditySide,
-    instruments::any::InstrumentAny,
-    orders::any::OrderAny,
-    types::{money::Money, price::Price, quantity::Quantity},
+    instruments::InstrumentAny,
+    orders::OrderAny,
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::prelude::ToPrimitive;
 
@@ -103,12 +103,12 @@ impl FeeModel for MakerTakerFeeModel {
 mod tests {
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
-        instruments::{any::InstrumentAny, stubs::audusd_sim},
+        instruments::{stubs::audusd_sim, InstrumentAny},
         orders::{
             builder::OrderTestBuilder,
             stubs::{TestOrderEventStubs, TestOrderStubs},
         },
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::prelude::ToPrimitive;

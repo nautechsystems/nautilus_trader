@@ -19,11 +19,8 @@ use pyo3::{IntoPy, PyObject, PyResult, Python};
 use crate::{
     enums::OrderType,
     orders::{
-        any::OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
-        market::MarketOrder, market_if_touched::MarketIfTouchedOrder,
-        market_to_limit::MarketToLimitOrder, stop_limit::StopLimitOrder,
-        stop_market::StopMarketOrder, trailing_stop_limit::TrailingStopLimitOrder,
-        trailing_stop_market::TrailingStopMarketOrder,
+        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, MarketToLimitOrder,
+        OrderAny, StopLimitOrder, StopMarketOrder, TrailingStopLimitOrder, TrailingStopMarketOrder,
     },
 };
 

@@ -18,7 +18,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 use strum::Display;
 
 use crate::{indicator::Indicator, momentum::bb::fast_std_with_mean};

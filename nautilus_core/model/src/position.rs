@@ -26,13 +26,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::{OrderSide, OrderSideSpecified, PositionSide},
-    events::order::filled::OrderFilled,
+    events::OrderFilled,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
     },
-    instruments::any::InstrumentAny,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    instruments::InstrumentAny,
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a position in a market.
@@ -530,16 +530,13 @@ mod tests {
 
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
-        events::order::OrderFilled,
+        events::OrderFilled,
         identifiers::{stubs::uuid4, AccountId, PositionId, StrategyId, TradeId, VenueOrderId},
-        instruments::{
-            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
-            stubs::*,
-        },
+        instruments::{stubs::*, CryptoPerpetual, CurrencyPair, InstrumentAny},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         stubs::*,
-        types::{money::Money, price::Price, quantity::Quantity},
+        types::{Money, Price, Quantity},
     };
 
     #[rstest]

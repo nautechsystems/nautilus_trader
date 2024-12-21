@@ -28,11 +28,9 @@ use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        options_contract::OptionsContract,
+        CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, OptionsContract,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 impl Default for SyntheticInstrument {
@@ -78,10 +76,6 @@ pub fn crypto_future_btcusdt(
         size_precision,
         price_increment,
         size_increment,
-        dec!(0),
-        dec!(0),
-        dec!(0),
-        dec!(0),
         None,
         None,
         Some(Quantity::from("9000.0")),
@@ -90,6 +84,10 @@ pub fn crypto_future_btcusdt(
         Some(Money::new(10.00, Currency::from("USDT"))),
         Some(Price::from("1000000.00")),
         Some(Price::from("0.01")),
+        None,
+        None,
+        None,
+        None,
         0.into(),
         0.into(),
     )
@@ -112,10 +110,6 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         3,
         Price::from("0.01"),
         Quantity::from("0.001"),
-        dec!(0.0002),
-        dec!(0.0004),
-        dec!(1.0),
-        dec!(0.35),
         None,
         None,
         Some(Quantity::from("10000.0")),
@@ -124,8 +118,12 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Some(Money::new(10.00, Currency::from("USDT"))),
         Some(Price::from("15000.00")),
         Some(Price::from("1.0")),
-        0.into(),
-        0.into(),
+        Some(dec!(1.0)),
+        Some(dec!(0.35)),
+        Some(dec!(0.0002)),
+        Some(dec!(0.0004)),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -142,10 +140,6 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         0,
         Price::from("0.5"),
         Quantity::from("1"),
-        dec!(-0.00025),
-        dec!(0.00075),
-        dec!(0.01),
-        dec!(0.0035),
         None,
         None,
         None,
@@ -154,8 +148,12 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         Some(Money::from("1 USD")),
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
-        0.into(),
-        0.into(),
+        Some(dec!(0.01)),
+        Some(dec!(0.0035)),
+        Some(dec!(-0.00025)),
+        Some(dec!(0.00075)),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -172,10 +170,6 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         0,
         Price::from("0.05"),
         Quantity::from("1"),
-        dec!(-0.00025),
-        dec!(0.00075),
-        dec!(0.01),
-        dec!(0.0035),
         None,
         None,
         None,
@@ -184,8 +178,12 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         None,
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
-        0.into(),
-        0.into(),
+        Some(dec!(0.01)),
+        Some(dec!(0.0035)),
+        Some(dec!(-0.00025)),
+        Some(dec!(0.00075)),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -204,10 +202,6 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         6,
         Price::from("0.01"),
         Quantity::from("0.000001"),
-        dec!(0.001),
-        dec!(0.001),
-        dec!(0.001),
-        dec!(0.001),
         None,
         Some(Quantity::from("9000")),
         Some(Quantity::from("0.000001")),
@@ -215,8 +209,12 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         None,
         Some(Price::from("1000000")),
         Some(Price::from("0.01")),
-        0.into(),
-        0.into(),
+        Some(dec!(0.001)),
+        Some(dec!(0.001)),
+        Some(dec!(0.001)),
+        Some(dec!(0.001)),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -231,10 +229,6 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         5,
         Price::from("0.01"),
         Quantity::from("0.00001"),
-        dec!(0.0001),
-        dec!(0.0001),
-        dec!(0.01),
-        dec!(0.0035),
         None,
         Some(Quantity::from("9000")),
         Some(Quantity::from("0.00001")),
@@ -242,8 +236,12 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         None,
         Some(Price::from("1000000")),
         Some(Price::from("0.01")),
-        0.into(),
-        0.into(),
+        Some(dec!(0.01)),
+        Some(dec!(0.0035)),
+        Some(dec!(0.0001)),
+        Some(dec!(0.0001)),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -264,10 +262,6 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         0,
         price_increment,
         Quantity::from("1"),
-        dec!(0.00002),
-        dec!(0.00002),
-        dec!(0.03),
-        dec!(0.03),
         Some(Quantity::from("1000")),
         Some(Quantity::from("1000000")),
         Some(Quantity::from("100")),
@@ -275,8 +269,12 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        Some(dec!(0.03)),
+        Some(dec!(0.03)),
+        Some(dec!(0.00002)),
+        Some(dec!(0.00002)),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -312,8 +310,8 @@ pub fn equity_aapl() -> Equity {
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -356,8 +354,10 @@ pub fn futures_contract_es(
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -389,8 +389,10 @@ pub fn futures_spread_es() -> FuturesSpread {
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -423,8 +425,10 @@ pub fn options_contract_appl() -> OptionsContract {
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -456,8 +460,10 @@ pub fn options_spread() -> OptionsSpread {
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -498,14 +504,16 @@ pub fn betting() -> BettingInstrument {
     let currency = Currency::GBP();
     let price_increment = Price::from("0.01");
     let size_increment = Quantity::from("0.01");
-    let maker_fee = Decimal::from(0);
-    let taker_fee = Decimal::from(0);
     let max_quantity = Some(Quantity::from("1000"));
     let min_quantity = Some(Quantity::from("1"));
     let max_notional = Some(Money::from("10000 GBP"));
     let min_notional = Some(Money::from("10 GBP"));
     let max_price = Some(Price::from("100.00"));
     let min_price = Some(Price::from("1.00"));
+    let margin_init = Some(Decimal::from(1));
+    let margin_maint = Some(Decimal::from(1));
+    let maker_fee = Some(Decimal::from(0));
+    let taker_fee = Some(Decimal::from(0));
     let ts_event = UnixNanos::default(); // For testing purposes
     let ts_init = UnixNanos::default(); // For testing purposes
 
@@ -533,14 +541,16 @@ pub fn betting() -> BettingInstrument {
         size_increment.precision,
         price_increment,
         size_increment,
-        maker_fee,
-        taker_fee,
         max_quantity,
         min_quantity,
         max_notional,
         min_notional,
         max_price,
         min_price,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
         ts_event,
         ts_init,
     )
@@ -570,8 +580,6 @@ pub fn binary_option() -> BinaryOption {
         size_increment.precision,
         price_increment,
         size_increment,
-        Decimal::from(0), // TBD
-        Decimal::from(0), // TBD
         None,
         None,
         None,
@@ -582,7 +590,9 @@ pub fn binary_option() -> BinaryOption {
         None,
         None,
         None,
-        0.into(),
-        0.into(),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }

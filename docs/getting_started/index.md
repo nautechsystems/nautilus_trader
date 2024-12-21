@@ -31,18 +31,18 @@ and then use this data with a `BacktestNode` to run a single backtest.
 
 ## Running in docker
 Alternatively, a self-contained dockerized Jupyter notebook server is available for download, which does not require any setup or
-installation. This is the fastest way to get up and running to try out NautilusTrader. Bear in mind that any data will be 
+installation. This is the fastest way to get up and running to try out NautilusTrader. Bear in mind that any data will be
 deleted when the container is deleted.
 
 - To get started, install docker:
-  - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions 
+  - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions
 - From a terminal, download the latest image
   - `docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64`
-- Run the docker container, exposing the jupyter port: 
+- Run the docker container, exposing the jupyter port:
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
 - Open your web browser to `localhost:{port}`
   - http://localhost:8888
- 
+
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
 this is why `log_level` in the examples is set to `ERROR`. If you lower this level to see

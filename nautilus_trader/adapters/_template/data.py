@@ -82,19 +82,24 @@ class TemplateLiveDataClient(LiveDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "method `_subscribe` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "method `_unsubscribe` must be implemented in the subclass",
         )  # pragma: no cover
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             "method `_request` must be implemented in the subclass",
         )  # pragma: no cover
@@ -169,7 +174,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "method `_subscribe` must be implemented in the subclass",
         )  # pragma: no cover
@@ -255,7 +260,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_subscribe_instrument_close` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "method `_unsubscribe` must be implemented in the subclass",
         )  # pragma: no cover
@@ -343,6 +348,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         self,
         data_type: DataType,
         correlation_id: UUID4,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request` must be implemented in the subclass",

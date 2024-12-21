@@ -26,7 +26,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TrailingOffsetType, TriggerType,
     },
-    events::order::{
+    events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
         OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
@@ -36,7 +36,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 const STOP_ORDER_TYPES: &[OrderType] = &[
@@ -692,7 +692,7 @@ mod tests {
             accepted::OrderAcceptedBuilder, denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
             initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
         },
-        orders::market::MarketOrder,
+        orders::MarketOrder,
     };
 
     fn test_initialize_market_order() {

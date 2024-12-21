@@ -27,11 +27,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
-    data::{
-        delta::OrderBookDelta,
-        order::{BookOrder, OrderId, NULL_ORDER},
-        Data,
-    },
+    data::{order::OrderId, BookOrder, Data, OrderBookDelta, NULL_ORDER},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,

@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
@@ -59,7 +60,7 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
     asset_id: str  # asset ID (token ID) of taker order (market order)
     associate_trades: list[str] | None  # trades that the order has been included in
     created_at: str
-    expiration: str
+    expiration: str | None
     id: str  # order ID
     maker_address: str
     market: str
@@ -85,7 +86,10 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
         client_order_id: ClientOrderId | None,
         ts_init: int,
     ) -> OrderStatusReport:
-        timestamp_ms = int(self.timestamp)
+        expire_time = (
+            pd.Timestamp(int(self.expiration), unit="ms", tz="UTC") if self.expiration else None
+        )
+        timestamp_ns = millis_to_nanos(int(self.timestamp))
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument.id,
@@ -96,13 +100,13 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
             order_type=OrderType.LIMIT,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             time_in_force=parse_time_in_force(order_type=self.order_type),
-            expire_time=millis_to_nanos(int(self.expiration)) if self.expiration else None,
+            expire_time=expire_time,
             order_status=parse_order_status(order_status=self.status),
             price=instrument.make_price(float(self.price)),
             quantity=instrument.make_qty(float(self.original_size)),
             filled_qty=instrument.make_qty(float(self.size_matched)),
-            ts_accepted=millis_to_nanos(timestamp_ms),
-            ts_last=millis_to_nanos(timestamp_ms),
+            ts_accepted=timestamp_ns,
+            ts_last=timestamp_ns,
             report_id=UUID4(),
             ts_init=ts_init,
         )
@@ -267,7 +271,7 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
     side: PolymarketOrderSide
     size_matched: str
     asset_id: str
-    expiration: str
+    expiration: str | None
     order_type: PolymarketOrderType  # time in force
     created_at: int
 
@@ -281,6 +285,10 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
         client_order_id: ClientOrderId | None,
         ts_init: int,
     ) -> OrderStatusReport:
+        expire_time = (
+            pd.Timestamp(int(self.expiration), unit="ms", tz="UTC") if self.expiration else None
+        )
+        timestamp_ns = millis_to_nanos(int(self.created_at))
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument.id,
@@ -291,13 +299,13 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
             order_type=OrderType.LIMIT,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             time_in_force=parse_time_in_force(order_type=self.order_type),
-            expire_time=millis_to_nanos(int(self.expiration)) if self.expiration else None,
+            expire_time=expire_time,
             order_status=parse_order_status(order_status=self.status),
             price=instrument.make_price(float(self.price)),
             quantity=instrument.make_qty(float(self.original_size)),
             filled_qty=instrument.make_qty(float(self.size_matched)),
-            ts_accepted=millis_to_nanos(self.created_at),
-            ts_last=millis_to_nanos(self.created_at),
+            ts_accepted=timestamp_ns,
+            ts_last=timestamp_ns,
             report_id=UUID4(),
             ts_init=ts_init,
         )

@@ -43,15 +43,15 @@ use nautilus_common::{
     },
 };
 use nautilus_model::{
-    accounts::any::AccountAny,
-    data::{quote::QuoteTick, Data},
+    accounts::AccountAny,
+    data::{Data, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
-    events::{account::state::AccountState, order::OrderEventAny, position::PositionEvent},
+    events::{position::PositionEvent, AccountState, OrderEventAny},
     identifiers::{InstrumentId, Venue},
-    instruments::any::InstrumentAny,
-    orders::any::OrderAny,
+    instruments::InstrumentAny,
+    orders::OrderAny,
     position::Position,
-    types::{currency::Currency, money::Money, price::Price},
+    types::{Currency, Money, Price},
 };
 use rust_decimal::{
     prelude::{FromPrimitive, ToPrimitive},
@@ -332,7 +332,7 @@ impl Portfolio {
                 );
                 HashMap::new()
             },
-            nautilus_model::accounts::any::AccountAny::balances_locked,
+            AccountAny::balances_locked,
         )
     }
 
@@ -1491,35 +1491,25 @@ mod tests {
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
-        data::quote::QuoteTick,
+        data::QuoteTick,
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{
-            account::{state::AccountState, stubs::cash_account_state},
-            order::{
-                stubs::{order_accepted, order_filled, order_submitted},
-                OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
-            },
-            position::{
-                changed::PositionChanged, closed::PositionClosed, opened::PositionOpened,
-                PositionEvent,
-            },
+            account::stubs::cash_account_state,
+            order::stubs::{order_accepted, order_filled, order_submitted},
+            AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
+            PositionChanged, PositionClosed, PositionEvent, PositionOpened,
         },
         identifiers::{
             stubs::{account_id, uuid4},
             AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, VenueOrderId,
         },
         instruments::{
-            any::InstrumentAny,
-            crypto_perpetual::CryptoPerpetual,
-            currency_pair::CurrencyPair,
             stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
+            CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
-        orders::{any::OrderAny, builder::OrderTestBuilder},
+        orders::{OrderAny, OrderTestBuilder},
         position::Position,
-        types::{
-            balance::AccountBalance, currency::Currency, money::Money, price::Price,
-            quantity::Quantity,
-        },
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
     use rust_decimal::{prelude::FromPrimitive, Decimal};

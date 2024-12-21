@@ -50,6 +50,7 @@ class BybitHttpEndpoint:
             BybitEndpointType.ACCOUNT: self.client.sign_request,
             BybitEndpointType.TRADE: self.client.sign_request,
             BybitEndpointType.POSITION: self.client.sign_request,
+            BybitEndpointType.USER: self.client.sign_request,
         }
 
     async def _method(

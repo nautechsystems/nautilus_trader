@@ -331,7 +331,7 @@ cpdef str format_iso8601(datetime dt):
 
 def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
-    Returns the maximum date as a datetime (UTC).
+    Return the maximum date as a datetime (UTC).
 
     Parameters
     ----------
@@ -360,7 +360,7 @@ def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
 
 def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
-    Returns the minimum date as a datetime (UTC).
+    Return the minimum date as a datetime (UTC).
 
     Parameters
     ----------

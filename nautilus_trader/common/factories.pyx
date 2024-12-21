@@ -1196,7 +1196,7 @@ cdef class OrderFactory:
             The take-profit child order trigger price (STOP).
         tp_price : Price, optional
             The take-profit child order price (LIMIT).
-        entry_order_type : OrderType {``MARKET``, ``LIMIT``, ``LIMIT_IF_TOUCHED``, ``MARKET_IF_TOUCHED``}, default ``MARKET``
+        entry_order_type : OrderType {``MARKET``, ``LIMIT``, ``LIMIT_IF_TOUCHED``, ``MARKET_IF_TOUCHED``, ``STOP_LIMIT``}, default ``MARKET``
             The entry order type.
         tp_order_type : OrderType {``LIMIT``, ``LIMIT_IF_TOUCHED``, ``MARKET_IF_TOUCHED``}, default ``LIMIT``
             The take-profit order type.
@@ -1344,6 +1344,34 @@ cdef class OrderFactory:
             )
         elif entry_order_type == OrderType.LIMIT_IF_TOUCHED:
             entry_order = LimitIfTouchedOrder(
+                trader_id=self.trader_id,
+                strategy_id=self.strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=entry_client_order_id,
+                order_side=order_side,
+                quantity=quantity,
+                price=entry_price,
+                trigger_price=entry_trigger_price,
+                trigger_type=TriggerType.DEFAULT,
+                init_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+                time_in_force=time_in_force,
+                expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+                post_only=entry_post_only,
+                quote_quantity=quote_quantity,
+                emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
+                contingency_type=ContingencyType.OTO,
+                order_list_id=order_list_id,
+                linked_order_ids=[sl_client_order_id, tp_client_order_id],
+                parent_order_id=None,
+                exec_algorithm_id=entry_exec_algorithm_id,
+                exec_algorithm_params=entry_exec_algorithm_params,
+                exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
+                tags=entry_tags,
+            )
+        elif entry_order_type == OrderType.STOP_LIMIT:
+            entry_order = StopLimitOrder(
                 trader_id=self.trader_id,
                 strategy_id=self.strategy_id,
                 instrument_id=instrument_id,

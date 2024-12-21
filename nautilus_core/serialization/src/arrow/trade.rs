@@ -25,10 +25,10 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::trade::TradeTick,
+    data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{
@@ -133,6 +133,14 @@ impl EncodeToRecordBatch for TradeTick {
                 ts_event_array,
                 ts_init_array,
             ],
+        )
+    }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        TradeTick::get_metadata(
+            &self.instrument_id,
+            self.price.precision,
+            self.size.precision,
         )
     }
 }

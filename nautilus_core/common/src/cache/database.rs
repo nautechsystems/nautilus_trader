@@ -24,18 +24,18 @@ use std::collections::HashMap;
 use bytes::Bytes;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
-    events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
+    accounts::AccountAny,
+    data::{Bar, DataType, QuoteTick, TradeTick},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
-    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
-    orderbook::book::OrderBook,
-    orders::any::OrderAny,
+    instruments::{InstrumentAny, SyntheticInstrument},
+    orderbook::OrderBook,
+    orders::OrderAny,
     position::Position,
-    types::currency::Currency,
+    types::Currency,
 };
 use ustr::Ustr;
 

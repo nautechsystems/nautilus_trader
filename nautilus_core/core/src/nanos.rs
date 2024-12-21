@@ -25,8 +25,6 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::time::duration_since_unix_epoch;
-
 /// Represents a timestamp in nanoseconds since the UNIX epoch.
 #[repr(C)]
 #[derive(
@@ -35,16 +33,6 @@ use crate::time::duration_since_unix_epoch;
 pub struct UnixNanos(u64);
 
 impl UnixNanos {
-    /// Returns the current UNIX nanoseconds.
-    ///
-    /// This uses the real-time system clock (wall-clock time) and is not suitable for
-    /// backtesting, where a test clock with static time should be used instead.
-    #[must_use]
-    pub fn now() -> Self {
-        let now = duration_since_unix_epoch().as_nanos();
-        Self::from(now as u64)
-    }
-
     /// Returns the underlying value as `u64`.
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
@@ -246,6 +234,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_str() {
+        let nanos: UnixNanos = "123".parse().unwrap();
+        assert_eq!(nanos.as_u64(), 123);
+    }
+
+    #[rstest]
+    fn test_from_str_invalid() {
+        let result = "abc".parse::<UnixNanos>();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_try_from_datetime_valid() {
+        use chrono::TimeZone;
+        let datetime = Utc.timestamp_opt(1_000_000_000, 0).unwrap(); // 1 billion seconds since epoch
+        let nanos = UnixNanos::try_from(datetime).unwrap();
+        assert_eq!(nanos.as_u64(), 1_000_000_000_000_000_000);
+    }
+
+    #[rstest]
     fn test_eq() {
         let nanos = UnixNanos::from(100);
         assert_eq!(nanos, 100);
@@ -307,18 +315,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_str() {
-        let nanos: UnixNanos = "123".parse().unwrap();
-        assert_eq!(nanos.as_u64(), 123);
-    }
-
-    #[rstest]
-    fn test_from_str_invalid() {
-        let result = "abc".parse::<UnixNanos>();
-        assert!(result.is_err());
-    }
-
-    #[rstest]
     #[should_panic(expected = "Error adding with overflow")]
     fn test_overflow_add() {
         let nanos = UnixNanos::from(u64::MAX);
@@ -347,6 +343,14 @@ mod tests {
     #[rstest]
     fn test_serde_json() {
         let nanos = UnixNanos::from(123);
+        let json = serde_json::to_string(&nanos).unwrap();
+        let deserialized: UnixNanos = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, nanos);
+    }
+
+    #[rstest]
+    fn test_serde_edge_cases() {
+        let nanos = UnixNanos::from(u64::MAX);
         let json = serde_json::to_string(&nanos).unwrap();
         let deserialized: UnixNanos = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, nanos);

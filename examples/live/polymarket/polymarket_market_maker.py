@@ -177,10 +177,6 @@ class TOBQuoter(Strategy):
     def __init__(self, config: TOBQuoterConfig) -> None:
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-        self.trade_size = Decimal(config.trade_size)
-        self.dry_run = config.dry_run
         self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
@@ -191,19 +187,19 @@ class TOBQuoter(Strategy):
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
         # Subscribe to live data
-        self.subscribe_quote_ticks(self.instrument_id)
-        self.subscribe_trade_ticks(self.instrument_id)
+        self.subscribe_quote_ticks(self.config.instrument_id)
+        self.subscribe_trade_ticks(self.config.instrument_id)
 
-        self.subscribe_order_book_deltas(self.instrument_id)
+        self.subscribe_order_book_deltas(self.config.instrument_id)
         # self.subscribe_order_book_at_interval(
-        #     self.instrument_id,
+        #     self.config.instrument_id,
         #     depth=20,
         #     interval_ms=1000,
         # )  # For debugging
@@ -294,7 +290,7 @@ class TOBQuoter(Strategy):
         self.log.info(repr(tick), LogColor.CYAN)
 
     def maintain_orders(self, best_bid: Price, best_ask: Price) -> None:
-        if self.dry_run:
+        if self.config.dry_run:
             return
 
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
@@ -320,9 +316,9 @@ class TOBQuoter(Strategy):
             return
 
         order: LimitOrder = self.order_factory.limit(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
             price=price,
             # time_in_force=TimeInForce.GTD,
             # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
@@ -338,9 +334,9 @@ class TOBQuoter(Strategy):
             return
 
         order: LimitOrder = self.order_factory.limit(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
             price=price,
             # time_in_force=TimeInForce.GTD,
             # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
@@ -354,11 +350,11 @@ class TOBQuoter(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        if self.dry_run:
+        if self.config.dry_run:
             return
 
-        self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id, reduce_only=False)
+        self.cancel_all_orders(self.config.instrument_id)
+        self.close_all_positions(self.config.instrument_id, reduce_only=False)
 
     def on_reset(self) -> None:
         """

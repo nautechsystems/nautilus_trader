@@ -18,7 +18,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
 
@@ -121,7 +121,7 @@ impl DonchianChannel {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::bar::Bar;
+    use nautilus_model::data::Bar;
     use rstest::rstest;
 
     use crate::{

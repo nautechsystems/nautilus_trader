@@ -22,12 +22,8 @@
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{
-        any::{LimitOrderAny, PassiveOrderAny, StopOrderAny},
-        base::OrderError,
-        market::MarketOrder,
-    },
-    types::price::Price,
+    orders::{LimitOrderAny, MarketOrder, OrderError, PassiveOrderAny, StopOrderAny},
+    types::Price,
 };
 
 /// A generic order matching core.
@@ -239,7 +235,7 @@ mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         orders::builder::OrderTestBuilder,
-        types::quantity::Quantity,
+        types::Quantity,
     };
     use rstest::rstest;
 

@@ -167,10 +167,10 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{delta::OrderBookDelta, order::BookOrder, stubs::*},
+        data::{stubs::*, BookOrder, OrderBookDelta},
         enums::{BookAction, OrderSide},
         identifiers::InstrumentId,
-        types::{price::Price, quantity::Quantity},
+        types::{Price, Quantity},
     };
 
     #[rstest]

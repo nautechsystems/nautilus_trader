@@ -15,7 +15,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use nautilus_model::data::bar::Bar;
+use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
 
@@ -111,7 +111,7 @@ impl VolumeWeightedAveragePrice {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::bar::Bar;
+    use nautilus_model::data::Bar;
     use rstest::rstest;
 
     use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*};

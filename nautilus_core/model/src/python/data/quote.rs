@@ -32,7 +32,7 @@ use pyo3::{
 
 use super::data_to_pycapsule;
 use crate::{
-    data::{quote::QuoteTick, Data},
+    data::{Data, QuoteTick},
     enums::PriceType,
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
@@ -381,7 +381,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{quote::QuoteTick, stubs::quote_ethusdt_binance};
+    use crate::data::{stubs::quote_ethusdt_binance, QuoteTick};
 
     #[rstest]
     fn test_as_dict(quote_ethusdt_binance: QuoteTick) {

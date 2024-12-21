@@ -20,13 +20,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::AccountId,
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     position::Position,
-    types::{
-        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

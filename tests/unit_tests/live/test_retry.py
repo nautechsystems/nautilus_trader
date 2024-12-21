@@ -29,11 +29,11 @@ def mock_logger():
     return MagicMock(spec=Logger)
 
 
-def test_retry_manager_repr():
+def test_retry_manager_repr() -> None:
     # Arrange
     name = "submit_order"
     details: list[object] = ["O-123456", "123"]
-    retry_manager = RetryManager(
+    retry_manager = RetryManager[str](
         max_retries=3,
         retry_delay_secs=0.1,
         logger=MagicMock(),
@@ -51,9 +51,9 @@ def test_retry_manager_repr():
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_successful_run(mock_logger):
+async def test_retry_manager_successful_run(mock_logger) -> None:
     # Arrange
-    retry_manager = RetryManager(
+    retry_manager = RetryManager[str](
         max_retries=3,
         retry_delay_secs=0.1,
         exc_types=(Exception,),
@@ -71,9 +71,9 @@ async def test_retry_manager_successful_run(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_with_retries(mock_logger):
+async def test_retry_manager_with_retries(mock_logger) -> None:
     # Arrange
-    retry_manager = RetryManager(
+    retry_manager = RetryManager[str](
         max_retries=3,
         retry_delay_secs=0.1,
         exc_types=(Exception,),
@@ -91,9 +91,9 @@ async def test_retry_manager_with_retries(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_exhausts_retries(mock_logger):
+async def test_retry_manager_exhausts_retries(mock_logger) -> None:
     # Arrange
-    retry_manager = RetryManager(
+    retry_manager = RetryManager[str](
         max_retries=2,
         retry_delay_secs=0.1,
         exc_types=(Exception,),
@@ -111,7 +111,7 @@ async def test_retry_manager_exhausts_retries(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_pool_acquire_and_release(mock_logger):
+async def test_retry_manager_pool_acquire_and_release(mock_logger) -> None:
     # Arrange
     pool_size = 3
     pool = RetryManagerPool(
@@ -131,7 +131,7 @@ async def test_retry_manager_pool_acquire_and_release(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_pool_create_new_when_empty(mock_logger):
+async def test_retry_manager_pool_create_new_when_empty(mock_logger) -> None:
     # Arrange
     pool_size = 1
     pool = RetryManagerPool(
@@ -152,12 +152,12 @@ async def test_retry_manager_pool_create_new_when_empty(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_with_retry_check(mock_logger):
+async def test_retry_manager_with_retry_check(mock_logger) -> None:
     # Arrange
     def retry_check(exception):
         return "Retry" in str(exception)
 
-    retry_manager = RetryManager(
+    retry_manager = RetryManager[str](
         max_retries=3,
         retry_delay_secs=0.1,
         exc_types=(Exception,),
@@ -176,9 +176,9 @@ async def test_retry_manager_with_retry_check(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_cancellation(mock_logger):
+async def test_retry_manager_cancellation(mock_logger) -> None:
     # Arrange
-    retry_manager = RetryManager(
+    retry_manager = RetryManager[str](
         max_retries=5,
         retry_delay_secs=0.5,
         logger=mock_logger,
@@ -203,7 +203,7 @@ async def test_retry_manager_cancellation(mock_logger):
 
 
 @pytest.mark.asyncio
-async def test_retry_manager_pool_shutdown(mock_logger):
+async def test_retry_manager_pool_shutdown(mock_logger) -> None:
     # Arrange
     pool_size = 2
     pool = RetryManagerPool(

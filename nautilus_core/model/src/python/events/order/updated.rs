@@ -17,9 +17,9 @@ use nautilus_core::{python::serialization::from_dict_pyo3, uuid::UUID4};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    events::order::OrderUpdated,
+    events::OrderUpdated,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

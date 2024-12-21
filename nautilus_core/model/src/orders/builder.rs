@@ -33,7 +33,7 @@ use crate::{
         stop_market::StopMarketOrder, trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{Currency, Price, Quantity},
 };
 
 pub struct OrderTestBuilder {

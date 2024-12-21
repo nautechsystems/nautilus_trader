@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     identifiers::InstrumentId,
-    types::{currency::Currency, money::Money},
+    types::{Currency, Money},
 };
 
 /// Represents an account balance denominated in a particular currency.
@@ -164,8 +164,8 @@ mod tests {
     use rstest::rstest;
 
     use crate::types::{
-        balance::{AccountBalance, MarginBalance},
         stubs::{stub_account_balance, stub_margin_balance},
+        AccountBalance, MarginBalance,
     };
 
     #[rstest]

@@ -15,17 +15,17 @@
 
 from collections.abc import Callable
 from io import BytesIO
-from typing import Any
+from typing import Any, Union
 
 import pyarrow as pa
 
 from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
@@ -43,12 +43,21 @@ from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWranglerV
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.serialization.arrow.implementations import account_state
+from nautilus_trader.serialization.arrow.implementations import component_commands
 from nautilus_trader.serialization.arrow.implementations import component_events
 from nautilus_trader.serialization.arrow.implementations import instruments
 from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
+
+NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
+    nautilus_pyo3.OrderBookDelta,
+    nautilus_pyo3.OrderBookDepth10,
+    nautilus_pyo3.QuoteTick,
+    nautilus_pyo3.TradeTick,
+    nautilus_pyo3.Bar,
+]
 
 _ARROW_ENCODERS: dict[type, Callable] = {}
 _ARROW_DECODERS: dict[type, Callable] = {}
@@ -364,6 +373,14 @@ register_arrow(
     schema=NAUTILUS_ARROW_SCHEMA[ComponentStateChanged],
     encoder=component_events.serialize,
     decoder=component_events.deserialize(ComponentStateChanged),
+)
+
+
+register_arrow(
+    ShutdownSystem,
+    schema=NAUTILUS_ARROW_SCHEMA[ShutdownSystem],
+    encoder=component_commands.serialize,
+    decoder=component_commands.deserialize(ShutdownSystem),
 )
 
 

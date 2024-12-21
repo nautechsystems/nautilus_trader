@@ -21,7 +21,7 @@ use std::{
 use nautilus_core::nanos::UnixNanos;
 
 use crate::{
-    data::{delta::OrderBookDelta, order::BookOrder},
+    data::{BookOrder, OrderBookDelta},
     enums::BookAction,
     identifiers::InstrumentId,
 };

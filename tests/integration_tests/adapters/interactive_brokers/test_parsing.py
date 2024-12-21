@@ -131,6 +131,8 @@ databento_symbology_params = [
     (IBContract(secType="FUT", exchange="SMART", localSymbol="M6EH3"), "M6EH3.GLBX"),
     (IBContract(secType="FUT", exchange="SMART", localSymbol="MYMM3"), "MYMM3.GLBX"),
     (IBContract(secType="FUT", exchange="SMART", localSymbol="MCLV3"), "MCLV3.GLBX"),
+    (IBContract(secType="FUT", exchange="SMART", localSymbol="TFMG5"), "TFMG5.NDEX"),
+    (IBContract(secType="FUT", exchange="SMART", localSymbol="GENZ4"), "GENZ4.IFEU"),
     (IBContract(secType="FOP", exchange="SMART", localSymbol="EX2G3 P4080"), "EX2G3 P4080.GLBX"),
     (IBContract(secType="FOP", exchange="SMART", localSymbol="DXH3 P103.5"), "DXH3 P103.5.GLBX"),
     (IBContract(secType="FOP", exchange="SMART", localSymbol="EX2G3 P4080"), "EX2G3 P4080.GLBX"),

@@ -24,13 +24,10 @@ use nautilus_model::{
     enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::{
-        any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        futures_spread::FuturesSpread, options_contract::OptionsContract,
-        options_spread::OptionsSpread,
+        BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
+        FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};
@@ -154,12 +151,6 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
         let size_increment = row
             .try_get::<String, _>("size_increment")
             .map(Quantity::from)?;
-        let maker_fee = row
-            .try_get::<String, _>("maker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let taker_fee = row
-            .try_get::<String, _>("taker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
         let max_quantity = row
             .try_get::<Option<String>, _>("max_quantity")
             .ok()
@@ -184,6 +175,18 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -211,14 +214,16 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             size_precision,
             price_increment,
             size_increment,
-            maker_fee,
-            taker_fee,
             max_quantity,
             min_quantity,
             max_notional,
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -250,28 +255,14 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
         let size_increment = row
             .try_get::<String, _>("size_increment")
             .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
-        let maker_fee = row
-            .try_get::<String, _>("maker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let taker_fee = row
-            .try_get::<String, _>("taker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        // let outcome = row
-        //     .try_get::<Option<String>, _>("outcome")
-        //     .ok()
-        //     .and_then(|res| res.map(|value| Ustr::from(value.as_str())));
-        // let description = row
-        //     .try_get::<Option<String>, _>("description")
-        //     .ok()
-        //     .and_then(|res| res.map(|value| Ustr::from(value.as_str())));
-        let margin_init = row
-            .try_get::<Option<String>, _>("margin_init")
+        let outcome = row
+            .try_get::<Option<String>, _>("outcome")
             .ok()
-            .and_then(|res| res.map(|value| Decimal::from_str(value.as_str()).unwrap()));
-        let margin_maint = row
-            .try_get::<Option<String>, _>("margin_maint")
+            .and_then(|res| res.map(|value| Ustr::from(value.as_str())));
+        let description = row
+            .try_get::<Option<String>, _>("description")
             .ok()
-            .and_then(|res| res.map(|value| Decimal::from_str(value.as_str()).unwrap()));
+            .and_then(|res| res.map(|value| Ustr::from(value.as_str())));
         let max_quantity = row
             .try_get::<Option<String>, _>("max_quantity")
             .ok()
@@ -296,6 +287,18 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -310,18 +313,18 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             size_precision,
             price_increment,
             size_increment,
-            maker_fee,
-            taker_fee,
-            None, // TODO: Add to schema
-            None, // TODO: Add to schema
-            margin_init,
-            margin_maint,
+            outcome,
+            description,
             max_quantity,
             min_quantity,
             max_notional,
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -355,18 +358,6 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
         let size_increment = row
             .try_get::<String, _>("size_increment")
             .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
-        let maker_fee = row
-            .try_get::<String, _>("maker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let taker_fee = row
-            .try_get::<String, _>("taker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_init = row
-            .try_get::<String, _>("margin_init")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_maint = row
-            .try_get::<String, _>("margin_maint")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
         let multiplier = row
             .try_get::<String, _>("multiplier")
             .map(|res| Quantity::from(res.as_str()))?;
@@ -397,6 +388,18 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -413,10 +416,6 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             size_precision as u8,
             price_increment,
             size_increment,
-            maker_fee,
-            taker_fee,
-            margin_init,
-            margin_maint,
             Some(multiplier),
             Some(lot_size),
             max_quantity,
@@ -425,6 +424,10 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -454,18 +457,6 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
         let size_increment = row
             .try_get::<String, _>("size_increment")
             .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
-        let maker_fee = row
-            .try_get::<String, _>("maker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let taker_fee = row
-            .try_get::<String, _>("taker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_init = row
-            .try_get::<String, _>("margin_init")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_maint = row
-            .try_get::<String, _>("margin_maint")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
         let multiplier = row
             .try_get::<String, _>("multiplier")
             .map(|res| Quantity::from(res.as_str()))?;
@@ -496,6 +487,19 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|res| Price::from(res.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -510,10 +514,6 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             size_precision as u8,
             price_increment,
             size_increment,
-            maker_fee,
-            taker_fee,
-            margin_init,
-            margin_maint,
             Some(multiplier),
             Some(lot_size),
             max_quantity,
@@ -522,6 +522,10 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -547,18 +551,6 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
         let size_increment = row
             .try_get::<String, _>("size_increment")
             .map(|res| Quantity::from(res.as_str()))?;
-        let maker_fee = row
-            .try_get::<String, _>("maker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let taker_fee = row
-            .try_get::<String, _>("taker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_init = row
-            .try_get::<String, _>("margin_init")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_maint = row
-            .try_get::<String, _>("margin_maint")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
         let lot_size = row
             .try_get::<Option<String>, _>("lot_size")
             .ok()
@@ -587,6 +579,18 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|res| Price::from(res.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -599,10 +603,6 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             size_precision as u8,
             price_increment,
             size_increment,
-            taker_fee,
-            maker_fee,
-            margin_init,
-            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
@@ -610,6 +610,10 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -631,18 +635,6 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
-        let maker_fee = row
-            .try_get::<String, _>("maker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let taker_fee = row
-            .try_get::<String, _>("taker_fee")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_init = row
-            .try_get::<String, _>("margin_init")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let margin_maint = row
-            .try_get::<String, _>("margin_maint")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
         let lot_size = row
             .try_get::<Option<String>, _>("lot_size")
             .map(|res| res.map(|s| Quantity::from_str(s.as_str()).unwrap()))?;
@@ -662,6 +654,18 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|s| Price::from(s.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -672,15 +676,15 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             currency,
             price_precision as u8,
             price_increment,
-            Some(maker_fee),
-            Some(taker_fee),
-            Some(margin_init),
-            Some(margin_maint),
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -738,10 +742,16 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             .and_then(|res| res.map(|s| Price::from(s.as_str())));
         let margin_init = row
             .try_get::<String, _>("margin_init")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let margin_maint = row
             .try_get::<String, _>("margin_maint")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -762,8 +772,10 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             min_quantity,
             max_price,
             min_price,
-            Some(margin_init),
-            Some(margin_maint),
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );
@@ -834,10 +846,16 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
             .and_then(|res| res.map(|s| Price::from(s.as_str())));
         let margin_init = row
             .try_get::<String, _>("margin_init")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let margin_maint = row
             .try_get::<String, _>("margin_maint")
-            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
@@ -860,8 +878,10 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
             min_quantity,
             max_price,
             min_price,
-            Some(margin_init),
-            Some(margin_maint),
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         );

@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
@@ -146,7 +146,7 @@ impl RelativeStrengthIndex {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+    use nautilus_model::data::{Bar, QuoteTick, TradeTick};
     use rstest::rstest;
 
     use crate::{indicator::Indicator, momentum::rsi::RelativeStrengthIndex, stubs::*};

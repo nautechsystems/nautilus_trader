@@ -22,11 +22,11 @@ use nautilus_core::{ffi::uuid::uuid4_new, nanos::UnixNanos};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
-    events::{account::state::AccountState, order::OrderFilled},
-    instruments::any::InstrumentAny,
-    orders::any::OrderAny,
+    events::{AccountState, OrderFilled},
+    instruments::InstrumentAny,
+    orders::OrderAny,
     position::Position,
-    types::{balance::AccountBalance, money::Money},
+    types::{AccountBalance, Money},
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 pub struct AccountsManager {

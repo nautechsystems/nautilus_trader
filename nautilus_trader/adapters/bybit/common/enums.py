@@ -32,6 +32,22 @@ def raise_error(error):
 
 
 @unique
+class BybitUnifiedMarginStatus(Enum):
+    CLASSIC_ACCOUNT = 1  # Classic account
+    UNIFIED_TRADING_ACCOUNT_1_0 = 3  # Unified trading account 1.0
+    UNIFIED_TRADING_ACCOUNT_1_0_PRO = 4  # Unified trading account 1.0 (pro version)
+    UNIFIED_TRADING_ACCOUNT_2_0 = 5  # Unified trading account 2.0
+    UNIFIED_TRADING_ACCOUNT_2_0_PRO = 6  # Unified trading account 2.0 (pro version)
+
+
+@unique
+class BybitMarginMode(Enum):
+    ISOLATED_MARGIN = "ISOLATED_MARGIN"
+    REGULAR_MARGIN = "REGULAR_MARGIN"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
+
+
+@unique
 class BybitPositionIdx(Enum):
     # One-way mode position
     ONE_WAY = 0
@@ -101,6 +117,13 @@ class BybitPositionSide(Enum):
 
 
 @unique
+class BybitWsOrderRequestMsgOP(Enum):
+    CREATE = "order.create"
+    AMEND = "order.amend"
+    CANCEL = "order.cancel"
+
+
+@unique
 class BybitKlineInterval(Enum):
     MINUTE_1 = "1"
     MINUTE_3 = "3"
@@ -133,6 +156,7 @@ class BybitOrderStatus(Enum):
 
 @unique
 class BybitOrderSide(Enum):
+    UNKNOWN = ""  # It will be an empty string in some cases
     BUY = "Buy"
     SELL = "Sell"
 
@@ -223,15 +247,16 @@ class BybitEndpointType(Enum):
     ACCOUNT = "ACCOUNT"
     TRADE = "TRADE"
     POSITION = "POSITION"
+    USER = "USER"
 
 
 def check_dict_keys(key, data):
     try:
         return data[key]
-    except KeyError:
+    except KeyError as e:
         raise RuntimeError(
             f"Unrecognized Bybit {key} not found in {data}",
-        )
+        ) from e
 
 
 class BybitEnumParser:
@@ -489,6 +514,23 @@ class BybitEnumParser:
             TimeInForce.FOK,
         }
 
+        # trigger direction
+        self.trigger_direction_map_buy = {
+            OrderType.STOP_MARKET: BybitTriggerDirection.RISES_TO,
+            OrderType.STOP_LIMIT: BybitTriggerDirection.RISES_TO,
+            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
+            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.RISES_TO,
+            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
+        }
+
+        self.trigger_direction_map_sell = {
+            OrderType.STOP_MARKET: BybitTriggerDirection.FALLS_TO,
+            OrderType.STOP_LIMIT: BybitTriggerDirection.FALLS_TO,
+            OrderType.MARKET_IF_TOUCHED: BybitTriggerDirection.FALLS_TO,
+            OrderType.TRAILING_STOP_MARKET: BybitTriggerDirection.FALLS_TO,
+            OrderType.LIMIT_IF_TOUCHED: BybitTriggerDirection.RISES_TO,
+        }
+
     def parse_bybit_order_status(
         self,
         order_type: OrderType,
@@ -520,10 +562,10 @@ class BybitEnumParser:
     def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
         try:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
-        except KeyError:
+        except KeyError as e:
             raise RuntimeError(
                 f"unrecognized Bybit time in force, was {time_in_force_to_str(time_in_force)}",  # pragma: no cover
-            )
+            ) from e
 
     def parse_nautilus_trigger_type(self, trigger_type: TriggerType) -> BybitTriggerType:
         return check_dict_keys(trigger_type, self.nautilus_to_bybit_trigger_type)
@@ -531,39 +573,16 @@ class BybitEnumParser:
     def parse_bybit_trigger_type(self, trigger_type: BybitTriggerType) -> TriggerType:
         return check_dict_keys(trigger_type, self.bybit_to_nautilus_trigger_type)
 
-    def parse_trigger_direction(  # noqa: C901 (too complex)
+    def parse_trigger_direction(
         self,
         order_type: OrderType,
         order_side: OrderSide,
     ) -> BybitTriggerDirection | None:
-        if order_side == OrderSide.BUY:
-            match order_type:
-                case OrderType.STOP_MARKET:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.STOP_LIMIT:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.MARKET_IF_TOUCHED:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.TRAILING_STOP_MARKET:
-                    return BybitTriggerDirection.RISES_TO
-                case OrderType.LIMIT_IF_TOUCHED:
-                    return BybitTriggerDirection.FALLS_TO
-                case _:
-                    return None
-        else:  # SELL
-            match order_type:
-                case OrderType.STOP_MARKET:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.STOP_LIMIT:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.MARKET_IF_TOUCHED:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.TRAILING_STOP_MARKET:
-                    return BybitTriggerDirection.FALLS_TO
-                case OrderType.LIMIT_IF_TOUCHED:
-                    return BybitTriggerDirection.RISES_TO
-                case _:
-                    return None
+        return (
+            self.trigger_direction_map_buy.get(order_type)
+            if order_side == OrderSide.BUY
+            else self.trigger_direction_map_sell.get(order_type)
+        )
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
         try:
@@ -576,7 +595,7 @@ class BybitEnumParser:
                 raise ValueError(
                     f"Bybit incorrect aggregation {aggregation}",  # pragma: no cover
                 )
-        except KeyError:
+        except KeyError as e:
             raise RuntimeError(
                 f"unrecognized Bybit bar type, was {bar_type}",  # pragma: no cover
-            )
+            ) from e

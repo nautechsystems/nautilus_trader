@@ -32,7 +32,7 @@ use super::GetTsInit;
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 /// Returns the bar interval as a `TimeDelta`.

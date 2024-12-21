@@ -413,7 +413,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::bar::Bar;
+    use crate::data::Bar;
 
     #[rstest]
     fn test_as_dict() {

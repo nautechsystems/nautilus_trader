@@ -33,12 +33,11 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
+        QuoteTick, TradeTick,
     },
     enums::AggregationSource,
-    instruments::any::InstrumentAny,
-    types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
+    instruments::InstrumentAny,
+    types::{fixed::FIXED_SCALAR, Price, Quantity},
 };
 
 pub trait BarAggregator {
@@ -564,13 +563,15 @@ where
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
 
-        self.clock.set_timer_ns(
-            &self.timer_name,
-            self.interval_ns.as_u64(),
-            start_time_ns,
-            None,
-            Some(callback.into()),
-        );
+        self.clock
+            .set_timer_ns(
+                &self.timer_name,
+                self.interval_ns.as_u64(),
+                start_time_ns,
+                None,
+                Some(callback.into()),
+            )
+            .expect(FAILED);
 
         log::debug!("Started timer {}", self.timer_name);
         Ok(())
@@ -648,10 +649,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use nautilus_model::{
-        data::bar::{BarSpecification, BarType},
+        data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
-        instruments::{any::InstrumentAny, equity::Equity, stubs::*},
-        types::{price::Price, quantity::Quantity},
+        instruments::{stubs::*, Equity, InstrumentAny},
+        types::{Price, Quantity},
     };
     use rstest::rstest;
 

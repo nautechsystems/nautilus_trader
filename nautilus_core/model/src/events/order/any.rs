@@ -20,7 +20,7 @@ use ustr::Ustr;
 
 use super::{OrderEvent, OrderEventType};
 use crate::{
-    events::order::{
+    events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,

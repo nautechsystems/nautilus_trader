@@ -20,7 +20,8 @@
 #![allow(unused_variables)]
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -32,15 +33,10 @@ use nautilus_common::{
 };
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    data::{
-        bar::{Bar, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
-        DataType,
-    },
+    data::{Bar, BarType, DataType, QuoteTick, TradeTick},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
 };
 
 pub trait DataClient {
@@ -58,46 +54,115 @@ pub trait DataClient {
     // fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
     // fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
 
-    // -- COMMAND HANDLERS ---------------------------------------------------------------------------
+    // -- COMMAND HANDLERS ------------------------------------------------------------------------
 
     /// Parse command and call specific function
-    fn subscribe(&mut self, data_type: &DataType) -> anyhow::Result<()>;
-    fn subscribe_instruments(&mut self, venue: Option<&Venue>) -> anyhow::Result<()>;
-    fn subscribe_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn subscribe(
+        &mut self,
+        data_type: &DataType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_instruments(
+        &mut self,
+        venue: Option<&Venue>,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
     fn subscribe_order_book_deltas(
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()>;
     fn subscribe_order_book_snapshots(
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()>;
-    fn subscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()>;
-    fn subscribe_instrument_status(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe(&mut self, data_type: &DataType) -> anyhow::Result<()>;
-    fn unsubscribe_instruments(&mut self, venue: Option<&Venue>) -> anyhow::Result<()>;
-    fn unsubscribe_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_order_book_deltas(&mut self, instrument_id: &InstrumentId)
-        -> anyhow::Result<()>;
+    fn subscribe_quote_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_trade_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_bars(
+        &mut self,
+        bar_type: &BarType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_instrument_status(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_instrument_close(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe(
+        &mut self,
+        data_type: &DataType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_instruments(
+        &mut self,
+        venue: Option<&Venue>,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_order_book_deltas(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
     fn unsubscribe_order_book_snapshots(
         &mut self,
         instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()>;
-    fn unsubscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()>;
-    fn unsubscribe_instrument_status(&mut self, instrument_id: &InstrumentId)
-        -> anyhow::Result<()>;
-    fn unsubscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn unsubscribe_quote_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_trade_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_bars(
+        &mut self,
+        bar_type: &BarType,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_instrument_status(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_instrument_close(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
 
-    // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
+    // -- DATA REQUEST HANDLERS -------------------------------------------------------------------
 
     fn request_data(&self, request: DataRequest);
     fn request_instruments(
@@ -106,6 +171,7 @@ pub trait DataClient {
         venue: Venue,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<InstrumentAny>;
     fn request_instrument(
         &self,
@@ -113,6 +179,7 @@ pub trait DataClient {
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
+        params: &Option<HashMap<String, String>>,
     ) -> InstrumentAny;
     // TODO: figure out where to call this and it's return type
     fn request_order_book_snapshot(
@@ -120,6 +187,7 @@ pub trait DataClient {
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         depth: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Payload;
     fn request_quote_ticks(
         &self,
@@ -128,6 +196,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<QuoteTick>;
     fn request_trade_ticks(
         &self,
@@ -136,6 +205,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<TradeTick>;
     fn request_bars(
         &self,
@@ -144,6 +214,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
+        params: &Option<HashMap<String, String>>,
     ) -> Vec<Bar>;
 }
 
@@ -177,6 +248,45 @@ impl Deref for DataClientAdapter {
 impl DerefMut for DataClientAdapter {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.client
+    }
+}
+
+impl Debug for DataClientAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataClientAdapter")
+            .field("client_id", &self.client_id)
+            .field("venue", &self.venue)
+            .field("handles_order_book_deltas", &self.handles_order_book_deltas)
+            .field(
+                "handles_order_book_snapshots",
+                &self.handles_order_book_snapshots,
+            )
+            .field("subscriptions_generic", &self.subscriptions_generic)
+            .field(
+                "subscriptions_order_book_delta",
+                &self.subscriptions_order_book_delta,
+            )
+            .field(
+                "subscriptions_order_book_snapshot",
+                &self.subscriptions_order_book_snapshot,
+            )
+            .field("subscriptions_quote_tick", &self.subscriptions_quote_tick)
+            .field("subscriptions_trade_tick", &self.subscriptions_trade_tick)
+            .field("subscriptions_bar", &self.subscriptions_bar)
+            .field(
+                "subscriptions_instrument_status",
+                &self.subscriptions_instrument_status,
+            )
+            .field(
+                "subscriptions_instrument_close",
+                &self.subscriptions_instrument_close,
+            )
+            .field("subscriptions_instrument", &self.subscriptions_instrument)
+            .field(
+                "subscriptions_instrument_venue",
+                &self.subscriptions_instrument_venue,
+            )
+            .finish()
     }
 }
 
@@ -260,7 +370,7 @@ impl DataClientAdapter {
             // https://github.com/rust-lang/rust/issues/60896
             if !self.subscriptions_instrument.contains(&instrument_id) {
                 self.client
-                    .subscribe_instrument(&instrument_id)
+                    .subscribe_instrument(&instrument_id, &command.params)
                     .expect("Error on subscribe");
             }
 
@@ -270,7 +380,7 @@ impl DataClientAdapter {
         if let Some(venue) = venue {
             if !self.subscriptions_instrument_venue.contains(&venue) {
                 self.client
-                    .subscribe_instruments(Some(&venue))
+                    .subscribe_instruments(Some(&venue), &command.params)
                     .expect("Error on subscribe");
             }
 
@@ -285,7 +395,7 @@ impl DataClientAdapter {
         if let Some(instrument_id) = instrument_id {
             if self.subscriptions_instrument.contains(&instrument_id) {
                 self.client
-                    .unsubscribe_instrument(&instrument_id)
+                    .unsubscribe_instrument(&instrument_id, &command.params)
                     .expect("Error on subscribe");
             }
 
@@ -295,7 +405,7 @@ impl DataClientAdapter {
         if let Some(venue) = venue {
             if self.subscriptions_instrument_venue.contains(&venue) {
                 self.client
-                    .unsubscribe_instruments(Some(&venue))
+                    .unsubscribe_instruments(Some(&venue), &command.params)
                     .expect("Error on subscribe");
             }
 
@@ -314,7 +424,7 @@ impl DataClientAdapter {
 
         if !self.subscriptions_order_book_delta.contains(&instrument_id) {
             self.client
-                .subscribe_order_book_deltas(&instrument_id, book_type, depth)
+                .subscribe_order_book_deltas(&instrument_id, book_type, depth, &command.params)
                 .expect("Error on subscribe");
         }
 
@@ -329,7 +439,7 @@ impl DataClientAdapter {
 
         if self.subscriptions_order_book_delta.contains(&instrument_id) {
             self.client
-                .unsubscribe_order_book_deltas(&instrument_id)
+                .unsubscribe_order_book_deltas(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
 
@@ -350,7 +460,7 @@ impl DataClientAdapter {
             .contains(&instrument_id)
         {
             self.client
-                .subscribe_order_book_snapshots(&instrument_id, book_type, depth)
+                .subscribe_order_book_snapshots(&instrument_id, book_type, depth, &command.params)
                 .expect("Error on subscribe");
         }
 
@@ -368,7 +478,7 @@ impl DataClientAdapter {
             .contains(&instrument_id)
         {
             self.client
-                .unsubscribe_order_book_snapshots(&instrument_id)
+                .unsubscribe_order_book_snapshots(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
 
@@ -384,7 +494,7 @@ impl DataClientAdapter {
 
         if !self.subscriptions_quote_tick.contains(&instrument_id) {
             self.client
-                .subscribe_quote_ticks(&instrument_id)
+                .subscribe_quote_ticks(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_quote_tick.insert(instrument_id);
@@ -398,7 +508,7 @@ impl DataClientAdapter {
 
         if self.subscriptions_quote_tick.contains(&instrument_id) {
             self.client
-                .unsubscribe_quote_ticks(&instrument_id)
+                .unsubscribe_quote_ticks(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_quote_tick.remove(&instrument_id);
@@ -412,7 +522,7 @@ impl DataClientAdapter {
 
         if self.subscriptions_trade_tick.contains(&instrument_id) {
             self.client
-                .unsubscribe_trade_ticks(&instrument_id)
+                .unsubscribe_trade_ticks(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_trade_tick.remove(&instrument_id);
@@ -426,7 +536,7 @@ impl DataClientAdapter {
 
         if !self.subscriptions_trade_tick.contains(&instrument_id) {
             self.client
-                .subscribe_trade_ticks(&instrument_id)
+                .subscribe_trade_ticks(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_trade_tick.insert(instrument_id);
@@ -437,7 +547,7 @@ impl DataClientAdapter {
 
         if !self.subscriptions_bar.contains(&bar_type) {
             self.client
-                .subscribe_bars(&bar_type)
+                .subscribe_bars(&bar_type, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_bar.insert(bar_type);
@@ -448,7 +558,7 @@ impl DataClientAdapter {
 
         if self.subscriptions_bar.contains(&bar_type) {
             self.client
-                .subscribe_bars(&bar_type)
+                .subscribe_bars(&bar_type, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_bar.remove(&bar_type);
@@ -458,7 +568,7 @@ impl DataClientAdapter {
         let data_type = command.data_type;
         if !self.subscriptions_generic.contains(&data_type) {
             self.client
-                .subscribe(&data_type)
+                .subscribe(&data_type, &command.params)
                 .expect("Error on subscribe");
         }
         self.subscriptions_generic.insert(data_type);
@@ -468,7 +578,7 @@ impl DataClientAdapter {
         let data_type = command.data_type;
         if self.subscriptions_generic.contains(&data_type) {
             self.client
-                .unsubscribe(&data_type)
+                .unsubscribe(&data_type, &command.params)
                 .expect("Error on unsubscribe");
         }
         self.subscriptions_generic.remove(&data_type);
@@ -495,9 +605,13 @@ impl DataClientAdapter {
         match req.data_type.type_name() {
             stringify!(InstrumentAny) => match (instrument_id, venue) {
                 (None, Some(venue)) => {
-                    let instruments =
-                        self.client
-                            .request_instruments(req.correlation_id, venue, start, end);
+                    let instruments = self.client.request_instruments(
+                        req.correlation_id,
+                        venue,
+                        start,
+                        end,
+                        &req.params,
+                    );
                     self.handle_instruments(venue, instruments, req.correlation_id)
                 }
                 (Some(instrument_id), None) => {
@@ -506,6 +620,7 @@ impl DataClientAdapter {
                         instrument_id,
                         start,
                         end,
+                        &req.params,
                     );
                     self.handle_instrument(instrument, req.correlation_id)
                 }
@@ -522,6 +637,7 @@ impl DataClientAdapter {
                     start,
                     end,
                     limit,
+                    &req.params,
                 );
                 self.handle_quote_ticks(&instrument_id, quotes, req.correlation_id)
             }
@@ -534,14 +650,20 @@ impl DataClientAdapter {
                     start,
                     end,
                     limit,
+                    &req.params,
                 );
                 self.handle_trade_ticks(&instrument_id, trades, req.correlation_id)
             }
             stringify!(Bar) => {
                 let bar_type = req.data_type.bar_type();
-                let bars =
-                    self.client
-                        .request_bars(req.correlation_id, bar_type, start, end, limit);
+                let bars = self.client.request_bars(
+                    req.correlation_id,
+                    bar_type,
+                    start,
+                    end,
+                    limit,
+                    &req.params,
+                );
                 self.handle_bars(&bar_type, bars, req.correlation_id)
             }
             _ => {
@@ -568,6 +690,7 @@ impl DataClientAdapter {
             data_type,
             data,
             self.clock.timestamp_ns(),
+            None,
         )
     }
 
@@ -589,6 +712,7 @@ impl DataClientAdapter {
             data_type,
             data,
             self.clock.timestamp_ns(),
+            None,
         )
     }
 
@@ -610,6 +734,7 @@ impl DataClientAdapter {
             data_type,
             data,
             self.clock.timestamp_ns(),
+            None,
         )
     }
 
@@ -631,6 +756,7 @@ impl DataClientAdapter {
             data_type,
             data,
             self.clock.timestamp_ns(),
+            None,
         )
     }
 
@@ -652,6 +778,7 @@ impl DataClientAdapter {
             data_type,
             data,
             self.clock.timestamp_ns(),
+            None,
         )
     }
 }

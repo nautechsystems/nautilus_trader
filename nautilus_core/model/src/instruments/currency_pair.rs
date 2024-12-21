@@ -36,6 +36,8 @@ use crate::{
 };
 
 /// Represents a generic currency pair instrument in a spot/cash market.
+///
+/// Can represent both Fiat FX and Cryptocurrency pairs.
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -44,26 +46,47 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct CurrencyPair {
+    /// The instrument ID for the instrument.
     pub id: InstrumentId,
+    /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
+    /// The base currency.
     pub base_currency: Currency,
+    /// The quote currency.
     pub quote_currency: Currency,
+    /// The price decimal precision.
     pub price_precision: u8,
+    /// The trading size decimal precision.
     pub size_precision: u8,
+    /// The minimum price increment (tick size).
     pub price_increment: Price,
+    /// The minimum size increment.
     pub size_increment: Quantity,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
+    /// The initial (order) margin requirement in percentage of order value.
     pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
+    /// The fee rate for liquidity makers as a percentage of order value.
+    pub maker_fee: Decimal,
+    /// The fee rate for liquidity takers as a percentage of order value.
+    pub taker_fee: Decimal,
+    /// The rounded lot unit size.
     pub lot_size: Option<Quantity>,
+    /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
+    /// The minimum allowable order quantity.
     pub min_quantity: Option<Quantity>,
+    /// The maximum allowable order notional value.
     pub max_notional: Option<Money>,
+    /// The minimum allowable order notional value.
     pub min_notional: Option<Money>,
+    /// The maximum allowable quoted price.
     pub max_price: Option<Price>,
+    /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -83,10 +106,6 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        taker_fee: Decimal,
-        maker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -94,6 +113,10 @@ impl CurrencyPair {
         min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -121,10 +144,6 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            maker_fee,
-            taker_fee,
-            margin_init,
-            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
@@ -132,6 +151,10 @@ impl CurrencyPair {
             min_notional,
             max_price,
             min_price,
+            margin_init: margin_init.unwrap_or_default(),
+            margin_maint: margin_maint.unwrap_or_default(),
+            maker_fee: maker_fee.unwrap_or_default(),
+            taker_fee: taker_fee.unwrap_or_default(),
             ts_event,
             ts_init,
         })
@@ -148,10 +171,6 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        taker_fee: Decimal,
-        maker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -159,6 +178,10 @@ impl CurrencyPair {
         min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -171,10 +194,6 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            taker_fee,
-            maker_fee,
-            margin_init,
-            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
@@ -182,6 +201,10 @@ impl CurrencyPair {
             min_notional,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             ts_event,
             ts_init,
         )
@@ -346,7 +369,7 @@ impl Instrument for CurrencyPair {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{currency_pair::CurrencyPair, stubs::*};
+    use crate::instruments::{stubs::*, CurrencyPair};
 
     #[rstest]
     fn test_equality(currency_pair_btcusdt: CurrencyPair) {

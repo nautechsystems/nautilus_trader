@@ -30,7 +30,7 @@ use nautilus_core::{
 use crate::{
     identifiers::{InstrumentId, Symbol},
     instruments::synthetic::SyntheticInstrument,
-    types::price::{Price, ERROR_PRICE},
+    types::{Price, ERROR_PRICE},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying

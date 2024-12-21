@@ -17,7 +17,7 @@ use std::{ffi::c_char, str::FromStr};
 
 use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};
 
-use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::currency::Currency};
+use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::Currency};
 
 /// Returns a [`Currency`] from pointers and primitives.
 ///
@@ -98,7 +98,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{enums::CurrencyType, types::currency::Currency};
+    use crate::{enums::CurrencyType, types::Currency};
 
     #[rstest]
     fn test_registration() {
