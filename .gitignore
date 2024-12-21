@@ -52,6 +52,7 @@ logs/
 .pytest_cache/
 .ruff_cache/
 *dask-worker-space*
+requirements*
 venv*/
 __pycache__/
 
