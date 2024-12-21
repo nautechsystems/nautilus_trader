@@ -31,7 +31,11 @@ from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesEn
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentInverse
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentLinear
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOption
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentSpot
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
@@ -86,13 +90,64 @@ class BybitMarketHttpAPI:
     async def fetch_instruments(
         self,
         product_type: BybitProductType,
+        symbol: str | None = None,
+        status: str | None = None,
+        base_coin: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
     ) -> BybitInstrumentList:
         response = await self._endpoint_instruments.get(
             BybitInstrumentsInfoGetParams(
                 category=product_type,
+                symbol=symbol,
+                status=status,
+                baseCoin=base_coin,
+                limit=limit,
+                cursor=cursor,
             ),
         )
         return response.result.list
+
+    async def fetch_all_instruments(
+        self,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+        status: str | None = None,
+        base_coin: str | None = None,
+    ) -> BybitInstrumentList:
+        """
+        Fetch all instruments with pagination from Bybit.
+        """
+        all_instruments: list[BybitInstrument] = []
+        current_cursor = None
+
+        while True:
+            response = await self._endpoint_instruments.get(
+                BybitInstrumentsInfoGetParams(
+                    category=product_type,
+                    symbol=symbol,
+                    status=status,
+                    baseCoin=base_coin,
+                    limit=1000,
+                    cursor=current_cursor,
+                ),
+            )
+            all_instruments.extend(response.result.list)
+            current_cursor = response.result.nextPageCursor
+
+            if not current_cursor or current_cursor == "":
+                break
+
+        if product_type == BybitProductType.SPOT:
+            return [x for x in all_instruments if isinstance(x, BybitInstrumentSpot)]
+        elif product_type == BybitProductType.LINEAR:
+            return [x for x in all_instruments if isinstance(x, BybitInstrumentLinear)]
+        elif product_type == BybitProductType.INVERSE:
+            return [x for x in all_instruments if isinstance(x, BybitInstrumentInverse)]
+        elif product_type == BybitProductType.OPTION:
+            return [x for x in all_instruments if isinstance(x, BybitInstrumentOption)]
+        else:
+            raise ValueError(f"Unsupported product type: {product_type}")
 
     async def fetch_instrument(
         self,

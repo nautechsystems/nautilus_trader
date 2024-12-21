@@ -30,6 +30,9 @@ class BybitInstrumentsInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=T
     category: BybitProductType | None = None
     symbol: str | None = None
     status: str | None = None
+    baseCoin: str | None = None
+    limit: int | None = None
+    cursor: str | None = None
 
 
 class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):

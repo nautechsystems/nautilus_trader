@@ -27,6 +27,10 @@ class BybitListResult(Generic[T], msgspec.Struct):
     list: list[T]
 
 
+class BybitListResultWithCursor(BybitListResult[T]):
+    nextPageCursor: str | None = None
+
+
 def bybit_coin_result(object_type: Any):
     return msgspec.defstruct("", [("coin", list[object_type])])
 
