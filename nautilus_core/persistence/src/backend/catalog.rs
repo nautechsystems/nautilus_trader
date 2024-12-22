@@ -88,15 +88,17 @@ impl ParquetDataCatalog {
     }
 
     #[must_use]
-    pub fn write_to_json<T>(&self, data: Vec<T>) -> PathBuf
+    pub fn write_to_json<T>(&self, data: Vec<T>, path: Option<PathBuf>) -> PathBuf
     where
         T: GetTsInit + Serialize,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
         Self::check_ascending_timestamps(&data, &type_name);
 
-        let path = self.make_path(&type_name, None);
-        let json_path = path.with_extension("json");
+        let json_path = path.unwrap_or_else(|| {
+            let path = self.make_path(&type_name, None);
+            path.with_extension("json")
+        });
 
         info!(
             "Writing {} records of {} data to {:?}",

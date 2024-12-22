@@ -345,7 +345,7 @@ fn test_catalog_serialization_json_round_trip() {
     let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
     // Write to JSON using catalog
-    let json_path = catalog.write_to_json(quote_ticks.clone());
+    let json_path = catalog.write_to_json(quote_ticks.clone(), None);
 
     // Read back from JSON
     let json_str = std::fs::read_to_string(json_path).unwrap();
@@ -393,7 +393,7 @@ fn test_datafusion_parquet_round_trip() {
     let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
     {
         let writer_props = WriterProperties::builder()
-            .set_compression(Compression::ZSTD(ZstdLevel::default()))
+            .set_compression(Compression::SNAPPY)
             .set_max_row_group_size(1000)
             .build();
 
