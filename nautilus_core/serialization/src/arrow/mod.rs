@@ -33,12 +33,13 @@ use arrow::{
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
-use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
-    Data,
+use nautilus_model::{
+    data::{
+        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        trade::TradeTick, Data,
+    },
+    types::price::PriceRaw,
 };
-#[cfg(feature = "high_precision")]
-use nautilus_model::types::price::PriceRaw;
 use pyo3::prelude::*;
 
 // Define metadata key constants constants
@@ -74,7 +75,6 @@ pub enum EncodingError {
 }
 
 #[inline]
-#[cfg(feature = "high_precision")]
 fn get_raw_price(bytes: &[u8]) -> PriceRaw {
     PriceRaw::from_le_bytes(bytes.try_into().unwrap())
 }

@@ -17,8 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{
-        FixedSizeBinaryArray, FixedSizeBinaryBuilder, StringArray, StringBuilder, StringViewArray,
-        UInt64Array, UInt8Array,
+        FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, StringArray, StringBuilder, StringViewArray, UInt64Array, UInt8Array
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,

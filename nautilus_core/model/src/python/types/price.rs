@@ -372,6 +372,8 @@ impl Price {
     #[cfg(not(feature = "high_precision"))]
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
+        use crate::types::fixed::fixed_i64_to_f64;
+
         fixed_i64_to_f64(self.raw)
     }
 

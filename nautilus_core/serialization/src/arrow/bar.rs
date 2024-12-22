@@ -98,6 +98,8 @@ impl EncodeToRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
+        use arrow::array::Int64Array;
+
         let mut open_builder = Int64Array::builder(data.len());
         let mut high_builder = Int64Array::builder(data.len());
         let mut low_builder = Int64Array::builder(data.len());
@@ -200,6 +202,8 @@ impl DecodeFromRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
+        use arrow::array::Int64Array;
+
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
 
@@ -398,6 +402,8 @@ mod tests {
     #[rstest]
     #[cfg(not(feature = "high_precision"))]
     fn test_encode_batch() {
+        use arrow::array::Int64Array;
+
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
@@ -565,6 +571,8 @@ mod tests {
     #[rstest]
     #[cfg(not(feature = "high_precision"))]
     fn test_decode_batch() {
+        use arrow::array::Int64Array;
+
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 

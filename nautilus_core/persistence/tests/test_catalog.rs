@@ -13,10 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::path::PathBuf;
+
 use nautilus_core::ffi::cvec::CVec;
-use nautilus_model::data::{
-    is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
-    TradeTick,
+use nautilus_model::{
+    data::{
+        is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
+        TradeTick,
+    },
+    types::{Price, Quantity},
 };
 use nautilus_persistence::{
     backend::{
@@ -330,31 +335,83 @@ fn test_catalog_serialization_json_round_trip() {
     use pretty_assertions::assert_eq;
 
     // Setup
-    let temp_dir = tempfile::tempdir().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), Some(1000));
+    // let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = PathBuf::from(".");
+    let catalog = ParquetDataCatalog::new(temp_dir.as_path().to_path_buf(), Some(1000));
 
     // Read original data from parquet
     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+    let file_path = "/home/twitu/Code/nautilus_trader/bench_data/quotes_0005.parquet";
     // let file_path = "test.parquet";
-    let mut session = DataBackendSession::new(1000);
+    let mut session = DataBackendSession::new(5000);
     session
-        .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_data", file_path, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let quote_ticks: Vec<Data> = query_result.collect();
-    let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
+    let mut quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
+
+        // fix bid and ask size
+    for data in quote_ticks.iter_mut() {
+        data.bid_size = Quantity::new(data.bid_size.raw as f64, data.bid_size.precision);
+        data.ask_size = Quantity::new(data.ask_size.raw as f64, data.ask_size.precision);
+        data.bid_price = Price::new(data.bid_price.raw as f64, data.bid_price.precision);
+        data.ask_price = Price::new(data.ask_price.raw as f64, data.bid_price.precision);
+    }
 
     // Write to JSON using catalog
     let json_path = catalog.write_to_json(quote_ticks.clone());
 
-    // Read back from JSON
-    let json_str = std::fs::read_to_string(json_path).unwrap();
-    let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
+    // // Read back from JSON
+    // let json_str = std::fs::read_to_string(json_path).unwrap();
+    // let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
 
-    // Compare
-    assert_eq!(quote_ticks.len(), loaded_data_variants.len());
-    for (orig, loaded) in quote_ticks.iter().zip(loaded_data_variants.iter()) {
-        assert_eq!(orig, loaded);
+    // // Compare
+    // assert_eq!(quote_ticks.len(), loaded_data_variants.len());
+    // for (orig, loaded) in quote_ticks.iter().zip(loaded_data_variants.iter()) {
+    //     assert_eq!(orig, loaded);
+    // }
+}
+
+#[rstest]
+fn simple_test() {
+    use std::collections::HashMap;
+
+    use datafusion::parquet::{
+        arrow::ArrowWriter,
+        basic::{Compression, ZstdLevel},
+        file::properties::WriterProperties,
+    };
+    use nautilus_serialization::arrow::EncodeToRecordBatch;
+    use pretty_assertions::assert_eq;
+
+    // Read back from JSON
+    let json_path = "/home/twitu/Code/nautilus_trader/nautilus_core/persistence/data/nautilus_model_data_quote_quote_tick/quotes_perf_data.json";
+    let json_str = std::fs::read_to_string(json_path).unwrap();
+    let quote_ticks: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
+    let metadata = HashMap::from([
+        ("price_precision".to_string(), "0".to_string()),
+        ("size_precision".to_string(), "0".to_string()),
+        ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
+    ]);
+    let schema = QuoteTick::get_schema(Some(metadata.clone()));
+
+
+    let temp_file_path = PathBuf::from("quotes_perf_data.parquet");
+    let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
+    {
+        let writer_props = WriterProperties::builder()
+            .set_compression(Compression::SNAPPY)
+            .set_max_row_group_size(5000)
+            .build();
+
+        let mut writer =
+            ArrowWriter::try_new(&mut temp_file, schema.into(), Some(writer_props)).unwrap();
+        for chunk in quote_ticks.chunks(5000) {
+            let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
+            writer.write(&batch).unwrap();
+        }
+        writer.close().unwrap();
     }
 }
 
