@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{
-        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, UInt32Array, UInt64Array, UInt8Array
+        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt32Array, UInt64Array, UInt8Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -42,22 +42,14 @@ use crate::arrow::{
 };
 
 fn get_field_data() -> Vec<(&'static str, DataType)> {
-    let mut field_data = Vec::new();
-    #[cfg(not(feature = "high_precision"))]
-    {
-        field_data.push(("bid_price", DataType::Int64));
-        field_data.push(("ask_price", DataType::Int64));
-    }
-    #[cfg(feature = "high_precision")]
-    {
-        field_data.push(("bid_price", DataType::FixedSizeBinary(16)));
-        field_data.push(("ask_price", DataType::FixedSizeBinary(16)));
-    }
-    field_data.push(("bid_size", DataType::UInt64));
-    field_data.push(("ask_size", DataType::UInt64));
-    field_data.push(("bid_count", DataType::UInt32));
-    field_data.push(("ask_count", DataType::UInt32));
-    field_data
+    vec![
+        ("bid_price", DataType::FixedSizeBinary(16)),
+        ("ask_price", DataType::FixedSizeBinary(16)),
+        ("bid_size", DataType::UInt64),
+        ("ask_size", DataType::UInt64),
+        ("bid_count", DataType::UInt32),
+        ("ask_count", DataType::UInt32),
+    ]
 }
 
 impl ArrowSchemaProvider for OrderBookDepth10 {
@@ -77,12 +69,10 @@ impl ArrowSchemaProvider for OrderBookDepth10 {
             }
         }
 
-        fields.extend_from_slice(&[
-            Field::new("flags", DataType::UInt8, false),
-            Field::new("sequence", DataType::UInt64, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
-        ]);
+        fields.push(Field::new("flags", DataType::UInt8, false));
+        fields.push(Field::new("sequence", DataType::UInt64, false));
+        fields.push(Field::new("ts_event", DataType::UInt64, false));
+        fields.push(Field::new("ts_init", DataType::UInt64, false));
 
         match metadata {
             Some(metadata) => Schema::new_with_metadata(fields, metadata),
@@ -128,16 +118,8 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         let mut ask_count_builders = Vec::with_capacity(DEPTH10_LEN);
 
         for _ in 0..DEPTH10_LEN {
-            #[cfg(not(feature = "high_precision"))]
-            {
-                bid_price_builders.push(Int64Array::builder(data.len()));
-                ask_price_builders.push(Int64Array::builder(data.len()));
-            }
-            #[cfg(feature = "high_precision")]
-            {
-                bid_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
-                ask_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
-            }
+            bid_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
+            ask_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
             bid_size_builders.push(UInt64Array::builder(data.len()));
             ask_size_builders.push(UInt64Array::builder(data.len()));
             bid_count_builders.push(UInt32Array::builder(data.len()));
@@ -151,20 +133,12 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
 
         for depth in data {
             for i in 0..DEPTH10_LEN {
-                #[cfg(not(feature = "high_precision"))]
-                {
-                    bid_price_builders[i].append_value(depth.bids[i].price.raw);
-                    ask_price_builders[i].append_value(depth.asks[i].price.raw);
-                }
-                #[cfg(feature = "high_precision")]
-                {
-                    bid_price_builders[i]
-                        .append_value(depth.bids[i].price.raw.to_le_bytes())
-                        .unwrap();
-                    ask_price_builders[i]
-                        .append_value(depth.asks[i].price.raw.to_le_bytes())
-                        .unwrap();
-                }
+                bid_price_builders[i]
+                    .append_value(depth.bids[i].price.raw.to_le_bytes())
+                    .unwrap();
+                ask_price_builders[i]
+                    .append_value(depth.asks[i].price.raw.to_le_bytes())
+                    .unwrap();
                 bid_size_builders[i].append_value(depth.bids[i].size.raw);
                 ask_size_builders[i].append_value(depth.asks[i].size.raw);
                 bid_count_builders[i].append_value(depth.bid_counts[i]);
@@ -202,18 +176,18 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
             .map(|mut b| Arc::new(b.finish()) as Arc<dyn Array>)
             .collect::<Vec<_>>();
 
-        let flags_array = Arc::new(flags_builder.finish());
-        let sequence_array = Arc::new(sequence_builder.finish());
-        let ts_event_array = Arc::new(ts_event_builder.finish());
-        let ts_init_array = Arc::new(ts_init_builder.finish());
+        let flags_array = Arc::new(flags_builder.finish()) as Arc<dyn Array>;
+        let sequence_array = Arc::new(sequence_builder.finish()) as Arc<dyn Array>;
+        let ts_event_array = Arc::new(ts_event_builder.finish()) as Arc<dyn Array>;
+        let ts_init_array = Arc::new(ts_init_builder.finish()) as Arc<dyn Array>;
 
         let mut columns = Vec::new();
-        columns.extend_from_slice(&bid_price_arrays);
-        columns.extend_from_slice(&ask_price_arrays);
-        columns.extend_from_slice(&bid_size_arrays);
-        columns.extend_from_slice(&ask_size_arrays);
-        columns.extend_from_slice(&bid_count_arrays);
-        columns.extend_from_slice(&ask_count_arrays);
+        columns.extend(bid_price_arrays);
+        columns.extend(ask_price_arrays);
+        columns.extend(bid_size_arrays);
+        columns.extend(ask_size_arrays);
+        columns.extend(bid_count_arrays);
+        columns.extend(ask_count_arrays);
         columns.push(flags_array);
         columns.push(sequence_array);
         columns.push(ts_event_array);
@@ -253,40 +227,20 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         }
 
         for i in 0..DEPTH10_LEN {
-            #[cfg(not(feature = "high_precision"))]
-            {
-                bid_prices.push(extract_depth_column!(
-                    Int64Array,
-                    "bid_price",
-                    i,
-                    i,
-                    DataType::Int64
-                ));
-                ask_prices.push(extract_depth_column!(
-                    Int64Array,
-                    "ask_price",
-                    i,
-                    DEPTH10_LEN + i,
-                    DataType::Int64
-                ));
-            }
-            #[cfg(feature = "high_precision")]
-            {
-                bid_prices.push(extract_depth_column!(
-                    FixedSizeBinaryArray,
-                    "bid_price",
-                    i,
-                    i,
-                    DataType::FixedSizeBinary(16)
-                ));
-                ask_prices.push(extract_depth_column!(
-                    FixedSizeBinaryArray,
-                    "ask_price",
-                    i,
-                    DEPTH10_LEN + i,
-                    DataType::FixedSizeBinary(16)
-                ));
-            }
+            bid_prices.push(extract_depth_column!(
+                FixedSizeBinaryArray,
+                "bid_price",
+                i,
+                i,
+                DataType::FixedSizeBinary(16)
+            ));
+            ask_prices.push(extract_depth_column!(
+                FixedSizeBinaryArray,
+                "ask_price",
+                i,
+                DEPTH10_LEN + i,
+                DataType::FixedSizeBinary(16)
+            ));
             bid_sizes.push(extract_depth_column!(
                 UInt64Array,
                 "bid_size",
@@ -350,42 +304,18 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 let mut ask_count_arr = [0u32; DEPTH10_LEN];
 
                 for i in 0..DEPTH10_LEN {
-                    #[cfg(not(feature = "high_precision"))]
-                    {
-                        bids[i] = BookOrder::new(
-                            OrderSide::Buy,
-                            Price::from_raw(bid_prices[i].value(row), price_precision),
-                            Quantity::from_raw(bid_sizes[i].value(row), size_precision),
-                            0,
-                        );
-                        asks[i] = BookOrder::new(
-                            OrderSide::Sell,
-                            Price::from_raw(ask_prices[i].value(row), price_precision),
-                            Quantity::from_raw(ask_sizes[i].value(row), size_precision),
-                            0,
-                        );
-                    }
-                    #[cfg(feature = "high_precision")]
-                    {
-                        bids[i] = BookOrder::new(
-                            OrderSide::Buy,
-                            Price::from_raw(
-                                get_raw_price(bid_prices[i].value(row)),
-                                price_precision,
-                            ),
-                            Quantity::from_raw(bid_sizes[i].value(row), size_precision),
-                            0, // Order id always zero
-                        );
-                        asks[i] = BookOrder::new(
-                            OrderSide::Sell,
-                            Price::from_raw(
-                                get_raw_price(ask_prices[i].value(row)),
-                                price_precision,
-                            ),
-                            Quantity::from_raw(ask_sizes[i].value(row), size_precision),
-                            0, // Order id always zero
-                        );
-                    }
+                    bids[i] = BookOrder::new(
+                        OrderSide::Buy,
+                        Price::from_raw(get_raw_price(bid_prices[i].value(row)), price_precision),
+                        Quantity::from_raw(bid_sizes[i].value(row), size_precision),
+                        0, // Order id always zero
+                    );
+                    asks[i] = BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from_raw(get_raw_price(ask_prices[i].value(row)), price_precision),
+                        Quantity::from_raw(ask_sizes[i].value(row), size_precision),
+                        0, // Order id always zero
+                    );
                     bid_count_arr[i] = bid_counts[i].value(row);
                     ask_count_arr[i] = ask_counts[i].value(row);
                 }
@@ -424,10 +354,7 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field};
-    #[cfg(feature = "high_precision")]
     use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
-    #[cfg(not(feature = "high_precision"))]
-    use nautilus_model::types::fixed::FIXED_SCALAR;
     use nautilus_model::{data::stubs::stub_depth10, types::price::PriceRaw};
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -521,7 +448,7 @@ mod tests {
             .map(|i| {
                 columns[i]
                     .as_any()
-                    .downcast_ref::<Int64Array>()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .unwrap()
             })
             .collect();
@@ -531,21 +458,14 @@ mod tests {
 
         for (i, bid_price) in bid_prices.iter().enumerate() {
             assert_eq!(bid_price.len(), 1);
-            // #[cfg(not(feature = "high_precision"))]
-            // {
-            //     assert_eq!(bid_price.value(0), expected_bid_prices[i]);
-            // }
-            #[cfg(feature = "high_precision")]
-            {
-                assert_eq!(
-                    get_raw_price(bid_price.value(0)),
-                    (expected_bid_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
-                );
-                assert_eq!(
-                    Price::from_raw(get_raw_price(bid_price.value(0)), price_precision).as_f64(),
-                    expected_bid_prices[i]
-                );
-            }
+            assert_eq!(
+                get_raw_price(bid_price.value(0)),
+                (expected_bid_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+            );
+            assert_eq!(
+                Price::from_raw(get_raw_price(bid_price.value(0)), price_precision).as_f64(),
+                expected_bid_prices[i]
+            );
         }
 
         // Extract and test ask prices
@@ -564,21 +484,14 @@ mod tests {
 
         for (i, ask_price) in ask_prices.iter().enumerate() {
             assert_eq!(ask_price.len(), 1);
-            // #[cfg(not(feature = "high_precision"))]
-            // {
-            //     assert_eq!(ask_price.value(0), expected_ask_prices[i]);
-            // }
-            #[cfg(feature = "high_precision")]
-            {
-                assert_eq!(
-                    get_raw_price(ask_price.value(0)),
-                    (expected_ask_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
-                );
-                assert_eq!(
-                    Price::from_raw(get_raw_price(ask_price.value(0)), price_precision).as_f64(),
-                    expected_ask_prices[i]
-                );
-            }
+            assert_eq!(
+                get_raw_price(ask_price.value(0)),
+                (expected_ask_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+            );
+            assert_eq!(
+                Price::from_raw(get_raw_price(ask_price.value(0)), price_precision).as_f64(),
+                expected_ask_prices[i]
+            );
         }
 
         // Extract and test bid sizes

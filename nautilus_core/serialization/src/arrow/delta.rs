@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, UInt64Array, UInt8Array},
+    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -38,24 +38,17 @@ use crate::arrow::{
 
 impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let mut fields = vec![
+        let fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
-        ];
-
-        #[cfg(not(feature = "high_precision"))]
-        fields.push(Field::new("price", DataType::Int64, false));
-        #[cfg(feature = "high_precision")]
-        fields.push(Field::new("price", DataType::FixedSizeBinary(16), false));
-
-        fields.extend(vec![
+            Field::new("price", DataType::FixedSizeBinary(16), false),
             Field::new("size", DataType::UInt64, false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ]);
+        ];
 
         match metadata {
             Some(metadata) => Schema::new_with_metadata(fields, metadata),
@@ -95,12 +88,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
     ) -> Result<RecordBatch, ArrowError> {
         let mut action_builder = UInt8Array::builder(data.len());
         let mut side_builder = UInt8Array::builder(data.len());
-
-        #[cfg(not(feature = "high_precision"))]
-        let mut price_builder = Int64Array::builder(data.len());
-        #[cfg(feature = "high_precision")]
         let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
-
         let mut size_builder = UInt64Array::builder(data.len());
         let mut order_id_builder = UInt64Array::builder(data.len());
         let mut flags_builder = UInt8Array::builder(data.len());
@@ -111,14 +99,9 @@ impl EncodeToRecordBatch for OrderBookDelta {
         for delta in data {
             action_builder.append_value(delta.action as u8);
             side_builder.append_value(delta.order.side as u8);
-
-            #[cfg(not(feature = "high_precision"))]
-            price_builder.append_value(delta.order.price.raw);
-            #[cfg(feature = "high_precision")]
             price_builder
                 .append_value(delta.order.price.raw.to_le_bytes())
                 .unwrap();
-
             size_builder.append_value(delta.order.size.raw);
             order_id_builder.append_value(delta.order.order_id);
             flags_builder.append_value(delta.flags);
@@ -167,7 +150,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
     fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
         let delta = chunk
             .first()
-            .expect("Chunk should have alteast one element to encode");
+            .expect("Chunk should have at least one element to encode");
 
         if delta.order.price.precision == 0 && delta.order.size.precision == 0 {
             if let Some(delta) = chunk.get(1) {
@@ -189,17 +172,12 @@ impl DecodeFromRecordBatch for OrderBookDelta {
 
         let action_values = extract_column::<UInt8Array>(cols, "action", 0, DataType::UInt8)?;
         let side_values = extract_column::<UInt8Array>(cols, "side", 1, DataType::UInt8)?;
-
-        #[cfg(not(feature = "high_precision"))]
-        let price_values = extract_column::<Int64Array>(cols, "price", 2, DataType::Int64)?;
-        #[cfg(feature = "high_precision")]
         let price_values = extract_column::<FixedSizeBinaryArray>(
             cols,
             "price",
             2,
             DataType::FixedSizeBinary(16),
         )?;
-
         let size_values = extract_column::<UInt64Array>(cols, "size", 3, DataType::UInt64)?;
         let order_id_values = extract_column::<UInt64Array>(cols, "order_id", 4, DataType::UInt64)?;
         let flags_values = extract_column::<UInt8Array>(cols, "flags", 5, DataType::UInt8)?;
@@ -207,7 +185,6 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        #[cfg(feature = "high_precision")]
         assert_eq!(
             price_values.value_length(),
             16,
@@ -230,12 +207,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                         format!("Invalid enum value, was {side_value}"),
                     )
                 })?;
-
-                #[cfg(not(feature = "high_precision"))]
-                let price = Price::from_raw(price_values.value(i), price_precision);
-                #[cfg(feature = "high_precision")]
                 let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
-
                 let size = Quantity::from_raw(size_values.value(i), size_precision);
                 let order_id = order_id_values.value(i);
                 let flags = flags_values.value(i);
@@ -298,24 +270,17 @@ mod tests {
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
         let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
 
-        let mut expected_fields = vec![
+        let expected_fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
-        ];
-
-        #[cfg(not(feature = "high_precision"))]
-        expected_fields.push(Field::new("price", DataType::Int64, false));
-        #[cfg(feature = "high_precision")]
-        expected_fields.push(Field::new("price", DataType::FixedSizeBinary(16), false));
-
-        expected_fields.extend(vec![
+            Field::new("price", DataType::FixedSizeBinary(16), false),
             Field::new("size", DataType::UInt64, false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ]);
+        ];
 
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
@@ -326,9 +291,6 @@ mod tests {
         let schema_map = OrderBookDelta::get_schema_map();
         assert_eq!(schema_map.get("action").unwrap(), "UInt8");
         assert_eq!(schema_map.get("side").unwrap(), "UInt8");
-        #[cfg(not(feature = "high_precision"))]
-        assert_eq!(schema_map.get("price").unwrap(), "Int64");
-        #[cfg(feature = "high_precision")]
         assert_eq!(schema_map.get("price").unwrap(), "FixedSizeBinary(16)");
         assert_eq!(schema_map.get("size").unwrap(), "UInt64");
         assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
@@ -379,15 +341,10 @@ mod tests {
         let columns = record_batch.columns();
         let action_values = columns[0].as_any().downcast_ref::<UInt8Array>().unwrap();
         let side_values = columns[1].as_any().downcast_ref::<UInt8Array>().unwrap();
-
-        #[cfg(not(feature = "high_precision"))]
-        let price_values = columns[2].as_any().downcast_ref::<Int64Array>().unwrap();
-        #[cfg(feature = "high_precision")]
         let price_values = columns[2]
             .as_any()
             .downcast_ref::<FixedSizeBinaryArray>()
             .unwrap();
-
         let size_values = columns[3].as_any().downcast_ref::<UInt64Array>().unwrap();
         let order_id_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let flags_values = columns[5].as_any().downcast_ref::<UInt8Array>().unwrap();
@@ -403,26 +360,15 @@ mod tests {
         assert_eq!(side_values.value(0), 1);
         assert_eq!(side_values.value(1), 2);
 
-        #[cfg(not(feature = "high_precision"))]
-        {
-            assert_eq!(price_values.len(), 2);
-            assert_eq!(price_values.value(0), 100_100_000_000);
-            assert_eq!(price_values.value(1), 101_200_000_000);
-        }
-
-        #[cfg(feature = "high_precision")]
-        {
-            use nautilus_model::types::price::PriceRaw;
-            assert_eq!(price_values.len(), 2);
-            assert_eq!(
-                get_raw_price(price_values.value(0)),
-                (100.10 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
-            );
-            assert_eq!(
-                get_raw_price(price_values.value(1)),
-                (101.20 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
-            );
-        }
+        assert_eq!(price_values.len(), 2);
+        assert_eq!(
+            get_raw_price(price_values.value(0)),
+            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+        );
+        assert_eq!(
+            get_raw_price(price_values.value(1)),
+            (101.20 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+        );
 
         assert_eq!(size_values.len(), 2);
         assert_eq!(size_values.value(0), 100_000_000_000);
@@ -451,15 +397,10 @@ mod tests {
 
         let action = UInt8Array::from(vec![1, 2]);
         let side = UInt8Array::from(vec![1, 1]);
-
-        #[cfg(not(feature = "high_precision"))]
-        let price = Int64Array::from(vec![100_100_000_000, 100_100_000_000]);
-        #[cfg(feature = "high_precision")]
         let price = FixedSizeBinaryArray::from(vec![
             &(100_100_000_000 as PriceRaw).to_le_bytes(),
             &(100_100_000_000 as PriceRaw).to_le_bytes(),
         ]);
-
         let size = UInt64Array::from(vec![10000, 9000]);
         let order_id = UInt64Array::from(vec![1, 2]);
         let flags = UInt8Array::from(vec![0, 0]);
