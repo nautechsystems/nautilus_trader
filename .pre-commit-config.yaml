@@ -128,3 +128,15 @@ repos:
     rev: 0.8.1
     hooks:
       - id: nbstripout
+
+  ##############################################################################
+  #  Custom hooks
+  ##############################################################################
+  - repo: local
+    hooks:
+      - id: poetry-lock-check
+        name: poetry-lock-check
+        entry: poetry lock --check
+        language: system
+        types: [python]
+        pass_filenames: false
