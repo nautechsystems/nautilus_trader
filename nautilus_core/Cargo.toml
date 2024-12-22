@@ -31,7 +31,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 arrow = "53.2.0"  # Keep in line with datafusion
 async-stream = "0.3.6"
 base64 = "0.22.1"
