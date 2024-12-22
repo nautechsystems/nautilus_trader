@@ -35,21 +35,20 @@ use super::{
     extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
-use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{
+    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, PRECISION_BYTES,
+};
 
 impl ArrowSchemaProvider for TradeTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let mut fields = Vec::with_capacity(6);
-
-        fields.push(Field::new("price", DataType::FixedSizeBinary(16), false));
-
-        fields.extend(vec![
+        let fields = vec![
+            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ]);
+        ];
 
         match metadata {
             Some(metadata) => Schema::new_with_metadata(fields, metadata),
@@ -87,7 +86,7 @@ impl EncodeToRecordBatch for TradeTick {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
+        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
 
         let mut size_builder = UInt64Array::builder(data.len());
         let mut aggressor_side_builder = UInt8Array::builder(data.len());
@@ -148,7 +147,7 @@ impl DecodeFromRecordBatch for TradeTick {
             cols,
             "price",
             0,
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
 
         let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
@@ -229,7 +228,11 @@ mod tests {
         array::{Array, FixedSizeBinaryArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
-    use nautilus_model::types::{fixed::FIXED_HIGH_PRECISION_SCALAR, price::PriceRaw};
+    #[cfg(feature = "high_precision")]
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
+    #[cfg(not(feature = "high_precision"))]
+    use nautilus_model::types::fixed::FIXED_SCALAR;
+    use nautilus_model::types::price::PriceRaw;
     use rstest::rstest;
 
     use crate::arrow::get_raw_price;
@@ -244,7 +247,11 @@ mod tests {
 
         let mut expected_fields = Vec::with_capacity(6);
 
-        expected_fields.push(Field::new("price", DataType::FixedSizeBinary(16), false));
+        expected_fields.push(Field::new(
+            "price",
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+            false,
+        ));
 
         expected_fields.extend(vec![
             Field::new("size", DataType::UInt64, false),
@@ -263,8 +270,10 @@ mod tests {
         let schema_map = TradeTick::get_schema_map();
         let mut expected_map = HashMap::new();
 
-        expected_map.insert("price".to_string(), "FixedSizeBinary(16)".to_string());
-
+        expected_map.insert(
+            "price".to_string(),
+            format!("FixedSizeBinary({PRECISION_BYTES})"),
+        );
         expected_map.insert("size".to_string(), "UInt64".to_string());
         expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
         expected_map.insert("trade_id".to_string(), "Utf8".to_string());
@@ -308,11 +317,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_raw_price(price_values.value(0)),
-            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.10 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(price_values.value(1)),
-            (100.50 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.50 * FIXED_SCALAR) as PriceRaw
         );
 
         let size_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();

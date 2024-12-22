@@ -31,7 +31,9 @@ use super::{
     extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
-use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{
+    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, PRECISION_BYTES,
+};
 
 impl ArrowSchemaProvider for QuoteTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -39,12 +41,12 @@ impl ArrowSchemaProvider for QuoteTick {
 
         fields.push(Field::new(
             "bid_price",
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
             false,
         ));
         fields.push(Field::new(
             "ask_price",
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
             false,
         ));
 
@@ -92,8 +94,10 @@ impl EncodeToRecordBatch for QuoteTick {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        let mut bid_price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
-        let mut ask_price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
+        let mut bid_price_builder =
+            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        let mut ask_price_builder =
+            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
 
         let mut bid_size_builder = UInt64Array::builder(data.len());
         let mut ask_size_builder = UInt64Array::builder(data.len());
@@ -155,13 +159,13 @@ impl DecodeFromRecordBatch for QuoteTick {
                 cols,
                 "bid_price",
                 0,
-                DataType::FixedSizeBinary(16),
+                DataType::FixedSizeBinary(PRECISION_BYTES),
             )?;
             let ask_price_values = extract_column::<FixedSizeBinaryArray>(
                 cols,
                 "ask_price",
                 1,
-                DataType::FixedSizeBinary(16),
+                DataType::FixedSizeBinary(PRECISION_BYTES),
             )?;
             (bid_price_values, ask_price_values)
         };
@@ -173,13 +177,13 @@ impl DecodeFromRecordBatch for QuoteTick {
 
         assert_eq!(
             bid_price_values.value_length(),
-            16,
-            "High precision uses 128 bit/16 byte value"
+            PRECISION_BYTES,
+            "Price precision uses {PRECISION_BYTES} byte value"
         );
         assert_eq!(
             ask_price_values.value_length(),
-            16,
-            "High precision uses 128 bit/16 byte value"
+            PRECISION_BYTES,
+            "Price precision uses {PRECISION_BYTES} byte value"
         );
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
@@ -223,7 +227,11 @@ mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use arrow::record_batch::RecordBatch;
-    use nautilus_model::types::{fixed::FIXED_HIGH_PRECISION_SCALAR, price::PriceRaw};
+    #[cfg(feature = "high_precision")]
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
+    #[cfg(not(feature = "high_precision"))]
+    use nautilus_model::types::fixed::FIXED_SCALAR;
+    use nautilus_model::types::price::PriceRaw;
     use rstest::rstest;
 
     use crate::arrow::get_raw_price;
@@ -240,12 +248,12 @@ mod tests {
 
         expected_fields.push(Field::new(
             "bid_price",
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
             false,
         ));
         expected_fields.push(Field::new(
             "ask_price",
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
             false,
         ));
 
@@ -265,8 +273,9 @@ mod tests {
         let arrow_schema = QuoteTick::get_schema_map();
         let mut expected_map = HashMap::new();
 
-        expected_map.insert("bid_price".to_string(), "FixedSizeBinary(16)".to_string());
-        expected_map.insert("ask_price".to_string(), "FixedSizeBinary(16)".to_string());
+        let fixed_size_binary = format!("FixedSizeBinary({PRECISION_BYTES})");
+        expected_map.insert("bid_price".to_string(), fixed_size_binary.clone());
+        expected_map.insert("ask_price".to_string(), fixed_size_binary);
 
         expected_map.insert("bid_size".to_string(), "UInt64".to_string());
         expected_map.insert("ask_size".to_string(), "UInt64".to_string());
@@ -316,19 +325,19 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_raw_price(bid_price_values.value(0)),
-            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.10 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(bid_price_values.value(1)),
-            (100.75 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.75 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(ask_price_values.value(0)),
-            (101.50 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (101.50 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(ask_price_values.value(1)),
-            (100.20 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.20 * FIXED_SCALAR) as PriceRaw
         );
 
         let bid_size_values = columns[2].as_any().downcast_ref::<UInt64Array>().unwrap();

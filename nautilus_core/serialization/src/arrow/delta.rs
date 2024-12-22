@@ -15,6 +15,7 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
+use crate::arrow::PRECISION_BYTES;
 use arrow::{
     array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
@@ -41,7 +42,7 @@ impl ArrowSchemaProvider for OrderBookDelta {
         let fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
-            Field::new("price", DataType::FixedSizeBinary(16), false),
+            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("size", DataType::UInt64, false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
@@ -88,7 +89,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
     ) -> Result<RecordBatch, ArrowError> {
         let mut action_builder = UInt8Array::builder(data.len());
         let mut side_builder = UInt8Array::builder(data.len());
-        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
+        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut size_builder = UInt64Array::builder(data.len());
         let mut order_id_builder = UInt64Array::builder(data.len());
         let mut flags_builder = UInt8Array::builder(data.len());
@@ -176,7 +177,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
             cols,
             "price",
             2,
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
         let size_values = extract_column::<UInt64Array>(cols, "size", 3, DataType::UInt64)?;
         let order_id_values = extract_column::<UInt64Array>(cols, "order_id", 4, DataType::UInt64)?;
@@ -187,8 +188,8 @@ impl DecodeFromRecordBatch for OrderBookDelta {
 
         assert_eq!(
             price_values.value_length(),
-            16,
-            "High precision uses 128 bit/16 byte value"
+            PRECISION_BYTES,
+            "Price precision uses {PRECISION_BYTES} byte value"
         );
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
@@ -255,7 +256,10 @@ mod tests {
 
     use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
+    #[cfg(feature = "high_precision")]
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
+    #[cfg(not(feature = "high_precision"))]
+    use nautilus_model::types::fixed::FIXED_SCALAR;
     use nautilus_model::types::price::PriceRaw;
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -273,7 +277,7 @@ mod tests {
         let expected_fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
-            Field::new("price", DataType::FixedSizeBinary(16), false),
+            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("size", DataType::UInt64, false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
@@ -291,7 +295,10 @@ mod tests {
         let schema_map = OrderBookDelta::get_schema_map();
         assert_eq!(schema_map.get("action").unwrap(), "UInt8");
         assert_eq!(schema_map.get("side").unwrap(), "UInt8");
-        assert_eq!(schema_map.get("price").unwrap(), "FixedSizeBinary(16)");
+        assert_eq!(
+            *schema_map.get("price").unwrap(),
+            format!("FixedSizeBinary({})", PRECISION_BYTES)
+        );
         assert_eq!(schema_map.get("size").unwrap(), "UInt64");
         assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
         assert_eq!(schema_map.get("flags").unwrap(), "UInt8");
@@ -363,11 +370,11 @@ mod tests {
         assert_eq!(price_values.len(), 2);
         assert_eq!(
             get_raw_price(price_values.value(0)),
-            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+            (100.10 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(price_values.value(1)),
-            (101.20 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+            (101.20 * FIXED_SCALAR) as PriceRaw
         );
 
         assert_eq!(size_values.len(), 2);
@@ -398,8 +405,8 @@ mod tests {
         let action = UInt8Array::from(vec![1, 2]);
         let side = UInt8Array::from(vec![1, 1]);
         let price = FixedSizeBinaryArray::from(vec![
-            &(100_100_000_000 as PriceRaw).to_le_bytes(),
-            &(100_100_000_000 as PriceRaw).to_le_bytes(),
+            &((101.10 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((101.20 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
         let size = UInt64Array::from(vec![10000, 9000]);
         let order_id = UInt64Array::from(vec![1, 2]);

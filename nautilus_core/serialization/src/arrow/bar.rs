@@ -28,7 +28,7 @@ use nautilus_model::{
 
 use super::{
     extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION,
+    KEY_SIZE_PRECISION, PRECISION_BYTES,
 };
 use crate::arrow::get_raw_price;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
@@ -36,10 +36,10 @@ use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRec
 impl ArrowSchemaProvider for Bar {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("open", DataType::FixedSizeBinary(16), false),
-            Field::new("high", DataType::FixedSizeBinary(16), false),
-            Field::new("low", DataType::FixedSizeBinary(16), false),
-            Field::new("close", DataType::FixedSizeBinary(16), false),
+            Field::new("open", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("volume", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -79,10 +79,10 @@ impl EncodeToRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        let mut open_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
-        let mut high_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
-        let mut low_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
-        let mut close_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
+        let mut open_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        let mut high_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        let mut low_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        let mut close_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut volume_builder = UInt64Array::builder(data.len());
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
@@ -138,17 +138,29 @@ impl DecodeFromRecordBatch for Bar {
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
 
-        let open_values =
-            extract_column::<FixedSizeBinaryArray>(cols, "open", 0, DataType::FixedSizeBinary(16))?;
-        let high_values =
-            extract_column::<FixedSizeBinaryArray>(cols, "high", 1, DataType::FixedSizeBinary(16))?;
-        let low_values =
-            extract_column::<FixedSizeBinaryArray>(cols, "low", 2, DataType::FixedSizeBinary(16))?;
+        let open_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "open",
+            0,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
+        let high_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "high",
+            1,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
+        let low_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "low",
+            2,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
         let close_values = extract_column::<FixedSizeBinaryArray>(
             cols,
             "close",
             3,
-            DataType::FixedSizeBinary(16),
+            DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
         let volume_values = extract_column::<UInt64Array>(cols, "volume", 4, DataType::UInt64)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
@@ -201,7 +213,10 @@ mod tests {
     use crate::arrow::get_raw_price;
     use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
+    #[cfg(feature = "high_precision")]
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
+    #[cfg(not(feature = "high_precision"))]
+    use nautilus_model::types::fixed::FIXED_SCALAR;
     use rstest::rstest;
 
     use super::*;
@@ -212,10 +227,10 @@ mod tests {
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
         let schema = Bar::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
-            Field::new("open", DataType::FixedSizeBinary(16), false),
-            Field::new("high", DataType::FixedSizeBinary(16), false),
-            Field::new("low", DataType::FixedSizeBinary(16), false),
-            Field::new("close", DataType::FixedSizeBinary(16), false),
+            Field::new("open", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("volume", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -228,10 +243,11 @@ mod tests {
     fn test_get_schema_map() {
         let schema_map = Bar::get_schema_map();
         let mut expected_map = HashMap::new();
-        expected_map.insert("open".to_string(), "FixedSizeBinary(16)".to_string());
-        expected_map.insert("high".to_string(), "FixedSizeBinary(16)".to_string());
-        expected_map.insert("low".to_string(), "FixedSizeBinary(16)".to_string());
-        expected_map.insert("close".to_string(), "FixedSizeBinary(16)".to_string());
+        let fixed_size_binary = format!("FixedSizeBinary({})", PRECISION_BYTES);
+        expected_map.insert("open".to_string(), fixed_size_binary.clone());
+        expected_map.insert("high".to_string(), fixed_size_binary.clone());
+        expected_map.insert("low".to_string(), fixed_size_binary.clone());
+        expected_map.insert("close".to_string(), fixed_size_binary.clone());
         expected_map.insert("volume".to_string(), "UInt64".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
@@ -292,38 +308,38 @@ mod tests {
         assert_eq!(open_values.len(), 2);
         assert_eq!(
             get_raw_price(open_values.value(0)),
-            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.10 * FIXED_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(open_values.value(1)),
-            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as i128
         );
         assert_eq!(high_values.len(), 2);
         assert_eq!(
             get_raw_price(high_values.value(0)),
-            (102.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (102.00 * FIXED_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(high_values.value(1)),
-            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as i128
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(
             get_raw_price(low_values.value(0)),
-            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(low_values.value(1)),
-            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as i128
         );
         assert_eq!(close_values.len(), 2);
         assert_eq!(
             get_raw_price(close_values.value(0)),
-            (101.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (101.00 * FIXED_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(close_values.value(1)),
-            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
+            (100.10 * FIXED_SCALAR) as i128
         );
         assert_eq!(volume_values.len(), 2);
         assert_eq!(volume_values.value(0), 1_100_000_000_000);

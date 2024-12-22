@@ -48,6 +48,13 @@ const KEY_INSTRUMENT_ID: &str = "instrument_id";
 const KEY_PRICE_PRECISION: &str = "price_precision";
 const KEY_SIZE_PRECISION: &str = "size_precision";
 
+#[cfg(not(feature = "high_precision"))]
+/// The number of bytes used to represent a 64 bit price in low precision mode.
+pub const PRECISION_BYTES: i32 = 8;
+#[cfg(feature = "high_precision")]
+/// The number of bytes used to represent a 128 bit price in high precision mode.
+pub const PRECISION_BYTES: i32 = 16;
+
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
     #[error("Arrow error: {0}")]
@@ -78,6 +85,7 @@ pub enum EncodingError {
 fn get_raw_price(bytes: &[u8]) -> PriceRaw {
     PriceRaw::from_le_bytes(bytes.try_into().unwrap())
 }
+
 pub trait ArrowSchemaProvider {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
 

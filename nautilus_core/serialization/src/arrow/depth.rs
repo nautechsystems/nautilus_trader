@@ -39,12 +39,13 @@ use super::{
 };
 use crate::arrow::{
     get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,
+    PRECISION_BYTES,
 };
 
 fn get_field_data() -> Vec<(&'static str, DataType)> {
     vec![
-        ("bid_price", DataType::FixedSizeBinary(16)),
-        ("ask_price", DataType::FixedSizeBinary(16)),
+        ("bid_price", DataType::FixedSizeBinary(PRECISION_BYTES)),
+        ("ask_price", DataType::FixedSizeBinary(PRECISION_BYTES)),
         ("bid_size", DataType::UInt64),
         ("ask_size", DataType::UInt64),
         ("bid_count", DataType::UInt32),
@@ -118,8 +119,14 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         let mut ask_count_builders = Vec::with_capacity(DEPTH10_LEN);
 
         for _ in 0..DEPTH10_LEN {
-            bid_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
-            ask_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
+            bid_price_builders.push(FixedSizeBinaryBuilder::with_capacity(
+                data.len(),
+                PRECISION_BYTES,
+            ));
+            ask_price_builders.push(FixedSizeBinaryBuilder::with_capacity(
+                data.len(),
+                PRECISION_BYTES,
+            ));
             bid_size_builders.push(UInt64Array::builder(data.len()));
             ask_size_builders.push(UInt64Array::builder(data.len()));
             bid_count_builders.push(UInt32Array::builder(data.len()));
@@ -232,14 +239,14 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 "bid_price",
                 i,
                 i,
-                DataType::FixedSizeBinary(16)
+                DataType::FixedSizeBinary(PRECISION_BYTES)
             ));
             ask_prices.push(extract_depth_column!(
                 FixedSizeBinaryArray,
                 "ask_price",
                 i,
                 DEPTH10_LEN + i,
-                DataType::FixedSizeBinary(16)
+                DataType::FixedSizeBinary(PRECISION_BYTES)
             ));
             bid_sizes.push(extract_depth_column!(
                 UInt64Array,
@@ -276,13 +283,13 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
             for i in 0..DEPTH10_LEN {
                 assert_eq!(
                     bid_prices[i].value_length(),
-                    16,
-                    "High precision uses 128 bit/16 byte value"
+                    PRECISION_BYTES,
+                    "Price precision uses {PRECISION_BYTES} byte value"
                 );
                 assert_eq!(
                     ask_prices[i].value_length(),
-                    16,
-                    "High precision uses 128 bit/16 byte value"
+                    PRECISION_BYTES,
+                    "Price precision uses {PRECISION_BYTES} byte value"
                 );
             }
         }
@@ -354,7 +361,10 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field};
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
+    #[cfg(feature = "high_precision")]
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
+    #[cfg(not(feature = "high_precision"))]
+    use nautilus_model::types::fixed::FIXED_SCALAR;
     use nautilus_model::{data::stubs::stub_depth10, types::price::PriceRaw};
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -460,7 +470,7 @@ mod tests {
             assert_eq!(bid_price.len(), 1);
             assert_eq!(
                 get_raw_price(bid_price.value(0)),
-                (expected_bid_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+                (expected_bid_prices[i] * FIXED_SCALAR) as PriceRaw
             );
             assert_eq!(
                 Price::from_raw(get_raw_price(bid_price.value(0)), price_precision).as_f64(),
@@ -486,7 +496,7 @@ mod tests {
             assert_eq!(ask_price.len(), 1);
             assert_eq!(
                 get_raw_price(ask_price.value(0)),
-                (expected_ask_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+                (expected_ask_prices[i] * FIXED_SCALAR) as PriceRaw
             );
             assert_eq!(
                 Price::from_raw(get_raw_price(ask_price.value(0)), price_precision).as_f64(),
