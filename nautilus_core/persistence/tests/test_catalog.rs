@@ -351,7 +351,7 @@ fn test_catalog_serialization_json_round_trip() {
     let quote_ticks: Vec<Data> = query_result.collect();
     let mut quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
-        // fix bid and ask size
+    // fix bid and ask size
     for data in quote_ticks.iter_mut() {
         data.bid_size = Quantity::new(data.bid_size.raw as f64, data.bid_size.precision);
         data.ask_size = Quantity::new(data.ask_size.raw as f64, data.ask_size.precision);
@@ -395,7 +395,6 @@ fn simple_test() {
         ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
     ]);
     let schema = QuoteTick::get_schema(Some(metadata.clone()));
-
 
     let temp_file_path = PathBuf::from("quotes_perf_data.parquet");
     let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
