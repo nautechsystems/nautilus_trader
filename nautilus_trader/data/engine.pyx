@@ -1385,7 +1385,7 @@ cdef class DataEngine(Component):
 
         cdef dict[str, object] metadata = request.data_type.metadata
         cdef dict[str, object] params = request.params
-        cdef str bars_market_data_type = params.get("bars_market_data_type", "")
+        cdef str bars_market_data_type = metadata.get("bars_market_data_type", "")
 
         cdef datetime now = self._clock.utc_now()
         cdef datetime start = time_object_to_dt(metadata.get("start"))  # Can be None
@@ -1667,7 +1667,7 @@ cdef class DataEngine(Component):
             )
             ts_end = ts_now
 
-        bars_market_data_type = request.params.get("bars_market_data_type", "")
+        bars_market_data_type = request.data_type.metadata.get("bars_market_data_type", "")
         data = []
 
         if request.data_type.type == Instrument:
@@ -1987,7 +1987,7 @@ cdef class DataEngine(Component):
         elif response.data_type.type == TradeTick:
             self._handle_trade_ticks(response.data)
         elif response.data_type.type == Bar:
-            if response.params.get("bars_market_data_type"):
+            if response.data_type.metadata.get("bars_market_data_type"):
                 response.data = self._handle_aggregated_bars(response.data, response.data_type.metadata, response.params)
             else:
                 self._handle_bars(response.data, response.params.get("partial"))
