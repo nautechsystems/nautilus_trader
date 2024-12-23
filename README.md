@@ -181,6 +181,53 @@ To install the latest binary wheel (or sdist package) from PyPI using Pythons pi
 
     pip install -U nautilus_trader
 
+### From the Nautech Systems package index
+
+The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+This enables users to install either the latest stable release or pre-release versions for testing.
+
+#### Stable wheels
+
+Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
+
+To install the latest stable release:
+
+    pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+
+#### Development wheels
+
+Development wheels are published daily from both the `develop` and `nightly` branches, providing early
+access to features and fixes not yet included in a stable release. These wheels follow [PEP-440](https://peps.python.org/pep-0440/) versioning standards.
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0.a20241212`).
+
+| :warning: WARNING |
+| :---------------- |
+**We don't recommend using development wheels in production environments, such as live trading controlling real capital.**
+
+#### Installation commands
+
+By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+
+To install the latest available pre-release (including development wheels):
+
+    pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+
+To install a specific development wheel (e.g., `1.208.0.dev20241212` for December 12, 2024):
+
+    pip install nautilus_trader==1.208.0.dev20241212 --index-url=https://packages.nautechsystems.io/simple
+
+#### Branch updates
+
+- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
+- `nightly` branch wheels (`.a`): Are built and published daily from the nightly branch, which incorporates updates from the develop branch at **14:00 UTC**.
+
+#### Retention policies
+
+- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
+- `nightly` branch wheels (`.a`): Only the 3 most recent wheel builds are retained.
+
 ### From Source
 
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
@@ -240,55 +287,6 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
        poetry install --only main --all-extras
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
-
-### Installing from the Nautech Systems package index
-
-The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
-This enables users to install either the latest stable release or pre-release versions for local work and testing.
-
-#### Stable wheels
-
-Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
-
-To install the latest stable release:
-
-    pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
-
-#### Development wheels
-
-Development wheels are published daily from both the `develop` and `nightly` branches, providing early
-access to features and fixes not yet included in a stable release. These wheels follow [PEP-440](https://peps.python.org/pep-0440/) versioning standards.
-
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0.a20241212`).
-
-| :warning: WARNING |
-| :---------------- |
-**We don't recommend using development wheels in production environments, such as live trading controlling real capital.**
-
-#### Installation commands
-
-By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
-
-To install the latest available pre-release (including development wheels):
-
-    pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
-
-To install a specific development wheel (e.g., `1.208.0.dev20241212` for December 12, 2024):
-
-    pip install nautilus_trader==1.208.0.dev20241212 --index-url=https://packages.nautechsystems.io/simple
-
-#### Retention policies
-
-- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`.a`): Only the 3 most recent wheel builds are retained.
-
-#### Branch updates
-
-- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`.a`): Are built and published daily from the nightly branch, which incorporates updates from the develop branch at **14:00 UTC**.
-
-By using the Nautech Systems package index, you can access stable releases or test cutting-edge features in development wheels.
 
 ## Redis
 
