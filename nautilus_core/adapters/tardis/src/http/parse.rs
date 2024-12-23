@@ -54,12 +54,12 @@ fn parse_spot_instrument(
     normalize_symbols: bool,
 ) -> InstrumentAny {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
     } else {
-        parse_instrument_id(&info.exchange, &info.id)
+        parse_instrument_id(&info.exchange, info.id)
     };
 
-    let raw_symbol = Symbol::new(&info.id);
+    let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
     let margin_init = dec!(0); // TBD
@@ -102,12 +102,12 @@ fn parse_perp_instrument(
     normalize_symbols: bool,
 ) -> InstrumentAny {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
     } else {
-        parse_instrument_id(&info.exchange, &info.id)
+        parse_instrument_id(&info.exchange, info.id)
     };
 
-    let raw_symbol = Symbol::new(&info.id);
+    let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
     let margin_init = dec!(0); // TBD
@@ -158,12 +158,12 @@ fn parse_future_instrument(
     normalize_symbols: bool,
 ) -> InstrumentAny {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
     } else {
-        parse_instrument_id(&info.exchange, &info.id)
+        parse_instrument_id(&info.exchange, info.id)
     };
 
-    let raw_symbol = Symbol::new(&info.id);
+    let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
     let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
@@ -213,12 +213,12 @@ fn parse_option_instrument(
     normalize_symbols: bool,
 ) -> InstrumentAny {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
     } else {
-        parse_instrument_id(&info.exchange, &info.id)
+        parse_instrument_id(&info.exchange, info.id)
     };
 
-    let raw_symbol = Symbol::new(&info.id);
+    let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
     let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
