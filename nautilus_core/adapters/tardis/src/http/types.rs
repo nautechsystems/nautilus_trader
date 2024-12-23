@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{
     enums::{Exchange, InstrumentType, OptionType},
@@ -62,13 +63,13 @@ pub struct InstrumentChanges {
 pub struct InstrumentInfo {
     /// The instrument symbol.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub id: String,
+    pub id: Ustr,
     /// The instrument exchange.
     pub exchange: Exchange,
     /// The instrument base currency (normalized, e.g., BTC for `BitMEX`, not XBT).
-    pub base_currency: String,
+    pub base_currency: Ustr,
     /// The instrument quote currency (normalized, e.g., BTC for `BitMEX`, not XBT).
-    pub quote_currency: String,
+    pub quote_currency: Ustr,
     /// The instrument type e.g., spot, perpetual, future, option.
     #[serde(rename = "type")]
     pub instrument_type: InstrumentType,
@@ -97,7 +98,7 @@ pub struct InstrumentInfo {
     /// If the instrument is quanto (only for quanto instruments).
     pub quanto: Option<bool>,
     /// The instrument settlement currency (only for Quanto instruments where settlement currency is different both base and quote currency).
-    pub settlement_currency: Option<String>,
+    pub settlement_currency: Option<Ustr>,
     /// The instrument strike price (only for options).
     pub strike_price: Option<f64>,
     /// The option type (only for options).

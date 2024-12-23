@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{enums::Exchange, parse::deserialize_uppercase};
 
@@ -24,7 +25,7 @@ pub struct TardisBookUpdateRecord {
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
@@ -46,7 +47,7 @@ pub struct TardisOrderBookSnapshot5Record {
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
@@ -100,7 +101,7 @@ pub struct TardisOrderBookSnapshot25Record {
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
@@ -239,7 +240,7 @@ pub struct TardisQuoteRecord {
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
@@ -261,7 +262,7 @@ pub struct TardisTradeRecord {
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
