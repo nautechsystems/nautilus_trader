@@ -14,6 +14,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Optimized `nanos_since_unix_epoch()` to use syscall with `CLOCK_REALTIME_COURSE`, achieving a ~4-5x performance improvement (added benches)
 - Optimized `UUID4::new()` avoiding unnecessary string allocation, achieving a ~2.8x performance improvement (added benches)
+- Upgraded v4-proto for dYdX (#2136), thanks @davidsblom
 - Upgraded `databento` crate to v0.17.0
 
 ### Breaking Changes
@@ -23,6 +24,7 @@ Released on TBD (UTC).
 - Fixed multi-threaded monotonicity for `AtomicTime` in real-time mode
 - Fixed timeout error code for Bybit (#2130), thanks @sunlei
 - Fixed instruments info retrieval for Bybit (#2134), thanks @sunlei
+- Fixed `request_aggregated_bars` metadata handling (#2137), thanks @faysou
 
 ---
 
