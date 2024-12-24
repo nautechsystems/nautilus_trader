@@ -748,7 +748,7 @@ jobs:
             echo "No existing index.html found, creating a new one..."
             echo '<!DOCTYPE html>' > "${index_file}"
             echo '<html><head><title>NautilusTrader Packages</title></head>' >> "${index_file}"
-            echo '<body><h1>Links for nautilus-trader</h1></body></html>' >> "${index_file}"
+            echo '<body><h1>Packages for nautilus_trader</h1></body></html>' >> "${index_file}"
             echo "No existing index.html found, creating a new one..."
           fi
 
@@ -782,7 +782,7 @@ jobs:
           temp_html=$(mktemp)
           echo '<!DOCTYPE html>' > "$temp_html"
           echo '<html><head><title>NautilusTrader Packages</title></head>' >> "$temp_html"
-          echo '<body><h1>Links for nautilus-trader</h1>' >> "$temp_html"
+          echo '<body><h1>Packages for nautilus_trader</h1>' >> "$temp_html"
 
           # Add files to the index
           for file in $all_files; do
