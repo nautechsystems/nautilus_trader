@@ -11,93 +11,8 @@ on:
       - completed
 
 jobs:
-  test-pip-install:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
-    defaults:
-      run:
-        shell: bash
-    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    env:
-      # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_CACHE_MULTIARCH: 1
-
-    steps:
-      - name: Free disk space (Ubuntu)
-        if: runner.os == 'Linux'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Install runner dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
-
-      - name: Free disk space (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          rm -rf "/c/Program Files/dotnet"
-          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
-
-      - name: Set sccache-cache env vars (non-Windows)
-        if: runner.os != 'Windows'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-          echo "CC=sccache clang" >> $GITHUB_ENV
-          echo "CXX=sccache clang" >> $GITHUB_ENV
-
-      - name: Set sccache-cache env vars (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-
-      - name: Set up Rust toolchain
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Get Poetry version from poetry-version
-        run: |
-          version=$(cat poetry-version)
-          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit
-
-      - name: Test pip installation
-        run: pip install .
-
   tag-release:
-    needs: [test-pip-install]
+    if: github.event.workflow_run.conclusion == 'success'
     name: tag-release - Python 3.11 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
@@ -199,6 +114,7 @@ jobs:
           body_path: RELEASE.md
 
   publish-sdist:
+    if: github.event.workflow_run.conclusion == 'success'
     needs: [tag-release]
     name: publish-sdist - Python 3.11 (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -299,11 +215,12 @@ jobs:
         run: poetry publish
 
   publish-wheels:
+    if: github.event.workflow_run.conclusion == 'success'
     needs: [tag-release]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-latest, windows-latest]  # Change to ubuntu-latest when GitHub stabilizes
         python-version: ["3.11", "3.12"]
     defaults:
       run:

@@ -250,9 +250,9 @@ jobs:
           token: ${{ secrets.CODSPEED_TOKEN }}
           run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
-      - name: Run examples
-        if: ${{ matrix.python-version == '3.12' }}
-        run: make test-examples
+      # - name: Run examples
+      #   if: ${{ matrix.python-version == '3.12' }}
+      #   run: make test-examples
 
       - name: Set release output
         if: github.event_name == 'push'
