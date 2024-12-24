@@ -8,7 +8,7 @@ on:
 
 jobs:
   pre-commit:
-    if: $github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/develop'
     strategy:
       fail-fast: false
       matrix:
