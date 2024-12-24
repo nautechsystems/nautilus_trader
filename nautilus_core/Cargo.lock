@@ -3007,7 +3007,6 @@ dependencies = [
  "heck 0.5.0",
  "iai",
  "indexmap",
- "libc",
  "pyo3",
  "rand",
  "rmp-serde",
