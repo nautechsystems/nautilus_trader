@@ -4,9 +4,9 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
-- Added optional `depth` param for some `OrderBook` methods
-- Added margin and commission docs (#2128), thanks @stefansimik
 - Added `BybitOrderBookDeltaDataLoader` with tutorial for Bybit backtesting (#2131), thanks @DeevsDeevs
+- Added margin and commission docs (#2128), thanks @stefansimik
+- Added optional `depth` param for some `OrderBook` methods
 - Added trade execution support where trades are processed by the matching engine (can be useful backtesting with throttled book and trades data)
 - Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124, #2126), thanks @faysou
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
