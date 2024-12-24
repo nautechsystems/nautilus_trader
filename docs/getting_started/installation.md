@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is tested and officially supported for Python 3.11 and 3.12 for the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.11 and 3.12 for the following 64-bit platforms:
 
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
@@ -51,7 +51,7 @@ To install the latest stable release:
 
 ### Development wheels
 
-Development wheels are published from both the `develop` and `nightly` branches, allowing users to test features and fixes ahead of stable releases.
+Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS, allowing users to test features and fixes ahead of stable releases.
 This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
@@ -70,9 +70,9 @@ To install the latest available pre-release (including development wheels):
 
     pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 
-To install a specific development wheel (e.g., `1.208.0.dev20241212` for December 12, 2024):
+To install a specific development wheel (e.g., `1.208.0.a20241212` for December 12, 2024):
 
-    pip install nautilus_trader==1.208.0.dev20241212 --index-url=https://packages.nautechsystems.io/simple
+    pip install nautilus_trader==1.208.0.a20241212 --index-url=https://packages.nautechsystems.io/simple
 
 ### Available versions
 
