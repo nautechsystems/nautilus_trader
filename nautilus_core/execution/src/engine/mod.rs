@@ -30,6 +30,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
+    time::SystemTime,
 };
 
 use config::ExecutionEngineConfig;
@@ -37,7 +38,7 @@ use nautilus_common::{
     cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
 use nautilus_model::{
-    enums::{OmsType, OrderSide},
+    enums::{OmsType, OrderSide, PositionSide},
     events::{OrderEvent, OrderEventAny, OrderFilled},
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
@@ -45,6 +46,7 @@ use nautilus_model::{
     position::Position,
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use crate::{
     client::ExecutionClient,
@@ -172,16 +174,35 @@ impl ExecutionEngine {
 
     // -- COMMANDS ------------------------------------------------------------
 
-    pub fn load_cache(&self) {
-        todo!();
+    pub fn load_cache(&mut self) {
+        let ts = SystemTime::now();
+
+        self.cache.borrow_mut().cache_general().unwrap();
+        self.cache.borrow_mut().cache_currencies().unwrap();
+        self.cache.borrow_mut().cache_instruments().unwrap();
+        self.cache.borrow_mut().cache_accounts().unwrap();
+        self.cache.borrow_mut().cache_orders().unwrap();
+        // self.cache.borrow_mut().cache_order_lists().unwrap();
+        self.cache.borrow_mut().cache_positions().unwrap();
+
+        self.cache.borrow_mut().build_index();
+        let _ = self.cache.borrow_mut().check_integrity();
+        self.set_position_id_counts();
+
+        log::info!(
+            "Loaded cache in {}ms",
+            (SystemTime::now().duration_since(ts).unwrap().as_millis())
+        );
+        todo!("Improve error handling");
     }
 
     pub fn flush_db(&self) {
-        todo!();
+        self.cache.borrow_mut().flush_db();
     }
 
     pub fn process(&self, event: &OrderEventAny) {
-        todo!()
+        self.handle_event(event.clone());
+        todo!("check clone");
     }
 
     // -- COMMAND HANDLERS ----------------------------------------------------
@@ -290,11 +311,13 @@ impl ExecutionEngine {
     }
 
     fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
-        todo!();
+        client.modify_order(command).unwrap();
+        todo!("ERROR");
     }
 
     fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
-        todo!();
+        client.cancel_order(command).unwrap();
+        todo!("ERROR");
     }
 
     pub const fn handle_cancel_all_orders(
@@ -305,12 +328,15 @@ impl ExecutionEngine {
         // TODO
         // client.cancel_all_orders(command);
     }
+
     fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
-        todo!();
+        client.batch_cancel_orders(command).unwrap();
+        todo!("ERROR");
     }
 
     fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
-        todo!();
+        client.query_order(command).unwrap();
+        todo!("ERROR");
     }
 
     fn create_order_state_snapshot(&self, order: &OrderAny) {
@@ -324,7 +350,68 @@ impl ExecutionEngine {
     // -- EVENT HANDLERS ----------------------------------------------------
 
     fn handle_event(&self, event: OrderEventAny) {
-        todo!()
+        let client_order_id = event.client_order_id();
+        let borrowed_cache = self.cache.borrow();
+
+        let order = match borrowed_cache.order(&client_order_id) {
+            Some(order) => order,
+            None => {
+                log::warn!(
+                    "Order with {} not found in the cache to apply {}",
+                    event.client_order_id(),
+                    event
+                );
+
+                let venue_order_id = match event.venue_order_id() {
+                    Some(venue_order_id) => venue_order_id,
+                    None => {
+                        log::error!("Cannot apply event to any order: {} not found in the cache with no `VenueOrderId`", event.client_order_id());
+                        return;
+                    }
+                };
+
+                let client_order_id = match borrowed_cache.client_order_id(&venue_order_id) {
+                    Some(client_order_id) => client_order_id,
+                    None => {
+                        log::error!(
+                            "Cannot apply event to any order: {} and {} not found in the cache",
+                            event.client_order_id(),
+                            venue_order_id
+                        );
+                        return;
+                    }
+                };
+
+                let order = match borrowed_cache.order(client_order_id) {
+                    Some(order) => order,
+                    None => {
+                        log::error!(
+                            "Cannot apply event to any order: {} and {} not found in cache",
+                            client_order_id,
+                            venue_order_id
+                        );
+                        return;
+                    }
+                };
+
+                // event.client_order_id() = client_order_id;
+                log::info!("Order with {} was found in the cache", client_order_id);
+                order
+            }
+        };
+
+        // TODO: fix later
+
+        // let oms_type: OmsType;
+        // match event {
+        //     OrderEventAny::Filled(order_filled) => {
+        //         oms_type = self.determine_oms_type(&order_filled);
+        //         self.determine_position_id(order_filled, oms_type);
+        //         self.apply_event_to_order(order, order_filled);
+        //         self.handle_order_fill(order, order_filled, oms_type);
+        //     }
+        //     _ => self.apply_event_to_order(order, event),
+        // }
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
@@ -414,6 +501,45 @@ impl ExecutionEngine {
     }
 
     fn handle_order_fill(&self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
+        let borrowed_cache = self.cache.borrow();
+        let instrument = match borrowed_cache.instrument(&fill.instrument_id) {
+            Some(instrument) => instrument,
+            None => {
+                log::error!(
+                    "Cannot handle order fill: no instrument found for {}, {}",
+                    fill.instrument_id,
+                    fill
+                );
+                return;
+            }
+        };
+
+        let account = match borrowed_cache.account(&fill.account_id) {
+            Some(account_id) => account_id,
+            None => {
+                log::error!(
+                    "Cannot handle order fill: no account found for {}, {}",
+                    fill.instrument_id.venue,
+                    fill
+                );
+                return;
+            }
+        };
+
+        // let position = borrowed_cache.position(fill.position_id);
+        // match position {
+        //     Some(mut position) if !position.is_closed() => {
+        //         if self.will_flip_position(&position, fill) {
+        //             self.flip_position(instrument.clone(), &mut position, fill, oms_type);
+        //         } else {
+        //             self.update_position(instrument.clone(), &mut position, fill, oms_type);
+        //         }
+        //     }
+        //     _ => {
+        //         self.open_position(instrument.clone(), position, fill, oms_type);
+        //     }
+        // }
+
         todo!();
     }
 
@@ -438,8 +564,8 @@ impl ExecutionEngine {
         position.apply(&fill);
     }
 
-    fn will_flip_position(&self, position: &Position, fill: OrderFilled) {
-        todo!();
+    fn will_flip_position(&self, position: &Position, fill: OrderFilled) -> bool {
+        position.is_opposite_side(fill.order_side) && (fill.last_qty.raw > position.quantity.raw)
     }
 
     fn flip_position(
@@ -449,20 +575,64 @@ impl ExecutionEngine {
         fill: OrderFilled,
         oms_type: OmsType,
     ) {
-        todo!();
+        let difference = match position.side {
+            PositionSide::Long => fill.last_qty - position.quantity,
+            PositionSide::Short => Quantity::from_raw(
+                position.quantity.raw - fill.last_qty.raw,
+                position.size_precision,
+            ),
+            _ => fill.last_qty,
+        };
+
+        // Split commission between two positions
+        let fill_precent: Decimal = position.quantity.as_decimal() / fill.last_qty.as_decimal();
+        // Fix unwrap
+        // let commission1 = Money::new(fill.commission * fill_precent, fill.commission.unwrap().currency);
+        // todo!();
     }
 
     fn publish_order_snapshot(&self, order: &OrderAny) {
+        if self.config.debug {
+            log::debug!("Creating order state snapshot for {}", order);
+        }
+
+        // if self.cache.borrow().has_backing
+
+        // if self.msgbus.borrow().has_backing && self.msgbus.borrow().serializer
         todo!();
     }
 
     fn publish_position_snapshot(&self, position: &Position) {
+        if self.config.debug {
+            log::debug!("Creating position state snapshot for {}", position);
+        }
+
+        // let unrealized_pnl = self.cache.borrow().pnl
+
         todo!();
     }
 
     // -- INTERNAL ------------------------------------------------------------
 
-    fn set_position_id_counts(&self) {
+    fn set_position_id_counts(&mut self) {
+        // For the internal position ID generator
+        let borrowed_cache = self.cache.borrow();
+        let positions = borrowed_cache.positions(None, None, None, None);
+
+        // Count positions per instrument_id using a HashMap
+        let mut counts: HashMap<StrategyId, usize> = HashMap::new();
+
+        for position in positions {
+            *counts.entry(position.strategy_id).or_insert(0) += 1;
+        }
+
+        self.pos_id_generator.reset();
+
+        for (strategy_id, count) in counts {
+            self.pos_id_generator.set_count(count, strategy_id);
+            log::info!("Set PositionId count for {} to {}", strategy_id, count);
+        }
+
         todo!();
     }
 

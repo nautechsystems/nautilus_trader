@@ -26,7 +26,7 @@ use crate::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
@@ -141,6 +141,29 @@ impl OrderEventAny {
             Self::Updated(event) => event.client_order_id,
             Self::PartiallyFilled(event) => event.client_order_id,
             Self::Filled(event) => event.client_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn venue_order_id(&self) -> Option<VenueOrderId> {
+        match self {
+            Self::Initialized(event) => event.venue_order_id(),
+            Self::Denied(event) => event.venue_order_id(),
+            Self::Emulated(event) => event.venue_order_id(),
+            Self::Released(event) => event.venue_order_id(),
+            Self::Submitted(event) => event.venue_order_id(),
+            Self::Accepted(event) => event.venue_order_id(),
+            Self::Rejected(event) => event.venue_order_id(),
+            Self::Canceled(event) => event.venue_order_id(),
+            Self::Expired(event) => event.venue_order_id(),
+            Self::Triggered(event) => event.venue_order_id(),
+            Self::PendingUpdate(event) => event.venue_order_id(),
+            Self::PendingCancel(event) => event.venue_order_id(),
+            Self::ModifyRejected(event) => event.venue_order_id(),
+            Self::CancelRejected(event) => event.venue_order_id(),
+            Self::Updated(event) => event.venue_order_id(),
+            Self::PartiallyFilled(event) => event.venue_order_id(),
+            Self::Filled(event) => event.venue_order_id(),
         }
     }
 
