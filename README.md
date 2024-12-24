@@ -166,10 +166,9 @@ This approach allows us to maintain a rapid development pace for now.
 NautilusTrader is still under active development. Some features may be incomplete, and while
 the API is becoming more stable, breaking changes can occur between releases.
 We strive to document these changes in the release notes on a **best-effort basis**.
+**Use NautilusTrader only if you are prepared to adapt to these changes.**
 
 We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
-
-Use NautilusTrader only if you are prepared to adapt to these changes.
 
 ## Installation
 
