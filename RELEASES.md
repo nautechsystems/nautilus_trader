@@ -12,7 +12,6 @@ Released on TBD (UTC).
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
-- Optimized `nanos_since_unix_epoch()` to use syscall with `CLOCK_REALTIME_COURSE`, achieving a ~4-5x performance improvement (added benches)
 - Optimized `UUID4::new()` avoiding unnecessary string allocation, achieving a ~2.8x performance improvement (added benches)
 - Upgraded v4-proto for dYdX (#2136), thanks @davidsblom
 - Upgraded `databento` crate to v0.17.0
