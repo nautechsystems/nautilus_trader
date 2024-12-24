@@ -166,7 +166,6 @@ This approach allows us to maintain a rapid development pace for now.
 NautilusTrader is still under active development. Some features may be incomplete, and while
 the API is becoming more stable, breaking changes can occur between releases.
 We strive to document these changes in the release notes on a **best-effort basis**.
-**Use NautilusTrader only if you are prepared to adapt to these changes.**
 
 We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
 
@@ -195,7 +194,7 @@ To install the latest stable release:
 
 #### Development wheels
 
-Development wheels are published from both the `develop` and `nightly` branches, allowing users to test features and fixes ahead of stable releases.
+Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS, allowing users to test features and fixes ahead of stable releases.
 This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
@@ -214,9 +213,9 @@ To install the latest available pre-release (including development wheels):
 
     pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 
-To install a specific development wheel (e.g., `1.208.0.dev20241212` for December 12, 2024):
+To install a specific development wheel (e.g., `1.208.0.a20241212` for December 12, 2024):
 
-    pip install nautilus_trader==1.208.0.dev20241212 --index-url=https://packages.nautechsystems.io/simple
+    pip install nautilus_trader==1.208.0.a20241212 --index-url=https://packages.nautechsystems.io/simple
 
 #### Available versions
 
