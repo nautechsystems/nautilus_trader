@@ -196,8 +196,9 @@ To install the latest stable release:
 
 #### Development wheels
 
-Development wheels are published daily from both the `develop` and `nightly` branches, providing early
-access to features and fixes not yet included in a stable release. These wheels follow [PEP-440](https://peps.python.org/pep-0440/) versioning standards.
+Development wheels are published from both the `develop` and `nightly` branches, allowing users to test features and fixes ahead of stable releases.
+This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
 - `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
 - `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0.a20241212`).
@@ -218,10 +219,18 @@ To install a specific development wheel (e.g., `1.208.0.dev20241212` for Decembe
 
     pip install nautilus_trader==1.208.0.dev20241212 --index-url=https://packages.nautechsystems.io/simple
 
+#### Available versions
+
+You can view all available versions of `nautilus_trader` on the [package index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html).
+
+To programmatically fetch and list available versions:
+
+    curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+
 #### Branch updates
 
 - `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`.a`): Are built and published daily from the nightly branch, which incorporates updates from the develop branch at **14:00 UTC**.
+- `nightly` branch wheels (`.a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
