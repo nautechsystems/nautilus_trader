@@ -2,24 +2,79 @@ name: build
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master, nightly, develop]
   pull_request:
     branches: [develop]
 
 jobs:
+  pre-commit:
+    if: $github.ref == 'refs/heads/develop'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12"]
+    name: pre-commit - python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        run: |
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Get Python version
+        run: |
+          version=$(bash scripts/python-version.sh)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+
+      - name: Get Poetry version from poetry-version
+        run: |
+          version=$(cat poetry-version)
+          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit
+
+      - name: Cached pre-commit
+        id: cached-pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit
+        run: |
+          # pre-commit run --hook-stage manual gitlint-ci
+          pre-commit run --all-files
+
   build-linux:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-22.04, ubuntu-24.04]  # Change to ubuntu-latest when GitHub stabilizes
         python-version: ["3.11", "3.12"]
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [pre-commit]
     env:
-      BUILD_MODE: debug
+      BUILD_MODE: release
       RUST_BACKTRACE: 1
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
@@ -49,16 +104,16 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+      # - name: Free disk space  # Continue to monitor
+      #   uses: jlumbroso/free-disk-space@main
+      #   with:
+      #     tool-cache: true
+      #     android: false
+      #     dotnet: false
+      #     haskell: false
+      #     large-packages: true
+      #     docker-images: true
+      #     swap-storage: true
 
       - name: Install runner dependencies
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
@@ -94,21 +149,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit
-
-      # ta-lib Python install currently broken
-      # https://github.com/TA-Lib/ta-lib-python/issues/655
-      # - name: Install TA-Lib (Linux)
-      #   run: |
-      #     make install-talib
-      #     poetry run pip install setuptools numpy==1.26.4 ta-lib
-
-      - name: Cached pre-commit
-        id: cached-pre-commit
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit
 
       - name: Cached cargo
         id: cached-cargo
@@ -123,15 +164,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Set poetry cache-dir
-        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Cached poetry
-        id: cached-poetry
+      - name: Cache Python site-packages
+        id: cached-site-packages
         uses: actions/cache@v4
         with:
-          path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          path: ~/.local/lib/python${{ matrix.python-version }}/site-packages
+          key: ${{ runner.os }}-${{ matrix.python-version }}-site-packages
+          restore-keys: |
+            ${{ runner.os }}-site-packages-
 
       - name: Cached test data
         id: cached-testdata-large
@@ -140,11 +180,6 @@ jobs:
           path: tests/test_data/large
           key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
           restore-keys: ${{ runner.os }}-large-files-
-
-      - name: Run pre-commit
-        run: |
-          # pre-commit run --hook-stage manual gitlint-ci
-          pre-commit run --all-files
 
       - name: Install Nautilus CLI and run init postgres
         run: |
@@ -157,29 +192,82 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Run nautilus_core cargo tests (Linux)
-        run: |
-          if ! command -v cargo-nextest &> /dev/null
-          then
-              echo "cargo-nextest not found, installing..."
-              cargo install cargo-nextest
-          else
-              echo "cargo-nextest is already installed"
-          fi
-          make cargo-test
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
 
-      - name: Run tests (Linux)
+      - name: Run nautilus_core tests
+        run: make cargo-test
+
+      - name: Update version in pyproject.toml
         run: |
-          make pytest
-          make test-examples
+          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+          branch_name="${GITHUB_REF_NAME}"  # Get the branch name
+
+          if [[ "$branch_name" == "nightly" ]]; then
+            # Nightly branch: use alpha versioning
+            suffix=".a$(date +%Y%m%d)"
+            new_version="${current_version%-*}${suffix}"
+          else
+            # Develop branch: use dev versioning with build number
+            suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
+            new_version="${current_version%-*}${suffix}"
+          fi
+
+          if [[ "$current_version" != *"$suffix"* ]]; then
+            if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
+              echo "Version updated to ${new_version}"
+            else
+              echo "Error: Failed to update version in pyproject.toml" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Generate updated lock file
+        run: poetry lock --no-update
+
+      - name: Build Python wheel
+        run: |
+          poetry build --format wheel
+          ls -lh dist/
+
+      - name: Install Python wheel
+        run: |
+          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+          python -m pip install -r requirements-test.txt
+          pip install "$(ls dist/*.whl)"
+
+      - name: Run tests
+        run: |
+          pytest --ignore=tests/performance_tests --new-first --failed-first
 
       # Run codspeed for latest python-version only
-      - name: Run benchmarks (Linux)
+      - name: Run benchmarks
         if: ${{ matrix.python-version == '3.12' }}
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: make test-performance
+          run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
+
+      - name: Run examples
+        if: ${{ matrix.python-version == '3.12' }}
+        run: make test-examples
+
+      - name: Set release output
+        if: github.event_name == 'push'
+        id: vars
+        run: |
+          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+          cd dist
+          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+
+      - name: Upload wheel artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATH }}
 
   build-macos:
     strategy:
@@ -192,8 +280,9 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [pre-commit]
     env:
-      BUILD_MODE: debug
+      BUILD_MODE: release
       RUST_BACKTRACE: 1
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
@@ -209,11 +298,11 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Free disk space (macOS)
-        run: |
-          sudo rm -rf ~/Library/Caches/*
-          sudo rm -rf ~/Library/Developer/Xcode/DerivedData/*
-          sudo rm -rf /Library/Developer/CommandLineTools
+      # - name: Free disk space  # Continue to monitor
+      #   run: |
+      #     sudo rm -rf ~/Library/Caches/*
+      #     sudo rm -rf ~/Library/Developer/Xcode/DerivedData/*
+      #     sudo rm -rf /Library/Developer/CommandLineTools
 
       - name: Set up Rust toolchain
         run: |
@@ -240,14 +329,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit
-
-      - name: Cached pre-commit
-        id: cached-pre-commit
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit
 
       - name: Cached cargo
         id: cached-cargo
@@ -280,26 +362,70 @@ jobs:
           key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
           restore-keys: ${{ runner.os }}-large-files-
 
-      - name: Run pre-commit
-        run: |
-          # pre-commit run --hook-stage manual gitlint-ci
-          pre-commit run --all-files
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
 
-      - name: Run nautilus_core cargo tests (macOS)
+      - name: Run nautilus_core tests
+        run: make cargo-test
+
+      - name: Update version in pyproject.toml
         run: |
-          if ! command -v cargo-nextest &> /dev/null
-          then
-              echo "cargo-nextest not found, installing..."
-              cargo install cargo-nextest
+          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+          branch_name="${GITHUB_REF_NAME}"  # Get the branch name
+
+          if [[ "$branch_name" == "nightly" ]]; then
+            # Nightly branch: use alpha versioning
+            suffix=".a$(date +%Y%m%d)"
+            new_version="${current_version%-*}${suffix}"
           else
-              echo "cargo-nextest is already installed"
+            # Develop branch: use dev versioning with build number
+            suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
+            new_version="${current_version%-*}${suffix}"
           fi
-          make cargo-test
 
-      - name: Run tests (macOS)
+          if [[ "$current_version" != *"$suffix"* ]]; then
+            if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
+              echo "Version updated to ${new_version}"
+            else
+              echo "Error: Failed to update version in pyproject.toml" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Generate updated lock file
+        run: poetry lock --no-update
+
+      - name: Build Python wheel
         run: |
-          make pytest
-          make test-examples
+          poetry build --format wheel
+          ls -lh dist/
+
+      - name: Install Python wheel
+        run: |
+          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+          python -m pip install -r requirements-test.txt
+          pip install "$(ls dist/*.whl)"
+
+      - name: Run tests
+        run: |
+          pytest --ignore=tests/performance_tests --new-first --failed-first
+
+      - name: Set release output
+        if: github.event_name == 'push'
+        id: vars
+        run: |
+          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+          cd dist
+          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+
+      - name: Upload wheel artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATH }}
 
   build-windows:
     strategy:
@@ -312,8 +438,9 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [pre-commit]
     env:
-      BUILD_MODE: debug
+      BUILD_MODE: debug  # Not building wheels, so debug is fine
       RUST_BACKTRACE: 1
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
@@ -326,16 +453,16 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Set sccache-cache env vars (Windows)
+      - name: Set sccache-cache env vars
         run: |
           echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
 
-      - name: Free disk space (Windows)
-        run: |
-          rm -rf "/c/Program Files/dotnet"
-          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+      # - name: Free disk space  # Continue to monitor
+      #   run: |
+      #     rm -rf "/c/Program Files/dotnet"
+      #     rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
 
       - name: Set up Rust toolchain
         run: |
@@ -396,9 +523,382 @@ jobs:
           restore-keys: ${{ runner.os }}-large-files-
 
       # Run tests without parallel build (avoids linker errors)
-      - name: Run tests (Windows)
+      - name: Run tests
         run: |
           poetry install --with test --all-extras
           poetry run pytest --ignore=tests/performance_tests --new-first --failed-first
         env:
           PARALLEL_BUILD: false
+
+  publish-wheels:
+    name: publish-packages
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/nightly' || github.ref == 'refs/heads/master')
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      CLOUDFLARE_R2_REGION: "auto"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download built wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: '*.whl'
+
+      - name: Configure AWS CLI for Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Configuring AWS CLI for Cloudflare R2..."
+
+          mkdir -p ~/.aws
+          echo "[default]" > ~/.aws/credentials
+          echo "aws_access_key_id=${{ env.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+          echo "aws_secret_access_key=${{ env.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+          echo "[default]" > ~/.aws/config
+          echo "region=${{ env.CLOUDFLARE_R2_REGION }}" >> ~/.aws/config
+          echo "output=json" >> ~/.aws/config
+          echo "AWS CLI configuration completed"
+
+      - name: Upload new wheels to Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Uploading new wheels to Cloudflare R2..."
+
+          echo "Initial dist/ contents:"
+          ls -la dist/
+          find dist/ -type f -name "*.whl" -ls
+
+          # Create clean directory for real files
+          mkdir -p dist/all
+
+          # Copy all files into dist/all/ to resolve symlinks
+          find dist/ -type f -name "*.whl" -exec cp -L {} dist/all/ \;
+
+          # First check for any wheels
+          if ! find dist/all/ -type f -name "*.whl" >/dev/null 2>&1; then
+            echo "No wheels found in dist/all/, exiting"
+            exit 1
+          fi
+
+          echo "Contents of dist/all/:"
+          ls -la dist/all/
+
+          wheel_count=0
+          for file in dist/all/*.whl; do
+            echo "File details for $file:"
+            ls -l "$file"
+            file "$file"
+
+            if [ ! -f "$file" ]; then
+              echo "Warning: '$file' is not a regular file, skipping"
+              continue
+            fi
+
+            wheel_count=$((wheel_count + 1))
+            echo "Found wheel: $file"
+            echo "sha256:$(sha256sum "$file" | awk '{print $1}')"
+
+            echo "Uploading $file..."
+            for i in {1..3}; do
+              if aws s3 cp "$file" "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/" \
+                --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }} \
+                --content-type "application/zip"; then
+                echo "Successfully uploaded $file"
+                break
+              else
+                echo "Upload failed for $file, retrying ($i/3)..."
+                sleep 5
+              fi
+
+              if [ $i -eq 3 ]; then
+                echo "Failed to upload $file after 3 attempts"
+              fi
+            done
+          done
+
+          if [ "$wheel_count" -eq 0 ]; then
+            echo "No wheel files found in dist directory"
+            exit 1
+          fi
+
+          echo "Successfully uploaded $wheel_count wheel files"
+
+      - name: Remove old wheels from Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Cleaning up old wheels in Cloudflare R2..."
+
+          branch_name="${GITHUB_REF_NAME}"  # Get the current branch
+          files=$(aws s3 ls "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }} | awk '{print $4}')
+          if [ -z "$files" ]; then
+            echo "No files found for cleanup"
+            exit 0
+          fi
+
+          echo "Current wheels:"
+          echo "$files"
+          echo "---"
+
+          # Skip index.html
+          files=$(echo "$files" | grep -v "^index\.html$")
+
+          # Clean up dev wheels on the develop branch
+          if [[ "$branch_name" == "develop" ]]; then
+            echo "Cleaning up .dev wheels for the develop branch..."
+            echo "All files before filtering:"
+            echo "$files"
+
+            # First find unique platform suffixes
+            platform_tags=$(echo "$files" | grep "\.dev" | sed -E 's/.*-(cp[^.]+).whl$/\1/' | sort -u)
+            echo "Found platform tags:"
+            echo "$platform_tags"
+
+            for platform_tag in $platform_tags; do
+              echo "Processing platform: $platform_tag"
+
+              # Get all dev wheels for this platform
+              matching_files=$(echo "$files" | grep "\.dev.*-${platform_tag}\.whl$" | sort -t'+' -k2 -V)
+
+              echo "Matching files:"
+              echo "$matching_files"
+
+              # Keep only the latest version
+              latest=$(echo "$matching_files" | tail -n 1)
+              echo "Latest version to keep: $latest"
+
+              # Delete all but the latest
+              for file in $matching_files; do
+                if [[ "$file" != "$latest" ]]; then
+                  echo "Deleting old .dev wheel: $file"
+                  if ! aws s3 rm "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/$file" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+                    echo "Warning: Failed to delete $file, skipping..."
+                  fi
+                else
+                  echo "Keeping wheel: $file"
+                fi
+              done
+            done
+            echo "Finished cleaning up .dev wheels"
+          fi
+
+          # Clean up alpha (.a) wheels on the nightly branch
+          if [[ "$branch_name" == "nightly" ]]; then
+            echo "Cleaning up .a wheels for the nightly branch..."
+            echo "All files before filtering:"
+            echo "$files"
+
+            # First find unique platform suffixes
+            platform_tags=$(echo "$files" | grep "\.a" | sed -E 's/.*-(cp[^.]+).whl$/\1/' | sort -u)
+            echo "Found platform tags:"
+            echo "$platform_tags"
+
+            for platform_tag in $platform_tags; do
+              echo "Processing platform: $platform_tag"
+
+              # Get all alpha wheels for this platform
+              matching_files=$(echo "$files" | grep "\.a.*-${platform_tag}\.whl$" | sort -t'a' -k2 -V)
+
+              echo "Matching files:"
+              echo "$matching_files"
+
+              # Extract unique versions (dates) from matching files
+              versions=$(echo "$matching_files" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+\.a([0-9]{8})-.+\.whl$/\1/" | sort -n)
+              echo "Unique versions (dates) for platform: $versions"
+
+              # Retain only the last 3 versions
+              versions_to_keep=$(echo "$versions" | tail -n 3)
+              echo "Versions to keep: $versions_to_keep"
+
+              # Delete files not in the last 3 versions
+              for file in $matching_files; do
+                file_version=$(echo "$file" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+\.a([0-9]{8})-.+\.whl$/\1/")
+                if echo "$versions_to_keep" | grep -qx "$file_version"; then
+                  echo "Keeping wheel: $file"
+                else
+                  echo "Deleting old .a wheel: $file"
+                  if ! aws s3 rm "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/$file" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+                    echo "Warning: Failed to delete $file, skipping..."
+                  fi
+                fi
+              done
+            done
+            echo "Finished cleaning up .a wheels"
+          fi
+
+      - name: Generate index.html
+        run: |
+          set -euo pipefail
+          echo "Generating package index..."
+
+          bucket_path="s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/"
+          index_file="index.html"
+
+          # Download existing index.html if it exists
+          if aws s3 ls "${bucket_path}${index_file}" --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}" >/dev/null 2>&1; then
+            echo "Existing index.html found, downloading..."
+            aws s3 cp "${bucket_path}${index_file}" . --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}"
+          else
+            echo "No existing index.html found, creating a new one..."
+            echo '<!DOCTYPE html>' > "${index_file}"
+            echo '<html><head><title>NautilusTrader Packages</title></head>' >> "${index_file}"
+            echo '<body><h1>Links for nautilus-trader</h1></body></html>' >> "${index_file}"
+            echo "No existing index.html found, creating a new one..."
+          fi
+
+          # Extract existing hashes from index.html
+          declare -A existing_hashes=()
+          if [[ -f "$index_file" ]]; then
+            echo "Extracting existing hashes from index.html..."
+            while IFS= read -r line; do
+              if [[ $line =~ href=\"([^\"#]+)#sha256=([a-f0-9]{64}) ]]; then
+                file="${BASH_REMATCH[1]}"
+                hash="${BASH_REMATCH[2]}"
+                existing_hashes["$file"]="$hash"
+                echo "Found hash for $file"
+              fi
+            done < "$index_file"
+            echo "Total hashes found: ${#existing_hashes[@]}"
+          fi
+
+          # Fetch existing wheels from the bucket
+          echo "Fetching existing wheels from the bucket..."
+          existing_files=$(aws s3 ls "${bucket_path}" --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}" | grep '\.whl$' | awk '{print $4}')
+
+          # Find local wheel files
+          mkdir -p dist/all
+          local_files=$(find dist/all -type f -name "*.whl" -exec basename {} \;)
+
+          # Merge existing files with local wheels
+          all_files=$(echo -e "${existing_files}\n${local_files}" | sort -u)
+
+          # Prepare a new HTML file (temp file for atomic update)
+          temp_html=$(mktemp)
+          echo '<!DOCTYPE html>' > "$temp_html"
+          echo '<html><head><title>NautilusTrader Packages</title></head>' >> "$temp_html"
+          echo '<body><h1>Links for nautilus-trader</h1>' >> "$temp_html"
+
+          # Add files to the index
+          for file in $all_files; do
+            hash="${existing_hashes["$file"]:-}"
+
+            if [[ -n "$hash" ]]; then
+              echo "Using existing hash for $file: $hash"
+            elif [[ -f "dist/all/$file" ]]; then
+              # Calculate hash for local file
+              hash=$(sha256sum "dist/all/$file" | awk '{print $1}')
+              echo "Calculated hash for local file $file: $hash"
+            else
+              # File isn't local and has no known hash -> download, compute
+              echo "Downloading missing wheel to compute hash for $file..."
+              tmpfile=$(mktemp)
+              if aws s3 cp "${bucket_path}${file}" "$tmpfile" \
+                --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}"; then
+                hash=$(sha256sum "$tmpfile" | awk '{print $1}')
+                echo "Calculated hash after download for $file: $hash"
+              else
+                echo "Warning: Could not download $file for hashing."
+                hash=""
+              fi
+              rm -f "$tmpfile"
+            fi
+
+            # Escape special HTML characters in the filename
+            escaped_file=$(echo "$file" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g')
+
+            if [[ -n "$hash" ]]; then
+              echo "<a href=\"$escaped_file#sha256=$hash\">$escaped_file</a><br>" >> "$temp_html"
+            else
+              echo "<a href=\"$escaped_file\">$escaped_file</a><br>" >> "$temp_html"
+            fi
+          done
+
+          echo '</body></html>' >> "$temp_html"
+
+          # Replace the old index.html atomically
+          mv "$temp_html" "$index_file"
+          echo "Index generation complete"
+
+      - name: Upload index.html to Cloudflare R2
+        run: |
+          for i in {1..3}; do
+            if aws s3 cp index.html "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/index.html" \
+              --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }} \
+              --content-type "text/html; charset=utf-8"; then
+              echo "Successfully uploaded index.html"
+              break
+            else
+              echo "Failed to upload index.html, retrying ($i/3)..."
+              sleep 5
+            fi
+          done
+
+          if [ $i -eq 3 ]; then
+            echo "Failed to upload index.html after 3 attempts"
+            exit 1
+          fi
+
+      - name: Verify uploaded files in Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Verifying uploaded files in Cloudflare R2..."
+
+          if ! aws s3 ls "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+            echo "Failed to list files in R2 bucket"
+          fi
+
+          # Verify index.html exists
+          if ! aws s3 ls "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/index.html" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+            echo "index.html not found in R2 bucket"
+          fi
+          echo "Verification completed successfully"
+
+      - name: Clean up local artifacts
+        run: |
+          set -euo pipefail
+          ls -lh dist/ || echo "No dist directory found"
+          rm -rf dist/* 2>/dev/null || true
+          echo "Cleanup completed"
+
+      - name: Fetch and delete artifacts for current run
+        if: success()
+        run: |
+          set -euo pipefail
+          echo "Fetching artifacts for the current run"
+
+          response=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
+
+          # Extract artifact IDs
+          ids=$(echo "$response" | jq -r '.artifacts[].id // empty')
+          if [[ -z "$ids" ]]; then
+            echo "No artifact IDs found for the current run"
+            exit 0
+          fi
+
+          echo "Artifact IDs to delete: $ids"
+
+          # Delete artifacts
+          for id in $ids; do
+            echo "Deleting artifact ID $id"
+            response=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id)
+
+            if [ "$response" -ne 204 ]; then
+              echo "Warning: Failed to delete artifact ID $id (HTTP $response)"
+            else
+              echo "Successfully deleted artifact ID $id"
+            fi
+          done
+
+          echo "Artifact deletion process completed"
+
