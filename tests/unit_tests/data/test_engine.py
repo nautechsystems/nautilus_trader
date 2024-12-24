@@ -18,6 +18,8 @@ import sys
 import pandas as pd
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -2730,6 +2732,323 @@ class TestDataEngine:
         ) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
         )
+
+    def test_request_aggregated_bars_with_bars(self):
+        # Arrange
+        loader = DatabentoDataLoader()
+
+        path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_ohlcv-1m_2024-07-01T23h40_2024-07-02T00h10.dbn.zst"
+        )
+        data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+        definition_path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_definition.dbn.zst"
+        )
+        definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
+
+        catalog = setup_catalog(protocol="file")
+        catalog.write_data(data)
+        catalog.write_data(definition)
+
+        self.data_engine.register_catalog(catalog)
+        self.data_engine.process(definition[0])
+
+        symbol_id = InstrumentId.from_str("ESU4.GLBX")
+
+        utc_now = pd.Timestamp("2024-07-01T23:56")
+        self.clock.advance_time(utc_now.value)
+
+        start = utc_now - pd.Timedelta(minutes=11)
+        end = utc_now - pd.Timedelta(minutes=1)
+
+        bar_type_0 = data[0].bar_type
+        bar_type_1 = BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+        bar_type_2 = BarType.from_str("ESU4.GLBX-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
+        bar_type_3 = BarType.from_str("ESU4.GLBX-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+        bar_types = [bar_type_1, bar_type_2, bar_type_3]
+
+        handler = []
+        params = {}
+        params["include_external_data"] = True
+        params["update_existing_subscriptions"] = False
+        params["update_catalog"] = False
+
+        request_id = UUID4()
+        request = DataRequest(
+            client_id=None,
+            venue=symbol_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_types": tuple(bar_types),
+                    "bars_market_data_type": "bars",
+                    "instrument_id": symbol_id,
+                    "bar_type": bar_types[0].composite(),
+                    "start": start,
+                    "end": end,
+                },
+            ),
+            callback=handler.append,
+            request_id=request_id,
+            ts_init=utc_now.value,
+            params=params,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        last_1_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-EXTERNAL"),
+            Price.from_str("5528.75"),
+            Price.from_str("5529.25"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Quantity.from_int(164),
+            1719878040000000000,
+            1719878040000000000,
+        )
+
+        last_2_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Price.from_str("5528.25"),
+            Price.from_str("5528.50"),
+            Quantity.from_int(76),
+            1719878040000000000,
+            1719878040000000000,
+        )
+
+        last_4_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-4-MINUTE-LAST-INTERNAL"),
+            Price.from_str("5527.50"),
+            Price.from_str("5528.50"),
+            Price.from_str("5527.50"),
+            Price.from_str("5528.50"),
+            Quantity.from_int(116),
+            1719877920000000000,
+            1719877920000000000,
+        )
+
+        last_5_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-5-MINUTE-LAST-INTERNAL"),
+            Price.from_str("5527.75"),
+            Price.from_str("5529.25"),
+            Price.from_str("5527.75"),
+            Price.from_str("5528.75"),
+            Quantity.from_int(329),
+            1719878100000000000,
+            1719878100000000000,
+        )
+
+        assert handler[0].data["bars"][bar_type_0][-1] == last_1_minute_bar
+        assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_2_minute_bar
+        assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_4_minute_bar
+        assert handler[0].data["bars"][bar_type_3.standard()][-1] == last_5_minute_bar
+
+    def test_request_aggregated_bars_with_quotes(self):
+        # Arrange
+        loader = DatabentoDataLoader()
+
+        path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_mbp-1_2024-07-01T23h58_2024-07-02T00h02.dbn.zst"
+        )
+        data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+        definition_path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_definition.dbn.zst"
+        )
+        definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
+
+        catalog = setup_catalog(protocol="file")
+        catalog.write_data(data)
+        catalog.write_data(definition)
+
+        self.data_engine.register_catalog(catalog)
+        self.data_engine.process(definition[0])
+
+        symbol_id = InstrumentId.from_str("ESU4.GLBX")
+
+        utc_now = pd.Timestamp("2024-07-02T00:00:01")
+        self.clock.advance_time(utc_now.value)
+
+        start = utc_now - pd.Timedelta(minutes=2, seconds=1)
+        end = utc_now - pd.Timedelta(minutes=0, seconds=1)
+
+        bar_type_1 = BarType.from_str("ESU4.GLBX-1-MINUTE-BID-INTERNAL")
+        bar_type_2 = BarType.from_str("ESU4.GLBX-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
+        bar_types = [bar_type_1, bar_type_2]
+
+        handler = []
+        params = {}
+        params["include_external_data"] = False
+        params["update_existing_subscriptions"] = False
+        params["update_catalog"] = False
+
+        request_id = UUID4()
+        request = DataRequest(
+            client_id=None,
+            venue=symbol_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_types": tuple(bar_types),
+                    "bars_market_data_type": "quote_ticks",
+                    "instrument_id": symbol_id,
+                    "bar_type": bar_types[0].composite(),
+                    "start": start,
+                    "end": end,
+                },
+            ),
+            callback=handler.append,
+            request_id=request_id,
+            ts_init=utc_now.value,
+            params=params,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        last_1_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-1-MINUTE-BID-INTERNAL"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Quantity.from_int(5806),
+            1719878400000000000,
+            1719878400000000000,
+        )
+
+        last_2_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-2-MINUTE-BID-INTERNAL"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Quantity.from_int(10244),
+            1719878400000000000,
+            1719878400000000000,
+        )
+
+        assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_1_minute_bar
+        assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_2_minute_bar
+
+    def test_request_aggregated_bars_with_trades(self):
+        # Arrange
+        loader = DatabentoDataLoader()
+
+        path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_trades_2024-07-01T23h58_2024-07-02T00h02.dbn.zst"
+        )
+        data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+        definition_path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_definition.dbn.zst"
+        )
+        definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
+
+        catalog = setup_catalog(protocol="file")
+        catalog.write_data(data)
+        catalog.write_data(definition)
+
+        self.data_engine.register_catalog(catalog)
+        self.data_engine.process(definition[0])
+
+        symbol_id = InstrumentId.from_str("ESU4.GLBX")
+
+        utc_now = pd.Timestamp("2024-07-02T00:00:01")
+        self.clock.advance_time(utc_now.value)
+
+        start = utc_now - pd.Timedelta(minutes=2, seconds=1)
+        end = utc_now - pd.Timedelta(minutes=0, seconds=0)
+
+        bar_type_1 = BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-INTERNAL")
+        bar_type_2 = BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
+        bar_types = [bar_type_1, bar_type_2]
+
+        handler = []
+        params = {}
+        params["include_external_data"] = False
+        params["update_existing_subscriptions"] = False
+        params["update_catalog"] = False
+
+        request_id = UUID4()
+        request = DataRequest(
+            client_id=None,
+            venue=symbol_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_types": tuple(bar_types),
+                    "bars_market_data_type": "trade_ticks",
+                    "instrument_id": symbol_id,
+                    "bar_type": bar_types[0].composite(),
+                    "start": start,
+                    "end": end,
+                },
+            ),
+            callback=handler.append,
+            request_id=request_id,
+            ts_init=utc_now.value,
+            params=params,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        last_1_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-INTERNAL"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Quantity.from_int(23),
+            1719878400000000000,
+            1719878400000000000,
+        )
+
+        last_2_minute_bar = Bar(
+            BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL"),
+            Price.from_str("5528.75"),
+            Price.from_str("5528.75"),
+            Price.from_str("5528.50"),
+            Price.from_str("5528.75"),
+            Quantity.from_int(41),
+            1719878400000000000,
+            1719878400000000000,
+        )
+
+        assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_1_minute_bar
+        assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_2_minute_bar
 
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
