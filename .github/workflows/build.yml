@@ -64,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]  # Change to ubuntu-latest when GitHub stabilizes
+        os: [ubuntu-22.04, ubuntu-24.04]  # TODO: Change to ubuntu-latest when GitHub stabilizes
         python-version: ["3.11", "3.12"]
     defaults:
       run:
@@ -252,8 +252,9 @@ jobs:
           pytest --ignore=tests/performance_tests --new-first --failed-first
 
       # Run codspeed for latest python-version only
+      # TODO: Change to ubuntu-latest when GitHub stabilizes
       - name: Run benchmarks
-        if: ${{ matrix.python-version == '3.12' }}
+        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
