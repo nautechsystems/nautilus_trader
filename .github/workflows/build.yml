@@ -684,7 +684,7 @@ jobs:
           fi
 
           # Clean up alpha (.a) wheels on the nightly branch
-          if [[ "$branch_name" == "nightly" ]];
+          if [[ "$branch_name" == "nightly" ]]; then
             echo "Cleaning up alpha wheels for the nightly branch..."
             echo "All files before filtering:"
             echo "$files"
@@ -896,5 +896,4 @@ jobs:
           done
 
           echo "Artifact deletion process completed"
-
 
