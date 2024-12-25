@@ -24,8 +24,8 @@ use rust_decimal::Decimal;
 
 use crate::{
     identifiers::{InstrumentId, Symbol},
-    instruments::crypto_future::CryptoFuture,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    instruments::CryptoFuture,
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -342,7 +342,7 @@ mod tests {
     use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
     use rstest::rstest;
 
-    use crate::instruments::{crypto_future::CryptoFuture, stubs::*};
+    use crate::instruments::{stubs::*, CryptoFuture};
 
     #[rstest]
     fn test_dict_round_trip(crypto_future_btcusdt: CryptoFuture) {

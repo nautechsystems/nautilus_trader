@@ -93,20 +93,17 @@ class DataSubscriber(Strategy):
     def __init__(self, config: DataSubscriberConfig) -> None:
         super().__init__(config)
 
-        # Configuration
-        self.instrument_ids = config.instrument_ids
-
     def on_start(self) -> None:
         start_time = time_object_to_dt("2024-05-09T10:00")
         end_time = time_object_to_dt("2024-05-09T10:05")
         self.request_quote_ticks(
-            InstrumentId.from_str("ESM4.GLBX"),
+            InstrumentId.from_str("ESM4.XCME"),  # or "ESM4.GLBX"
             start_time,
             end_time,
             params={"schema": "bbo-1m"},
         )
 
-        # for instrument_id in self.instrument_ids:
+        # for instrument_id in self.config.instrument_ids:
         # from nautilus_trader.model.enums import BookType
 
         # self.subscribe_order_book_deltas(

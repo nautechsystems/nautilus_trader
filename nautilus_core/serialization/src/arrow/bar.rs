@@ -22,8 +22,8 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::bar::{Bar, BarType},
-    types::{price::Price, quantity::Quantity},
+    data::{Bar, BarType},
+    types::{Price, Quantity},
 };
 
 use super::{
@@ -116,6 +116,10 @@ impl EncodeToRecordBatch for Bar {
                 Arc::new(ts_init_array),
             ],
         )
+    }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        Bar::get_metadata(&self.bar_type, self.open.precision, self.volume.precision)
     }
 }
 

@@ -35,22 +35,18 @@ use nautilus_core::correctness::{
     check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string, FAILED,
 };
 use nautilus_model::{
-    accounts::any::AccountAny,
-    data::{
-        bar::{Bar, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    accounts::AccountAny,
+    data::{Bar, BarType, QuoteTick, TradeTick},
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Symbol, Venue, VenueOrderId,
     },
-    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
-    orderbook::book::OrderBook,
-    orders::{any::OrderAny, list::OrderList},
+    instruments::{InstrumentAny, SyntheticInstrument},
+    orderbook::OrderBook,
+    orders::{OrderAny, OrderList},
     position::Position,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

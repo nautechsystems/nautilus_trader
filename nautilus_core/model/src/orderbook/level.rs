@@ -22,7 +22,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     data::order::{BookOrder, OrderId},
-    orderbook::{error::BookIntegrityError, ladder::BookPrice},
+    orderbook::{BookIntegrityError, BookPrice},
     types::fixed::FIXED_SCALAR,
 };
 
@@ -239,8 +239,8 @@ mod tests {
     use crate::{
         data::order::BookOrder,
         enums::OrderSide,
-        orderbook::{ladder::BookPrice, level::BookLevel},
-        types::{price::Price, quantity::Quantity},
+        orderbook::{BookLevel, BookPrice},
+        types::{Price, Quantity},
     };
 
     #[rstest]

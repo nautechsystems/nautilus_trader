@@ -21,10 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::AccountType,
     identifiers::AccountId,
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-    },
+    types::{AccountBalance, Currency, MarginBalance},
 };
 
 #[repr(C)]
@@ -105,9 +102,9 @@ impl PartialEq for AccountState {
 mod tests {
     use rstest::rstest;
 
-    use crate::events::account::{
-        state::AccountState,
-        stubs::{cash_account_state, margin_account_state},
+    use crate::events::{
+        account::stubs::{cash_account_state, margin_account_state},
+        AccountState,
     };
 
     #[rstest]

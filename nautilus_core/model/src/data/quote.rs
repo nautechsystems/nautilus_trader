@@ -35,7 +35,7 @@ use super::GetTsInit;
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
-    types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
+    types::{fixed::FIXED_PRECISION, Price, Quantity},
 };
 
 /// Represents a single quote tick in a market.
@@ -219,7 +219,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{quote::QuoteTick, stubs::quote_ethusdt_binance},
+        data::{stubs::quote_ethusdt_binance, QuoteTick},
         enums::PriceType,
     };
 

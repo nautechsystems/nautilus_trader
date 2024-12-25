@@ -16,10 +16,7 @@
 use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
 
 use crate::{
-    data::{
-        delta::OrderBookDelta,
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-    },
+    data::{OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::BookAction,
     identifiers::InstrumentId,
 };

@@ -34,19 +34,19 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
 redis = { version = "0.27.6", features = [
-    "connection-manager",
-    "keep-alive",
-    "sentinel",
-    "streams",
-    "tokio-comp",
-    "tokio-rustls-comp",
-    "tls-rustls",
-    "tls-rustls-webpki-roots",
+  "connection-manager",
+  "keep-alive",
+  "sentinel",
+  "streams",
+  "tokio-comp",
+  "tokio-rustls-comp",
+  "tls-rustls",
+  "tls-rustls-webpki-roots",
 ], optional = true }
 sqlx = { version = "0.8.2", features = [
-    "postgres",
-    "runtime-tokio",
-    "json"
+  "postgres",
+  "runtime-tokio",
+  "json"
 ], optional = true }
 
 [dev-dependencies]
@@ -55,10 +55,10 @@ rstest = { workspace = true }
 [features]
 default = ["redis"]  # redis needed by `nautilus_trader` by default for now
 extension-module = [
-    "pyo3/extension-module",
-    "nautilus-common/extension-module",
-    "nautilus-core/extension-module",
-    "nautilus-model/extension-module",
+  "pyo3/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
 ]
 python = ["pyo3", "pyo3-async-runtimes"]
 redis = ["dep:redis"]

@@ -134,7 +134,6 @@ class DataSubscriber(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_ids = config.instrument_ids
         self.client_id = TARDIS_CLIENT_ID
 
     def on_start(self) -> None:
@@ -144,7 +143,7 @@ class DataSubscriber(Strategy):
         Here we specify the 'TARDIS' client_id for subscriptions.
 
         """
-        for instrument_id in self.instrument_ids:
+        for instrument_id in self.config.instrument_ids:
             # from nautilus_trader.model.enums import BookType
             # self.subscribe_order_book_at_interval(
             #     instrument_id=instrument_id,
@@ -181,7 +180,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        for instrument_id in self.instrument_ids:
+        for instrument_id in self.config.instrument_ids:
             self.unsubscribe_order_book_deltas(
                 instrument_id=instrument_id,
                 client_id=self.client_id,

@@ -72,7 +72,7 @@ mod tests {
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
             AccountId, ClientOrderId, PositionId,
         },
-        types::{currency::Currency, quantity::Quantity},
+        types::{Currency, Quantity},
     };
 
     use super::*;

@@ -15,7 +15,7 @@
 
 use std::ops::{AddAssign, SubAssign};
 
-use crate::types::quantity::Quantity;
+use crate::types::Quantity;
 
 // TODO: Document panic
 #[no_mangle]

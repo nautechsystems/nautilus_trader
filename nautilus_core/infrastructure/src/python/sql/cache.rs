@@ -21,8 +21,8 @@ use nautilus_common::{
 };
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
-    events::position::snapshot::PositionSnapshot,
+    data::{Bar, DataType, QuoteTick, TradeTick},
+    events::PositionSnapshot,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -30,7 +30,7 @@ use nautilus_model::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
         orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
     },
-    types::currency::Currency,
+    types::Currency,
 };
 use pyo3::prelude::*;
 

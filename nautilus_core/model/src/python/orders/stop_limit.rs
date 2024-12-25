@@ -27,13 +27,13 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},
-        stop_limit::StopLimitOrder,
+        StopLimitOrder,
     },
     python::{
         common::commissions_from_hashmap,
         events::order::{order_event_to_pyobject, pyobject_to_order_event},
     },
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

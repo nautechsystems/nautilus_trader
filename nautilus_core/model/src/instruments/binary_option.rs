@@ -27,7 +27,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a generic binary option instrument.
@@ -366,7 +366,7 @@ impl Instrument for BinaryOption {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{binary_option::BinaryOption, stubs::*};
+    use crate::instruments::{stubs::*, BinaryOption};
 
     #[rstest]
     fn test_equality(binary_option: BinaryOption) {

@@ -28,7 +28,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a betting instrument with complete market and selection details.
@@ -433,7 +433,7 @@ impl Instrument for BettingInstrument {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{betting::BettingInstrument, stubs::*};
+    use crate::instruments::{stubs::*, BettingInstrument};
 
     #[rstest]
     fn test_equality(betting: BettingInstrument) {

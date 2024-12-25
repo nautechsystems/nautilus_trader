@@ -30,25 +30,28 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The historical HTTP client gateway override.
     live_gateway : str, optional
         The live client gateway override.
-    parent_symbols : dict[str, set[str]], optional
-        The Databento parent symbols to subscribe to instrument definitions for on start.
-        This is a map of Databento dataset keys -> to a sequence of the parent symbols,
-        e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
-    instrument_ids : list[InstrumentId], optional
-        The instrument IDs to request instrument definitions for on start.
+    use_exchange_as_venue : bool, default True
+        If the `exchange` field will be used as the venue for instrument IDs.
     timeout_initial_load : float, default 15.0
         The timeout (seconds) to wait for instruments to load (concurrently per dataset).
     mbo_subscriptions_delay : float, default 3.0
         The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset).
         After the timeout the MBO order book feed will start and replay messages from the initial
         snapshot and then all deltas.
+    parent_symbols : dict[str, set[str]], optional
+        The Databento parent symbols to subscribe to instrument definitions for on start.
+        This is a map of Databento dataset keys -> to a sequence of the parent symbols,
+        e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
+    instrument_ids : list[InstrumentId], optional
+        The instrument IDs to request instrument definitions for on start.
 
     """
 
     api_key: str | None = None
     http_gateway: str | None = None
     live_gateway: str | None = None
-    instrument_ids: list[InstrumentId] | None = None
-    parent_symbols: dict[str, set[str]] | None = None
+    use_exchange_as_venue: bool = True
     timeout_initial_load: float | None = 15.0
     mbo_subscriptions_delay: float | None = 3.0  # Need to have received all definitions
+    instrument_ids: list[InstrumentId] | None = None
+    parent_symbols: dict[str, set[str]] | None = None

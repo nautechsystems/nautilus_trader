@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+from __future__ import annotations
+
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
@@ -31,39 +32,22 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.http.errors import should_retry
-from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.component import LiveClock
-from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.messages import BatchCancelOrders
-from nautilus_trader.execution.messages import CancelAllOrders
-from nautilus_trader.execution.messages import CancelOrder
-from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.execution.messages import SubmitOrder
-from nautilus_trader.execution.messages import SubmitOrderList
-from nautilus_trader.execution.reports import FillReport
-from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
@@ -92,7 +76,29 @@ from nautilus_trader.model.orders import StopLimitOrder
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.model.orders import TrailingStopLimitOrder
 from nautilus_trader.model.orders import TrailingStopMarketOrder
-from nautilus_trader.model.position import Position
+
+
+if TYPE_CHECKING:
+    import asyncio
+
+    import pandas as pd
+
+    from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+    from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+    from nautilus_trader.cache.cache import Cache
+    from nautilus_trader.common.component import LiveClock
+    from nautilus_trader.common.component import MessageBus
+    from nautilus_trader.execution.messages import BatchCancelOrders
+    from nautilus_trader.execution.messages import CancelAllOrders
+    from nautilus_trader.execution.messages import CancelOrder
+    from nautilus_trader.execution.messages import ModifyOrder
+    from nautilus_trader.execution.messages import SubmitOrder
+    from nautilus_trader.execution.messages import SubmitOrderList
+    from nautilus_trader.execution.reports import FillReport
+    from nautilus_trader.execution.reports import OrderStatusReport
+    from nautilus_trader.execution.reports import PositionStatusReport
+    from nautilus_trader.model.position import Position
 
 
 class BybitExecutionClient(LiveExecutionClient):
@@ -115,8 +121,10 @@ class BybitExecutionClient(LiveExecutionClient):
         The instrument provider.
     product_types : list[BybitProductType]
         The product types for the client.
-    base_url_ws : str
-        The base URL for the WebSocket client.
+    base_url_ws_private : str
+        The base URL for the `private` WebSocket client.
+    base_url_ws_trade : str
+        The base URL for the `trade` WebSocket client.
     config : BybitExecClientConfig
         The configuration for the client.
     name : str, optional
@@ -133,7 +141,8 @@ class BybitExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         instrument_provider: BybitInstrumentProvider,
         product_types: list[BybitProductType],
-        base_url_ws: str,
+        base_url_ws_private: str,
+        base_url_ws_trade: str,
         config: BybitExecClientConfig,
         name: str | None,
     ) -> None:
@@ -160,9 +169,16 @@ class BybitExecutionClient(LiveExecutionClient):
         # Configuration
         self._product_types = product_types
         self._use_gtd = config.use_gtd
+        self._use_ws_trade_api = config.use_ws_trade_api
+        self._use_http_batch_api = config.use_http_batch_api
+
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
+        self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
+        self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
@@ -171,12 +187,18 @@ class BybitExecutionClient(LiveExecutionClient):
         account_id = AccountId(f"{name or BYBIT_VENUE.value}-UNIFIED")
         self._set_account_id(account_id)
 
-        # WebSocket API
+        # HTTP API
+        self._http_account = BybitAccountHttpAPI(
+            client=client,
+            clock=clock,
+        )
+
+        # WebSocket private client
         self._ws_client = BybitWebSocketClient(
             clock=clock,
-            handler=self._handle_ws_message,
+            handler=self._handle_ws_message_private,
             handler_reconnect=None,
-            base_url=base_url_ws,
+            base_url=base_url_ws_private,
             is_private=True,
             api_key=config.api_key or get_api_key(config.demo, config.testnet),
             api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
@@ -184,11 +206,30 @@ class BybitExecutionClient(LiveExecutionClient):
             max_reconnection_tries=config.max_ws_reconnection_tries,
         )
 
-        # HTTP API
-        self._http_account = BybitAccountHttpAPI(
-            client=client,
-            clock=clock,
-        )
+        # WebSocket trade client
+        self._order_single_client: BybitWebSocketClient | BybitAccountHttpAPI
+        self._order_batch_client: BybitWebSocketClient | BybitAccountHttpAPI
+        if self._use_ws_trade_api:
+            self._ws_order_client = BybitWebSocketClient(
+                clock=clock,
+                handler=self._handle_ws_message_trade,
+                handler_reconnect=None,
+                base_url=base_url_ws_trade,
+                is_trade=True,
+                api_key=config.api_key or get_api_key(config.demo, config.testnet),
+                api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
+                loop=loop,
+                max_reconnection_tries=config.max_ws_reconnection_tries,
+                ws_trade_timeout_secs=config.ws_trade_timeout_secs,
+            )
+            self._order_single_client = self._ws_order_client
+            if config.use_http_batch_api:
+                self._order_batch_client = self._http_account
+            else:
+                self._order_batch_client = self._ws_order_client
+        else:
+            self._order_single_client = self._http_account
+            self._order_batch_client = self._http_account
 
         # Order submission
         self._submit_order_methods = {
@@ -203,11 +244,11 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
-        self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
+        # self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
 
         self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
         self._decoder_ws_account_execution_update = msgspec.json.Decoder(BybitWsAccountExecutionMsg)
-        self._decoder_ws_account_position_update = msgspec.json.Decoder(BybitWsAccountPositionMsg)
+        # self._decoder_ws_account_position_update = msgspec.json.Decoder(BybitWsAccountPositionMsg)
         self._decoder_ws_account_wallet_update = msgspec.json.Decoder(BybitWsAccountWalletMsg)
 
         # Hot caches
@@ -232,8 +273,14 @@ class BybitExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_orders_update()
         await self._ws_client.subscribe_wallet_update()
 
+        if self._use_ws_trade_api:
+            await self._ws_order_client.connect()
+
     async def _disconnect(self) -> None:
         await self._ws_client.disconnect()
+
+        if self._use_ws_trade_api:
+            await self._ws_order_client.disconnect()
 
     def _stop(self) -> None:
         self._retry_manager_pool.shutdown()
@@ -539,7 +586,7 @@ class BybitExecutionClient(LiveExecutionClient):
             await retry_manager.run(
                 "cancel_order",
                 [client_order_id, venue_order_id],
-                self._http_account.cancel_order,
+                self._order_single_client.cancel_order,
                 bybit_symbol.product_type,
                 bybit_symbol.raw_symbol,
                 client_order_id=client_order_id,
@@ -593,7 +640,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 await retry_manager.run(
                     "batch_cancel_orders",
                     None,
-                    self._http_account.batch_cancel_orders,
+                    self._order_batch_client.batch_cancel_orders,
                     product_type=product_type,
                     cancel_orders=cancel_orders,
                 )
@@ -660,7 +707,7 @@ class BybitExecutionClient(LiveExecutionClient):
             await retry_manager.run(
                 "modify_order",
                 [client_order_id, venue_order_id],
-                self._http_account.amend_order,
+                self._order_single_client.amend_order,
                 bybit_symbol.product_type,
                 bybit_symbol.raw_symbol,
                 client_order_id=client_order_id,
@@ -758,7 +805,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 await retry_manager.run(
                     "submit_order_list",
                     None,
-                    self._http_account.batch_place_orders,
+                    self._order_batch_client.batch_place_orders,
                     product_type=product_type,
                     submit_orders=submit_orders,
                 )
@@ -784,7 +831,7 @@ class BybitExecutionClient(LiveExecutionClient):
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        await self._http_account.place_order(
+        await self._order_single_client.place_order(
             product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
@@ -800,7 +847,7 @@ class BybitExecutionClient(LiveExecutionClient):
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        await self._http_account.place_order(
+        await self._order_single_client.place_order(
             product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
@@ -820,7 +867,7 @@ class BybitExecutionClient(LiveExecutionClient):
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._http_account.place_order(
+        await self._order_single_client.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
@@ -845,7 +892,7 @@ class BybitExecutionClient(LiveExecutionClient):
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._http_account.place_order(
+        await self._order_single_client.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
@@ -870,7 +917,7 @@ class BybitExecutionClient(LiveExecutionClient):
         order_type = BybitOrderType.MARKET
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._http_account.place_order(
+        await self._order_single_client.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
@@ -893,7 +940,7 @@ class BybitExecutionClient(LiveExecutionClient):
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        await self._http_account.place_order(
+        await self._order_single_client.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
@@ -926,7 +973,10 @@ class BybitExecutionClient(LiveExecutionClient):
             trailing_offset=str(order.trailing_offset),
         )
 
-    def _handle_ws_message(self, raw: bytes) -> None:
+    def _handle_ws_message_trade(self, raw: bytes) -> None:
+        pass
+
+    def _handle_ws_message_private(self, raw: bytes) -> None:
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:
@@ -1119,9 +1169,9 @@ class BybitExecutionClient(LiveExecutionClient):
                             venue_order_id=report.venue_order_id,
                             ts_event=report.ts_last,
                         )
-                elif (
-                    bybit_order.orderStatus == BybitOrderStatus.CANCELED
-                    or bybit_order.orderStatus == BybitOrderStatus.DEACTIVATED
+                elif bybit_order.orderStatus in (
+                    BybitOrderStatus.CANCELED,
+                    BybitOrderStatus.DEACTIVATED,
                 ):
                     self.generate_order_canceled(
                         strategy_id=strategy_id,

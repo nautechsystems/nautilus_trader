@@ -18,13 +18,11 @@ use rstest::fixture;
 
 use crate::{
     enums::AccountType,
-    events::account::state::AccountState,
+    events::AccountState,
     identifiers::stubs::{account_id, uuid4},
     types::{
-        balance::AccountBalance,
-        currency::Currency,
-        money::Money,
         stubs::{stub_account_balance, stub_margin_balance},
+        AccountBalance, Currency, Money,
     },
 };
 

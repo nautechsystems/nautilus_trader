@@ -24,32 +24,22 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
     events::{
-        account::state::AccountState,
-        order::{
-            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
-            OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
-            OrderUpdated,
-        },
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
+        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted,
+        OrderTriggered, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
     },
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-        money::Money,
-        price::Price,
-        quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
 use crate::messages::{
-    cancel::CancelOrder, cancel_batch::BatchCancelOrders, modify::ModifyOrder, query::QueryOrder,
-    submit::SubmitOrder, submit_list::SubmitOrderList,
+    BatchCancelOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
 };
 
 pub struct ExecutionClient {

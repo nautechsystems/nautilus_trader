@@ -26,13 +26,8 @@ use heck::ToSnakeCase;
 use nautilus_core::{nanos::UnixNanos, parsing::precision_from_str};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
-        delta::OrderBookDelta,
-        deltas::OrderBookDeltas_API,
-        depth::OrderBookDepth10,
-        quote::QuoteTick,
-        trade::TradeTick,
-        Data,
+        Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
+        TradeTick,
     },
     identifiers::InstrumentId,
 };
@@ -154,9 +149,9 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
 
             let instrument_id = if normalize_symbols {
-                normalize_instrument_id(exchange, &inst.id, instrument_type, inst.inverse)
+                normalize_instrument_id(exchange, inst.id, instrument_type, inst.inverse)
             } else {
-                parse_instrument_id(exchange, &inst.id)
+                parse_instrument_id(exchange, inst.id)
             };
 
             let info = InstrumentMiniInfo::new(
@@ -430,7 +425,7 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
-    match write_batch_to_parquet(&batch, &filepath, None) {
+    match write_batch_to_parquet(batch, &filepath, None) {
         Ok(()) => tracing::info!("File written: {}", filepath.display()),
         Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
     }
@@ -463,7 +458,7 @@ fn write_batch(
     path: &Path,
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
-    match write_batch_to_parquet(&batch, &filepath, None) {
+    match write_batch_to_parquet(batch, &filepath, None) {
         Ok(()) => tracing::info!("File written: {}", filepath.display()),
         Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
     }

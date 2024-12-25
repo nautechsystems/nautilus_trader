@@ -27,7 +27,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a deliverable futures contract instrument, with crypto assets as underlying and for settlement.
@@ -378,7 +378,7 @@ impl Instrument for CryptoFuture {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{crypto_future::CryptoFuture, stubs::*};
+    use crate::instruments::{stubs::*, CryptoFuture};
 
     #[rstest]
     fn test_equality(crypto_future_btcusdt: CryptoFuture) {

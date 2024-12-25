@@ -19,7 +19,7 @@ do
 
     # Run the backtest script
     chmod +x "examples/backtest/$script"
-    yes | poetry run "examples/backtest/$script"
+    yes | python "examples/backtest/$script"
 
     # Get the exit status of the last example run
     exit_status=$?

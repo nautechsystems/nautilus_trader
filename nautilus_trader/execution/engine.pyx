@@ -593,7 +593,8 @@ cdef class ExecutionEngine(Component):
         Stop the registered clients.
         """
         for client in self._clients.values():
-            client.stop()
+            if client.is_running:
+                client.stop()
 
     cpdef void load_cache(self):
         """

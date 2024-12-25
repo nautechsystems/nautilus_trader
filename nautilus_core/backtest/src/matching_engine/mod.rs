@@ -29,19 +29,13 @@ use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_execution::matching_core::OrderMatchingCore;
 use nautilus_model::{
-    data::{
-        bar::{Bar, BarType},
-        delta::OrderBookDelta,
-        deltas::OrderBookDeltas,
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, ContingencyType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus,
         OrderType, PriceType,
     },
-    events::order::{
+    events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
         OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
     },
@@ -49,15 +43,13 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
-    instruments::{any::InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
-    orderbook::book::OrderBook,
+    instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
+    orderbook::OrderBook,
     orders::{
-        any::{OrderAny, PassiveOrderAny, StopOrderAny},
-        trailing_stop_limit::TrailingStopLimitOrder,
-        trailing_stop_market::TrailingStopMarketOrder,
+        OrderAny, PassiveOrderAny, StopOrderAny, TrailingStopLimitOrder, TrailingStopMarketOrder,
     },
     position::Position,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;
 use uuid::Uuid;

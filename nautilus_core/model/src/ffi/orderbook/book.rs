@@ -23,13 +23,12 @@ use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 use super::level::BookLevel_API;
 use crate::{
     data::{
-        delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
-        order::BookOrder, quote::QuoteTick, trade::TradeTick,
+        BookOrder, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, book::OrderBook},
-    types::{price::Price, quantity::Quantity},
+    orderbook::{analysis::book_check_integrity, OrderBook},
+    types::{Price, Quantity},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.

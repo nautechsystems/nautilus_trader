@@ -278,9 +278,8 @@ pub fn check_key_not_in_map<K, V>(
     map_name: &str,
 ) -> anyhow::Result<()>
 where
-    K: Hash,
-    K: std::cmp::Eq,
-    K: std::fmt::Display,
+    K: Hash + Eq + Display + Clone,
+    V: Debug,
 {
     if map.contains_key(key) {
         anyhow::bail!(
@@ -300,9 +299,8 @@ pub fn check_key_in_map<K, V>(
     map_name: &str,
 ) -> anyhow::Result<()>
 where
-    K: Hash,
-    K: std::cmp::Eq,
-    K: std::fmt::Display,
+    K: Hash + Eq + Display + Clone,
+    V: Debug,
 {
     if !map.contains_key(key) {
         anyhow::bail!(
@@ -322,9 +320,8 @@ pub fn check_key_not_in_index_map<K, V>(
     map_name: &str,
 ) -> anyhow::Result<()>
 where
-    K: Hash,
-    K: std::cmp::Eq,
-    K: std::fmt::Display,
+    K: Hash + Eq + Display + Clone,
+    V: Debug,
 {
     if map.contains_key(key) {
         anyhow::bail!(
@@ -344,9 +341,8 @@ pub fn check_key_in_index_map<K, V>(
     map_name: &str,
 ) -> anyhow::Result<()>
 where
-    K: Hash,
-    K: std::cmp::Eq,
-    K: std::fmt::Display,
+    K: Hash + Eq + Display + Clone,
+    V: Debug,
 {
     if !map.contains_key(key) {
         anyhow::bail!(
@@ -366,9 +362,7 @@ pub fn check_member_not_in_set<V>(
     set_name: &str,
 ) -> anyhow::Result<()>
 where
-    V: Hash,
-    V: std::cmp::Eq,
-    V: std::fmt::Display,
+    V: Hash + Eq + Display + Clone,
 {
     if set.contains(member) {
         anyhow::bail!(
@@ -387,9 +381,7 @@ pub fn check_member_in_set<V>(
     set_name: &str,
 ) -> anyhow::Result<()>
 where
-    V: Hash,
-    V: std::cmp::Eq,
-    V: std::fmt::Display,
+    V: Hash + Eq + Display + Clone,
 {
     if !set.contains(member) {
         anyhow::bail!(

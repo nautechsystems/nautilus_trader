@@ -17,11 +17,11 @@
 
 use std::collections::BTreeMap;
 
-use super::{book::OrderBook, ladder::BookPrice, level::BookLevel};
+use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
-    orderbook::error::BookIntegrityError,
-    types::{price::Price, quantity::Quantity},
+    orderbook::BookIntegrityError,
+    types::{Price, Quantity},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of

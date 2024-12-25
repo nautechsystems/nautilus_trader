@@ -28,7 +28,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{fixed::fixed_i64_to_f64, price::Price};
+use crate::types::{fixed::fixed_i64_to_f64, Price};
 
 #[pymethods]
 impl Price {

@@ -23,8 +23,8 @@ use nautilus_model::{
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::{any::OrderAny, market::MarketOrder},
-    types::quantity::Quantity,
+    orders::{MarketOrder, OrderAny},
+    types::Quantity,
 };
 use ustr::Ustr;
 

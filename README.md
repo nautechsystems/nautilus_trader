@@ -149,6 +149,26 @@ The following integrations are currently supported:
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
 
+### Branches
+
+We aim to maintain a stable, passing build across all branches.
+
+- `master`: Reflects the source code for the latest released version.
+- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
+- `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
+
+Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+This approach allows us to maintain a rapid development pace for now.
+
+## Versioning and releases
+
+NautilusTrader is still under active development. Some features may be incomplete, and while
+the API is becoming more stable, breaking changes can occur between releases.
+We strive to document these changes in the release notes on a **best-effort basis**.
+
+We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+
 ## Installation
 
 ### From PyPI
@@ -158,6 +178,64 @@ We recommend using the latest supported version of Python and setting up [nautil
 To install the latest binary wheel (or sdist package) from PyPI using Pythons pip package manager:
 
     pip install -U nautilus_trader
+
+### From the Nautech Systems package index
+
+The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+This enables users to install either the latest stable release or pre-release versions for testing.
+
+#### Stable wheels
+
+Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
+
+To install the latest stable release:
+
+    pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+
+#### Development wheels
+
+Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS,
+allowing users to test features and fixes ahead of stable releases.
+
+This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+
+| :warning: WARNING |
+| :---------------- |
+**We don't recommend using development wheels in production environments, such as live trading controlling real capital.**
+
+#### Installation commands
+
+By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+
+To install the latest available pre-release (including development wheels):
+
+    pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+
+To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
+
+    pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+
+#### Available versions
+
+You can view all available versions of `nautilus_trader` on the [package index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html).
+
+To programmatically fetch and list available versions:
+
+    curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+
+#### Branch updates
+
+- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
+- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+
+#### Retention policies
+
+- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
+- `nightly` branch wheels (`a`): Only the 3 most recent wheel builds are retained.
 
 ### From Source
 
@@ -218,44 +296,6 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
        poetry install --only main --all-extras
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
-
-## Nightly wheels
-
-Nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch
-using the version format `dev.{date}` (e.g., `1.208.0.dev20241212` for December 12, 2024).
-These wheels allow testing of the latest features and fixes that have not yet been included in a stable PyPI release.
-
-**To install the latest nightly build**:
-
-    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
-
-**To install a specific nightly build** (e.g., `1.208.0.dev20241212` for December 12, 2024):
-
-    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
-
-**Notes**:
-- The `develop` branch is merged into `nightly` daily at **14:00 UTC** (if there are changes).
-- A 3-day lookback window is maintained, retaining only the last 3 nightly builds.
-
-## Versioning and releases
-
-NautilusTrader aims for a weekly release schedule. The introduction of experimental or larger features
-may delay a release by several weeks.
-
-The API is becoming more stable, but breaking changes may still occur between releases.
-We strive to document these changes in the release notes on a best-effort basis.
-
-### Branches
-
-We aim to maintain a stable, passing build across all branches.
-
-- `master`: Reflects the source code for the latest released version.
-- `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
-- `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
-
-Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
-Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
-This approach allows us to maintain a rapid development pace for now.
 
 ## Redis
 
@@ -347,33 +387,28 @@ class EMACross(Strategy):
     def __init__(self, config: EMACrossConfig) -> None:
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-        self.bar_type = config.bar_type
-        self.trade_size = Decimal(config.trade_size)
+        self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
-
-        self.instrument: Instrument | None = None  # Initialized in on_start
 
     def on_start(self) -> None:
         """
         Actions to be performed on strategy start.
         """
         # Get instrument
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
 
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.bar_type)
+        self.request_bars(self.config.bar_type)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
+        self.subscribe_bars(self.config.bar_type)
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -381,17 +416,17 @@ class EMACross(Strategy):
         """
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
+            if self.portfolio.is_flat(self.config.instrument_id):
                 self.buy()
-            elif self.portfolio.is_net_short(self.instrument_id):
-                self.close_all_positions(self.instrument_id)
+            elif self.portfolio.is_net_short(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
                 self.buy()
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
+            if self.portfolio.is_flat(self.config.instrument_id):
                 self.sell()
-            elif self.portfolio.is_net_long(self.instrument_id):
-                self.close_all_positions(self.instrument_id)
+            elif self.portfolio.is_net_long(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
                 self.sell()
 
     def buy(self) -> None:
@@ -399,9 +434,9 @@ class EMACross(Strategy):
         Users simple buy method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
         )
 
         self.submit_order(order)
@@ -411,9 +446,9 @@ class EMACross(Strategy):
         Users simple sell method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
         )
 
         self.submit_order(order)
@@ -423,11 +458,11 @@ class EMACross(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         # Cleanup orders and positions
-        self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
+        self.cancel_all_orders(self.config.instrument_id)
+        self.close_all_positions(self.config.instrument_id)
 
         # Unsubscribe from data
-        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_bars(self.config.bar_type)
 
     def on_reset(self) -> None:
         """

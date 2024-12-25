@@ -567,7 +567,8 @@ cdef class DataEngine(Component):
         Stop the registered clients.
         """
         for client in self._clients.values():
-            client.stop()
+            if client.is_running:
+                client.stop()
 
     cpdef void execute(self, DataCommand command):
         """
@@ -984,6 +985,13 @@ cdef class DataEngine(Component):
             return
         Condition.not_none(client, "client")
 
+        if "start" not in params:
+            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                QuoteTick,
+                instrument_id,
+            )[0]
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id, params)
 
@@ -1024,6 +1032,13 @@ cdef class DataEngine(Component):
             self._handle_subscribe_synthetic_trade_ticks(instrument_id)
             return
         Condition.not_none(client, "client")
+
+        if "start" not in params:
+            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                TradeTick,
+                instrument_id,
+            )[0]
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id, params)
@@ -1076,6 +1091,13 @@ cdef class DataEngine(Component):
                 )
                 return
 
+            if "start" not in params:
+                last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                    Bar,
+                    bar_type=bar_type,
+                )[0]
+                params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type, params)
 
@@ -1090,6 +1112,10 @@ cdef class DataEngine(Component):
 
         try:
             if data_type not in client.subscribed_custom_data():
+                if "start" not in params:
+                    last_timestamp: datetime | None = self._catalogs_last_timestamp(data_type.type)[0]
+                    params["start"] = last_timestamp.value + 1 if last_timestamp else None
+
                 client.subscribe(data_type, params)
         except NotImplementedError:
             self._log.error(
@@ -1359,7 +1385,7 @@ cdef class DataEngine(Component):
 
         cdef dict[str, object] metadata = request.data_type.metadata
         cdef dict[str, object] params = request.params
-        cdef str bars_market_data_type = params.get("bars_market_data_type", "")
+        cdef str bars_market_data_type = metadata.get("bars_market_data_type", "")
 
         cdef datetime now = self._clock.utc_now()
         cdef datetime start = time_object_to_dt(metadata.get("start"))  # Can be None
@@ -1419,10 +1445,10 @@ cdef class DataEngine(Component):
         datetime end,
         dict params,
     ):
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             Instrument,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             self._query_catalog(request)
@@ -1474,10 +1500,10 @@ cdef class DataEngine(Component):
     ):
         instrument_id = request.data_type.metadata.get("instrument_id")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             QuoteTick,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1515,10 +1541,10 @@ cdef class DataEngine(Component):
     ):
         instrument_id = request.data_type.metadata.get("instrument_id")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             TradeTick,
             instrument_id,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1556,10 +1582,10 @@ cdef class DataEngine(Component):
     ):
         bar_type = request.data_type.metadata.get("bar_type")
 
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             Bar,
             bar_type=bar_type,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1595,9 +1621,9 @@ cdef class DataEngine(Component):
         datetime now,
         dict params,
     ):
-        last_timestamp, _ = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_last_timestamp(
             request.data_type.type,
-        )
+        )[0]
 
         if last_timestamp:
             if (now <= last_timestamp) or (end and end <= last_timestamp):
@@ -1641,7 +1667,7 @@ cdef class DataEngine(Component):
             )
             ts_end = ts_now
 
-        bars_market_data_type = request.params.get("bars_market_data_type", "")
+        bars_market_data_type = request.data_type.metadata.get("bars_market_data_type", "")
         data = []
 
         if request.data_type.type == Instrument:
@@ -1961,7 +1987,7 @@ cdef class DataEngine(Component):
         elif response.data_type.type == TradeTick:
             self._handle_trade_ticks(response.data)
         elif response.data_type.type == Bar:
-            if response.params.get("bars_market_data_type"):
+            if response.data_type.metadata.get("bars_market_data_type"):
                 response.data = self._handle_aggregated_bars(response.data, response.data_type.metadata, response.params)
             else:
                 self._handle_bars(response.data, response.params.get("partial"))

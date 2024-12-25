@@ -28,7 +28,6 @@ import asyncio
 from concurrent.futures import Executor
 
 import cython
-import msgspec
 
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig

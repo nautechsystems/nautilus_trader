@@ -32,16 +32,13 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEventAny, OrderInitialized, OrderUpdated},
+    events::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    orders::base::OrderError,
-    types::{
-        price::Price,
-        quantity::{check_quantity_positive, Quantity},
-    },
+    orders::OrderError,
+    types::{quantity::check_quantity_positive, Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -485,9 +482,9 @@ mod tests {
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        instruments::{currency_pair::CurrencyPair, stubs::*},
-        orders::builder::OrderTestBuilder,
-        types::{price::Price, quantity::Quantity},
+        instruments::{stubs::*, CurrencyPair},
+        orders::OrderTestBuilder,
+        types::{Price, Quantity},
     };
 
     #[rstest]

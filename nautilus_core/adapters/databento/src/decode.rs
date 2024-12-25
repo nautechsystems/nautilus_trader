@@ -19,14 +19,8 @@ use databento::dbn::{self};
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarSpecification, BarType},
-        delta::OrderBookDelta,
-        depth::{OrderBookDepth10, DEPTH10_LEN},
-        order::BookOrder,
-        quote::QuoteTick,
-        status::InstrumentStatus,
-        trade::TradeTick,
-        Data,
+        Bar, BarSpecification, BarType, BookOrder, Data, InstrumentStatus, OrderBookDelta,
+        OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN,
     },
     enums::{
         AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU16, FromU8,
@@ -34,11 +28,9 @@ use nautilus_model::{
     },
     identifiers::{InstrumentId, TradeId},
     instruments::{
-        any::InstrumentAny, equity::Equity, futures_contract::FuturesContract,
-        futures_spread::FuturesSpread, options_contract::OptionsContract,
-        options_spread::OptionsSpread,
+        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
-    types::{currency::Currency, fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
+    types::{fixed::FIXED_SCALAR, Currency, Price, Quantity},
 };
 use ustr::Ustr;
 

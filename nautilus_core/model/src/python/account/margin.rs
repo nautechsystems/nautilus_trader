@@ -17,12 +17,12 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    accounts::margin::MarginAccount,
-    events::account::state::AccountState,
+    accounts::MarginAccount,
+    events::AccountState,
     identifiers::{AccountId, InstrumentId},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     python::instruments::pyobject_to_instrument_any,
-    types::{money::Money, price::Price, quantity::Quantity},
+    types::{Money, Price, Quantity},
 };
 
 #[pymethods]

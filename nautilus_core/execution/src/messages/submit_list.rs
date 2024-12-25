@@ -21,7 +21,7 @@ use nautilus_model::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
         VenueOrderId,
     },
-    orders::list::OrderList,
+    orders::OrderList,
 };
 use serde::{Deserialize, Serialize};
 

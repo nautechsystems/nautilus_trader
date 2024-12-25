@@ -26,17 +26,15 @@ use nautilus_common::{
     throttler::Throttler,
 };
 use nautilus_core::uuid::UUID4;
-use nautilus_execution::messages::{
-    modify::ModifyOrder, submit::SubmitOrder, submit_list::SubmitOrderList, TradingCommand,
-};
+use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
 use nautilus_model::{
-    accounts::{any::AccountAny, base::Account},
+    accounts::{Account, AccountAny},
     enums::{InstrumentClass, OrderSide, OrderStatus, TradingState},
-    events::order::{OrderDenied, OrderEventAny, OrderModifyRejected},
+    events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
-    instruments::any::InstrumentAny,
-    orders::{any::OrderAny, list::OrderList},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    instruments::InstrumentAny,
+    orders::{OrderAny, OrderList},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use ustr::Ustr;
@@ -1084,14 +1082,14 @@ mod tests {
     use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
     use nautilus_model::{
         accounts::{
-            any::AccountAny,
             stubs::{cash_account, margin_account},
+            AccountAny,
         },
-        data::{quote::QuoteTick, stubs::quote_audusd},
+        data::{stubs::quote_audusd, QuoteTick},
         enums::{AccountType, OrderSide, OrderType, TradingState},
         events::{
-            account::{state::AccountState, stubs::cash_account_state_million_usd},
-            order::{OrderDenied, OrderEventAny, OrderEventType},
+            account::stubs::cash_account_state_million_usd, AccountState, OrderDenied,
+            OrderEventAny, OrderEventType,
         },
         identifiers::{
             stubs::{
@@ -1102,13 +1100,11 @@ mod tests {
             TraderId, VenueOrderId,
         },
         instruments::{
-            any::InstrumentAny,
-            crypto_perpetual::CryptoPerpetual,
-            currency_pair::CurrencyPair,
             stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
+            CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
-        orders::{any::OrderAny, builder::OrderTestBuilder, list::OrderList},
-        types::{balance::AccountBalance, money::Money, price::Price, quantity::Quantity},
+        orders::{OrderAny, OrderList, OrderTestBuilder},
+        types::{AccountBalance, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
     use rust_decimal::{prelude::FromPrimitive, Decimal};

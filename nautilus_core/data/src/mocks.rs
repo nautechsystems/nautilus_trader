@@ -26,15 +26,10 @@ use nautilus_common::{
 };
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    data::{
-        bar::{Bar, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
-        DataType,
-    },
+    data::{Bar, BarType, DataType, QuoteTick, TradeTick},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
 };
 
 use crate::client::DataClient;

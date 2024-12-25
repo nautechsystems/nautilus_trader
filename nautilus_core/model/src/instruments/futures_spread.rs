@@ -30,7 +30,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a generic deliverable futures spread instrument.
@@ -365,7 +365,7 @@ impl Instrument for FuturesSpread {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{futures_spread::FuturesSpread, stubs::*};
+    use crate::instruments::{stubs::*, FuturesSpread};
 
     #[rstest]
     fn test_equality(futures_spread_es: FuturesSpread) {

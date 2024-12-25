@@ -29,22 +29,17 @@ use nautilus_core::{
 };
 use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
-    accounts::any::AccountAny,
+    accounts::AccountAny,
     data::{
-        bar::Bar,
-        delta::OrderBookDelta,
-        deltas::{OrderBookDeltas, OrderBookDeltas_API},
-        quote::QuoteTick,
-        status::InstrumentStatus,
-        trade::TradeTick,
-        Data,
+        Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
+        QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
-    instruments::any::InstrumentAny,
-    orderbook::book::OrderBook,
-    orders::any::PassiveOrderAny,
-    types::{currency::Currency, money::Money, price::Price},
+    instruments::InstrumentAny,
+    orderbook::OrderBook,
+    orders::PassiveOrderAny,
+    types::{Currency, Money, Price},
 };
 use rust_decimal::Decimal;
 
@@ -520,23 +515,16 @@ mod tests {
     use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
         data::{
-            bar::{Bar, BarType},
-            delta::OrderBookDelta,
-            deltas::OrderBookDeltas,
-            order::BookOrder,
-            quote::QuoteTick,
-            status::InstrumentStatus,
-            trade::TradeTick,
+            Bar, BarType, BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, QuoteTick,
+            TradeTick,
         },
         enums::{
             AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
             OmsType, OrderSide,
         },
         identifiers::{TradeId, Venue},
-        instruments::{
-            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
-        },
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+        instruments::{stubs::crypto_perpetual_ethusdt, CryptoPerpetual, InstrumentAny},
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
 

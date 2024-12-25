@@ -28,24 +28,23 @@ use nautilus_common::{
 };
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
-    data::{delta::OrderBookDelta, order::BookOrder},
+    data::{BookOrder, OrderBookDelta},
     enums::{
         AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
         OrderType,
     },
-    events::order::{
-        rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
+    events::{
+        order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
+        OrderRejected,
     },
     identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
     instruments::{
-        any::InstrumentAny,
-        crypto_perpetual::CryptoPerpetual,
-        equity::Equity,
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
+        CryptoPerpetual, Equity, InstrumentAny,
     },
-    orders::{any::OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
+    orders::{stubs::TestOrderStubs, OrderAny, OrderTestBuilder},
     position::Position,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
 use ustr::Ustr;

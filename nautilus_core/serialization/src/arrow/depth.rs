@@ -28,7 +28,7 @@ use nautilus_model::{
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 use super::{
@@ -222,6 +222,14 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         columns.push(ts_init_array);
 
         RecordBatch::try_new(Self::get_schema(Some(metadata.clone())).into(), columns)
+    }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        OrderBookDepth10::get_metadata(
+            &self.instrument_id,
+            self.bids[0].price.precision,
+            self.bids[0].size.precision,
+        )
     }
 }
 

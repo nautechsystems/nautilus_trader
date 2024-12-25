@@ -27,7 +27,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a generic equity instrument.
@@ -317,7 +317,7 @@ impl Instrument for Equity {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{equity::Equity, stubs::*};
+    use crate::instruments::{stubs::*, Equity};
 
     #[rstest]
     fn test_equality(equity_aapl: Equity) {

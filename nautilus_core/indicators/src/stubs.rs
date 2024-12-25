@@ -16,14 +16,10 @@
 //! Type stubs to facilitate testing.
 
 use nautilus_model::{
-    data::{
-        bar::{Bar, BarSpecification, BarType},
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{Bar, BarSpecification, BarType, QuoteTick, TradeTick},
     enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
     identifiers::{InstrumentId, Symbol, TradeId, Venue},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use rstest::*;
 

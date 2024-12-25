@@ -35,12 +35,12 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
         PositionSide, TriggerType,
     },
-    events::order::OrderEventAny,
+    events::OrderEventAny,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
         VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

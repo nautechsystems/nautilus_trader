@@ -15,7 +15,7 @@
 
 use std::ops::{AddAssign, SubAssign};
 
-use crate::types::price::Price;
+use crate::types::Price;
 
 // TODO: Document panic
 #[no_mangle]

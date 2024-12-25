@@ -83,6 +83,8 @@ cdef class SimulatedExchange:
     """The fee model for the exchange.\n\n:returns: `FeeModel`"""
     cdef readonly bint bar_execution
     """If bars should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
+    cdef readonly bint trade_execution
+    """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders

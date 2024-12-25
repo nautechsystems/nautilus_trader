@@ -14,6 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 //! The core `AtomicTime` for real-time and static clocks.
+//!
+//! This module provides an atomic time abstraction that supports both real-time and static
+//! clocks. It ensures thread-safe operations and monotonic time retrieval with nanosecond precision.
 
 use std::{
     ops::Deref,
@@ -30,26 +33,49 @@ use crate::{
 };
 
 /// Global atomic time in real-time mode for use across the system.
+///
+/// This clock operates in real-time mode, where it synchronizes with the system clock
+/// or hardware counters, ensuring unique and monotonic timestamps.
 pub static ATOMIC_CLOCK_REALTIME: OnceLock<AtomicTime> = OnceLock::new();
 
 /// Global atomic time in static mode for use across the system.
+///
+/// This clock operates in static mode, where time is manually set and can be controlled
+/// programmatically, useful for backtesting or simulation.
 pub static ATOMIC_CLOCK_STATIC: OnceLock<AtomicTime> = OnceLock::new();
 
 /// Returns a static reference to the global atomic clock in real-time mode.
+///
+/// This clock synchronizes with the system time, providing unique, monotonic timestamps
+/// across the system.
 pub fn get_atomic_clock_realtime() -> &'static AtomicTime {
     ATOMIC_CLOCK_REALTIME.get_or_init(AtomicTime::default)
 }
 
 /// Returns a static reference to the global atomic clock in static mode.
+///
+/// This clock allows manual time control and does not synchronize with the system clock.
 pub fn get_atomic_clock_static() -> &'static AtomicTime {
     ATOMIC_CLOCK_STATIC.get_or_init(|| AtomicTime::new(false, UnixNanos::default()))
 }
 
+/// Returns the duration since the UNIX epoch.
+///
+/// This implementation relies on `SystemTime::now` and provides timestamps with nanosecond
+/// precision. It panics if the system time is set before the UNIX epoch.
+#[inline(always)]
 #[must_use]
 pub fn duration_since_unix_epoch() -> Duration {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Error calling `SystemTime::now.duration_since`")
+        .expect("Error calling `SystemTime`")
+}
+
+/// Returns the current UNIX time in nanoseconds.
+#[inline(always)]
+#[must_use]
+pub fn nanos_since_unix_epoch() -> u64 {
+    duration_since_unix_epoch().as_nanos() as u64
 }
 
 /// Represents an atomic timekeeping structure.
@@ -101,8 +127,10 @@ impl AtomicTime {
 
     /// Get time in nanoseconds.
     ///
-    /// - Real-time mode returns current wall clock time since UNIX epoch (unique and monotonic).
-    /// - Static mode returns currently stored time.
+    /// - **Real-time mode**: Returns the current wall clock time since the UNIX epoch,
+    ///   ensuring monotonicity across threads using `Ordering::SeqCst`.
+    /// - **Static mode**: Returns the currently stored time, which uses `Ordering::Relaxed`
+    ///   and is suitable for single-threaded scenarios where strict synchronization is unnecessary.
     #[must_use]
     pub fn get_time_ns(&self) -> UnixNanos {
         match self.realtime.load(Ordering::Relaxed) {
@@ -130,31 +158,51 @@ impl AtomicTime {
     }
 
     /// Sets new time for the clock.
+    ///
+    /// Intended for single-threaded use, as it relies on `Ordering::Relaxed` and
+    /// does not enforce strict synchronization.
     pub fn set_time(&self, time: UnixNanos) {
         self.store(time.into(), Ordering::Relaxed);
     }
 
-    /// Increments current time with a delta and returns the updated time.
+    /// Increments the current time by the specified delta and returns the updated value.
+    ///
+    /// Intended for single-threaded use, as it relies on `Ordering::Relaxed` and
+    /// does not enforce strict synchronization.
     pub fn increment_time(&self, delta: u64) -> UnixNanos {
         UnixNanos::from(self.fetch_add(delta, Ordering::Relaxed) + delta)
     }
 
     /// Stores and returns current time.
+    ///
+    /// This method uses `Ordering::SeqCst` (Sequential Consistency) ordering to ensure that:
+    /// 1. Timestamps are monotonically increasing and thread-safe.
+    /// 2. The returned timestamp is never less than the current system time.
+    /// 3. Each timestamp is at least 1 nanosecond greater than the last stored value.
     pub fn time_since_epoch(&self) -> UnixNanos {
-        // Increment by 1 nanosecond to keep increasing time
-        let now = duration_since_unix_epoch().as_nanos() as u64 + 1;
-        let last = self.load(Ordering::SeqCst) + 1;
-        let time = now.max(last);
-        self.store(time, Ordering::SeqCst);
-        UnixNanos::from(time)
+        // This method guarantees strict consistency but may incur a performance cost under
+        // high contention due to retries in the `compare_exchange` loop.
+        let now = nanos_since_unix_epoch();
+        loop {
+            let last = self.load(Ordering::SeqCst);
+            let next = now.max(last + 1);
+            match self.compare_exchange(last, next, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return UnixNanos::from(next),
+                Err(_) => continue,
+            }
+        }
     }
 
     /// Switches the clock to real-time mode.
+    ///
+    /// Intended for single-threaded use, as it uses `Ordering::Relaxed` for updating the mode.
     pub fn make_realtime(&self) {
         self.realtime.store(true, Ordering::Relaxed);
     }
 
     /// Switches the clock to static mode.
+    ///
+    /// Intended for single-threaded use, as it uses `Ordering::Relaxed` for updating the mode.
     pub fn make_static(&self) {
         self.realtime.store(false, Ordering::Relaxed);
     }
@@ -165,11 +213,109 @@ impl AtomicTime {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::time::UNIX_EPOCH;
+    use std::sync::Arc;
 
     use rstest::*;
 
     use super::*;
+
+    #[rstest]
+    fn test_global_clocks_initialization() {
+        let realtime_clock = get_atomic_clock_realtime();
+        assert!(realtime_clock.get_time_ns().as_u64() > 0);
+
+        let static_clock = get_atomic_clock_static();
+        static_clock.set_time(UnixNanos::from(500_000_000)); // 500 ms
+        assert_eq!(static_clock.get_time_ns().as_u64(), 500_000_000);
+    }
+
+    #[rstest]
+    fn test_switching_modes() {
+        let time = AtomicTime::new(true, UnixNanos::default());
+
+        // Verify real-time mode
+        let realtime_ns = time.get_time_ns();
+        assert!(realtime_ns.as_u64() > 0);
+
+        // Switch to static mode
+        time.make_static();
+        time.set_time(UnixNanos::from(1_000_000_000)); // 1 second
+        let static_ns = time.get_time_ns();
+        assert_eq!(static_ns.as_u64(), 1_000_000_000);
+
+        // Switch back to real-time mode
+        time.make_realtime();
+        let new_realtime_ns = time.get_time_ns();
+        assert!(new_realtime_ns.as_u64() > static_ns.as_u64());
+    }
+
+    #[rstest]
+    fn test_increment_time() {
+        // Start in static mode
+        let time = AtomicTime::new(false, UnixNanos::from(0));
+
+        let updated_time = time.increment_time(500);
+        assert_eq!(updated_time.as_u64(), 500);
+
+        let updated_time = time.increment_time(1_000);
+        assert_eq!(updated_time.as_u64(), 1_500);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[rstest]
+    fn test_nanos_since_unix_epoch_vs_system_time() {
+        let unix_nanos = nanos_since_unix_epoch();
+        let system_ns = duration_since_unix_epoch().as_nanos() as u64;
+
+        // Allow for a reasonable delta due to overhead
+        assert!(
+            (unix_nanos as i64 - system_ns as i64).abs() < NANOSECONDS_IN_SECOND as i64,
+            "CLOCK_MONOTONIC_COARSE and SystemTime differ significantly"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[rstest]
+    fn test_time_since_epoch_monotonicity() {
+        let clock = get_atomic_clock_realtime();
+        let mut previous = clock.time_since_epoch();
+        for _ in 0..1_000_000 {
+            let current = clock.time_since_epoch();
+            assert!(current > previous);
+            previous = current;
+        }
+    }
+
+    #[rstest]
+    fn test_time_since_epoch_strictly_increasing_concurrent() {
+        let time = Arc::new(AtomicTime::new(true, UnixNanos::default()));
+        let num_threads = 4;
+        let iterations = 100_000;
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for thread_id in 0..num_threads {
+            let time_clone = Arc::clone(&time);
+
+            let handle = std::thread::spawn(move || {
+                let mut previous = time_clone.time_since_epoch().as_u64();
+
+                for i in 0..iterations {
+                    let current = time_clone.time_since_epoch().as_u64();
+                    assert!(
+                        current > previous,
+                        "Thread {thread_id}: iteration {i}: time did not increase: previous={previous}, current={current}",
+                    );
+                    previous = current;
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
 
     #[rstest]
     fn test_duration_since_unix_epoch() {

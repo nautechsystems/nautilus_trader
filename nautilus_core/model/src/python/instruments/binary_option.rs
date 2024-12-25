@@ -26,8 +26,8 @@ use ustr::Ustr;
 use crate::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
-    instruments::binary_option::BinaryOption,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    instruments::BinaryOption,
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -335,7 +335,7 @@ mod tests {
     use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
     use rstest::rstest;
 
-    use crate::instruments::{binary_option::BinaryOption, stubs::*};
+    use crate::instruments::{stubs::*, BinaryOption};
 
     #[rstest]
     fn test_dict_round_trip(binary_option: BinaryOption) {

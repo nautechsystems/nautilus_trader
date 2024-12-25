@@ -24,7 +24,7 @@ use super::{
 use crate::{
     enums::{OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 impl Default for LimitOrder {

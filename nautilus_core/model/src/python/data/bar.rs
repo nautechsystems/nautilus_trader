@@ -34,7 +34,7 @@ use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]
@@ -410,7 +410,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::bar::Bar;
+    use crate::data::Bar;
 
     #[rstest]
     fn test_as_dict() {

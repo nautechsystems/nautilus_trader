@@ -20,7 +20,7 @@ use nautilus_model::{
         TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

@@ -18,19 +18,12 @@ use std::collections::HashMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
-    events::{
-        account::state::AccountState,
-        order::{OrderEvent, OrderEventAny},
-        position::snapshot::PositionSnapshot,
-    },
+    data::{Bar, DataType, QuoteTick, TradeTick},
+    events::{position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
-    instruments::{any::InstrumentAny, Instrument},
-    orders::{any::OrderAny, base::Order},
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-    },
+    instruments::{Instrument, InstrumentAny},
+    orders::{Order, OrderAny},
+    types::{AccountBalance, Currency, MarginBalance},
 };
 use sqlx::{PgPool, Row};
 

@@ -25,16 +25,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
+    events::{AccountState, OrderFilled},
     identifiers::{
         stubs::{account_id, uuid4},
         AccountId,
     },
-    instruments::any::InstrumentAny,
+    instruments::InstrumentAny,
     position::Position,
-    types::{
-        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
-    },
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,15 +284,12 @@ mod tests {
     use crate::{
         accounts::{base::Account, cash::CashAccount, stubs::*},
         enums::{AccountType, LiquiditySide, OrderSide, OrderType},
-        events::account::{state::AccountState, stubs::*},
+        events::{account::stubs::*, AccountState},
         identifiers::{position_id::PositionId, AccountId},
-        instruments::{
-            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
-            equity::Equity, stubs::*, Instrument,
-        },
+        instruments::{stubs::*, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]

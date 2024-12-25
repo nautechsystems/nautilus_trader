@@ -107,6 +107,7 @@ def databento_data(
     to_catalog=True,
     base_path=None,
     write_data_mode="overwrite",
+    use_exchange_as_venue=False,
     **kwargs,
 ):
     """
@@ -135,6 +136,8 @@ def databento_data(
         The base path to use for the data folder, defaults to None.
     write_data_mode : str, optional
         Whether to "append", "prepend" or "overwrite" data to an existing catalog, defaults to "overwrite".
+    use_exchange_as_venue : bool, optional
+        Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
     **kwargs
         Additional keyword arguments to pass to the Databento API.
 
@@ -211,6 +214,7 @@ def databento_data(
             data_file=data_file,
             base_path=base_path,
             write_data_mode=write_data_mode,
+            use_exchange_as_venue=use_exchange_as_venue,
         )
         result.update(catalog_data)
 
@@ -223,6 +227,7 @@ def save_data_to_catalog(
     data_file=None,
     base_path=None,
     write_data_mode="overwrite",
+    use_exchange_as_venue=False,
 ):
     """
     Save Databento data to a catalog.
@@ -242,6 +247,8 @@ def save_data_to_catalog(
         Base path for the catalog.
     write_data_mode : str, optional
         Mode for writing data to the catalog. Default is "overwrite".
+    use_exchange_as_venue : bool, optional
+        Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
 
     Returns
     -------
@@ -263,7 +270,11 @@ def save_data_to_catalog(
     loader = DatabentoDataLoader()
 
     if definition_file is not None:
-        nautilus_definition = loader.from_dbn_file(definition_file, as_legacy_cython=True)
+        nautilus_definition = loader.from_dbn_file(
+            definition_file,
+            as_legacy_cython=True,
+            use_exchange_as_venue=use_exchange_as_venue,
+        )
         catalog.write_data(nautilus_definition)
     else:
         nautilus_definition = None

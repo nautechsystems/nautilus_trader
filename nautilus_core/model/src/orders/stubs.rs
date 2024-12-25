@@ -20,10 +20,10 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use super::any::OrderAny;
 use crate::{
     enums::LiquiditySide,
-    events::order::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
+    events::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{AccountId, PositionId, TradeId, VenueOrderId},
-    instruments::any::InstrumentAny,
-    types::{money::Money, price::Price, quantity::Quantity},
+    instruments::InstrumentAny,
+    types::{Money, Price, Quantity},
 };
 
 // Test Event Stubs

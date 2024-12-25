@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::{
-    events::position::{changed::PositionChanged, closed::PositionClosed, opened::PositionOpened},
+    events::{PositionChanged, PositionClosed, PositionOpened},
     identifiers::{AccountId, InstrumentId},
 };
 pub mod changed;

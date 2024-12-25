@@ -30,18 +30,18 @@ use nautilus_common::{
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
-    accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
-    events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
+    accounts::AccountAny,
+    data::{Bar, DataType, QuoteTick, TradeTick},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
-    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
-    orderbook::book::OrderBook,
-    orders::any::OrderAny,
+    instruments::{InstrumentAny, SyntheticInstrument},
+    orderbook::OrderBook,
+    orders::OrderAny,
     position::Position,
-    types::currency::Currency,
+    types::Currency,
 };
 use redis::{Commands, Connection, Pipeline, RedisError};
 use ustr::Ustr;

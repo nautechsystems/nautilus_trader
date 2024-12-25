@@ -30,9 +30,9 @@ tempfile = { workspace = true }
 [features]
 default = ["python"]
 extension-module = [
-    "pyo3/extension-module",
-    "nautilus-core/extension-module",
-    "nautilus-common/extension-module",
-    "nautilus-model/extension-module",
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-model/extension-module",
 ]
 python = ["pyo3", "nautilus-core/python", "nautilus-common/python", "nautilus-model/python"]

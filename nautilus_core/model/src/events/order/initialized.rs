@@ -28,13 +28,13 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::order::OrderEvent,
+    events::OrderEvent,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    orders::any::OrderAny,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    orders::OrderAny,
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[repr(C)]

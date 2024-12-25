@@ -26,8 +26,8 @@ use ustr::Ustr;
 use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    instruments::options_contract::OptionsContract,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    instruments::OptionsContract,
+    types::{Currency, Price, Quantity},
 };
 
 #[pymethods]

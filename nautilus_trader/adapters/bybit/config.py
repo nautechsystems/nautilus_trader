@@ -78,6 +78,10 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         If None then will default to 'SPOT', you also cannot mix 'SPOT' with
         any other product type for execution, and it will use a `CASH` account
         type, vs `MARGIN` for the other derivative products.
+    base_url_ws_private : str, optional
+        The base URL for the `private` WebSocket client.
+    base_url_ws_trade : str, optional
+        The base URL for the `trade` WebSocket client.
     demo : bool, default False
         If the client is connecting to the Bybit demo API.
     testnet : bool, default False
@@ -85,6 +89,11 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_gtd : bool, default False
         If False, then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
+    use_ws_trade_api : bool, default False
+        If the client is using websocket to send order requests.
+    use_http_batch_api : bool, default False
+        If the client is using http api to send batch order requests.
+        Effective only when `use_ws_trade_api` is set to `True`.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay : PositiveFloat, optional
@@ -92,6 +101,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     max_ws_reconnection_tries: int, default 3
         The number of retries to reconnect the websocket connection if the
         connection is broken.
+    ws_trade_timeout_secs : float, default 5.0
+        The timeout for trade websocket messages.
 
     Warnings
     --------
@@ -103,10 +114,14 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     api_secret: str | None = None
     product_types: list[BybitProductType] | None = None
     base_url_http: str | None = None
-    base_url_ws: str | None = None
+    base_url_ws_private: str | None = None
+    base_url_ws_trade: str | None = None
     demo: bool = False
     testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit
+    use_ws_trade_api: bool = False
+    use_http_batch_api: bool = False
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
     max_ws_reconnection_tries: int | None = 3
+    ws_trade_timeout_secs: float | None = 5.0

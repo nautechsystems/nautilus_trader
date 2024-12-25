@@ -26,7 +26,7 @@ use super::{
 use crate::{
     enums::InstrumentClass,
     identifiers::{InstrumentId, Symbol, Venue},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[derive(Clone, Debug)]

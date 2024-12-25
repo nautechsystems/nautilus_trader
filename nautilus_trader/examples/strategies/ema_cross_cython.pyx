@@ -102,36 +102,31 @@ cdef class EMACross(Strategy):
         )
         super().__init__(config)
 
-        # Configuration
-        self.instrument_id = config.instrument_id
-        self.bar_type = config.bar_type
-        self.trade_size = Decimal(config.trade_size)
+        self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
-        self.instrument: Instrument | None = None  # Initialized in on_start
-
     cpdef void on_start(self):
         """
         Actions to be performed on strategy start.
         """
-        self.instrument = self.cache.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.config.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.bar_type)
+        self.request_bars(self.config.bar_type)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
+        self.subscribe_bars(self.config.bar_type)
 
     cpdef void on_instrument(self, Instrument instrument):
         """
@@ -200,24 +195,24 @@ cdef class EMACross(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.config.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
+            if self.portfolio.is_flat(self.config.instrument_id):
                 self.buy()
-            elif self.portfolio.is_net_short(self.instrument_id):
-                self.close_all_positions(self.instrument_id)
+            elif self.portfolio.is_net_short(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
                 self.buy()
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
+            if self.portfolio.is_flat(self.config.instrument_id):
                 self.sell()
-            elif self.portfolio.is_net_long(self.instrument_id):
-                self.close_all_positions(self.instrument_id)
+            elif self.portfolio.is_net_long(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
                 self.sell()
 
     cpdef void buy(self):
@@ -229,9 +224,9 @@ cdef class EMACross(Strategy):
             return
 
         cdef MarketOrder order = self.order_factory.market(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
         )
 
         self.submit_order(order)
@@ -245,9 +240,9 @@ cdef class EMACross(Strategy):
             return
 
         cdef MarketOrder order = self.order_factory.market(
-            instrument_id=self.instrument_id,
+            instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
+            quantity=self.instrument.make_qty(self.config.trade_size),
         )
 
         self.submit_order(order)
@@ -281,8 +276,8 @@ cdef class EMACross(Strategy):
         Actions to be performed when the strategy is stopped.
 
         """
-        self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
+        self.cancel_all_orders(self.config.instrument_id)
+        self.close_all_positions(self.config.instrument_id)
 
     cpdef void on_reset(self):
         """
@@ -327,4 +322,4 @@ cdef class EMACross(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_bars(self.config.bar_type)

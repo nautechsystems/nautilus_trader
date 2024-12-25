@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::OrderSide,
-    orderbook::{error::BookIntegrityError, ladder::BookPrice},
-    types::{price::Price, quantity::Quantity},
+    orderbook::{BookIntegrityError, BookPrice},
+    types::{Price, Quantity},
 };
 
 pub type OrderId = u64;

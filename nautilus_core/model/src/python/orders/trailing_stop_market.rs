@@ -27,10 +27,10 @@ use crate::{
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},
-        trailing_stop_market::TrailingStopMarketOrder,
+        TrailingStopMarketOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 #[pymethods]

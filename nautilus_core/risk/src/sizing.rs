@@ -15,8 +15,8 @@
 
 //! Position sizing calculation functions.
 use nautilus_model::{
-    instruments::any::InstrumentAny,
-    types::{money::Money, price::Price, quantity::Quantity},
+    instruments::InstrumentAny,
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::{
     prelude::{FromPrimitive, ToPrimitive},
@@ -97,7 +97,7 @@ fn calculate_riskable_money(equity: Decimal, risk: Decimal, commission_rate: Dec
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        identifiers::Symbol, instruments::stubs::default_fx_ccy, types::currency::Currency,
+        identifiers::Symbol, instruments::stubs::default_fx_ccy, types::Currency,
     };
     use rstest::*;
 

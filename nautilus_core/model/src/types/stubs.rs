@@ -16,10 +16,7 @@ use rstest::fixture;
 
 use crate::{
     identifiers::stubs::instrument_id_btc_usdt,
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        money::Money,
-    },
+    types::{AccountBalance, MarginBalance, Money},
 };
 
 #[fixture]

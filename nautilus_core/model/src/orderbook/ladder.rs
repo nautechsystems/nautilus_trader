@@ -29,8 +29,8 @@ use nautilus_core::nanos::UnixNanos;
 use crate::{
     data::order::{BookOrder, OrderId},
     enums::{OrderSide, OrderSideSpecified},
-    orderbook::level::BookLevel,
-    types::{price::Price, quantity::Quantity},
+    orderbook::BookLevel,
+    types::{Price, Quantity},
 };
 
 /// Represents a price level with a specified side in an order books ladder.
@@ -254,7 +254,7 @@ mod tests {
         data::order::BookOrder,
         enums::OrderSide,
         orderbook::ladder::{BookLadder, BookPrice},
-        types::{price::Price, quantity::Quantity},
+        types::{Price, Quantity},
     };
 
     #[rstest]

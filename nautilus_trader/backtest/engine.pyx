@@ -393,6 +393,7 @@ cdef class BacktestEngine:
         routing: bool = False,
         frozen_account: bool = False,
         bar_execution: bool = True,
+        trade_execution: bool = False,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
         support_contingent_orders: bool = True,
@@ -436,6 +437,8 @@ cdef class BacktestEngine:
             If the account for this exchange is frozen (balances will not change).
         bar_execution : bool, default True
             If bars should be processed by the matching engine(s) (and move the market).
+        trade_execution : bool, default False
+            If trades should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -495,6 +498,7 @@ cdef class BacktestEngine:
             clock=self.kernel.clock,
             frozen_account=frozen_account,
             bar_execution=bar_execution,
+            trade_execution=trade_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
             support_contingent_orders=support_contingent_orders,

@@ -19,13 +19,8 @@ use nautilus_core::nanos::UnixNanos;
 use rstest::fixture;
 
 use super::{
-    bar::{Bar, BarSpecification, BarType},
-    deltas::OrderBookDeltas,
-    depth::DEPTH10_LEN,
-    quote::QuoteTick,
-    status::InstrumentStatus,
-    trade::TradeTick,
-    OrderBookDelta, OrderBookDepth10,
+    Bar, BarSpecification, BarType, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
+    OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN,
 };
 use crate::{
     data::order::BookOrder,
@@ -34,7 +29,7 @@ use crate::{
         OrderSide, PriceType,
     },
     identifiers::{InstrumentId, Symbol, TradeId, Venue},
-    types::{price::Price, quantity::Quantity},
+    types::{Price, Quantity},
 };
 
 impl Default for QuoteTick {

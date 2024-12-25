@@ -38,6 +38,21 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
         The account default leverage (for margin accounts).
     bar_execution : bool, default True
         If bars should be processed by the matching engine(s) (and move the market).
+    trade_execution : bool, default False
+        If trades should be processed by the matching engine(s) (and move the market).
+    reject_stop_orders : bool, default True
+        If stop orders are rejected on submission if trigger price is in the market.
+    support_gtd_orders : bool, default True
+        If orders with GTD time in force will be supported by the venue.
+    support_contingent_orders : bool, default True
+        If contingent orders will be supported/respected by the venue.
+        If False, then it's expected the strategy will be managing any contingent orders.
+    use_position_ids : bool, default True
+        If venue position IDs will be generated on order fills.
+    use_random_ids : bool, default False
+        If all venue generated identifiers will be random UUID4's.
+    use_reduce_only : bool, default True
+        If the `reduce_only` execution instruction on orders will be honored.
 
     """
 
@@ -51,6 +66,7 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     book_type: str = "L1_MBP"
     frozen_account: bool = False
     bar_execution: bool = True
+    trade_execution: bool = False
     reject_stop_orders: bool = True
     support_gtd_orders: bool = True
     support_contingent_orders: bool = True

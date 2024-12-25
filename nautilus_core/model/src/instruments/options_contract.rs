@@ -30,7 +30,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents a generic options contract instrument.
@@ -371,7 +371,7 @@ impl Instrument for OptionsContract {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{options_contract::OptionsContract, stubs::*};
+    use crate::instruments::{stubs::*, OptionsContract};
 
     #[rstest]
     fn test_equality(options_contract_appl: OptionsContract) {

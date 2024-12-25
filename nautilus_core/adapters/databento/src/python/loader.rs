@@ -18,10 +18,7 @@ use std::{collections::HashMap, path::PathBuf};
 use databento::dbn;
 use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
 use nautilus_model::{
-    data::{
-        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        status::InstrumentStatus, trade::TradeTick, Data,
-    },
+    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Venue},
     python::instruments::instrument_any_to_pyobject,
 };
@@ -78,8 +75,15 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_instruments")]
-    fn py_load_instruments(&mut self, py: Python, filepath: PathBuf) -> PyResult<PyObject> {
-        let iter = self.load_instruments(&filepath).map_err(to_pyvalue_err)?;
+    fn py_load_instruments(
+        &mut self,
+        py: Python,
+        filepath: PathBuf,
+        use_exchange_as_venue: bool,
+    ) -> PyResult<PyObject> {
+        let iter = self
+            .load_instruments(&filepath, use_exchange_as_venue)
+            .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for instrument in iter {

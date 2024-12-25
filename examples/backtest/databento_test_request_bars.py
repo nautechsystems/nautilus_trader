@@ -110,25 +110,28 @@ class TestHistoricalAggStrategy(Strategy):
     def __init__(self, config: TestHistoricalAggConfig):
         super().__init__(config=config)
 
-        self._symbol_id = config.symbol_id
-        self._historical_start_delay = config.historical_start_delay
-        self._historical_end_delay = config.historical_end_delay
         # self.external_sma = SimpleMovingAverage(2)
         # self.composite_sma = SimpleMovingAverage(2)
 
     def on_start(self):
         ######### for testing bars
         utc_now = self._clock.utc_now()
-        start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
-        end_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_end_delay)
+        start_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_start_delay)
+        end_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_end_delay)
         self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # external_bar_type = BarType.from_str(f"{self._symbol_id}-1-MINUTE-LAST-EXTERNAL")
+        # external_bar_type = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-EXTERNAL")
         # self.subscribe_bars(external_bar_type)
 
-        bar_type_1 = BarType.from_str(f"{self._symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
-        bar_type_2 = BarType.from_str(f"{self._symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
-        bar_type_3 = BarType.from_str(f"{self._symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+        bar_type_1 = BarType.from_str(
+            f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        )
+        bar_type_2 = BarType.from_str(
+            f"{self.config.symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL",
+        )
+        bar_type_3 = BarType.from_str(
+            f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        )
 
         self.subscribe_bars(bar_type_1)
         self.subscribe_bars(bar_type_2)
@@ -148,15 +151,15 @@ class TestHistoricalAggStrategy(Strategy):
 
         ######### for testing quotes
         # utc_now = self._clock.utc_now()
-        # start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
+        # start_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_start_delay)
         # end_historical_bars = utc_now - pd.Timedelta(
-        #     minutes=self._historical_end_delay,
+        #     minutes=self.config.historical_end_delay,
         #     milliseconds=1,
         # )
         # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # bar_type_1 = BarType.from_str(f"{self._symbol_id}-1-MINUTE-BID-INTERNAL")
-        # bar_type_2 = BarType.from_str(f"{self._symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
+        # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
+        # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
 
         # self.subscribe_bars(bar_type_1)
         # self.subscribe_bars(bar_type_2)
@@ -171,15 +174,15 @@ class TestHistoricalAggStrategy(Strategy):
 
         ######### for testing trades
         # utc_now = self._clock.utc_now()
-        # start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
+        # start_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_start_delay)
         # end_historical_bars = utc_now - pd.Timedelta(
-        #     minutes=self._historical_end_delay,
+        #     minutes=self.config.historical_end_delay,
         #     milliseconds=1,
         # )
         # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # bar_type_1 = BarType.from_str(f"{self._symbol_id}-1-MINUTE-LAST-INTERNAL")
-        # bar_type_2 = BarType.from_str(f"{self._symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
+        # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
+        # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
 
         # self.subscribe_bars(bar_type_1)
         # self.subscribe_bars(bar_type_2)
