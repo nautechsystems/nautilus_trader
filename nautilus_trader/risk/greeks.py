@@ -36,7 +36,7 @@ def greeks_key(instrument_id: InstrumentId):
 
 class GreeksCalculatorConfig(ActorConfig, frozen=True):
     """
-    Configuration settings for the GreeksCalculator actor.
+    Configuration for ``GreeksCalculator`` actor instances.
 
     Parameters
     ----------
@@ -70,7 +70,7 @@ class GreeksCalculator(Actor):
     Parameters
     ----------
     config : GreeksCalculatorConfig
-        The configuration settings for the GreeksCalculator.
+        The configuration for the GreeksCalculator.
 
     Attributes
     ----------
