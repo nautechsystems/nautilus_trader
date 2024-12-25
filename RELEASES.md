@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Fixed timeout error code for Bybit (#2130), thanks @sunlei
 - Fixed instruments info retrieval for Bybit (#2134), thanks @sunlei
 - Fixed `request_aggregated_bars` metadata handling (#2137), thanks @faysou
+- Fixed demo notebook `backtest_high_level.ipynb` (#2142), thanks @stefansimik
 
 ---
 
