@@ -13,7 +13,7 @@ on:
 jobs:
   tag-release:
     if: github.event.workflow_run.conclusion == 'success'
-    name: tag-release - Python 3.11 (ubuntu-latest)
+    name: tag-release - python 3.11 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -116,7 +116,7 @@ jobs:
   publish-sdist:
     if: github.event.workflow_run.conclusion == 'success'
     needs: [tag-release]
-    name: publish-sdist - Python 3.11 (ubuntu-latest)
+    name: publish-sdist - python 3.11 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
@@ -225,7 +225,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: publish-wheels - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: release
