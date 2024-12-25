@@ -199,7 +199,7 @@ This process also helps preserve compute resources and ensures easy access to th
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
 - `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0.a20241212`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
 | :warning: WARNING |
 | :---------------- |
@@ -213,9 +213,9 @@ To install the latest available pre-release (including development wheels):
 
     pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 
-To install a specific development wheel (e.g., `1.208.0.a20241212` for December 12, 2024):
+To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
 
-    pip install nautilus_trader==1.208.0.a20241212 --index-url=https://packages.nautechsystems.io/simple
+    pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
 
 #### Available versions
 
@@ -228,12 +228,12 @@ To programmatically fetch and list available versions:
 #### Branch updates
 
 - `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`.a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
 - `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`.a`): Only the 3 most recent wheel builds are retained.
+- `nightly` branch wheels (`a`): Only the 3 most recent wheel builds are retained.
 
 ### From Source
 
