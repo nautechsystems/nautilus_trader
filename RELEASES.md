@@ -1,6 +1,6 @@
 # NautilusTrader 1.209.0 Beta
 
-Released on TBD (UTC).
+Released on 25th December 2024 (UTC).
 
 ### Enhancements
 - Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
