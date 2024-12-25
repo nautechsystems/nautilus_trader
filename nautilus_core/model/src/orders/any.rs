@@ -567,6 +567,20 @@ impl OrderAny {
         }
     }
 
+    pub fn is_quote_quantity(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_quote_quantity(),
+            Self::LimitIfTouched(order) => order.is_quote_quantity(),
+            Self::Market(order) => order.is_quote_quantity(),
+            Self::MarketIfTouched(order) => order.is_quote_quantity(),
+            Self::MarketToLimit(order) => order.is_quote_quantity(),
+            Self::StopLimit(order) => order.is_quote_quantity(),
+            Self::StopMarket(order) => order.is_quote_quantity(),
+            Self::TrailingStopLimit(order) => order.is_quote_quantity(),
+            Self::TrailingStopMarket(order) => order.is_quote_quantity(),
+        }
+    }
+
     #[must_use]
     pub fn parent_order_id(&self) -> Option<ClientOrderId> {
         match self {
