@@ -252,7 +252,7 @@ cdef class Actor(Component):
         ClientId client_id=*,
         callback=*,
         bint include_external_data=*,
-        bint update_existing_subscriptions=*,
+        bint update_subscriptions=*,
         bint update_catalog=*,
         dict[str, object] params=*,
     )

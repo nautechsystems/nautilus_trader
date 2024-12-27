@@ -990,7 +990,9 @@ cdef class DataEngine(Component):
                 QuoteTick,
                 instrument_id,
             )[0]
-            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
+            # Time in nanoseconds from pd.Timestamp
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id, params)
@@ -1038,7 +1040,9 @@ cdef class DataEngine(Component):
                 TradeTick,
                 instrument_id,
             )[0]
-            params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
+            # Time in nanoseconds from pd.Timestamp
+            params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id, params)
@@ -1081,7 +1085,7 @@ cdef class DataEngine(Component):
 
         if bar_type.is_internally_aggregated():
             # Internal aggregation
-            if bar_type.standard() not in self._bar_aggregators:
+            if bar_type.standard() not in self._bar_aggregators or not self._bar_aggregators[bar_type.standard()].is_running:
                 self._start_bar_aggregator(client, bar_type, await_partial, params)
         else:
             # External aggregation
@@ -1096,7 +1100,9 @@ cdef class DataEngine(Component):
                     Bar,
                     bar_type=bar_type,
                 )[0]
-                params["start"] = last_timestamp.value + 1 if last_timestamp else None # time in nanoseconds from pd.Timestamp
+
+                # Time in nanoseconds from pd.Timestamp
+                params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type, params)
@@ -1952,23 +1958,20 @@ cdef class DataEngine(Component):
             self._log.debug(f"{RECV}{RES} {response}", LogColor.MAGENTA)
 
         self.response_count += 1
-
         correlation_id = response.correlation_id
-        update_catalog = False
-
-        if response.params is not None:
-            update_catalog = response.params.get("update_catalog", False)
+        update_catalog = response.params.get("update_catalog", False) if response.params is not None else False
 
         if type(response.data) is list:
             response_data = response.data
         else:
-            #for request_instrument case
+            # For request_instrument case
             response_data = [response.data]
 
         if update_catalog and response.data_type.type != Instrument:
-            # for instruments we want to handle each instrument individually
+            # For instruments we want to handle each instrument individually
             self._update_catalog(response_data)
 
+        # We may need to join responses from a catalog and a client
         response_data = self._handle_query_group(correlation_id, response_data)
 
         if response_data is None:
@@ -2019,11 +2022,11 @@ cdef class DataEngine(Component):
         self._query_group_n_components[correlation_id] = n_components
 
     cpdef object _handle_query_group(self, UUID4 correlation_id, list ticks):
-        # closure is not allowed in cpdef functions so we call a cdef function
+        # Closure is not allowed in cpdef functions so we call a cdef function
         return self._handle_query_group_aux(correlation_id, ticks)
 
     cdef object _handle_query_group_aux(self, UUID4 correlation_id, list ticks):
-        # return None or a list of ticks
+        # Returns None or a list of ticks
         if correlation_id not in self._query_group_n_components:
             return ticks
 
@@ -2097,7 +2100,7 @@ cdef class DataEngine(Component):
                     self._log.error("No aggregator for partial bar update")
 
     cpdef dict _handle_aggregated_bars(self, list ticks, dict metadata, dict params):
-        # closure is not allowed in cpdef functions so we call a cdef function
+        # Closure is not allowed in cpdef functions so we call a cdef function
         return self._handle_aggregated_bars_aux(ticks, metadata, params)
 
     cdef dict _handle_aggregated_bars_aux(self, list ticks, dict metadata, dict params):
@@ -2123,12 +2126,8 @@ cdef class DataEngine(Component):
             bars_result[metadata["bar_type"]] = ticks
 
         for bar_type in metadata["bar_types"]:
-            aggregated_bars = []
-            handler = lambda bar: aggregated_bars.append(bar)
-            aggregator = None
-
-            if params["update_existing_subscriptions"] and bar_type.standard() in self._bar_aggregators:
-                aggregator = self._bar_aggregators.get(bar_type.standard())
+            if params["update_subscriptions"] and bar_type.standard() in self._bar_aggregators:
+                aggregator = self._bar_aggregators[bar_type.standard()]
             else:
                 instrument = self._cache.instrument(metadata["instrument_id"])
                 if instrument is None:
@@ -2138,35 +2137,13 @@ cdef class DataEngine(Component):
                     )
 
                 # Create aggregator
-                if bar_type.spec.is_time_aggregated():
-                    test_clock = TestClock()
-                    aggregator = TimeBarAggregator(
-                        instrument=instrument,
-                        bar_type=bar_type,
-                        handler=handler,
-                        clock=test_clock,
-                        build_with_no_updates=self._time_bars_build_with_no_updates,
-                        timestamp_on_close=self._time_bars_timestamp_on_close,
-                        interval_type=self._time_bars_interval_type,
-                    )
-                elif bar_type.spec.aggregation == BarAggregation.TICK:
-                    aggregator = TickBarAggregator(
-                        instrument=instrument,
-                        bar_type=bar_type,
-                        handler=handler,
-                    )
-                elif bar_type.spec.aggregation == BarAggregation.VOLUME:
-                    aggregator = VolumeBarAggregator(
-                        instrument=instrument,
-                        bar_type=bar_type,
-                        handler=handler,
-                    )
-                elif bar_type.spec.aggregation == BarAggregation.VALUE:
-                    aggregator = ValueBarAggregator(
-                        instrument=instrument,
-                        bar_type=bar_type,
-                        handler=handler,
-                    )
+                aggregator = self._create_bar_aggregator(instrument, bar_type)
+
+                if params["update_subscriptions"]:
+                    self._bar_aggregators[bar_type.standard()] = aggregator
+
+            aggregated_bars = []
+            handler = lambda bar: aggregated_bars.append(bar)
 
             if metadata["bars_market_data_type"] == "quote_ticks" and not bar_type.is_composite():
                 aggregator.start_batch_update(handler, ticks[0].ts_event)
@@ -2193,7 +2170,7 @@ cdef class DataEngine(Component):
         if not params["include_external_data"] and metadata["bars_market_data_type"] == "bars":
             del bars_result[metadata["bar_type"]]
 
-        # we need a second final dict as a we can't delete keys in a loop
+        # We need a second final dict as a we can't delete keys in a loop
         result["bars"] = {}
 
         for bar_type in bars_result:
@@ -2256,21 +2233,7 @@ cdef class DataEngine(Component):
             msg=order_book,
         )
 
-    cpdef void _start_bar_aggregator(
-        self,
-        MarketDataClient client,
-        BarType bar_type,
-        bint await_partial,
-        dict params,
-    ):
-        cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot start bar aggregation: "
-                f"no instrument found for {bar_type.instrument_id}",
-            )
-
-        # Create aggregator
+    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type):
         if bar_type.spec.is_time_aggregated():
             aggregator = TimeBarAggregator(
                 instrument=instrument,
@@ -2307,6 +2270,29 @@ cdef class DataEngine(Component):
                 f"not supported in open-source"  # pragma: no cover (design-time error)
             )
 
+        return aggregator
+
+    cpdef void _start_bar_aggregator(
+        self,
+        MarketDataClient client,
+        BarType bar_type,
+        bint await_partial,
+        dict params,
+    ):
+        cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot start bar aggregation: "
+                f"no instrument found for {bar_type.instrument_id}",
+            )
+
+        # An aggregator may already have been created with actor.request_aggregated_bars and _handle_aggregated_bars
+        aggregator = self._bar_aggregators.get(bar_type.standard())
+
+        if aggregator is None:
+            # Create aggregator
+            aggregator = self._create_bar_aggregator(instrument, bar_type)
+
         # Set if awaiting initial partial bar
         aggregator.set_await_partial(await_partial)
 
@@ -2322,7 +2308,7 @@ cdef class DataEngine(Component):
                 topic=f"data.bars.{composite_bar_type}",
                 handler=aggregator.handle_bar,
             )
-            self._handle_subscribe_bars(client, composite_bar_type, False, params)
+            self._handle_subscribe_bars(client, composite_bar_type, await_partial, params)
         elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
@@ -2341,6 +2327,8 @@ cdef class DataEngine(Component):
                 priority=5,
             )
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id, params)
+
+        aggregator.is_running = True
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type, dict params):
         cdef aggregator = self._bar_aggregators.get(bar_type.standard())
