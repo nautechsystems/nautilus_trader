@@ -478,13 +478,12 @@ where
 /// Provides a means of building time bars aggregated from quote and trades.
 ///
 /// At each aggregation time interval, a bar is created and sent to the handler.
-pub struct TimeBarAggregator<C, H>
+pub struct TimeBarAggregator<H>
 where
-    C: Clock,
     H: FnMut(Bar),
 {
     core: BarAggregatorCore<H>,
-    clock: C,
+    clock: Rc<RefCell<dyn Clock>>,
     build_with_no_updates: bool,
     timestamp_on_close: bool,
     is_left_open: bool,
@@ -499,27 +498,26 @@ where
 }
 
 #[derive(Clone)]
-pub struct NewBarCallback<C: Clock, H: FnMut(Bar)> {
-    aggregator: Rc<RefCell<TimeBarAggregator<C, H>>>,
+pub struct NewBarCallback<H: FnMut(Bar)> {
+    aggregator: Rc<RefCell<TimeBarAggregator<H>>>,
 }
 
-impl<C: Clock, H: FnMut(Bar)> NewBarCallback<C, H> {
-    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<C, H>>>) -> Self {
+impl<H: FnMut(Bar)> NewBarCallback<H> {
+    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
         Self { aggregator }
     }
 }
 
-impl<C: Clock + 'static, H: FnMut(Bar) + 'static> From<NewBarCallback<C, H>> for TimeEventCallback {
-    fn from(value: NewBarCallback<C, H>) -> Self {
+impl<H: FnMut(Bar) + 'static> From<NewBarCallback<H>> for TimeEventCallback {
+    fn from(value: NewBarCallback<H>) -> Self {
         Self::Rust(Rc::new(move |event: TimeEvent| {
             value.aggregator.borrow_mut().build_bar(event);
         }))
     }
 }
 
-impl<C, H> TimeBarAggregator<C, H>
+impl<H> TimeBarAggregator<H>
 where
-    C: Clock + 'static,
     H: FnMut(Bar) + 'static,
 {
     /// Creates a new [`TimeBarAggregator`] instance.
@@ -535,7 +533,7 @@ where
         bar_type: BarType,
         handler: H,
         await_partial: bool,
-        clock: C,
+        clock: Rc<RefCell<dyn Clock>>,
         build_with_no_updates: bool,
         timestamp_on_close: bool,
         interval_type: &str, // TODO: Make this an enum
@@ -558,12 +556,13 @@ where
     }
 
     /// Starts the time bar aggregator.
-    pub fn start(&mut self, callback: NewBarCallback<C, H>) -> anyhow::Result<()> {
-        let now = self.clock.utc_now();
+    pub fn start(&mut self, callback: NewBarCallback<H>) -> anyhow::Result<()> {
+        let now = self.clock.borrow().utc_now();
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
 
         self.clock
+            .borrow_mut()
             .set_timer_ns(
                 &self.timer_name,
                 self.interval_ns.as_u64(),
@@ -579,7 +578,7 @@ where
 
     /// Stops the time bar aggregator.
     pub fn stop(&mut self) {
-        self.clock.cancel_timer(&self.timer_name);
+        self.clock.borrow_mut().cancel_timer(&self.timer_name);
     }
 
     fn build_bar(&mut self, event: TimeEvent) {
@@ -606,13 +605,12 @@ where
 
         self.core.build_and_send(ts_event, ts_init);
         self.stored_open_ns = event.ts_event;
-        self.next_close_ns = self.clock.next_time_ns(&self.timer_name);
+        self.next_close_ns = self.clock.borrow().next_time_ns(&self.timer_name);
     }
 }
 
-impl<C, H> BarAggregator for TimeBarAggregator<C, H>
+impl<H> BarAggregator for TimeBarAggregator<H>
 where
-    C: Clock,
     H: FnMut(Bar),
 {
     fn bar_type(&self) -> BarType {

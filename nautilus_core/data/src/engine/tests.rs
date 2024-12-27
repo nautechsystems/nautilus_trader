@@ -24,7 +24,7 @@ use std::{
 use indexmap::indexmap;
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::{Clock, TestClock},
     messages::data::{Action, SubscriptionCommand},
     msgbus::{
         handler::ShareableMessageHandler,
@@ -69,8 +69,8 @@ fn venue() -> Venue {
 }
 
 #[fixture]
-fn clock() -> Box<TestClock> {
-    Box::new(TestClock::new())
+fn clock() -> Rc<RefCell<TestClock>> {
+    Rc::new(RefCell::new(TestClock::new()))
 }
 
 #[fixture]
@@ -109,7 +109,7 @@ fn switchboard(msgbus: Rc<RefCell<MessageBus>>) -> MessagingSwitchboard {
 
 #[fixture]
 fn data_engine(
-    clock: Box<TestClock>,
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
 ) -> Rc<RefCell<DataEngine>> {
@@ -123,7 +123,7 @@ fn data_client(
     venue: Venue,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
-    clock: Box<TestClock>,
+    clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
     let client = Box::new(MockDataClient::new(cache, msgbus, client_id, venue));
     DataClientAdapter::new(client_id, venue, true, true, client, clock)
