@@ -33,7 +33,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-sysinfo = "0.33.0"
+sysinfo = "0.33.1"
 
 [dev-dependencies]
 proptest = { workspace = true }
