@@ -81,10 +81,10 @@ pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
-    if !ptr.is_null() {
-        Some(cstr_to_ustr(ptr))
-    } else {
+    if ptr.is_null() {
         None
+    } else {
+        Some(cstr_to_ustr(ptr))
     }
 }
 
