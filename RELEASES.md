@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
 
 ---
 
