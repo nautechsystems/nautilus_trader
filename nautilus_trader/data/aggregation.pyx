@@ -299,6 +299,7 @@ cdef class BarAggregator:
             bar_type=self.bar_type,
         )
         self._batch_mode = False
+        self.is_running = False # is_running means that an aggregator receives data from the message bus
 
     def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
         self._batch_mode = True

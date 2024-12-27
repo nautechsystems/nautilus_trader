@@ -2598,7 +2598,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint include_external_data = False,
-        bint update_existing_subscriptions = False,
+        bint update_subscriptions = False,
         bint update_catalog = False,
         dict[str, object] params = None,
     ):
@@ -2629,8 +2629,8 @@ cdef class Actor(Component):
             completed processing.
         include_external_data : bool, default False
             If True, includes the queried external data in the response.
-        update_existing_subscriptions : bool, default False
-            If True, updates the aggregators of any existing subscription with the queried external data.
+        update_subscriptions : bool, default False
+            If True, updates the aggregators of any existing or future subscription with the queried external data.
         update_catalog : bool, default False
             If True then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
@@ -2687,7 +2687,7 @@ cdef class Actor(Component):
 
         params = params if params else {}
         params["include_external_data"] = include_external_data
-        params["update_existing_subscriptions"] = update_existing_subscriptions
+        params["update_subscriptions"] = update_subscriptions
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()

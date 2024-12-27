@@ -198,6 +198,7 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
+    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type, bint await_partial, dict params)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type, dict params)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)

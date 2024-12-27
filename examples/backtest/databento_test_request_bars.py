@@ -133,17 +133,21 @@ class TestHistoricalAggStrategy(Strategy):
             f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
         )
 
-        self.subscribe_bars(bar_type_1)
-        self.subscribe_bars(bar_type_2)
-        self.subscribe_bars(bar_type_3)
-
         self.request_aggregated_bars(
             [bar_type_1, bar_type_2, bar_type_3],
             start=start_historical_bars,
             end=end_historical_bars,
-            update_existing_subscriptions=True,
+            update_subscriptions=True,
             include_external_data=False,
         )
+
+        self.user_log("request_aggregated_bars done")
+
+        self.subscribe_bars(bar_type_1)
+        self.subscribe_bars(bar_type_2)
+        self.subscribe_bars(bar_type_3)
+
+        self.user_log("subscribe_bars done")
 
         #### for testing indicators with bars
         # self.register_indicator_for_bars(external_bar_type, self.external_sma)
@@ -161,16 +165,16 @@ class TestHistoricalAggStrategy(Strategy):
         # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
         # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
 
-        # self.subscribe_bars(bar_type_1)
-        # self.subscribe_bars(bar_type_2)
-
         # self.request_aggregated_bars(
         #     [bar_type_1, bar_type_2],
         #     start=start_historical_bars,
         #     end=end_historical_bars,
-        #     update_existing_subscriptions=True,
+        #     update_subscriptions=True,
         #     include_external_data=False,
         # )
+
+        # self.subscribe_bars(bar_type_1)
+        # self.subscribe_bars(bar_type_2)
 
         ######### for testing trades
         # utc_now = self._clock.utc_now()
@@ -184,27 +188,29 @@ class TestHistoricalAggStrategy(Strategy):
         # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
         # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
 
-        # self.subscribe_bars(bar_type_1)
-        # self.subscribe_bars(bar_type_2)
-
         # self.request_aggregated_bars(
         #     [bar_type_1, bar_type_2],
         #     start=start_historical_bars,
         #     end=end_historical_bars,
-        #     update_existing_subscriptions=True,
+        #     update_subscriptions=True,
         #     include_external_data=False,
         # )
 
+        # self.subscribe_bars(bar_type_1)
+        # self.subscribe_bars(bar_type_2)
+
     def on_historical_data(self, data):
         if type(data) is Bar:
-            self.user_log(f"historical bar ts_init = {unix_nanos_to_str(data.ts_init)}")
+            self.user_log(
+                f"historical bar ts_init = {unix_nanos_to_str(data.ts_init)}, {data.ts_init}",
+            )
             self.user_log(data)
 
             # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
             # self.user_log(f"{self.composite_sma.value=}, {self.composite_sma.initialized=}")
 
     def on_bar(self, bar):
-        self.user_log(f"bar ts_init = {unix_nanos_to_str(bar.ts_init)}")
+        self.user_log(f"bar ts_init = {unix_nanos_to_str(bar.ts_init)}, {bar.ts_init}")
         self.user_log(bar)
 
         # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")

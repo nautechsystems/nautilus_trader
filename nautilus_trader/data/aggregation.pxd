@@ -66,6 +66,7 @@ cdef class BarAggregator:
     cdef object _handler_backup
     cdef bint _await_partial
     cdef bint _batch_mode
+    cdef public bint is_running
 
     cdef readonly BarType bar_type
     """The aggregators bar type.\n\n:returns: `BarType`"""

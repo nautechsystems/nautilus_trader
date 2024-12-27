@@ -2779,7 +2779,7 @@ class TestDataEngine:
         handler = []
         params = {}
         params["include_external_data"] = True
-        params["update_existing_subscriptions"] = False
+        params["update_subscriptions"] = False
         params["update_catalog"] = False
 
         request_id = UUID4()
@@ -2900,7 +2900,7 @@ class TestDataEngine:
         handler = []
         params = {}
         params["include_external_data"] = False
-        params["update_existing_subscriptions"] = False
+        params["update_subscriptions"] = False
         params["update_catalog"] = False
 
         request_id = UUID4()
@@ -2997,7 +2997,7 @@ class TestDataEngine:
         handler = []
         params = {}
         params["include_external_data"] = False
-        params["update_existing_subscriptions"] = False
+        params["update_subscriptions"] = False
         params["update_catalog"] = False
 
         request_id = UUID4()
