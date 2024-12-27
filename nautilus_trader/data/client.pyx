@@ -361,6 +361,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         data_type : DataType
             The data type for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(
@@ -543,6 +545,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         data_type : DataType
             The data type for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(

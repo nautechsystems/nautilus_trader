@@ -15,6 +15,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{enums::Exchange, parse::deserialize_uppercase};
 
@@ -33,7 +34,7 @@ pub struct BookLevel {
 pub struct BookChangeMsg {
     /// The symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     /// The exchange ID.
     pub exchange: Exchange,
     /// Indicates whether this is an initial order book snapshot.
@@ -54,7 +55,7 @@ pub struct BookChangeMsg {
 pub struct BookSnapshotMsg {
     /// The symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     /// The exchange ID.
     pub exchange: Exchange,
     /// The name of the snapshot, e.g., `book_snapshot_{depth}_{interval}{time_unit}`.
@@ -80,7 +81,7 @@ pub struct BookSnapshotMsg {
 pub struct TradeMsg {
     /// The symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     /// The exchange ID.
     pub exchange: Exchange,
     /// The trade ID provided by the exchange (optional).
@@ -103,7 +104,7 @@ pub struct TradeMsg {
 pub struct DerivativeTickerMsg {
     /// The symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     /// The exchange ID.
     pub exchange: Exchange,
     /// The last instrument price if provided by exchange.
@@ -130,7 +131,7 @@ pub struct DerivativeTickerMsg {
 pub struct BarMsg {
     /// The symbol as provided by the exchange.
     #[serde(deserialize_with = "deserialize_uppercase")]
-    pub symbol: String,
+    pub symbol: Ustr,
     /// The exchange ID.
     pub exchange: Exchange,
     /// name with format `trade_bar`_{interval}

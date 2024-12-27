@@ -249,7 +249,7 @@ mod tests {
     fn test_try_from_datetime_valid() {
         use chrono::TimeZone;
         let datetime = Utc.timestamp_opt(1_000_000_000, 0).unwrap(); // 1 billion seconds since epoch
-        let nanos = UnixNanos::try_from(datetime).unwrap();
+        let nanos = UnixNanos::from(datetime);
         assert_eq!(nanos.as_u64(), 1_000_000_000_000_000_000);
     }
 

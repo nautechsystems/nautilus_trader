@@ -96,6 +96,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             base_url_ws_private=None,  # Override with custom endpoint
+            use_ws_trade_api=True,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
             demo=False,  # If client uses the demo API

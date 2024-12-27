@@ -76,7 +76,7 @@ pub fn load_deltas<P: AsRef<Path>>(
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, &record.symbol),
+            None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let side = parse_order_side(&record.side);
         let price = Price::new(record.price, price_precision);
@@ -164,7 +164,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
         let record: TardisOrderBookSnapshot5Record = raw_record.deserialize(None)?;
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, &record.symbol),
+            None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let flags = RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
@@ -269,7 +269,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, &record.symbol),
+            None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let flags = RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
@@ -396,7 +396,7 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, &record.symbol),
+            None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let bid_price = Price::new(record.bid_price.unwrap_or(0.0), price_precision);
         let bid_size = Quantity::new(record.bid_amount.unwrap_or(0.0), size_precision);
@@ -444,7 +444,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, &record.symbol),
+            None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let price = Price::new(record.price, price_precision);
         let size = Quantity::new(record.amount, size_precision);

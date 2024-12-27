@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitContractType
 from nautilus_trader.adapters.bybit.common.enums import BybitOptionType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
-from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResultWithCursor
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
 from nautilus_trader.adapters.bybit.schemas.common import LinearPriceFilter
 from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
@@ -376,26 +376,26 @@ BybitInstrumentList = (
 class BybitInstrumentsSpotResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitInstrumentSpot]
+    result: BybitListResultWithCursor[BybitInstrumentSpot]
     time: int
 
 
 class BybitInstrumentsLinearResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitInstrumentLinear]
+    result: BybitListResultWithCursor[BybitInstrumentLinear]
     time: int
 
 
 class BybitInstrumentsInverseResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitInstrumentInverse]
+    result: BybitListResultWithCursor[BybitInstrumentInverse]
     time: int
 
 
 class BybitInstrumentsOptionResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitInstrumentOption]
+    result: BybitListResultWithCursor[BybitInstrumentOption]
     time: int

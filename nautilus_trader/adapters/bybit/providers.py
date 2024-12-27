@@ -93,15 +93,15 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
 
         for product_type in self._product_types:
-            instrument_infos[product_type] = await self._http_market.fetch_instruments(
+            instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
                 product_type,
             )
             fee_rates[product_type] = await self._http_account.fetch_fee_rate(
                 product_type,
             )
 
-        for product_type in instrument_infos:
-            for instrument in instrument_infos[product_type]:
+        for product_type, instruments in instrument_infos.items():
+            for instrument in instruments:
                 target_fee_rate = next(
                     (
                         item
@@ -141,7 +141,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
 
         for product_type in self._product_types:
-            instrument_infos[product_type] = await self._http_market.fetch_instruments(
+            instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
                 product_type,
             )
             fee_rates[product_type] = await self._http_account.fetch_fee_rate(
@@ -203,17 +203,21 @@ class BybitInstrumentProvider(InstrumentProvider):
         else:
             raise TypeError(f"Unsupported Bybit instrument, was {instrument}")
 
-    def _parse_spot_instrument(
+    def _parse_to_instrument(
         self,
-        data: BybitInstrumentSpot,
+        instrument: BybitInstrument,
         fee_rate: BybitFeeRate,
     ) -> None:
+        if isinstance(instrument, BybitInstrumentOption):
+            self._log.warning("Parsing of instrument Options is currently not supported")
+            return
+
         try:
-            base_currency = self.currency(data.baseCoin)
-            quote_currency = self.currency(data.quoteCoin)
+            base_currency = self.currency(instrument.baseCoin)
+            quote_currency = self.currency(instrument.quoteCoin)
             ts_event = self._clock.timestamp_ns()
             ts_init = self._clock.timestamp_ns()
-            instrument = data.parse_to_instrument(
+            instrument = instrument.parse_to_instrument(
                 base_currency=base_currency,
                 quote_currency=quote_currency,
                 fee_rate=fee_rate,
@@ -223,51 +227,30 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {data.symbol}: {e}")
+                self._log.warning(
+                    f"Unable to parse {instrument.__class__.__name__} instrument {instrument.symbol}: {e}",
+                )
+
+    def _parse_spot_instrument(
+        self,
+        data: BybitInstrumentSpot,
+        fee_rate: BybitFeeRate,
+    ) -> None:
+        self._parse_to_instrument(data, fee_rate)
 
     def _parse_linear_instrument(
         self,
         data: BybitInstrumentLinear,
         fee_rate: BybitFeeRate,
     ) -> None:
-        try:
-            base_currency = self.currency(data.baseCoin)
-            quote_currency = self.currency(data.quoteCoin)
-            ts_event = self._clock.timestamp_ns()
-            ts_init = self._clock.timestamp_ns()
-            instrument = data.parse_to_instrument(
-                base_currency=base_currency,
-                quote_currency=quote_currency,
-                fee_rate=fee_rate,
-                ts_event=ts_event,
-                ts_init=ts_init,
-            )
-            self.add(instrument=instrument)
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(f"Unable to parse linear instrument {data.symbol}: {e}")
+        self._parse_to_instrument(data, fee_rate)
 
     def _parse_inverse_instrument(
         self,
         data: BybitInstrumentInverse,
         fee_rate: BybitFeeRate,
     ) -> None:
-        try:
-            base_currency = self.currency(data.baseCoin)
-            quote_currency = self.currency(data.quoteCoin)
-            ts_event = self._clock.timestamp_ns()
-            ts_init = self._clock.timestamp_ns()
-            instrument = data.parse_to_instrument(
-                base_currency=base_currency,
-                quote_currency=quote_currency,
-                fee_rate=fee_rate,
-                ts_event=ts_event,
-                ts_init=ts_init,
-            )
-            self.add(instrument=instrument)
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(f"Unable to parse inverse instrument {data.symbol}: {e}")
+        self._parse_to_instrument(data, fee_rate)
 
     def _parse_option_instrument(
         self,
@@ -275,8 +258,3 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rate: BybitFeeRate,
     ) -> None:
         self._log.warning("Parsing of instrument Options is currently not supported")
-        try:
-            pass
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {instrument.symbol}: {e}")

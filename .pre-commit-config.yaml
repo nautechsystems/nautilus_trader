@@ -108,7 +108,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v1.14.0
     hooks:
       - id: mypy
         args: [
@@ -128,3 +128,15 @@ repos:
     rev: 0.8.1
     hooks:
       - id: nbstripout
+
+  ##############################################################################
+  #  Custom hooks
+  ##############################################################################
+  - repo: local
+    hooks:
+      - id: poetry-lock-check
+        name: poetry-lock-check
+        entry: poetry lock --check
+        language: system
+        types: [python]
+        pass_filenames: false

@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is tested and officially supported for Python 3.11 and 3.12 for the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.11 and 3.12 for the following 64-bit platforms:
 
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
@@ -35,6 +35,64 @@ Install optional dependencies as 'extras' for specific integrations:
 To install with specific extras using pip:
 
     pip install -U "nautilus_trader[docker,ib]"
+
+## From the Nautech Systems package index
+
+The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+This enables users to install either the latest stable release or pre-release versions for testing.
+
+### Stable wheels
+
+Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
+
+To install the latest stable release:
+
+    pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+
+### Development wheels
+
+Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS,
+allowing users to test features and fixes ahead of stable releases.
+
+This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
+while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
+
+- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
+- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+
+:::warning
+We don't recommend using development wheels in production environments, such as live trading controlling real capital.
+:::
+
+### Installation commands
+
+By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+
+To install the latest available pre-release (including development wheels):
+
+    pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+
+To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
+
+    pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+
+### Available versions
+
+You can view all available versions of `nautilus_trader` on the [package index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html).
+
+To programmatically fetch and list available versions:
+
+    curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+
+### Branch updates
+
+- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
+- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+
+### Retention policies
+
+- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
+- `nightly` branch wheels (`a`): Only the 3 most recent wheel builds are retained.
 
 ## From Source
 
@@ -100,24 +158,6 @@ To install a binary wheel from GitHub, first navigate to the [latest release](ht
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
     pip install <file-name>.whl
-
-## Nightly wheels
-
-Nightly binary wheels for `nautilus_trader` are built and published daily from the `nightly` branch
-using the version format `dev.{date}` (e.g., `1.208.0.dev20241212` for December 12, 2024).
-These wheels allow testing of the latest features and fixes that have not yet been included in a stable PyPI release.
-
-**To install the latest nightly build**:
-
-    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader
-
-**To install a specific nightly build** (e.g., `1.208.0.dev20241212` for December 12, 2024):
-
-    pip install -U --index-url=https://nautechsystems.github.io/nautilus_trader/simple/ nautilus_trader==1.208.0.dev20241212
-
-**Notes**:
-- The `develop` branch is merged into `nightly` daily at **14:00 UTC** (if there are changes).
-- A 3-day lookback window is maintained, retaining only the last 3 nightly builds.
 
 ## Versioning and releases
 

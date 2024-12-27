@@ -16,10 +16,7 @@
 //! The core `AtomicTime` for real-time and static clocks.
 //!
 //! This module provides an atomic time abstraction that supports both real-time and static
-//! clocks. It ensures thread-safe operations and monotonic time retrieval with nanosecond
-//! precision. On Linux, it uses a fast system call (`CLOCK_REALTIME_COARSE`) to optimize
-//! time retrieval, achieving significant performance improvements. On other platforms, it
-//! falls back to using `SystemTime`.
+//! clocks. It ensures thread-safe operations and monotonic time retrieval with nanosecond precision.
 
 use std::{
     ops::Deref,
@@ -29,9 +26,6 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-#[cfg(target_os = "linux")]
-use libc::{clock_gettime, timespec, CLOCK_REALTIME_COARSE};
 
 use crate::{
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
@@ -78,55 +72,10 @@ pub fn duration_since_unix_epoch() -> Duration {
 }
 
 /// Returns the current UNIX time in nanoseconds.
-///
-/// This fallback implementation uses `duration_since_unix_epoch` for timestamps
-/// and is available on non-Linux platforms.
-#[cfg(not(target_os = "linux"))]
 #[inline(always)]
 #[must_use]
 pub fn nanos_since_unix_epoch() -> u64 {
     duration_since_unix_epoch().as_nanos() as u64
-}
-
-/// Returns the current UNIX time in nanoseconds.
-///
-/// Uses `clock_gettime` with `CLOCK_REALTIME_COARSE` on Linux for fast, coarse-grained
-/// time measurements. Suitable for scenarios where speed is prioritized over precision,
-/// ~4-5x faster than `CLOCK_REALTIME` used by `SystemTime`.
-///
-/// # Panics
-/// This function panics if:
-/// - The `clock_gettime` system call fails.
-///
-/// # Platform
-/// - Available on Linux only.
-///
-/// # Reference
-/// - [Linux man page for clock_gettime](https://man7.org/linux/man-pages/man2/clock_gettime.2.html).
-///
-/// # Example
-/// ```rust
-/// let now = nanos_since_unix_epoch();
-/// println!("Monotonic time: {now} ns");
-/// ```
-#[cfg(target_os = "linux")]
-#[inline(always)]
-#[must_use]
-pub fn nanos_since_unix_epoch() -> u64 {
-    let mut ts = timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-
-    unsafe {
-        if clock_gettime(CLOCK_REALTIME_COARSE, &mut ts) != 0 {
-            let errno = std::io::Error::last_os_error();
-            panic!("Error calling `clock_gettime`: {errno:?}");
-        }
-    }
-
-    // Convert seconds and nanoseconds to a single nanoseconds value
-    ts.tv_sec as u64 * NANOSECONDS_IN_SECOND + ts.tv_nsec as u64
 }
 
 /// Represents an atomic timekeeping structure.

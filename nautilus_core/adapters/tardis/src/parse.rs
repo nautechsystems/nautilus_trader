@@ -20,26 +20,25 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
 };
 use serde::{Deserialize, Deserializer};
+use ustr::Ustr;
 
 use super::enums::{Exchange, InstrumentType, OptionType};
 
-pub fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<Ustr, D::Error>
 where
     D: Deserializer<'de>,
 {
-    String::deserialize(deserializer).map(|s| s.to_uppercase())
+    String::deserialize(deserializer).map(|s| Ustr::from(&s.to_uppercase()))
 }
 
 #[must_use]
 #[inline]
 pub fn normalize_symbol_str(
-    symbol: &str,
+    symbol: Ustr,
     exchange: &Exchange,
     instrument_type: InstrumentType,
     is_inverse: Option<bool>,
-) -> String {
-    let mut symbol = symbol.to_string();
-
+) -> Ustr {
     match exchange {
         Exchange::Binance
         | Exchange::BinanceFutures
@@ -48,61 +47,59 @@ pub fn normalize_symbol_str(
         | Exchange::BinanceJersey
             if instrument_type == InstrumentType::Perpetual =>
         {
-            symbol.push_str("-PERP");
+            append_suffix(symbol, "-PERP")
         }
 
         Exchange::Bybit | Exchange::BybitSpot | Exchange::BybitOptions => match instrument_type {
-            InstrumentType::Spot => {
-                symbol.push_str("-SPOT");
-            }
+            InstrumentType::Spot => append_suffix(symbol, "-SPOT"),
             InstrumentType::Perpetual if !is_inverse.unwrap_or(false) => {
-                symbol.push_str("-LINEAR");
+                append_suffix(symbol, "-LINEAR")
             }
             InstrumentType::Future if !is_inverse.unwrap_or(false) => {
-                symbol.push_str("-LINEAR");
+                append_suffix(symbol, "-LINEAR")
             }
             InstrumentType::Perpetual if is_inverse == Some(true) => {
-                symbol.push_str("-INVERSE");
+                append_suffix(symbol, "-INVERSE")
             }
-            InstrumentType::Future if is_inverse == Some(true) => {
-                symbol.push_str("-INVERSE");
-            }
-            InstrumentType::Option => {
-                symbol.push_str("-OPTION");
-            }
-            _ => {}
+            InstrumentType::Future if is_inverse == Some(true) => append_suffix(symbol, "-INVERSE"),
+            InstrumentType::Option => append_suffix(symbol, "-OPTION"),
+            _ => symbol,
         },
 
         Exchange::Dydx if instrument_type == InstrumentType::Perpetual => {
-            symbol.push_str("-PERP");
+            append_suffix(symbol, "-PERP")
         }
 
         Exchange::GateIoFutures if instrument_type == InstrumentType::Perpetual => {
-            symbol.push_str("-PERP");
+            append_suffix(symbol, "-PERP")
         }
 
-        _ => {}
+        _ => symbol,
     }
+}
 
-    symbol
+fn append_suffix(symbol: Ustr, suffix: &str) -> Ustr {
+    let mut symbol = symbol.to_string();
+    symbol.push_str(suffix);
+    Ustr::from(&symbol)
 }
 
 /// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
 #[must_use]
-pub fn parse_instrument_id(exchange: &Exchange, symbol: &str) -> InstrumentId {
-    InstrumentId::new(Symbol::from_str_unchecked(symbol), exchange.as_venue())
+pub fn parse_instrument_id(exchange: &Exchange, symbol: Ustr) -> InstrumentId {
+    InstrumentId::new(Symbol::from_ustr_unchecked(symbol), exchange.as_venue())
 }
 
 /// Parses a Nautilus instrument ID with a normalized symbol from the given Tardis `exchange` and `symbol` values.
 #[must_use]
 pub fn normalize_instrument_id(
     exchange: &Exchange,
-    symbol: &str,
+    symbol: Ustr,
     instrument_type: InstrumentType,
     is_inverse: Option<bool>,
 ) -> InstrumentId {
     let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
-    parse_instrument_id(exchange, &symbol)
+    parse_instrument_id(exchange, symbol)
 }
 
 /// Parses a Nautilus order side from the given Tardis string `value`.
@@ -217,7 +214,7 @@ mod tests {
     #[case(Exchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
     fn test_parse_instrument_id(
         #[case] exchange: Exchange,
-        #[case] symbol: &str,
+        #[case] symbol: Ustr,
         #[case] expected: &str,
     ) {
         let instrument_id = parse_instrument_id(&exchange, symbol);
@@ -270,7 +267,7 @@ mod tests {
     )]
     fn test_normalize_instrument_id(
         #[case] exchange: Exchange,
-        #[case] symbol: &str,
+        #[case] symbol: Ustr,
         #[case] instrument_type: InstrumentType,
         #[case] is_inverse: Option<bool>,
         #[case] expected: &str,

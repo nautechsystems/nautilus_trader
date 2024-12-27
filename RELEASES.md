@@ -1,27 +1,48 @@
-# NautilusTrader 1.209.0 Beta
+# NautilusTrader 1.210.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
+- Allow bar aggregators to persist after request_aggregated_bars (#2144), thanks @faysou
+
+### Internal Improvements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.209.0 Beta
+
+Released on 25th December 2024 (UTC).
+
+### Enhancements
 - Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
-- Added optional `depth` param for some `OrderBook` methods
-- Added margin and commission docs (#2128), thanks @stefansimik
 - Added `BybitOrderBookDeltaDataLoader` with tutorial for Bybit backtesting (#2131), thanks @DeevsDeevs
+- Added margin and commission docs (#2128), thanks @stefansimik
+- Added optional `depth` param for some `OrderBook` methods
 - Added trade execution support where trades are processed by the matching engine (can be useful backtesting with throttled book and trades data)
 - Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124, #2126), thanks @faysou
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
 
 ### Internal Improvements
-- Optimized `nanos_since_unix_epoch()` to use syscall with `CLOCK_REALTIME_COURSE`, achieving a ~4-5x performance improvement (added benches)
 - Optimized `UUID4::new()` avoiding unnecessary string allocation, achieving a ~2.8x performance improvement (added benches)
+- Upgraded v4-proto for dYdX (#2136), thanks @davidsblom
 - Upgraded `databento` crate to v0.17.0
 
 ### Breaking Changes
 - Moved `BinanceOrderBookDeltaDataLoader` from `nautilus_trader.persistence.loaders` to `nautilus_trader.adapters.binance.loaders`
 
 ### Fixes
-- Fixed timeout error code for Bybit (#2130), thanks @sunlei
 - Fixed multi-threaded monotonicity for `AtomicTime` in real-time mode
+- Fixed timeout error code for Bybit (#2130), thanks @sunlei
+- Fixed instruments info retrieval for Bybit (#2134), thanks @sunlei
+- Fixed `request_aggregated_bars` metadata handling (#2137), thanks @faysou
+- Fixed demo notebook `backtest_high_level.ipynb` (#2142), thanks @stefansimik
 
 ---
 
@@ -237,7 +258,7 @@ Released on 22nd October 2024 (UTC).
 - Added `Clock.timestamp_us()` method for UNIX timestamps in microseconds (μs)
 - Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Added validation for venue `book_type` configuration vs data (prevents an issue where top-of-book data is used when order book data is expected)
-- Added `compute_effective_deltas` config setting for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)
+- Added `compute_effective_deltas` config option for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)
 - Added rate limiter for `WebSocketClient` (#1994), thanks @Pushkarm029
 - Added in the money probability field to GreeksData (#1995), thanks @faysou
 - Added `on_signal(signal)` handler for custom signal data
@@ -401,8 +422,8 @@ Released on 7th September 2024 (UTC).
 - Added `OrderBookDeltas` batching support for `ParquetDataCatalog` (use `data_cls` of `OrderBookDeltas` to batch with the same flags method as live adapters)
 - Added `RetryManagerPool` to abstract common retry functionality for all adapters
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
-- Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
-- Added `recv_window_ms` config setting for `BinanceExecClientConfig`
+- Added `BacktestRunConfig.dispose_on_completion` config option to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
+- Added `recv_window_ms` config option for `BinanceExecClientConfig`
 - Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Added custom `client_order_id` parameters to `OrderFactory` methods
 - Added support for Binance RSA and Ed25519 API key types (#1908), thanks @NextThread
@@ -420,7 +441,7 @@ Released on 7th September 2024 (UTC).
 
 ### Breaking Changes
 - Renamed `heartbeat_interval` to `heartbeat_interval_secs` (more explicitly indicates time units)
-- Moved `heartbeat_interval_secs` config setting to `MessageBusConfig` (the message bus handles external stream processing)
+- Moved `heartbeat_interval_secs` config option to `MessageBusConfig` (the message bus handles external stream processing)
 - Changed `WebSocketClient.send_text(...)` to take `data` as `bytes` rather than `str`
 - Changed `CryptoPerpetual` Arrow schema to include `multiplier` field
 - Changed `CryptoFuture` Arrow schema to include `multiplier` field
@@ -457,9 +478,9 @@ Released on 19th August 2024 (UTC).
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
 - Changed `OptionsContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
 - Renamed `snapshot_positions_interval` to `snapshot_positions_interval_secs` (more explicitly indicates time units)
-- Moved `snapshot_orders` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
-- Moved `snapshot_positions` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
-- Moved `snapshot_positions_interval_secs` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_orders` config option to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_positions` config option to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_positions_interval_secs` config option to `ExecEngineConfig` (can now be used for all environment contexts)
 
 ### Fixes
 - Fixed `Position` exception type on duplicate fill (should be `KeyError` to align with the same error for `Order`)
