@@ -552,8 +552,6 @@ cdef class QuoteTickDataWrangler:
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        # Build a quote tick from the given values. The function expects the values to
-        # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick.from_raw_c(
             self.instrument.id,
             int(bid * 1e9),
@@ -766,8 +764,6 @@ cdef class TradeTickDataWrangler:
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        # Build a quote tick from the given values. The function expects the values to
-        # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick.from_raw_c(
             self.instrument.id,
             int(price * 1e9),
