@@ -1387,7 +1387,7 @@ cdef class DataEngine(Component):
             )
 
         if client is not None:
-            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
         cdef dict[str, object] metadata = request.data_type.metadata
         cdef dict[str, object] params = request.params
