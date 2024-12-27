@@ -20,15 +20,17 @@
 #![allow(unused_variables)]
 
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet},
     fmt::Debug,
     ops::{Deref, DerefMut},
+    rc::Rc,
     sync::Arc,
 };
 
 use indexmap::IndexMap;
 use nautilus_common::{
-    clock::Clock,
+    clock::{Clock, TestClock},
     messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
 };
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -220,7 +222,7 @@ pub trait DataClient {
 
 pub struct DataClientAdapter {
     client: Box<dyn DataClient>,
-    clock: Box<dyn Clock>,
+    clock: Rc<RefCell<TestClock>>,
     pub client_id: ClientId,
     pub venue: Venue,
     pub handles_order_book_deltas: bool,
@@ -299,7 +301,7 @@ impl DataClientAdapter {
         handles_order_book_deltas: bool,
         handles_order_book_snapshots: bool,
         client: Box<dyn DataClient>,
-        clock: Box<dyn Clock>,
+        clock: Rc<RefCell<TestClock>>,
     ) -> Self {
         Self {
             client,
@@ -689,7 +691,7 @@ impl DataClientAdapter {
             instrument_id.venue,
             data_type,
             data,
-            self.clock.timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
             None,
         )
     }
@@ -711,7 +713,7 @@ impl DataClientAdapter {
             venue,
             data_type,
             data,
-            self.clock.timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
             None,
         )
     }
@@ -733,7 +735,7 @@ impl DataClientAdapter {
             instrument_id.venue,
             data_type,
             data,
-            self.clock.timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
             None,
         )
     }
@@ -755,7 +757,7 @@ impl DataClientAdapter {
             instrument_id.venue,
             data_type,
             data,
-            self.clock.timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
             None,
         )
     }
@@ -777,7 +779,7 @@ impl DataClientAdapter {
             bar_type.instrument_id().venue,
             data_type,
             data,
-            self.clock.timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
             None,
         )
     }

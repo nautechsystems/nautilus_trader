@@ -83,7 +83,7 @@ use crate::{aggregation::BarAggregator, client::DataClientAdapter};
 
 /// Provides a high-performance `DataEngine` for all environments.
 pub struct DataEngine {
-    clock: Box<dyn Clock>,
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clients: IndexMap<ClientId, DataClientAdapter>,
@@ -106,7 +106,7 @@ impl DataEngine {
     /// Creates a new [`DataEngine`] instance.
     #[must_use]
     pub fn new(
-        clock: Box<dyn Clock>,
+        clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
         config: Option<DataEngineConfig>,
@@ -165,9 +165,9 @@ impl DataEngine {
         self.clients.values().for_each(|client| client.reset());
     }
 
-    pub fn dispose(mut self) {
+    pub fn dispose(self) {
         self.clients.values().for_each(|client| client.dispose());
-        self.clock.cancel_timers();
+        self.clock.borrow_mut().cancel_timers();
     }
 
     pub fn connect(&self) {
@@ -637,7 +637,7 @@ impl DataEngine {
                     interval_ms,
                 };
 
-                let now_ns = self.clock.timestamp_ns().as_u64();
+                let now_ns = self.clock.borrow().timestamp_ns().as_u64();
                 let mut start_time_ns = now_ns - (now_ns % interval_ns);
 
                 if start_time_ns - NANOSECONDS_IN_MILLISECOND <= now_ns {
@@ -657,6 +657,7 @@ impl DataEngine {
                     TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
 
                 self.clock
+                    .borrow_mut()
                     .set_timer_ns(
                         &timer_name,
                         interval_ns,
@@ -797,8 +798,9 @@ impl DataEngine {
             if msgbus.subscriptions_count(topic) == 0 {
                 let timer_name = snapshotter.timer_name;
                 self.book_snapshotters.remove(instrument_id);
-                if self.clock.timer_names().contains(&timer_name.as_str()) {
-                    self.clock.cancel_timer(&timer_name);
+                let mut clock = self.clock.borrow_mut();
+                if clock.timer_names().contains(&timer_name.as_str()) {
+                    clock.cancel_timer(&timer_name);
                 }
                 log::debug!("Removed BookSnapshotter for instrument ID {instrument_id}");
             }
