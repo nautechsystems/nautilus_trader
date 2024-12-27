@@ -877,10 +877,10 @@ impl OrderMatchingEngine {
             let cache = self.cache.as_ref().borrow();
             let positions_open =
                 cache.positions_open(None, Some(&order.instrument_id()), None, None);
-            if !positions_open.is_empty() {
-                Some(positions_open[0].id)
-            } else {
+            if positions_open.is_empty() {
                 None
+            } else {
+                Some(positions_open[0].id)
             }
         }
     }
