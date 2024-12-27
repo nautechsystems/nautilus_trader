@@ -31,8 +31,12 @@ use std::{
 
 use bytes::Bytes;
 use database::CacheDatabaseAdapter;
-use nautilus_core::correctness::{
-    check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string, FAILED,
+use nautilus_core::{
+    correctness::{
+        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
+        FAILED,
+    },
+    uuid::UUID4,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -1511,6 +1515,57 @@ impl Cache {
             // }
         }
         Ok(())
+    }
+
+    pub fn snapshot_position(&self, position: &Position) -> anyhow::Result<()> {
+        let position_id = position.id;
+        let snapshots = self.position_snapshots.get(&position_id);
+
+        // Reassign position ID
+        let mut copied_position = position.clone();
+        copied_position.id = PositionId::new(format!("{}-{}", position_id.as_str(), UUID4::new()));
+        // cdef bytes position_pickled = pickle.dumps(copied_position)
+
+        // if let Some(snapshots) = snapshots {}
+        // else {
+
+        // }
+
+        todo!()
+        // Ok(())
+    }
+
+    pub fn snapshot_position_state(
+        &mut self,
+        position: &Position,
+        // ts_snapshot: u64,
+        // unrealized_pnl: Option<Money>,
+        open_only: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let open_only = open_only.unwrap_or(true);
+
+        if open_only && !position.is_open() {
+            return Ok(());
+        }
+
+        if let Some(database) = &mut self.database {
+            database.snapshot_position_state(position).map_err(|e| {
+                log::error!(
+                    "Failed to snapshot position state for {}: {:?}",
+                    position.id,
+                    e
+                );
+                e
+            })?;
+        } else {
+            log::warn!(
+                "Cannot snapshot position state for {} (no database configured)",
+                position.id
+            );
+        }
+
+        // Ok(())
+        todo!()
     }
 
     // -- IDENTIFIER QUERIES ----------------------------------------------------------------------

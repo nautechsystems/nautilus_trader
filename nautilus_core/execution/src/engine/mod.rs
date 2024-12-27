@@ -43,11 +43,14 @@ use nautilus_common::{
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
-    enums::{OmsType, OrderSide, PositionSide},
-    events::{OrderEvent, OrderEventAny, OrderFilled},
+    enums::{ContingencyType, OmsType, OrderSide, PositionSide},
+    events::{
+        OrderDenied, OrderEvent, OrderEventAny, OrderFilled, PositionChanged, PositionClosed,
+        PositionOpened,
+    },
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
-    orders::OrderAny,
+    orders::{OrderAny, OrderError},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -261,18 +264,25 @@ impl ExecutionEngine {
     }
 
     fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
-        let order = command.order.clone();
+        let mut command = command;
+        let mut order = command.order.clone();
+        let client_order_id = order.client_order_id();
+        let instrument_id = order.instrument_id();
 
         // Check if the order exists in the cache
-        if !self.cache.borrow().order_exists(&order.client_order_id()) {
-            if let Err(e) = self.cache.borrow_mut().add_order(
-                order.clone(),
-                command.position_id,
-                Some(command.client_id),
-                true,
-            ) {
-                log::error!("Error adding order to cache: {}", e);
-                return;
+        if !self.cache.borrow().order_exists(&client_order_id) {
+            // Add order to cache in a separate scope to drop the mutable borrow
+            {
+                let mut cache = self.cache.borrow_mut();
+                if let Err(e) = cache.add_order(
+                    order.clone(),
+                    command.position_id,
+                    Some(command.client_id),
+                    true,
+                ) {
+                    log::error!("Error adding order to cache: {}", e);
+                    return;
+                }
             }
 
             if self.config.snapshot_orders {
@@ -280,42 +290,50 @@ impl ExecutionEngine {
             }
         }
 
-        let cache = self.cache.borrow();
-        let instrument = if let Some(instrument) = cache.instrument(&order.instrument_id()) {
-            instrument
-        } else {
-            log::error!(
-                "Cannot handle submit order: no instrument found for {}, {}",
-                order.instrument_id(),
-                &command
-            );
-            return;
+        // Get instrument in a separate scope to manage borrows
+        let instrument = {
+            let cache = self.cache.borrow();
+            if let Some(instrument) = cache.instrument(&instrument_id) {
+                instrument.clone()
+            } else {
+                log::error!(
+                    "Cannot handle submit order: no instrument found for {}, {}",
+                    instrument_id,
+                    &command
+                );
+                return;
+            }
         };
 
         // Handle quote quantity conversion
         if !instrument.is_inverse() && order.is_quote_quantity() {
-            if let Some(last_px) =
-                self.last_px_for_conversion(&order.instrument_id(), order.order_side())
-            {
-                let base_qty = instrument.get_base_quantity(order.quantity(), last_px);
-                self.set_order_base_qty(&order, base_qty);
+            let last_px = self.last_px_for_conversion(&instrument_id, order.order_side());
+
+            if let Some(price) = last_px {
+                let base_qty = instrument.get_base_quantity(order.quantity(), price);
+                self.set_order_base_qty(&mut order, base_qty);
             } else {
                 self.deny_order(
                     &order,
-                    &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
+                    &format!("no-price-to-convert-quote-qty {instrument_id}"),
                 );
-                return; // Denied
+                return;
             }
         }
 
+        command.order = order;
+
         // Send the order to the execution client
-        if let Err(e) = client.submit_order(command) {
+        if let Err(e) = client.submit_order(command.clone()) {
             log::error!("Error submitting order to client: {}", e);
-            self.deny_order(&order, &format!("failed-to-submit-order-to-client: {e}"));
+            self.deny_order(
+                &command.order,
+                &format!("failed-to-submit-order-to-client: {e}"),
+            );
         }
     }
 
-    fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
+    fn handle_submit_order_list(&self, client: &ExecutionClient, mut command: SubmitOrderList) {
         let orders = command.order_list.orders.clone();
 
         // Cache orders
@@ -357,7 +375,7 @@ impl ExecutionEngine {
             let mut quote_qty = None;
             let mut last_px = None;
 
-            for order in &command.order_list.orders {
+            for order in &mut command.order_list.orders {
                 if !order.is_quote_quantity() {
                     continue; // Base quantity already set
                 }
@@ -407,13 +425,10 @@ impl ExecutionEngine {
         }
     }
 
-    pub const fn handle_cancel_all_orders(
-        &self,
-        _client: &ExecutionClient,
-        _command: CancelAllOrders,
-    ) {
-        // TODO
-        // client.cancel_all_orders(command);
+    fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+        if let Err(e) = client.cancel_all_orders(command) {
+            log::error!("Error canceling all orders: {}", e);
+        };
     }
 
     fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
@@ -434,6 +449,10 @@ impl ExecutionEngine {
             .switchboard
             .get_order_snapshots_topic(order.client_order_id());
         msgbus.publish(&topic, order);
+        todo!("??")
+    }
+
+    fn create_position_state_snapshot(&self, position: &Position) {
         todo!("??")
     }
 
@@ -590,30 +609,47 @@ impl ExecutionEngine {
     }
 
     fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
-        match order.apply(event.clone()) {
-            Ok(()) => {
-                self.cache.borrow_mut().update_order(order).unwrap();
+        if let Err(e) = order.apply(event.clone()) {
+            match e {
+                OrderError::InvalidStateTransition => {
+                    log::warn!("InvalidStateTrigger: {}, did not apply {}", e, event);
+                }
+                _ => {
+                    log::error!("Error applying event: {}, did not apply {}", e, event);
+                }
             }
-            Err(e) => {
-                log::error!("Error applying event: {}, did not apply {}", e, event);
-            }
+            return;
+        }
+
+        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+            log::error!("Error updating order in cache: {}", e);
+        }
+
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus
+            .switchboard
+            .get_event_orders_topic(event.strategy_id());
+        msgbus.publish(&topic, order);
+
+        if self.config.snapshot_orders {
+            self.create_order_state_snapshot(order);
         }
     }
 
-    fn handle_order_fill(&self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
-        let borrowed_cache = self.cache.borrow();
-        let instrument = if let Some(instrument) = borrowed_cache.instrument(&fill.instrument_id) {
-            instrument
-        } else {
-            log::error!(
-                "Cannot handle order fill: no instrument found for {}, {}",
-                fill.instrument_id,
-                fill
-            );
-            return;
-        };
+    fn handle_order_fill(&mut self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
+        let instrument =
+            if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
+                instrument.clone()
+            } else {
+                log::error!(
+                    "Cannot handle order fill: no instrument found for {}, {}",
+                    fill.instrument_id,
+                    fill
+                );
+                return;
+            };
 
-        let account = if let Some(account_id) = borrowed_cache.account(&fill.account_id) {
+        let account = if let Some(account_id) = self.cache.borrow().account(&fill.account_id) {
             account_id
         } else {
             log::error!(
@@ -634,22 +670,74 @@ impl ExecutionEngine {
             return;
         };
 
-        // let position = borrowed_cache.position(&position_id);
-        // if position.is_none() || position.unwrap().is_closed() {
-        //     position = self.open_position(instrument, position_id, fill, oms_type)
-        // }
-        todo!();
+        // TODO: fix clone
+        let mut position = match self.cache.borrow().position(&position_id) {
+            Some(pos) if !pos.is_closed() => pos.clone(),
+            Some(pos) => self
+                .open_position(instrument.clone(), None, fill, oms_type)
+                .unwrap(),
+            None => self
+                .open_position(instrument.clone(), None, fill, oms_type)
+                .unwrap(),
+        };
+
+        if self.will_flip_position(&position, fill) {
+            self.flip_position(instrument, &mut position, fill, oms_type);
+        } else {
+            self.update_position(instrument, &mut position, fill, oms_type);
+        }
+
+        if matches!(order.contingency_type(), Some(ContingencyType::Oto)) && position.is_open() {
+            for client_order_id in order.linked_order_ids().unwrap_or_default() {
+                let cache = self.cache.borrow();
+                let contingent_order = cache.order(&client_order_id);
+                if let Some(contingent_order) = contingent_order {
+                    if contingent_order.position_id().is_none() {
+                        // TODO: check this
+                        let mut contingent_order = contingent_order.clone();
+                        contingent_order.set_position_id(Some(position_id));
+
+                        // TODO: IMPL add_position_id
+                        // self.cache.borrow_mut().add_position_id();
+                    }
+                }
+            }
+        }
     }
 
     fn open_position(
         &self,
         instrument: InstrumentAny,
-        position_id: PositionId,
+        position: Option<&Position>,
         fill: OrderFilled,
         oms_type: OmsType,
-    ) -> anyhow::Result<()> {
-        let position = Position::new(&instrument, fill);
-        self.cache.borrow_mut().add_position(position, oms_type)
+    ) -> anyhow::Result<Position> {
+        let position = if let Some(position) = position {
+            // Always snapshot opening positions to handle NETTING OMS
+            self.cache.borrow_mut().snapshot_position(position)?;
+            let mut position = position.clone();
+            position.apply(&fill);
+            self.cache.borrow_mut().update_position(&position)?;
+            position
+        } else {
+            let position = Position::new(&instrument, fill);
+            self.cache
+                .borrow_mut()
+                .add_position(position.clone(), oms_type)?;
+            if self.config.snapshot_positions {
+                self.publish_position_snapshot(&position);
+            }
+            position
+        };
+
+        let event = PositionOpened::create(&position, &fill, self.clock.borrow().timestamp_ns());
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus
+            .switchboard
+            .get_event_positions_topic(event.strategy_id);
+        msgbus.publish(&topic, &event);
+
+        Ok(position)
     }
 
     fn update_position(
@@ -660,6 +748,28 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) {
         position.apply(&fill);
+
+        if let Err(e) = self.cache.borrow_mut().update_position(position) {
+            log::error!("Failed to update position: {:?}", e);
+            return;
+        }
+
+        if self.config.snapshot_positions {
+            self.create_position_state_snapshot(position);
+        }
+
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus
+            .switchboard
+            .get_event_positions_topic(position.strategy_id);
+        if position.is_closed() {
+            let event = PositionClosed::create(position, &fill, self.clock.borrow().timestamp_ns());
+            msgbus.publish(&topic, &event);
+        } else {
+            let event =
+                PositionChanged::create(position, &fill, self.clock.borrow().timestamp_ns());
+            msgbus.publish(&topic, &event);
+        };
     }
 
     fn will_flip_position(&self, position: &Position, fill: OrderFilled) -> bool {
@@ -699,31 +809,31 @@ impl ExecutionEngine {
 
         let mut fill_split1: Option<OrderFilled> = None;
         if position.is_open() {
-            fill_split1 = Some(OrderFilled {
-                trader_id: fill.trader_id,
-                strategy_id: fill.strategy_id,
-                instrument_id: fill.instrument_id,
-                client_order_id: fill.client_order_id,
-                venue_order_id: fill.venue_order_id,
-                account_id: fill.account_id,
-                trade_id: fill.trade_id,
-                position_id: fill.position_id,
-                order_side: fill.order_side,
-                order_type: fill.order_type,
-                last_qty: position.quantity,
-                last_px: fill.last_px,
-                currency: fill.currency,
-                commission: commission1,
-                liquidity_side: fill.liquidity_side,
-                event_id: fill.id(),
-                ts_event: fill.ts_event,
-                ts_init: fill.ts_init,
-                reconciliation: fill.reconciliation,
-            });
+            fill_split1 = Some(OrderFilled::new(
+                fill.trader_id,
+                fill.strategy_id,
+                fill.instrument_id,
+                fill.client_order_id,
+                fill.venue_order_id,
+                fill.account_id,
+                fill.trade_id,
+                fill.order_side,
+                fill.order_type,
+                position.quantity,
+                fill.last_px,
+                fill.currency,
+                fill.liquidity_side,
+                UUID4::new(),
+                fill.ts_event,
+                fill.ts_init,
+                fill.reconciliation,
+                fill.position_id,
+                commission1,
+            ));
 
             // Close original position
-            // todo: will not panic
-            self.update_position(instrument, position, fill_split1.unwrap(), oms_type);
+            // todo: should not panic
+            self.update_position(instrument.clone(), position, fill_split1.unwrap(), oms_type);
         }
 
         // Guard against flipping a position with a zero fill size
@@ -749,28 +859,27 @@ impl ExecutionEngine {
             fill.position_id
         };
 
-        // Generate order fill for flipped position
-        let fill_split2 = OrderFilled {
-            trader_id: fill.trader_id,
-            strategy_id: fill.strategy_id,
-            instrument_id: fill.instrument_id,
-            client_order_id: fill.client_order_id,
-            venue_order_id: fill.venue_order_id,
-            account_id: fill.account_id,
-            trade_id: fill.trade_id,
-            position_id: position_id_flip,
-            order_side: fill.order_side,
-            order_type: fill.order_type,
-            last_qty: difference, // Fill difference from original as above
-            last_px: fill.last_px,
-            currency: fill.currency,
-            commission: commission2,
-            liquidity_side: fill.liquidity_side,
-            event_id: UUID4::new(), // New event ID
-            ts_event: fill.ts_event,
-            ts_init: fill.ts_init,
-            reconciliation: fill.reconciliation,
-        };
+        let fill_split2 = OrderFilled::new(
+            fill.trader_id,
+            fill.strategy_id,
+            fill.instrument_id,
+            fill.client_order_id,
+            fill.venue_order_id,
+            fill.account_id,
+            fill.trade_id,
+            fill.order_side,
+            fill.order_type,
+            position.quantity,
+            fill.last_px,
+            fill.currency,
+            fill.liquidity_side,
+            UUID4::new(),
+            fill.ts_event,
+            fill.ts_init,
+            fill.reconciliation,
+            fill.position_id,
+            commission2,
+        );
 
         if oms_type == OmsType::Hedging {
             if let Some(position_id) = fill.position_id {
@@ -782,8 +891,9 @@ impl ExecutionEngine {
         }
 
         // Open flipped position
-        // self.open_position(instrument, None, fill_split2, oms_type);
-        todo!()
+        if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
+            log::error!("Failed to open flipped position: {:?}", e);
+        };
     }
 
     fn publish_order_snapshot(&self, order: &OrderAny) {
@@ -791,9 +901,10 @@ impl ExecutionEngine {
             log::debug!("Creating order state snapshot for {}", order);
         }
 
+        // TODO: IMPL cache.has_backing()
         // if self.cache.borrow().has_backing
 
-        // if self.msgbus.borrow().has_backing && self.msgbus.borrow().serializer
+        // TODO: what is msgbus.serializer?
         todo!();
     }
 
@@ -802,7 +913,15 @@ impl ExecutionEngine {
             log::debug!("Creating position state snapshot for {}", position);
         }
 
-        // let unrealized_pnl = self.cache.borrow().pnl
+        // TODO: IMPL calculate_unrealized_pnl first
+        // let unrealized_pnl = self.cache.borrow().calculate_unrealized_pnl(position);
+
+        // TODO: IMPL has_backing
+        // if self.cache.borrow().has_backing() {
+        //     Create snapshot
+        // }
+
+        // if self.msgbus.borrow().has_backing && self.msgbus.borrow().se
 
         todo!();
     }
@@ -827,8 +946,6 @@ impl ExecutionEngine {
             self.pos_id_generator.set_count(count, strategy_id);
             log::info!("Set PositionId count for {} to {}", strategy_id, count);
         }
-
-        todo!();
     }
 
     fn last_px_for_conversion(
@@ -855,14 +972,63 @@ impl ExecutionEngine {
         }
     }
 
-    fn set_order_base_qty(&self, order: &OrderAny, quantity: Quantity) {
-        // Implementation depends on your order type system
-        // This is a placeholder for the actual implementation
-        log::debug!(
-            "Setting base quantity {} for order {}",
-            quantity,
-            order.client_order_id()
+    fn set_order_base_qty(&self, order: &mut OrderAny, base_qty: Quantity) {
+        log::info!(
+            "Setting {} order quote quantity {} to base quantity {}",
+            order.instrument_id(),
+            order.quantity(),
+            base_qty
         );
+
+        let original_qty = order.quantity();
+        order.set_quantity(base_qty);
+        order.set_leaves_qty(base_qty);
+        order.set_is_quote_quantity(false);
+
+        if matches!(order.contingency_type(), Some(ContingencyType::Oto)) {
+            return;
+        }
+
+        if let Some(linked_order_ids) = order.linked_order_ids() {
+            for client_order_id in linked_order_ids {
+                match self.cache.borrow().order(&client_order_id) {
+                    Some(contingent_order) => {
+                        if !contingent_order.is_quote_quantity() {
+                            continue; // Already base quantity
+                        }
+
+                        if contingent_order.quantity() != original_qty {
+                            log::warn!(
+                                "Contingent order quantity {} was not equal to the OTO parent original quantity {} when setting to base quantity of {}",
+                                contingent_order.quantity(),
+                                original_qty,
+                                base_qty
+                            );
+                        }
+
+                        log::info!(
+                            "Setting {} order quote quantity {} to base quantity {}",
+                            contingent_order.instrument_id(),
+                            contingent_order.quantity(),
+                            base_qty
+                        );
+
+                        todo!();
+                        // contingent_order.set_quantity(base_qty);
+                        // contingent_order.set_leaves_qty(base_qty);
+                        // contingent_order.set_is_quote_quantity(false);
+                    }
+                    None => {
+                        log::error!("Contingency order {} not found", client_order_id);
+                    }
+                }
+            }
+        } else {
+            log::warn!(
+                "No linked order IDs found for order {}",
+                order.client_order_id()
+            );
+        }
     }
 
     fn deny_order(&self, order: &OrderAny, reason: &str) {
@@ -870,6 +1036,38 @@ impl ExecutionEngine {
             "Order denied: {reason}, order ID: {}",
             order.client_order_id()
         );
-        todo!()
+
+        let denied = OrderDenied::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason.into(),
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
+        );
+
+        let mut order = order.clone();
+
+        if let Err(e) = order.apply(OrderEventAny::Denied(denied)) {
+            log::error!("Failed to apply denied event to order: {}", e);
+            return;
+        }
+
+        if let Err(e) = self.cache.borrow_mut().update_order(&order) {
+            log::error!("Failed to update order in cache: {}", e);
+            return;
+        }
+
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus
+            .switchboard
+            .get_event_orders_topic(order.strategy_id());
+        msgbus.publish(&topic, &denied);
+
+        if self.config.snapshot_orders {
+            self.create_order_state_snapshot(&order);
+        }
     }
 }

@@ -39,7 +39,8 @@ use nautilus_model::{
 };
 
 use crate::messages::{
-    BatchCancelOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
+    BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
+    SubmitOrderList,
 };
 
 pub struct ExecutionClient {
@@ -78,6 +79,10 @@ impl ExecutionClient {
     }
 
     pub fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()> {
+        todo!();
+    }
+
+    pub fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()> {
         todo!();
     }
 
