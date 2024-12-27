@@ -6,7 +6,7 @@ Released on TBD (UTC).
 - Allow bar aggregators to persist after request_aggregated_bars (#2144), thanks @faysou
 
 ### Internal Improvements
-None
+- Explicitly reject submitted orders when no size available in book
 
 ### Breaking Changes
 None
