@@ -511,6 +511,8 @@ class NautilusKernel:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
             self._trader.add_exec_algorithm(exec_algorithm)
 
+        self._is_running = False
+
         build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
         self._log.info(f"Initialized in {build_time_ms}ms")
 
@@ -571,6 +573,10 @@ class NautilusKernel:
     def _on_shutdown_system(self, command: ShutdownSystem):
         if command.trader_id != self.trader_id:
             self._log.warning(f"Received {command!r} not for this trader {self.trader_id}")
+            return
+
+        if not self._is_running:
+            self._log.warning(f"Received {command!r} when not running")
             return
 
         self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
@@ -898,6 +904,7 @@ class NautilusKernel:
         Start the Nautilus system kernel.
         """
         self._log.info("STARTING")
+        self._is_running = True
 
         self._start_engines()
         self._connect_clients()
@@ -922,6 +929,7 @@ class NautilusKernel:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
         self._log.info("STARTING")
+        self._is_running = True
 
         self._register_executor()
         self._start_engines()
@@ -968,6 +976,7 @@ class NautilusKernel:
         self._flush_writer()
 
         self._log.info("STOPPED")
+        self._is_running = False
 
     async def stop_async(self) -> None:
         """
@@ -1005,6 +1014,7 @@ class NautilusKernel:
         self._flush_writer()
 
         self._log.info("STOPPED")
+        self._is_running = False
 
     def dispose(self) -> None:
         """
