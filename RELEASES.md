@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Allow bar aggregators to persist after request_aggregated_bars (#2144), thanks @faysou
 
 ### Internal Improvements
 None
