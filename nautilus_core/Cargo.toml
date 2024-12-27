@@ -51,7 +51,7 @@ parquet = "53.2.0"  # Keep in line with datafusion
 pyo3 = { version = "0.22.6", features = ["rust_decimal", "indexmap", "smallvec"] }
 pyo3-async-runtimes = { version = "0.22.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
-reqwest = { version = "0.12.10", features = ["blocking"] }
+reqwest = { version = "0.12.11", features = ["blocking"] }
 ring = "0.17.8"
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
