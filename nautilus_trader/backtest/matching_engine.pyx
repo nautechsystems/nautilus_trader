@@ -1725,9 +1725,12 @@ cdef class OrderMatchingEngine:
                 return  # Cannot fill full size - so kill/cancel
 
         if not fills:
-            self._log.error(
-                "Cannot fill order: no fills from book when fills were expected (check sizes in data)",
-            )
+            if order.status_c() == OrderStatus.SUBMITTED:
+                self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+            else:
+                self._log.error(
+                    "Cannot fill order: no fills from book when fills were expected (check data)",
+                )
             return  # No fills
 
         if self.oms_type == OmsType.NETTING:
@@ -1796,6 +1799,8 @@ cdef class OrderMatchingEngine:
                 )
 
             if fill_qty._mem.raw == 0:
+                if len(fills) == 1 and order.status_c() == OrderStatus.SUBMITTED:
+                    self._generate_order_rejected(order, f"no market for {order.instrument_id}")
                 return  # Done
 
             self.fill_order(
