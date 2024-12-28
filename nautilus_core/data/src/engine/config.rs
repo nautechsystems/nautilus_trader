@@ -16,6 +16,7 @@
 use nautilus_model::identifiers::ClientId;
 
 /// Configuration for `DataEngine` instances.
+#[derive(Clone, Debug)]
 pub struct DataEngineConfig {
     pub time_bars_build_with_no_updates: bool,
     pub time_bars_timestamp_on_close: bool,

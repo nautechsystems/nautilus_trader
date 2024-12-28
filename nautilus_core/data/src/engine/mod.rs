@@ -72,14 +72,20 @@ use nautilus_model::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
         TradeTick,
     },
-    enums::{AggregationSource, BookType, PriceType, RecordFlag},
+    enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
 };
 use ustr::Ustr;
 
-use crate::{aggregation::BarAggregator, client::DataClientAdapter};
+use crate::{
+    aggregation::{
+        BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
+        VolumeBarAggregator,
+    },
+    client::DataClientAdapter,
+};
 
 /// Provides a high-performance `DataEngine` for all environments.
 pub struct DataEngine {
@@ -810,7 +816,7 @@ impl DataEngine {
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
     fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
-        // TODO improve by adding bulk update methods to cache and database
+        // TODO: Improve by adding bulk update methods to cache and database
         let mut cache = self.cache.as_ref().borrow_mut();
         for instrument in instruments.iter() {
             if let Err(e) = cache.add_instrument(instrument.clone()) {
@@ -876,32 +882,83 @@ impl DataEngine {
         Ok(())
     }
 
-    fn start_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&bar_type.instrument_id())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Cannot start bar aggregation: no instrument found for {}",
-                    bar_type.instrument_id(),
-                )
-            })?;
+    fn create_bar_aggregator(
+        &mut self,
+        instrument: &InstrumentAny,
+        bar_type: BarType,
+    ) -> Box<dyn BarAggregator> {
+        let cache = self.cache.clone();
+        let msgbus = self.msgbus.clone();
 
-        // Create aggregator
-        // TODO: Determine how to handle generic Clock vs dyn Clock
-        // let aggregator = if bar_type.spec().is_time_aggregated() {
-        //     TimeBarAggregator::new(
-        //         instrument,
-        //         bar_type,
-        //         |b| self.handle_bar(b),
-        //         false,
-        //         self.clock,
-        //         self.config.time_bars_build_with_no_updates,
-        //         self.config.time_bars_timestamp_on_close,
-        //         &self.config.time_bars_interval_type,
-        //     )
-        // };
+        let handler = move |bar: Bar| {
+            if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
+                log::error!("Error on cache insert: {e}");
+            }
+
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
+            msgbus.publish(&topic, &bar as &dyn Any);
+        };
+
+        let clock = self.clock.clone();
+        let config = self.config.clone();
+
+        if bar_type.spec().is_time_aggregated() {
+            Box::new(TimeBarAggregator::new(
+                instrument,
+                bar_type,
+                handler,
+                false,
+                clock,
+                config.time_bars_build_with_no_updates,
+                config.time_bars_timestamp_on_close,
+                &config.time_bars_interval_type,
+            ))
+        } else {
+            match bar_type.spec().aggregation {
+                BarAggregation::Tick => {
+                    Box::new(TickBarAggregator::new(instrument, bar_type, handler, false))
+                        as Box<dyn BarAggregator>
+                }
+                BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
+                    instrument, bar_type, handler, false,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Value => Box::new(ValueBarAggregator::new(
+                    instrument, bar_type, handler, false,
+                )) as Box<dyn BarAggregator>,
+                _ => panic!(
+                    "Cannot create aggregator: {} aggregation not currently supported",
+                    bar_type.spec().aggregation
+                ),
+            }
+        }
+    }
+
+    fn start_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+        let instrument = {
+            let cache = self.cache.borrow();
+            cache
+                .instrument(&bar_type.instrument_id())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Cannot start bar aggregation: no instrument found for {}",
+                        bar_type.instrument_id(),
+                    )
+                })?
+                .clone()
+        };
+
+        let aggregator = if let Some(aggregator) = self.bar_aggregators.get_mut(&bar_type) {
+            aggregator
+        } else {
+            let aggregator = self.create_bar_aggregator(&instrument, bar_type);
+            self.bar_aggregators.insert(bar_type, aggregator);
+            self.bar_aggregators.get_mut(&bar_type).unwrap()
+        };
+
+        // TODO: Subscribe to data
+
+        aggregator.set_is_running(true);
 
         Ok(())
     }
