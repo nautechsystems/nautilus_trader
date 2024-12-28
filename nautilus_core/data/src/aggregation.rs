@@ -43,6 +43,10 @@ use nautilus_model::{
 pub trait BarAggregator {
     /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
+    /// If the aggregator is running and will receive data from the message bus.
+    fn is_running(&self) -> bool;
+    fn set_await_partial(&mut self, value: bool);
+    fn set_is_running(&mut self, value: bool);
     /// Updates theaggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
     /// Updates the aggregator with the given quote.
@@ -225,6 +229,7 @@ where
     builder: BarBuilder,
     handler: H,
     await_partial: bool,
+    is_running: bool,
 }
 
 impl<H> BarAggregatorCore<H>
@@ -249,11 +254,16 @@ where
             builder: BarBuilder::new(instrument, bar_type),
             handler,
             await_partial,
+            is_running: false,
         }
     }
 
     pub fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
+    }
+
+    pub fn set_is_running(&mut self, value: bool) {
+        self.is_running = value;
     }
 
     /// Set the initial values for a partially completed bar.
@@ -318,6 +328,18 @@ where
         self.core.bar_type
     }
 
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_await_partial(&mut self, value: bool) {
+        self.core.await_partial = value;
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.is_running = value;
+    }
+
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         self.core.apply_update(price, size, ts_event);
@@ -366,6 +388,18 @@ where
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_await_partial(&mut self, value: bool) {
+        self.core.await_partial = value;
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.is_running = value;
     }
 
     /// Apply the given update to the aggregator.
@@ -447,6 +481,18 @@ where
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_await_partial(&mut self, value: bool) {
+        self.core.await_partial = value;
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.is_running = value;
     }
 
     /// Apply the given update to the aggregator.
@@ -615,6 +661,18 @@ where
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_await_partial(&mut self, value: bool) {
+        self.core.await_partial = value;
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.is_running = value;
     }
 
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
