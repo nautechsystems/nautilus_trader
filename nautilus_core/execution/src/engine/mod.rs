@@ -698,7 +698,14 @@ impl ExecutionEngine {
                         contingent_order.set_position_id(Some(position_id));
 
                         // TODO: IMPL add_position_id
-                        // self.cache.borrow_mut().add_position_id();
+                        if let Err(e) = self.cache.borrow_mut().add_position_id(
+                            &position_id,
+                            &contingent_order.instrument_id().venue,
+                            &contingent_order.client_order_id(),
+                            &contingent_order.strategy_id(),
+                        ) {
+                            log::error!("Failed to add position ID: {}", e);
+                        }
                     }
                 }
             }

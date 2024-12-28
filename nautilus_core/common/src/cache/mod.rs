@@ -50,7 +50,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{OrderAny, OrderList},
     position::Position,
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -555,6 +555,37 @@ impl Cache {
             // 9: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
         }
+    }
+
+    /// Returns whether the cache has a backing database.
+    #[must_use]
+    pub const fn has_backing(&self) -> bool {
+        self.config.database.is_some()
+    }
+
+    // Calculate the unrealized profit and loss (PnL) for a given position.
+    #[must_use]
+    pub fn calculate_unrealized_pnl(&self, position: &Position) -> Money {
+        let quote = if let Some(quote) = self.quote(&position.instrument_id) {
+            quote
+        } else {
+            log::warn!(
+                "Cannot calculate unrealized PnL for {}, no quotes for {}",
+                position.id,
+                position.instrument_id
+            );
+            return Money::new(0.0, position.settlement_currency);
+        };
+
+        let last = match position.side {
+            PositionSide::Flat | PositionSide::NoPositionSide => {
+                return Money::new(0.0, position.settlement_currency);
+            }
+            PositionSide::Long => quote.ask_price,
+            PositionSide::Short => quote.bid_price,
+        };
+
+        position.unrealized_pnl(last)
     }
 
     /// Checks integrity of data within the cache.
@@ -1350,7 +1381,7 @@ impl Cache {
     }
 
     /// Indexes the given `position_id` with the other given IDs.
-    fn add_position_id(
+    pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
         venue: &Venue,
@@ -1517,22 +1548,31 @@ impl Cache {
         Ok(())
     }
 
-    pub fn snapshot_position(&self, position: &Position) -> anyhow::Result<()> {
+    /// Creates a snapshot of the given position by cloning it, assigning a new ID,
+    /// serializing it, and storing it in the position snapshots.
+    pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<()> {
         let position_id = position.id;
-        let snapshots = self.position_snapshots.get(&position_id);
 
-        // Reassign position ID
         let mut copied_position = position.clone();
-        copied_position.id = PositionId::new(format!("{}-{}", position_id.as_str(), UUID4::new()));
-        // cdef bytes position_pickled = pickle.dumps(copied_position)
+        let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
+        copied_position.id = PositionId::new(new_id);
 
-        // if let Some(snapshots) = snapshots {}
-        // else {
+        // Serialize the position
+        let position_serialized = bincode::serialize(&copied_position)?;
 
-        // }
+        let snapshots: Option<&Bytes> = self.position_snapshots.get(&position_id);
+        let new_snapshots = match snapshots {
+            Some(existing_snapshots) => {
+                let mut combined = existing_snapshots.to_vec();
+                combined.extend(position_serialized);
+                Bytes::from(combined)
+            }
+            None => Bytes::from(position_serialized),
+        };
+        self.position_snapshots.insert(position_id, new_snapshots);
 
-        todo!()
-        // Ok(())
+        log::debug!("Snapshot {}", copied_position);
+        Ok(())
     }
 
     pub fn snapshot_position_state(
