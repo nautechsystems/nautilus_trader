@@ -885,14 +885,14 @@ where
 
         if time_ns > self.batch_next_close_ns {
             // Ensure batch times are coherent with last builder update
-            if self.bar_type().spec().aggregation != BarAggregation::Month {
+            if self.bar_type().spec().aggregation == BarAggregation::Month {
+                // TODO: Handle monthly bars which need special date arithmetic
+                // This will need chrono/datetime handling
+            } else {
                 while self.batch_next_close_ns < time_ns {
                     self.batch_next_close_ns += self.interval_ns;
                 }
                 self.batch_open_ns = self.batch_next_close_ns - self.interval_ns;
-            } else {
-                // TODO: Handle monthly bars which need special date arithmetic
-                // This will need chrono/datetime handling
             }
         }
 
@@ -911,10 +911,10 @@ where
             self.core.build_and_send(ts_event, time_ns);
             self.batch_open_ns = self.batch_next_close_ns;
 
-            if self.bar_type().spec().aggregation != BarAggregation::Month {
-                self.batch_next_close_ns += self.interval_ns;
-            } else {
+            if self.bar_type().spec().aggregation == BarAggregation::Month {
                 // TODO: Handle monthly bars increment
+            } else {
+                self.batch_next_close_ns += self.interval_ns;
             }
         }
 
@@ -939,7 +939,20 @@ where
         let spec = self.bar_type().spec();
         let step = spec.step as isize;
 
-        if spec.aggregation != BarAggregation::Month {
+        if spec.aggregation == BarAggregation::Month {
+            if self.batch_open_ns == time_ns {
+                start_dt = subtract_n_months(start_dt, step).expect("Failed subtracting months");
+                self.batch_open_ns = UnixNanos::from(
+                    start_dt
+                        .timestamp_nanos_opt()
+                        .expect("Bad month subtraction") as u64,
+                );
+            }
+
+            let next_dt = add_n_months(start_dt, step).expect("Failed adding months");
+            self.batch_next_close_ns =
+                UnixNanos::from(next_dt.timestamp_nanos_opt().expect("Bad month addition") as u64);
+        } else {
             if self.batch_open_ns == time_ns {
                 self.batch_open_ns = UnixNanos::from(
                     self.batch_open_ns
@@ -953,19 +966,6 @@ where
                     .as_u64()
                     .saturating_add(self.interval_ns.as_u64()),
             );
-        } else {
-            if self.batch_open_ns == time_ns {
-                start_dt = subtract_n_months(start_dt, step).expect("Failed subtracting months");
-                self.batch_open_ns = UnixNanos::from(
-                    start_dt
-                        .timestamp_nanos_opt()
-                        .expect("Bad month subtraction") as u64,
-                );
-            }
-
-            let next_dt = add_n_months(start_dt, step).expect("Failed adding months");
-            self.batch_next_close_ns =
-                UnixNanos::from(next_dt.timestamp_nanos_opt().expect("Bad month addition") as u64);
         }
     }
 
@@ -1142,7 +1142,7 @@ fn add_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
 }
 
 /// Returns the last valid day of `(year, month)`.
-fn last_day_of_month(year: i32, month: u32) -> u32 {
+const fn last_day_of_month(year: i32, month: u32) -> u32 {
     // E.g., for February, check leap year logic
     match month {
         1 => 31,
@@ -1168,7 +1168,7 @@ fn last_day_of_month(year: i32, month: u32) -> u32 {
 }
 
 /// Basic leap-year check
-fn is_leap_year(year: i32) -> bool {
+const fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
@@ -1236,7 +1236,7 @@ mod tests {
             UnixNanos::from(2),
         );
 
-        builder.set_partial(partial_bar.clone());
+        builder.set_partial(partial_bar);
         let bar = builder.build_now();
 
         assert_eq!(bar.open, partial_bar.open);
@@ -2068,7 +2068,6 @@ mod tests {
             15,
         );
 
-        // Initial update to initialize builder
         aggregator.update(
             Price::from("100.00"),
             Quantity::from(1),
@@ -2129,7 +2128,7 @@ mod tests {
 
         // Simulate timestamp on close
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
-        aggregator.build_bar(event.clone());
+        aggregator.build_bar(event);
 
         let handler_guard = handler.lock().unwrap();
         let bar = handler_guard.first().unwrap();
@@ -2170,5 +2169,53 @@ mod tests {
 
         let handler_guard = handler.lock().unwrap();
         assert_eq!(handler_guard.len(), 0);
+    }
+
+    #[rstest]
+    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
+    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 12, Utc.with_ymd_and_hms(2023, 3, 31, 12, 0, 0).unwrap())] // One year earlier
+    #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap())] // Wrapping to previous year
+    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 2, Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap())] // Multiple months back
+    fn test_subtract_n_months(
+        #[case] input: DateTime<Utc>,
+        #[case] months: isize,
+        #[case] expected: DateTime<Utc>,
+    ) {
+        let result = subtract_n_months(input, months);
+        assert_eq!(result, Some(expected));
+    }
+
+    #[rstest]
+    #[case(Utc.with_ymd_and_hms(2023, 2, 28, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 3, 28, 12, 0, 0).unwrap())] // Simple month addition
+    #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
+    #[case(Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap())] // Wrapping to next year
+    #[case(Utc.with_ymd_and_hms(2023, 1, 31, 12, 0, 0).unwrap(), 13, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Crossing year boundary with multiple months
+    fn test_add_n_months(
+        #[case] input: DateTime<Utc>,
+        #[case] months: isize,
+        #[case] expected: DateTime<Utc>,
+    ) {
+        let result = add_n_months(input, months);
+        assert_eq!(result, Some(expected));
+    }
+
+    #[rstest]
+    #[case(2024, 2, 29)] // Leap year February
+    #[case(2023, 2, 28)] // Non-leap year February
+    #[case(2024, 12, 31)] // December
+    #[case(2023, 11, 30)] // November
+    fn test_last_day_of_month(#[case] year: i32, #[case] month: u32, #[case] expected: u32) {
+        let result = last_day_of_month(year, month);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(2024, true)] // Leap year divisible by 4
+    #[case(1900, false)] // Not leap year, divisible by 100 but not 400
+    #[case(2000, true)] // Leap year, divisible by 400
+    #[case(2023, false)] // Non-leap year
+    fn test_is_leap_year(#[case] year: i32, #[case] expected: bool) {
+        let result = is_leap_year(year);
+        assert_eq!(result, expected);
     }
 }
