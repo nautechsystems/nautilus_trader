@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::ClientId;
+use nautilus_model::{enums::BarIntervalType, identifiers::ClientId};
 
 /// Configuration for `DataEngine` instances.
 #[derive(Clone, Debug)]
 pub struct DataEngineConfig {
     pub time_bars_build_with_no_updates: bool,
     pub time_bars_timestamp_on_close: bool,
-    pub time_bars_interval_type: String, // Make this an enum `BarIntervalType`
+    pub time_bars_interval_type: BarIntervalType,
     pub validate_data_sequence: bool,
     pub buffer_deltas: bool,
     pub external_clients: Option<Vec<ClientId>>,
@@ -33,7 +33,7 @@ impl Default for DataEngineConfig {
         Self {
             time_bars_build_with_no_updates: true,
             time_bars_timestamp_on_close: true,
-            time_bars_interval_type: "left_open".to_string(), // Make this an enum `BarIntervalType`
+            time_bars_interval_type: BarIntervalType::LeftOpen,
             validate_data_sequence: false,
             buffer_deltas: false,
             external_clients: None,

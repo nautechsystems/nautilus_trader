@@ -18,10 +18,11 @@
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
+#![allow(unused_assignments)]
 
 use std::{cell::RefCell, ops::Add, rc::Rc};
 
-use chrono::TimeDelta;
+use chrono::{DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
 use nautilus_common::{
     clock::Clock,
     timer::{TimeEvent, TimeEventCallback},
@@ -35,8 +36,7 @@ use nautilus_model::{
         bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
         QuoteTick, TradeTick,
     },
-    enums::AggregationSource,
-    instruments::InstrumentAny,
+    enums::{AggregationSource, BarAggregation, BarIntervalType},
     types::{fixed::FIXED_SCALAR, Price, Quantity},
 };
 
@@ -62,11 +62,19 @@ pub trait BarAggregator {
     fn handle_trade(&mut self, trade: TradeTick) {
         self.update(trade.price, trade.size, trade.ts_event);
     }
+    fn handle_bar(&mut self, bar: Bar) {
+        let spec = self.bar_type().spec();
+        self.update_bar(bar, bar.volume, bar.ts_init);
+    }
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>);
+    fn stop_batch_update(&mut self);
 }
 
 /// Provides a generic bar builder for aggregation.
 pub struct BarBuilder {
     bar_type: BarType,
+    price_precision: u8,
     size_precision: u8,
     initialized: bool,
     ts_last: UnixNanos,
@@ -89,14 +97,7 @@ impl BarBuilder {
     /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[must_use]
-    pub fn new(instrument: &InstrumentAny, bar_type: BarType) -> Self {
-        correctness::check_equal(
-            instrument.id(),
-            bar_type.instrument_id(),
-            "instrument.id",
-            "bar_type.instrument_id",
-        )
-        .expect(FAILED);
+    pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8) -> Self {
         correctness::check_equal(
             bar_type.aggregation_source(),
             AggregationSource::Internal,
@@ -107,7 +108,8 @@ impl BarBuilder {
 
         Self {
             bar_type,
-            size_precision: instrument.size_precision(),
+            price_precision,
+            size_precision,
             initialized: false,
             ts_last: UnixNanos::default(),
             count: 0,
@@ -117,7 +119,7 @@ impl BarBuilder {
             high: None,
             low: None,
             close: None,
-            volume: Quantity::zero(instrument.size_precision()),
+            volume: Quantity::zero(size_precision),
         }
     }
 
@@ -177,6 +179,31 @@ impl BarBuilder {
         self.ts_last = ts_event;
     }
 
+    pub fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        if ts_init < self.ts_last {
+            return; // Not applicable
+        }
+
+        if self.open.is_none() {
+            self.open = Some(bar.open);
+            self.high = Some(bar.high);
+            self.low = Some(bar.low);
+            self.initialized = true;
+        } else {
+            if bar.high > self.high.unwrap() {
+                self.high = Some(bar.high);
+            }
+            if bar.low < self.low.unwrap() {
+                self.low = Some(bar.low);
+            }
+        }
+
+        self.close = Some(bar.close);
+        self.volume = self.volume.add(volume);
+        self.count += 1;
+        self.ts_last = ts_init;
+    }
+
     /// Reset the bar builder.
     ///
     /// All stateful fields are reset to their initial value.
@@ -228,8 +255,11 @@ where
     bar_type: BarType,
     builder: BarBuilder,
     handler: H,
+    handler_backup: Option<H>,
+    batch_handler: Option<Box<dyn FnMut(Bar)>>,
     await_partial: bool,
     is_running: bool,
+    batch_mode: bool,
 }
 
 impl<H> BarAggregatorCore<H>
@@ -244,17 +274,21 @@ where
     /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
-        instrument: &InstrumentAny,
         bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
         handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
             bar_type,
-            builder: BarBuilder::new(instrument, bar_type),
+            builder: BarBuilder::new(bar_type, price_precision, size_precision),
             handler,
+            handler_backup: None,
+            batch_handler: None,
             await_partial,
             is_running: false,
+            batch_mode: false,
         }
     }
 
@@ -282,7 +316,25 @@ where
 
     fn build_and_send(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) {
         let bar = self.builder.build(ts_event, ts_init);
-        (self.handler)(bar);
+        if self.batch_mode {
+            if let Some(handler) = &mut self.batch_handler {
+                handler(bar);
+            }
+        } else {
+            (self.handler)(bar);
+        }
+    }
+
+    pub fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+        self.batch_mode = true;
+        self.batch_handler = Some(handler);
+    }
+
+    pub fn stop_batch_update(&mut self) {
+        self.batch_mode = false;
+        if let Some(handler) = self.handler_backup.take() {
+            self.handler = handler;
+        }
     }
 }
 
@@ -295,6 +347,7 @@ where
     H: FnMut(Bar),
 {
     core: BarAggregatorCore<H>,
+    cum_value: f64,
 }
 
 impl<H> TickBarAggregator<H>
@@ -309,13 +362,21 @@ where
     /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
-        instrument: &InstrumentAny,
         bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
         handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
+            core: BarAggregatorCore::new(
+                bar_type,
+                price_precision,
+                size_precision,
+                handler,
+                await_partial,
+            ),
+            cum_value: 0.0,
         }
     }
 }
@@ -349,6 +410,46 @@ where
             self.core.build_now_and_send();
         }
     }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        let mut volume_update = volume;
+        let average_price = Price::new(
+            (bar.high.as_f64() + bar.low.as_f64() + bar.close.as_f64()) / 3.0,
+            self.core.builder.price_precision,
+        );
+
+        while volume_update.as_f64() > 0.0 {
+            let value_update = average_price.as_f64() * volume_update.as_f64();
+            if self.cum_value + value_update < self.core.bar_type.spec().step as f64 {
+                self.cum_value += value_update;
+                self.core.builder.update_bar(bar, volume_update, ts_init);
+                break;
+            }
+
+            let value_diff = self.core.bar_type.spec().step as f64 - self.cum_value;
+            let volume_diff = volume_update.as_f64() * (value_diff / value_update);
+            self.core.builder.update_bar(
+                bar,
+                Quantity::new(volume_diff, volume_update.precision),
+                ts_init,
+            );
+
+            self.core.build_now_and_send();
+            self.cum_value = 0.0;
+            volume_update = Quantity::new(
+                volume_update.as_f64() - volume_diff,
+                volume_update.precision,
+            );
+        }
+    }
+
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+        self.core.start_batch_update(handler);
+    }
+
+    fn stop_batch_update(&mut self) {
+        self.core.stop_batch_update();
+    }
 }
 
 /// Provides a means of building volume bars aggregated from quote and trades.
@@ -371,13 +472,20 @@ where
     /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
-        instrument: &InstrumentAny,
         bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
         handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
+            core: BarAggregatorCore::new(
+                bar_type,
+                price_precision,
+                size_precision,
+                handler,
+                await_partial,
+            ),
         }
     }
 }
@@ -431,6 +539,42 @@ where
             raw_size_update -= raw_size_diff;
         }
     }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        let mut raw_volume_update = volume.raw;
+        let spec = self.core.bar_type.spec();
+        let raw_step = (spec.step as f64 * FIXED_SCALAR) as u64;
+        let mut raw_volume_diff = 0;
+
+        while raw_volume_update > 0 {
+            if self.core.builder.volume.raw + raw_volume_update < raw_step {
+                self.core.builder.update_bar(
+                    bar,
+                    Quantity::from_raw(raw_volume_update, volume.precision),
+                    ts_init,
+                );
+                break;
+            }
+
+            raw_volume_diff = raw_step - self.core.builder.volume.raw;
+            self.core.builder.update_bar(
+                bar,
+                Quantity::from_raw(raw_volume_diff, volume.precision),
+                ts_init,
+            );
+
+            self.core.build_now_and_send();
+            raw_volume_update -= raw_volume_diff;
+        }
+    }
+
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+        self.core.start_batch_update(handler);
+    }
+
+    fn stop_batch_update(&mut self) {
+        self.core.stop_batch_update();
+    }
 }
 
 /// Provides a means of building value bars aggregated from quote and trades.
@@ -457,13 +601,20 @@ where
     /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
     /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
-        instrument: &InstrumentAny,
         bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
         handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
+            core: BarAggregatorCore::new(
+                bar_type,
+                price_precision,
+                size_precision,
+                handler,
+                await_partial,
+            ),
             cum_value: 0.0,
         }
     }
@@ -519,6 +670,46 @@ where
             size_update -= size_diff;
         }
     }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        let mut volume_update = volume;
+        let average_price = Price::new(
+            (bar.high.as_f64() + bar.low.as_f64() + bar.close.as_f64()) / 3.0,
+            self.core.builder.price_precision,
+        );
+
+        while volume_update.as_f64() > 0.0 {
+            let value_update = average_price.as_f64() * volume_update.as_f64();
+            if self.cum_value + value_update < self.core.bar_type.spec().step as f64 {
+                self.cum_value += value_update;
+                self.core.builder.update_bar(bar, volume_update, ts_init);
+                break;
+            }
+
+            let value_diff = self.core.bar_type.spec().step as f64 - self.cum_value;
+            let volume_diff = volume_update.as_f64() * (value_diff / value_update);
+            self.core.builder.update_bar(
+                bar,
+                Quantity::new(volume_diff, volume_update.precision),
+                ts_init,
+            );
+
+            self.core.build_now_and_send();
+            self.cum_value = 0.0;
+            volume_update = Quantity::new(
+                volume_update.as_f64() - volume_diff,
+                volume_update.precision,
+            );
+        }
+    }
+
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+        self.core.start_batch_update(handler);
+    }
+
+    fn stop_batch_update(&mut self) {
+        self.core.stop_batch_update();
+    }
 }
 
 /// Provides a means of building time bars aggregated from quote and trades.
@@ -541,6 +732,11 @@ where
     interval: TimeDelta,
     interval_ns: UnixNanos,
     next_close_ns: UnixNanos,
+    composite_bar_build_delay: i32,
+    add_delay: bool,
+    batch_open_ns: UnixNanos,
+    batch_next_close_ns: UnixNanos,
+    time_bars_origin: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone)]
@@ -575,17 +771,43 @@ where
     /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        instrument: &InstrumentAny,
         bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
         handler: H,
         await_partial: bool,
         clock: Rc<RefCell<dyn Clock>>,
         build_with_no_updates: bool,
         timestamp_on_close: bool,
-        interval_type: &str, // TODO: Make this an enum
+        interval_type: BarIntervalType,
+        time_bars_origin: Option<DateTime<Utc>>,
+        composite_bar_build_delay: i32,
     ) -> Self {
+        let is_left_open = match interval_type {
+            BarIntervalType::LeftOpen => true,
+            BarIntervalType::RightOpen => false,
+        };
+
+        // Change how we check for composite internally aggregated bars
+        let add_delay = if bar_type.is_composite() {
+            matches!(
+                bar_type.composite().aggregation_source(),
+                AggregationSource::Internal
+            )
+        } else {
+            false
+        };
+
+        let core = BarAggregatorCore::new(
+            bar_type,
+            price_precision,
+            size_precision,
+            handler,
+            await_partial,
+        );
+
         Self {
-            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
+            core,
             clock,
             build_with_no_updates,
             timestamp_on_close,
@@ -598,6 +820,11 @@ where
             interval: get_bar_interval(&bar_type),
             interval_ns: get_bar_interval_ns(&bar_type),
             next_close_ns: UnixNanos::default(),
+            composite_bar_build_delay,
+            add_delay,
+            batch_open_ns: UnixNanos::default(),
+            batch_next_close_ns: UnixNanos::default(),
+            time_bars_origin,
         }
     }
 
@@ -625,6 +852,121 @@ where
     /// Stops the time bar aggregator.
     pub fn stop(&mut self) {
         self.clock.borrow_mut().cancel_timer(&self.timer_name);
+    }
+
+    fn batch_pre_update(&mut self, time_ns: UnixNanos) {
+        if time_ns > self.batch_next_close_ns && self.core.builder.initialized {
+            let ts_init = self.batch_next_close_ns;
+
+            // Adjust timestamp based on interval type
+            let ts_event = if self.is_left_open {
+                if self.timestamp_on_close {
+                    self.batch_next_close_ns
+                } else {
+                    self.batch_open_ns
+                }
+            } else {
+                self.batch_open_ns
+            };
+
+            self.core.build_and_send(ts_event, ts_init);
+        }
+    }
+
+    fn batch_post_update(&mut self, time_ns: UnixNanos) {
+        // If not in batch mode and time matches next close, reset batch close
+        if !self.core.batch_mode
+            && time_ns == self.batch_next_close_ns
+            && time_ns > self.stored_open_ns
+        {
+            self.batch_next_close_ns = UnixNanos::default();
+            return;
+        }
+
+        if time_ns > self.batch_next_close_ns {
+            // Ensure batch times are coherent with last builder update
+            if self.bar_type().spec().aggregation != BarAggregation::Month {
+                while self.batch_next_close_ns < time_ns {
+                    self.batch_next_close_ns += self.interval_ns;
+                }
+                self.batch_open_ns = self.batch_next_close_ns - self.interval_ns;
+            } else {
+                // TODO: Handle monthly bars which need special date arithmetic
+                // This will need chrono/datetime handling
+            }
+        }
+
+        if time_ns == self.batch_next_close_ns {
+            // Adjust timestamp based on interval type
+            let ts_event = if self.is_left_open {
+                if self.timestamp_on_close {
+                    self.batch_next_close_ns
+                } else {
+                    self.batch_open_ns
+                }
+            } else {
+                self.batch_open_ns
+            };
+
+            self.core.build_and_send(ts_event, time_ns);
+            self.batch_open_ns = self.batch_next_close_ns;
+
+            if self.bar_type().spec().aggregation != BarAggregation::Month {
+                self.batch_next_close_ns += self.interval_ns;
+            } else {
+                // TODO: Handle monthly bars increment
+            }
+        }
+
+        // Delay resetting batch_next_close_ns to allow creating a last historical bar
+        // when transitioning to regular bars
+        if !self.core.batch_mode {
+            self.batch_next_close_ns = UnixNanos::default();
+        }
+    }
+
+    pub fn start_batch_time(&mut self, time_ns: UnixNanos) {
+        self.core.batch_mode = true;
+
+        let dt = Utc.timestamp_nanos(time_ns.as_u64() as i64);
+        let mut start_dt = get_time_bar_start(dt, &self.bar_type());
+        self.batch_open_ns = UnixNanos::from(
+            start_dt
+                .timestamp_nanos_opt()
+                .expect("Timestamp out of range") as u64,
+        );
+
+        let spec = self.bar_type().spec();
+        let step = spec.step as isize;
+
+        if spec.aggregation != BarAggregation::Month {
+            if self.batch_open_ns == time_ns {
+                self.batch_open_ns = UnixNanos::from(
+                    self.batch_open_ns
+                        .as_u64()
+                        .saturating_sub(self.interval_ns.as_u64()),
+                );
+            }
+
+            self.batch_next_close_ns = UnixNanos::from(
+                self.batch_open_ns
+                    .as_u64()
+                    .saturating_add(self.interval_ns.as_u64()),
+            );
+        } else {
+            if self.batch_open_ns == time_ns {
+                start_dt = subtract_n_months(start_dt, step).expect("Failed subtracting months");
+                self.batch_open_ns = UnixNanos::from(
+                    start_dt
+                        .timestamp_nanos_opt()
+                        .expect("Bad month subtraction") as u64,
+                );
+            }
+
+            let next_dt = add_n_months(start_dt, step).expect("Failed adding months");
+            self.batch_next_close_ns =
+                UnixNanos::from(next_dt.timestamp_nanos_opt().expect("Bad month addition") as u64);
+        }
     }
 
     fn build_bar(&mut self, event: TimeEvent) {
@@ -655,9 +997,9 @@ where
     }
 }
 
-impl<H> BarAggregator for TimeBarAggregator<H>
+impl<H: FnMut(Bar)> BarAggregator for TimeBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -695,6 +1037,139 @@ where
             self.stored_close_ns = UnixNanos::default();
         }
     }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        if self.batch_next_close_ns != 0 {
+            self.batch_pre_update(ts_init);
+        }
+
+        self.core.builder.update_bar(bar, volume, ts_init);
+
+        if self.build_on_next_tick {
+            if ts_init <= self.stored_close_ns {
+                let ts_event = if self.is_left_open {
+                    if self.timestamp_on_close {
+                        self.stored_close_ns
+                    } else {
+                        self.stored_open_ns
+                    }
+                } else {
+                    self.stored_open_ns
+                };
+
+                self.core.build_and_send(ts_event, ts_init);
+            }
+
+            // Reset flag and clear stored close
+            self.build_on_next_tick = false;
+            self.stored_close_ns = UnixNanos::default();
+        }
+
+        if self.batch_next_close_ns != 0 {
+            self.batch_post_update(ts_init);
+        }
+    }
+
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+        self.core.start_batch_update(handler);
+    }
+
+    fn stop_batch_update(&mut self) {
+        self.core.stop_batch_update();
+    }
+}
+
+/// Subtract `n` months from a chrono `DateTime<Utc>`.
+fn subtract_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
+    // A naive approach:
+    //   1) Convert dt to y/m/d
+    //   2) Subtract n from the month
+    //   3) Adjust year if month < 1
+    //   4) Rebuild and keep day-of-month within valid range
+    //   5) Return new DateTime
+    let year = dt.year();
+    let month = dt.month() as isize; // 1..12
+    let day = dt.day(); // 1..31
+
+    let mut new_month = month - n;
+    let mut new_year = year;
+
+    // If subtracting months dips below 1, wrap around
+    while new_month <= 0 {
+        new_month += 12;
+        new_year -= 1;
+    }
+    // clamp day to something valid for new_year/new_month
+    let last_day_of_new_month = last_day_of_month(new_year, new_month as u32);
+    let new_day = day.min(last_day_of_new_month);
+
+    // Build a new Chrono NaiveDateTime
+    let new_date = chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, new_day)?;
+    let new_naive_datetime =
+        new_date.and_hms_micro_opt(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() / 1000)?;
+
+    // Convert back to UTC
+    let new_dt = DateTime::<Utc>::from_naive_utc_and_offset(new_naive_datetime, chrono::Utc);
+    Some(new_dt)
+}
+
+/// Add `n` months to a chrono `DateTime<Utc>`.
+fn add_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
+    // Same approach but adding months
+    let year = dt.year();
+    let month = dt.month() as isize;
+    let day = dt.day();
+
+    let mut new_month = month + n;
+    let mut new_year = year;
+
+    // If months goes above 12, wrap around
+    while new_month > 12 {
+        new_month -= 12;
+        new_year += 1;
+    }
+    let last_day_of_new_month = last_day_of_month(new_year, new_month as u32);
+    let new_day = day.min(last_day_of_new_month);
+
+    let new_date = chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, new_day)?;
+    let new_naive_datetime =
+        new_date.and_hms_micro_opt(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() / 1000)?;
+
+    Some(DateTime::<Utc>::from_naive_utc_and_offset(
+        new_naive_datetime,
+        chrono::Utc,
+    ))
+}
+
+/// Returns the last valid day of `(year, month)`.
+fn last_day_of_month(year: i32, month: u32) -> u32 {
+    // E.g., for February, check leap year logic
+    match month {
+        1 => 31,
+        2 => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
+        3 => 31,
+        4 => 30,
+        5 => 31,
+        6 => 30,
+        7 => 31,
+        8 => 31,
+        9 => 30,
+        10 => 31,
+        11 => 30,
+        12 => 31,
+        _ => 31, // fallback
+    }
+}
+
+/// Basic leap-year check
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -707,7 +1182,7 @@ mod tests {
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
-        instruments::{stubs::*, Equity, InstrumentAny},
+        instruments::{stubs::*, CurrencyPair, Equity, InstrumentAny},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -715,28 +1190,140 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_bar_builder_instantiate(equity_aapl: Equity) {
+    fn test_bar_builder_initialization(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_type = BarType::new(
             instrument.id(),
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let builder = BarBuilder::new(&instrument, bar_type);
+        let builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
         assert!(!builder.initialized);
         assert_eq!(builder.ts_last, 0);
         assert_eq!(builder.count, 0);
     }
 
     #[rstest]
-    fn test_bar_builder_set_partial_updates_bar_to_expected_properties(equity_aapl: Equity) {
+    fn test_set_partial_update(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_type = BarType::new(
             instrument.id(),
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
+
+        let partial_bar = Bar::new(
+            bar_type,
+            Price::from("101.00"),
+            Price::from("102.00"),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from(100),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+
+        builder.set_partial(partial_bar.clone());
+        let bar = builder.build_now();
+
+        assert_eq!(bar.open, partial_bar.open);
+        assert_eq!(bar.high, partial_bar.high);
+        assert_eq!(bar.low, partial_bar.low);
+        assert_eq!(bar.close, partial_bar.close);
+        assert_eq!(bar.volume, partial_bar.volume);
+        assert_eq!(builder.ts_last, 2);
+    }
+
+    #[rstest]
+    fn test_set_partial_does_not_overwrite_existing_partial(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(100, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
+
+        let partial_bar1 = Bar::new(
+            bar_type,
+            Price::from("101.00"),
+            Price::from("102.00"),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from(1),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let partial_bar2 = Bar::new(
+            bar_type,
+            Price::from("102.00"),
+            Price::from("103.00"),
+            Price::from("101.00"),
+            Price::from("102.00"),
+            Quantity::from(2),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+
+        builder.set_partial(partial_bar1.clone());
+        builder.set_partial(partial_bar2);
+        let bar = builder.build_now();
+
+        assert_eq!(bar.open, partial_bar1.open);
+        assert_eq!(bar.high, partial_bar1.high);
+        assert_eq!(bar.low, partial_bar1.low);
+        assert_eq!(bar.close, partial_bar1.close);
+        assert_eq!(bar.volume, partial_bar1.volume);
+    }
+
+    #[rstest]
+    fn test_update_ignores_earlier_timestamps(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(100, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
+
+        builder.update(Price::from("1.00000"), Quantity::from(1), 1_000.into());
+        builder.update(Price::from("1.00001"), Quantity::from(1), 500.into());
+
+        assert_eq!(builder.ts_last, 1_000);
+        assert_eq!(builder.count, 1);
+    }
+
+    #[rstest]
+    fn test_bar_builder_set_partial_updates_bar_to_expected_properties(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
 
         let partial_bar = Bar::new(
             bar_type,
@@ -762,14 +1349,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_bar_builder_set_partial_when_already_set_does_not_update(equity_aapl: Equity) {
-        let instrument = InstrumentAny::Equity(equity_aapl);
+    fn test_bar_builder_set_partial_when_already_set_does_not_update(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let bar_type = BarType::new(
             instrument.id(),
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
 
         let partial_bar1 = Bar::new(
             bar_type,
@@ -817,7 +1408,11 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
 
         builder.update(
             Price::new(1.00000, 8),
@@ -840,7 +1435,7 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
 
         builder.update(
             Price::new(1.00000, 8),
@@ -866,7 +1461,11 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
 
         for _ in 0..5 {
             builder.update(
@@ -888,7 +1487,11 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
         let _ = builder.build_now();
     }
 
@@ -900,7 +1503,11 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
 
         builder.update(
             Price::new(1.00001, 8),
@@ -938,7 +1545,7 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let mut builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
 
         builder.update(
             Price::new(1.00001, 8),
@@ -981,8 +1588,9 @@ mod tests {
         let handler_clone = Arc::clone(&handler);
 
         let mut aggregator = TickBarAggregator::new(
-            &instrument,
             bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
             move |bar: Bar| {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
@@ -1006,8 +1614,9 @@ mod tests {
         let handler_clone = Arc::clone(&handler);
 
         let mut aggregator = TickBarAggregator::new(
-            &instrument,
             bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
             move |bar: Bar| {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);

@@ -903,28 +903,45 @@ impl DataEngine {
         let clock = self.clock.clone();
         let config = self.config.clone();
 
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+
         if bar_type.spec().is_time_aggregated() {
             Box::new(TimeBarAggregator::new(
-                instrument,
                 bar_type,
+                price_precision,
+                size_precision,
                 handler,
                 false,
                 clock,
                 config.time_bars_build_with_no_updates,
                 config.time_bars_timestamp_on_close,
-                &config.time_bars_interval_type,
+                config.time_bars_interval_type,
+                None, // TODO: Implement
+                20,   // TODO: TBD, composite bar build delay
             ))
         } else {
             match bar_type.spec().aggregation {
-                BarAggregation::Tick => {
-                    Box::new(TickBarAggregator::new(instrument, bar_type, handler, false))
-                        as Box<dyn BarAggregator>
-                }
+                BarAggregation::Tick => Box::new(TickBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                    false,
+                )) as Box<dyn BarAggregator>,
                 BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
-                    instrument, bar_type, handler, false,
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                    false,
                 )) as Box<dyn BarAggregator>,
                 BarAggregation::Value => Box::new(ValueBarAggregator::new(
-                    instrument, bar_type, handler, false,
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                    false,
                 )) as Box<dyn BarAggregator>,
                 _ => panic!(
                     "Cannot create aggregator: {} aggregation not currently supported",
