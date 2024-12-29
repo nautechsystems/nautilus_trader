@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Improved market order handling when no size available in book (now explicitly rejects)
 - Improved validation for `TradeTick` by ensuring `size` is always positive
 - Improved validation for `OrderBookDelta` by ensuring `order.size` is positive when `action` is either `ADD` or `UPDATE`
+- Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 
 ### Breaking Changes
 None
