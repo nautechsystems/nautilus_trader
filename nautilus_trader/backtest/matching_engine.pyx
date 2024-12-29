@@ -377,7 +377,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(delta, "delta")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(delta)}")
+            self._log.debug(f"Processing {delta!r}")
 
         self._book.apply_delta(delta)
 
@@ -406,7 +406,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(deltas, "deltas")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(deltas)}")
+            self._log.debug(f"Processing {deltas!r}")
 
         self._book.apply_deltas(deltas)
 
@@ -437,7 +437,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(tick, "tick")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(tick)}")
+            self._log.debug(f"Processing {tick!r}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_quote_tick(tick)
@@ -459,7 +459,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(tick, "tick")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(tick)}")
+            self._log.debug(f"Processing {tick!r}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
@@ -528,7 +528,7 @@ cdef class OrderMatchingEngine:
                 return
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(bar)}")
+            self._log.debug(f"Processing {bar!r}")
 
         cdef PriceType price_type = bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
@@ -784,7 +784,7 @@ cdef class OrderMatchingEngine:
                 for client_order_id in order.linked_order_ids:
                     contingent_order = self.cache.order(client_order_id)
                     if contingent_order is None:
-                        raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
+                        raise RuntimeError(f"Cannot find contingent order for {client_order_id!r}")  # pragma: no cover
                     if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
                         if not order.is_closed_c() and contingent_order.is_closed_c():
                             self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
@@ -842,7 +842,7 @@ cdef class OrderMatchingEngine:
         ):
             self._generate_order_rejected(
                 order,
-                f"SHORT SELLING not permitted on a CASH account with position {position} and order {repr(order)}"
+                f"SHORT SELLING not permitted on a CASH account with position {position} and order {order!r}"
             )
             return  # Cannot short sell
 
@@ -895,7 +895,7 @@ cdef class OrderMatchingEngine:
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
-                reason=f"{repr(command.client_order_id)} not found",
+                reason=f"{command.client_order_id!r} not found",
             )
         else:
             self.update_order(
@@ -915,7 +915,7 @@ cdef class OrderMatchingEngine:
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
-                reason=f"{repr(command.client_order_id)} not found",
+                reason=f"{command.client_order_id!r} not found",
             )
         else:
             if order.is_inflight_c() or order.is_open_c():
@@ -1974,8 +1974,8 @@ cdef class OrderMatchingEngine:
                         strategy_id=child_order.strategy_id,
                     )
                     self._log.debug(
-                        f"Indexed {repr(order.position_id)} "
-                        f"for {repr(child_order.client_order_id)}",
+                        f"Indexed {order.position_id!r} "
+                        f"for {child_order.client_order_id!r}",
                     )
                 if not child_order.is_open_c() or (child_order.status_c() == OrderStatus.PENDING_UPDATE and child_order._previous_status == OrderStatus.SUBMITTED):
                     self.process_order(
