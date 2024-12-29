@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::{DurationNanos, UnixNanos};
+use nautilus_core::{
+    nanos::{DurationNanos, UnixNanos},
+    uuid::UUID4,
+};
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -46,6 +49,7 @@ pub struct PositionClosed {
     pub realized_pnl: Option<Money>,
     pub unrealized_pnl: Money,
     pub duration: DurationNanos,
+    pub event_id: UUID4,
     pub ts_opened: UnixNanos,
     pub ts_closed: Option<UnixNanos>,
     pub ts_event: UnixNanos,
@@ -56,7 +60,7 @@ impl PositionClosed {
     pub fn create(
         position: &Position,
         fill: &OrderFilled,
-        // event_id: UUID4,
+        event_id: UUID4,
         ts_init: UnixNanos,
     ) -> PositionClosed {
         PositionClosed {
@@ -81,6 +85,7 @@ impl PositionClosed {
             realized_pnl: position.realized_pnl,
             unrealized_pnl: Money::new(0.0, position.quote_currency),
             duration: position.duration_ns,
+            event_id,
             ts_opened: position.ts_opened,
             ts_closed: position.ts_closed,
             ts_event: fill.ts_event,

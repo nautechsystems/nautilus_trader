@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -40,12 +40,18 @@ pub struct PositionOpened {
     pub last_px: Price,
     pub currency: Currency,
     pub avg_px_open: f64,
+    pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
 
 impl PositionOpened {
-    pub fn create(position: &Position, fill: &OrderFilled, ts_init: UnixNanos) -> PositionOpened {
+    pub fn create(
+        position: &Position,
+        fill: &OrderFilled,
+        event_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> PositionOpened {
         PositionOpened {
             trader_id: position.trader_id,
             strategy_id: position.strategy_id,
@@ -61,6 +67,7 @@ impl PositionOpened {
             last_px: fill.last_px,
             currency: position.quote_currency,
             avg_px_open: position.avg_px_open,
+            event_id,
             ts_event: fill.ts_event,
             ts_init,
         }

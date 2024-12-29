@@ -748,7 +748,8 @@ impl ExecutionEngine {
             position
         };
 
-        let event = PositionOpened::create(&position, &fill, self.clock.borrow().timestamp_ns());
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus
             .switchboard
@@ -780,12 +781,13 @@ impl ExecutionEngine {
         let topic = msgbus
             .switchboard
             .get_event_positions_topic(position.strategy_id);
+        let ts_init = self.clock.borrow().timestamp_ns();
+
         if position.is_closed() {
-            let event = PositionClosed::create(position, &fill, self.clock.borrow().timestamp_ns());
+            let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
             msgbus.publish(&topic, &event);
         } else {
-            let event =
-                PositionChanged::create(position, &fill, self.clock.borrow().timestamp_ns());
+            let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
             msgbus.publish(&topic, &event);
         };
     }

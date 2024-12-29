@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -45,6 +45,7 @@ pub struct PositionChanged {
     pub realized_return: f64,
     pub realized_pnl: Option<Money>,
     pub unrealized_pnl: Money,
+    pub event_id: UUID4,
     pub ts_opened: UnixNanos,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -54,7 +55,7 @@ impl PositionChanged {
     pub fn create(
         position: &Position,
         fill: &OrderFilled,
-        // event_id: UUID4,
+        event_id: UUID4,
         ts_init: UnixNanos,
     ) -> PositionChanged {
         PositionChanged {
@@ -77,6 +78,7 @@ impl PositionChanged {
             realized_return: position.realized_return,
             realized_pnl: position.realized_pnl,
             unrealized_pnl: Money::new(0.0, position.quote_currency),
+            event_id,
             ts_opened: position.ts_opened,
             ts_event: fill.ts_event,
             ts_init,
