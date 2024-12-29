@@ -110,6 +110,7 @@ impl OrderBookDelta {
         if matches!(action, BookAction::Add | BookAction::Update) {
             check_positive_u64(order.size.raw, "order.size.raw")?;
         }
+
         Ok(Self {
             instrument_id,
             action,
