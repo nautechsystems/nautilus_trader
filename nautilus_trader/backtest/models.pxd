@@ -55,7 +55,12 @@ cdef class FeeModel:
 cdef class MakerTakerFeeModel(FeeModel):
     pass
 
+
 cdef class FixedFeeModel(FeeModel):
     cdef Money _commission
     cdef Money _zero_commission
     cdef bint _charge_commission_once
+
+
+cdef class PerContractFeeModel(FeeModel):
+    cdef Money _commission
