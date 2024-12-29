@@ -107,6 +107,7 @@ impl TradeTick {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_u64(size.raw, "size.raw")?;
+
         Ok(Self {
             instrument_id,
             price,
