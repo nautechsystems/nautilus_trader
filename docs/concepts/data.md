@@ -176,10 +176,10 @@ Currently there exists:
 
 :::warning
 At the risk of causing confusion, there are also a growing number of DataWrangler v2 components, which will take a `pd.DataFrame` typically
-with a different fixed width Nautilus arrow v2 schema, and output pyo3 Nautilus objects which are only compatible with the new version
+with a different fixed width Nautilus Arrow v2 schema, and output PyO3 Nautilus objects which are only compatible with the new version
 of the Nautilus core, currently in development.
 
-**These pyo3 provided data objects are not compatible where the legacy Cython objects are currently used (adding directly to a `BacktestEngine` etc).**
+**These PyO3 provided data objects are not compatible where the legacy Cython objects are currently used (e.g., adding directly to a `BacktestEngine`).**
 :::
 
 ### Transformation pipeline
