@@ -6,7 +6,8 @@ Released on TBD (UTC).
 - Allow bar aggregators to persist after request_aggregated_bars (#2144), thanks @faysou
 
 ### Internal Improvements
-- Explicitly reject submitted orders when no size available in book
+- Improved market order handling when no size available in book (now explicitly rejects)
+- Improved validation for `TradeTick` by ensuring `size` is positive
 
 ### Breaking Changes
 None
