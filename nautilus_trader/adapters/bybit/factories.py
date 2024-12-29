@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+from __future__ import annotations
+
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_ALL_PRODUCTS
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
@@ -24,19 +26,24 @@ from nautilus_trader.adapters.bybit.common.urls import get_http_base_url
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_private
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_public
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_trade
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.component import LiveClock
-from nautilus_trader.common.component import MessageBus
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
+
+
+if TYPE_CHECKING:
+    import asyncio
+
+    from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+    from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+    from nautilus_trader.cache.cache import Cache
+    from nautilus_trader.common.component import LiveClock
+    from nautilus_trader.common.component import MessageBus
+    from nautilus_trader.config import InstrumentProviderConfig
 
 
 @lru_cache(1)
