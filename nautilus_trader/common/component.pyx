@@ -2601,10 +2601,7 @@ cdef inline bint contains_wildcard(str topic_or_pattern):
 
 
 cdef inline bint is_matching(str topic, str pattern):
-    topic_contains_wildcard = contains_wildcard(topic)
-    pattern_contains_wildcard = contains_wildcard(pattern)
-
-    if not topic_contains_wildcard and not pattern_contains_wildcard:
+    if not contains_wildcard(topic) and not contains_wildcard(pattern):
         return topic == pattern
 
     # Get length of string and wildcard pattern
