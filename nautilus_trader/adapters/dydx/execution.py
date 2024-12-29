@@ -1145,7 +1145,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         await self._place_order(order_msg=order_msg, order=order)
 
-    async def _place_order(self, order_msg: DYDXOrder, order: Order):
+    async def _place_order(self, order_msg: DYDXOrder, order: Order) -> None:
         if self._wallet is None:
             rejection_reason = "Cannot submit order: no wallet available"
             self._log.error(rejection_reason)

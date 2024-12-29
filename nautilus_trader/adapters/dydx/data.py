@@ -403,7 +403,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
         if instrument is None:
             self._log.error(f"Cannot resolve crossed order book: no instrument for {instrument_id}")
-            return
+            return venue_deltas
 
         book.apply_deltas(venue_deltas)
         bid_price = book.best_bid_price()
