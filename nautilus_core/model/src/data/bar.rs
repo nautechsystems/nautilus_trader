@@ -25,7 +25,11 @@ use std::{
 use chrono::{DateTime, Datelike, Duration, TimeDelta, Timelike, Utc};
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::FAILED, nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{
+    correctness::{check_predicate_true, FAILED},
+    nanos::UnixNanos,
+    serialization::Serializable,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::GetTsInit;
@@ -569,7 +573,40 @@ impl Bar {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        Self {
+        Self::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+            .expect(FAILED)
+    }
+
+    /// Creates a new [`Bar`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if:
+    /// - `high` is not >= `low`.
+    /// - `high` is not >= `close`.
+    /// - `low` is not <= `close.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(high >= open, "high >= open")?;
+        check_predicate_true(high >= low, "high >= low")?;
+        check_predicate_true(high >= close, "high >= close")?;
+        check_predicate_true(low <= close, "low <= close")?;
+        check_predicate_true(low <= open, "low <= open")?;
+
+        Ok(Self {
             bar_type,
             open,
             high,
@@ -578,7 +615,7 @@ impl Bar {
             volume,
             ts_event,
             ts_init,
-        }
+        })
     }
 
     pub fn instrument_id(&self) -> InstrumentId {
@@ -1084,6 +1121,56 @@ mod tests {
         assert!(bar_type3 > bar_type1);
         assert!(bar_type3 >= bar_type1);
         assert!(bar_type4 >= bar_type1);
+    }
+
+    #[rstest]
+    fn test_bar_new() {
+        let bar_type = BarType::from("AAPL.XNAS-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from("100.0");
+        let high = Price::from("105.0");
+        let low = Price::from("95.0");
+        let close = Price::from("102.0");
+        let volume = Quantity::from("1000");
+        let ts_event = UnixNanos::from(1_000_000);
+        let ts_init = UnixNanos::from(2_000_000);
+
+        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open, open);
+        assert_eq!(bar.high, high);
+        assert_eq!(bar.low, low);
+        assert_eq!(bar.close, close);
+        assert_eq!(bar.volume, volume);
+        assert_eq!(bar.ts_event, ts_event);
+        assert_eq!(bar.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case("100.0", "90.0", "95.0", "92.0")] // high < open
+    #[case("100.0", "105.0", "110.0", "102.0")] // high < low
+    #[case("100.0", "105.0", "95.0", "110.0")] // high < close
+    #[case("100.0", "105.0", "95.0", "90.0")] // low > close
+    #[case("100.0", "110.0", "105.0", "108.0")] // low > open
+    #[case("100.0", "90.0", "110.0", "120.0")] // high < open, high < close, low > close
+    fn test_bar_new_checked_conditions(
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] close: &str,
+    ) {
+        let bar_type = BarType::from("AAPL.XNAS-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from(open);
+        let high = Price::from(high);
+        let low = Price::from(low);
+        let close = Price::from(close);
+        let volume = Quantity::from("1000");
+        let ts_event = UnixNanos::from(1_000_000);
+        let ts_init = UnixNanos::from(2_000_000);
+
+        let result = Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init);
+
+        assert!(result.is_err());
     }
 
     #[rstest]

@@ -338,9 +338,9 @@ pub fn stub_bar() -> Bar {
     };
     Bar {
         bar_type,
-        open: Price::from("1.00001"),
+        open: Price::from("1.00002"),
         high: Price::from("1.00004"),
-        low: Price::from("1.00002"),
+        low: Price::from("1.00001"),
         close: Price::from("1.00003"),
         volume: Quantity::from("100000"),
         ts_event: UnixNanos::default(),
