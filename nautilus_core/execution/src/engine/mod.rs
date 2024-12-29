@@ -444,16 +444,41 @@ impl ExecutionEngine {
     }
 
     fn create_order_state_snapshot(&self, order: &OrderAny) {
+        if self.config.debug {
+            log::debug!("Creating order state snapshot for {}", order);
+        }
+
+        if self.cache.borrow().has_backing() {
+            if let Err(e) = self.cache.borrow().snapshot_order_state(order) {
+                log::error!("Failed to snapshot order state: {}", e);
+                return;
+            }
+        }
+
         let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_order_snapshots_topic(order.client_order_id());
-        msgbus.publish(&topic, order);
-        todo!("??")
+        if msgbus.has_backing {
+            let topic = msgbus
+                .switchboard
+                .get_order_snapshots_topic(order.client_order_id());
+            msgbus.publish(&topic, order);
+        }
     }
 
     fn create_position_state_snapshot(&self, position: &Position) {
-        todo!("??")
+        if self.config.debug {
+            log::debug!("Creating position state snapshot for {}", position);
+        }
+
+        // let mut position: Position = position.clone();
+        // if let Some(pnl) = self.cache.borrow().calculate_unrealized_pnl(&position) {
+        //     position.unrealized_pnl(last)
+        // }
+
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus
+            .switchboard
+            .get_positions_snapshots_topic(position.id);
+        msgbus.publish(&topic, position);
     }
 
     // -- EVENT HANDLERS ----------------------------------------------------
@@ -697,7 +722,6 @@ impl ExecutionEngine {
                         let mut contingent_order = contingent_order.clone();
                         contingent_order.set_position_id(Some(position_id));
 
-                        // TODO: IMPL add_position_id
                         if let Err(e) = self.cache.borrow_mut().add_position_id(
                             &position_id,
                             &contingent_order.instrument_id().venue,
@@ -732,7 +756,7 @@ impl ExecutionEngine {
                 .borrow_mut()
                 .add_position(position.clone(), oms_type)?;
             if self.config.snapshot_positions {
-                self.publish_position_snapshot(&position);
+                self.create_position_state_snapshot(&position);
             }
             position
         };
@@ -838,8 +862,6 @@ impl ExecutionEngine {
                 commission1,
             ));
 
-            // Close original position
-            // todo: should not panic
             self.update_position(instrument.clone(), position, fill_split1.unwrap(), oms_type);
         }
 
@@ -901,36 +923,6 @@ impl ExecutionEngine {
         if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
             log::error!("Failed to open flipped position: {:?}", e);
         };
-    }
-
-    fn publish_order_snapshot(&self, order: &OrderAny) {
-        if self.config.debug {
-            log::debug!("Creating order state snapshot for {}", order);
-        }
-
-        // TODO: IMPL cache.has_backing()
-        // if self.cache.borrow().has_backing
-
-        // TODO: what is msgbus.serializer?
-        todo!();
-    }
-
-    fn publish_position_snapshot(&self, position: &Position) {
-        if self.config.debug {
-            log::debug!("Creating position state snapshot for {}", position);
-        }
-
-        // TODO: IMPL calculate_unrealized_pnl first
-        // let unrealized_pnl = self.cache.borrow().calculate_unrealized_pnl(position);
-
-        // TODO: IMPL has_backing
-        // if self.cache.borrow().has_backing() {
-        //     Create snapshot
-        // }
-
-        // if self.msgbus.borrow().has_backing && self.msgbus.borrow().se
-
-        todo!();
     }
 
     // -- INTERNAL ------------------------------------------------------------

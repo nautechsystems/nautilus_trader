@@ -565,7 +565,7 @@ impl Cache {
 
     // Calculate the unrealized profit and loss (PnL) for a given position.
     #[must_use]
-    pub fn calculate_unrealized_pnl(&self, position: &Position) -> Money {
+    pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
         let quote = if let Some(quote) = self.quote(&position.instrument_id) {
             quote
         } else {
@@ -574,18 +574,18 @@ impl Cache {
                 position.id,
                 position.instrument_id
             );
-            return Money::new(0.0, position.settlement_currency);
+            return None;
         };
 
         let last = match position.side {
             PositionSide::Flat | PositionSide::NoPositionSide => {
-                return Money::new(0.0, position.settlement_currency);
+                return Some(Money::new(0.0, position.settlement_currency));
             }
             PositionSide::Long => quote.ask_price,
             PositionSide::Short => quote.bid_price,
         };
 
-        position.unrealized_pnl(last)
+        Some(position.unrealized_pnl(last))
     }
 
     /// Checks integrity of data within the cache.
@@ -1606,6 +1606,20 @@ impl Cache {
 
         // Ok(())
         todo!()
+    }
+
+    pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        let database = if let Some(database) = &self.database {
+            database
+        } else {
+            log::warn!(
+                "Cannot snapshot order state for {} (no database configured)",
+                order.client_order_id()
+            );
+            return Ok(());
+        };
+
+        database.snapshot_order_state(order)
     }
 
     // -- IDENTIFIER QUERIES ----------------------------------------------------------------------

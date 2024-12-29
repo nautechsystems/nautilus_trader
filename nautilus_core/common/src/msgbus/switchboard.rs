@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::{ClientOrderId, InstrumentId, StrategyId},
+    identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
 };
 use ustr::Ustr;
 
@@ -39,6 +39,7 @@ pub struct MessagingSwitchboard {
     trade_topics: HashMap<InstrumentId, Ustr>,
     bar_topics: HashMap<BarType, Ustr>,
     order_snapshots_topics: HashMap<ClientOrderId, Ustr>,
+    positions_snapshots_topics: HashMap<PositionId, Ustr>,
 }
 
 impl Default for MessagingSwitchboard {
@@ -60,6 +61,7 @@ impl Default for MessagingSwitchboard {
             order_snapshots_topics: HashMap::new(),
             event_orders_topics: HashMap::new(),
             event_positions_topics: HashMap::new(),
+            positions_snapshots_topics: HashMap::new(),
         }
     }
 }
@@ -153,6 +155,14 @@ impl MessagingSwitchboard {
             .order_snapshots_topics
             .entry(client_order_id)
             .or_insert_with(|| Ustr::from(&format!("order.snapshots.{client_order_id}")))
+    }
+
+    #[must_use]
+    pub fn get_positions_snapshots_topic(&mut self, position_id: PositionId) -> Ustr {
+        *self
+            .positions_snapshots_topics
+            .entry(position_id)
+            .or_insert_with(|| Ustr::from(&format!("positions.snapshots.{position_id}")))
     }
 
     #[must_use]
