@@ -80,8 +80,8 @@ pub fn nanos_since_unix_epoch() -> u64 {
 
 /// Represents an atomic timekeeping structure.
 ///
-/// `AtomicTime` can act as a real-time clock or static clock based on its mode.
-/// It uses `AtomicU64` to atomically update the value using only immutable
+/// [`AtomicTime`] can act as a real-time clock or static clock based on its mode.
+/// It uses an [`AtomicU64`] to atomically update the value using only immutable
 /// references.
 ///
 /// This struct provides thread-safe access to a stored nanosecond time value,
@@ -128,8 +128,8 @@ impl AtomicTime {
     /// Get time in nanoseconds.
     ///
     /// - **Real-time mode**: Returns the current wall clock time since the UNIX epoch,
-    ///   ensuring monotonicity across threads using `Ordering::SeqCst`.
-    /// - **Static mode**: Returns the currently stored time, which uses `Ordering::Relaxed`
+    ///   ensuring monotonicity across threads using [`Ordering::SeqCst`].
+    /// - **Static mode**: Returns the currently stored time, which uses [`Ordering::Relaxed`]
     ///   and is suitable for single-threaded scenarios where strict synchronization is unnecessary.
     #[must_use]
     pub fn get_time_ns(&self) -> UnixNanos {
@@ -159,7 +159,7 @@ impl AtomicTime {
 
     /// Sets new time for the clock.
     ///
-    /// Intended for single-threaded use, as it relies on `Ordering::Relaxed` and
+    /// Intended for single-threaded use, as it relies on [`Ordering::Relaxed`] and
     /// does not enforce strict synchronization.
     pub fn set_time(&self, time: UnixNanos) {
         self.store(time.into(), Ordering::Relaxed);
@@ -167,7 +167,7 @@ impl AtomicTime {
 
     /// Increments the current time by the specified delta and returns the updated value.
     ///
-    /// Intended for single-threaded use, as it relies on `Ordering::Relaxed` and
+    /// Intended for single-threaded use, as it relies on [`Ordering::Relaxed`] and
     /// does not enforce strict synchronization.
     pub fn increment_time(&self, delta: u64) -> UnixNanos {
         UnixNanos::from(self.fetch_add(delta, Ordering::Relaxed) + delta)
@@ -175,7 +175,7 @@ impl AtomicTime {
 
     /// Stores and returns current time.
     ///
-    /// This method uses `Ordering::SeqCst` (Sequential Consistency) ordering to ensure that:
+    /// This method uses [`Ordering::SeqCst`] (Sequential Consistency) ordering to ensure that:
     /// 1. Timestamps are monotonically increasing and thread-safe.
     /// 2. The returned timestamp is never less than the current system time.
     /// 3. Each timestamp is at least 1 nanosecond greater than the last stored value.
@@ -195,14 +195,14 @@ impl AtomicTime {
 
     /// Switches the clock to real-time mode.
     ///
-    /// Intended for single-threaded use, as it uses `Ordering::Relaxed` for updating the mode.
+    /// Intended for single-threaded use, as it uses [`Ordering::Relaxed`] for updating the mode.
     pub fn make_realtime(&self) {
         self.realtime.store(true, Ordering::Relaxed);
     }
 
     /// Switches the clock to static mode.
     ///
-    /// Intended for single-threaded use, as it uses `Ordering::Relaxed` for updating the mode.
+    /// Intended for single-threaded use, as it uses [`Ordering::Relaxed`] for updating the mode.
     pub fn make_static(&self) {
         self.realtime.store(false, Ordering::Relaxed);
     }
