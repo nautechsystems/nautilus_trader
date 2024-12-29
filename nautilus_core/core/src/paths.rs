@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Utility functions for resolving project and workspace directory paths.
+
 use std::path::PathBuf;
 
 /// Returns the workspace root directory path.

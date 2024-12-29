@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Functions for condition checks similar to the *design by contract* philosophy
-//! to ensure logical correctness.
+//! Functions for correctness checks similar to the *design by contract* philosophy.
 //!
 //! This module provides validation checking of function or method conditions.
 //!
