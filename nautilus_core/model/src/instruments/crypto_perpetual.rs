@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_positive_u64, FAILED},
+    correctness::{check_equal_u8, check_positive_u64, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -28,7 +28,12 @@ use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::Instrument,
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        currency::Currency,
+        money::Money,
+        price::{check_positive_price, Price},
+        quantity::Quantity,
+    },
 };
 
 /// Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
@@ -135,7 +140,7 @@ impl CryptoPerpetual {
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
         check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
 
         Ok(Self {

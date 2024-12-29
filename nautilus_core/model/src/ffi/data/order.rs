@@ -24,13 +24,17 @@ use nautilus_core::ffi::string::str_to_cstr;
 use crate::{
     data::BookOrder,
     enums::OrderSide,
-    types::{Price, Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::Quantity,
+    },
 };
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn book_order_from_raw(
     order_side: OrderSide,
-    price_raw: i64,
+    price_raw: PriceRaw,
     price_prec: u8,
     size_raw: u64,
     size_prec: u8,

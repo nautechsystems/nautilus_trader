@@ -33,7 +33,13 @@ use arrow::{
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
-use nautilus_model::data::{Bar, Data, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
+use nautilus_model::{
+    data::{
+        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        trade::TradeTick, Data,
+    },
+    types::price::PriceRaw,
+};
 use pyo3::prelude::*;
 
 // Define metadata key constants constants
@@ -41,6 +47,13 @@ const KEY_BAR_TYPE: &str = "bar_type";
 const KEY_INSTRUMENT_ID: &str = "instrument_id";
 const KEY_PRICE_PRECISION: &str = "price_precision";
 const KEY_SIZE_PRECISION: &str = "size_precision";
+
+#[cfg(not(feature = "high_precision"))]
+/// The number of bytes used to represent a 64 bit price in low precision mode.
+pub const PRECISION_BYTES: i32 = 8;
+#[cfg(feature = "high_precision")]
+/// The number of bytes used to represent a 128 bit price in high precision mode.
+pub const PRECISION_BYTES: i32 = 16;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
@@ -66,6 +79,11 @@ pub enum EncodingError {
     InvalidColumnType(&'static str, usize, DataType, DataType),
     #[error("Arrow error: {0}")]
     ArrowError(#[from] arrow::error::ArrowError),
+}
+
+#[inline]
+fn get_raw_price(bytes: &[u8]) -> PriceRaw {
+    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
 }
 
 pub trait ArrowSchemaProvider {

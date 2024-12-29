@@ -17,8 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{
-        check_equal_u8, check_positive_i64, check_positive_u64, check_valid_string,
-        check_valid_string_optional, FAILED,
+        check_equal_u8, check_positive_u64, check_valid_string, check_valid_string_optional, FAILED,
     },
     nanos::UnixNanos,
 };
@@ -30,7 +29,12 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        currency::Currency,
+        money::Money,
+        price::{check_positive_price, Price},
+        quantity::Quantity,
+    },
 };
 
 /// Represents a generic options spread instrument.
@@ -134,7 +138,7 @@ impl OptionsSpread {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
         check_positive_u64(multiplier.raw, stringify!(multiplier.raw))?;
         check_positive_u64(lot_size.raw, stringify!(lot_size.raw))?;
 

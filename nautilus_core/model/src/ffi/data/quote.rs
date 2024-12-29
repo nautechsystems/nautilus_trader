@@ -24,14 +24,18 @@ use nautilus_core::{ffi::string::str_to_cstr, nanos::UnixNanos};
 use crate::{
     data::QuoteTick,
     identifiers::InstrumentId,
-    types::{Price, Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::Quantity,
+    },
 };
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quote_tick_new(
     instrument_id: InstrumentId,
-    bid_price_raw: i64,
-    ask_price_raw: i64,
+    bid_price_raw: PriceRaw,
+    ask_price_raw: PriceRaw,
     bid_price_prec: u8,
     ask_price_prec: u8,
     bid_size_raw: u64,

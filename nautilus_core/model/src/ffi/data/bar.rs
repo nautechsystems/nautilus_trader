@@ -29,7 +29,10 @@ use crate::{
     data::bar::{Bar, BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{Price, Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::Quantity,
+    },
 };
 
 #[no_mangle]
@@ -219,6 +222,7 @@ pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn bar_new(
     bar_type: BarType,
     open: Price,
@@ -242,12 +246,13 @@ pub extern "C" fn bar_new(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn bar_new_from_raw(
     bar_type: BarType,
-    open: i64,
-    high: i64,
-    low: i64,
-    close: i64,
+    open: PriceRaw,
+    high: PriceRaw,
+    low: PriceRaw,
+    close: PriceRaw,
     price_prec: u8,
     volume: u64,
     size_prec: u8,
