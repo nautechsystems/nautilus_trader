@@ -464,18 +464,23 @@ cdef class OrderMatchingEngine:
         if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
 
-        self._core.set_last_raw(tick._mem.price.raw)
-
         cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
+        cdef int64_t price_raw = tick._mem.price.raw
+
+        self._core.set_last_raw(price_raw)
 
         if self._trade_execution:
             aggressor_side = tick.aggressor_side
-            if tick.aggressor_side == AggressorSide.BUYER:
-                self._core.set_ask_raw(tick._mem.price.raw)
-            elif tick.aggressor_side == AggressorSide.SELLER:
-                self._core.set_bid_raw(tick._mem.price.raw)
+            if aggressor_side == AggressorSide.BUYER:
+                self._core.set_ask_raw(price_raw)
+                if price_raw < self._core.bid_raw:
+                    self._core.set_bid_raw(price_raw)
+            elif aggressor_side == AggressorSide.SELLER:
+                self._core.set_bid_raw(price_raw)
+                if price_raw > self._core.ask_raw:
+                    self._core.set_ask_raw(price_raw)
             else:
-                aggressor_side_str = aggressor_side_to_str(tick.aggressor_side)
+                aggressor_side_str = aggressor_side_to_str(aggressor_side)
                 raise RuntimeError(  # pragma: no cover (design-time error)
                     f"invalid `AggressorSide` for trade execution, was {aggressor_side_str}",  # pragma: no cover
                 )
@@ -1346,10 +1351,10 @@ cdef class OrderMatchingEngine:
         cdef Price_t bid
         cdef Price_t ask
 
-        if orderbook_has_bid(&self._book._mem) and not aggressor_side == AggressorSide.SELLER:
+        if orderbook_has_bid(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
             bid = orderbook_best_bid_price(&self._book._mem)
             self._core.set_bid_raw(bid.raw)
-        if orderbook_has_ask(&self._book._mem) and not aggressor_side == AggressorSide.BUYER:
+        if orderbook_has_ask(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
             ask = orderbook_best_ask_price(&self._book._mem)
             self._core.set_ask_raw(ask.raw)
 

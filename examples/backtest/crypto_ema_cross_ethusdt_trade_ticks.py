@@ -60,6 +60,7 @@ if __name__ == "__main__":
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
+        trade_execution=True,  # Only use with L1_MBP book type or throttled book data
     )
 
     # Add instruments
