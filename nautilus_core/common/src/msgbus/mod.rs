@@ -638,6 +638,14 @@ mod tests {
     #[case("data.quotes.BINANCE", "data.*.BINANCE", true)]
     #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", true)]
     #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", true)]
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH???", false)]
+    #[case("data.trades.BINANCE.ETHUSD", "data.*.BINANCE.ETH???", true)]
+    // We don't support [seq] style pattern
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[HC]USDT", false)]
+    // We don't support [!seq] style pattern
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[!ABC]USDT", false)]
+    // We don't support [^seq] style pattern
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[^ABC]USDT", false)]
     fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected: bool) {
         assert_eq!(
             is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
