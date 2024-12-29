@@ -1758,9 +1758,9 @@ mod tests {
             ts_event: 0.into(),
             ts_init: 0.into(),
             peak_quantity: position.quantity,
-            avg_px_close: position.avg_px_open,
+            avg_px_close: Some(position.avg_px_open),
             realized_return: position.avg_px_open,
-            realized_pnl: Money::new(10.0, Currency::USD()),
+            realized_pnl: Some(Money::new(10.0, Currency::USD())),
             unrealized_pnl: Money::new(10.0, Currency::USD()),
             ts_opened: 0.into(),
         }
@@ -1785,14 +1785,14 @@ mod tests {
             ts_event: 0.into(),
             ts_init: 0.into(),
             peak_quantity: position.quantity,
-            avg_px_close: position.avg_px_open,
+            avg_px_close: Some(position.avg_px_open),
             realized_return: position.avg_px_open,
-            realized_pnl: Money::new(10.0, Currency::USD()),
+            realized_pnl: Some(Money::new(10.0, Currency::USD())),
             unrealized_pnl: Money::new(10.0, Currency::USD()),
             ts_opened: 0.into(),
-            closing_order_id: ClientOrderId::new("SSD"),
+            closing_order_id: Some(ClientOrderId::new("SSD")),
             duration: 0,
-            ts_closed: 0.into(),
+            ts_closed: None,
         }
     }
 

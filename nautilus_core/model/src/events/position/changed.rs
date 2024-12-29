@@ -17,7 +17,9 @@ use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     enums::{OrderSide, PositionSide},
+    events::OrderFilled,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+    position::Position,
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -39,11 +41,45 @@ pub struct PositionChanged {
     pub last_px: Price,
     pub currency: Currency,
     pub avg_px_open: f64,
-    pub avg_px_close: f64,
+    pub avg_px_close: Option<f64>,
     pub realized_return: f64,
-    pub realized_pnl: Money,
+    pub realized_pnl: Option<Money>,
     pub unrealized_pnl: Money,
     pub ts_opened: UnixNanos,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
+}
+
+impl PositionChanged {
+    pub fn create(
+        position: &Position,
+        fill: &OrderFilled,
+        // event_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> PositionChanged {
+        PositionChanged {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            peak_quantity: position.peak_qty,
+            last_qty: fill.last_qty,
+            last_px: fill.last_px,
+            currency: position.quote_currency,
+            avg_px_open: position.avg_px_open,
+            avg_px_close: position.avg_px_close,
+            realized_return: position.realized_return,
+            realized_pnl: position.realized_pnl,
+            unrealized_pnl: Money::new(0.0, position.quote_currency),
+            ts_opened: position.ts_opened,
+            ts_event: fill.ts_event,
+            ts_init,
+        }
+    }
 }

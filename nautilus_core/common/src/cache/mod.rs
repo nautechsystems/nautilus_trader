@@ -31,8 +31,12 @@ use std::{
 
 use bytes::Bytes;
 use database::CacheDatabaseAdapter;
-use nautilus_core::correctness::{
-    check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string, FAILED,
+use nautilus_core::{
+    correctness::{
+        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
+        FAILED,
+    },
+    uuid::UUID4,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -46,7 +50,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{OrderAny, OrderList},
     position::Position,
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -551,6 +555,37 @@ impl Cache {
             // 9: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
         }
+    }
+
+    /// Returns whether the cache has a backing database.
+    #[must_use]
+    pub const fn has_backing(&self) -> bool {
+        self.config.database.is_some()
+    }
+
+    // Calculate the unrealized profit and loss (PnL) for a given position.
+    #[must_use]
+    pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
+        let quote = if let Some(quote) = self.quote(&position.instrument_id) {
+            quote
+        } else {
+            log::warn!(
+                "Cannot calculate unrealized PnL for {}, no quotes for {}",
+                position.id,
+                position.instrument_id
+            );
+            return None;
+        };
+
+        let last = match position.side {
+            PositionSide::Flat | PositionSide::NoPositionSide => {
+                return Some(Money::new(0.0, position.settlement_currency));
+            }
+            PositionSide::Long => quote.ask_price,
+            PositionSide::Short => quote.bid_price,
+        };
+
+        Some(position.unrealized_pnl(last))
     }
 
     /// Checks integrity of data within the cache.
@@ -1346,7 +1381,7 @@ impl Cache {
     }
 
     /// Indexes the given `position_id` with the other given IDs.
-    fn add_position_id(
+    pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
         venue: &Venue,
@@ -1511,6 +1546,80 @@ impl Cache {
             // }
         }
         Ok(())
+    }
+
+    /// Creates a snapshot of the given position by cloning it, assigning a new ID,
+    /// serializing it, and storing it in the position snapshots.
+    pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        let position_id = position.id;
+
+        let mut copied_position = position.clone();
+        let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
+        copied_position.id = PositionId::new(new_id);
+
+        // Serialize the position
+        let position_serialized = bincode::serialize(&copied_position)?;
+
+        let snapshots: Option<&Bytes> = self.position_snapshots.get(&position_id);
+        let new_snapshots = match snapshots {
+            Some(existing_snapshots) => {
+                let mut combined = existing_snapshots.to_vec();
+                combined.extend(position_serialized);
+                Bytes::from(combined)
+            }
+            None => Bytes::from(position_serialized),
+        };
+        self.position_snapshots.insert(position_id, new_snapshots);
+
+        log::debug!("Snapshot {}", copied_position);
+        Ok(())
+    }
+
+    pub fn snapshot_position_state(
+        &mut self,
+        position: &Position,
+        // ts_snapshot: u64,
+        // unrealized_pnl: Option<Money>,
+        open_only: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let open_only = open_only.unwrap_or(true);
+
+        if open_only && !position.is_open() {
+            return Ok(());
+        }
+
+        if let Some(database) = &mut self.database {
+            database.snapshot_position_state(position).map_err(|e| {
+                log::error!(
+                    "Failed to snapshot position state for {}: {:?}",
+                    position.id,
+                    e
+                );
+                e
+            })?;
+        } else {
+            log::warn!(
+                "Cannot snapshot position state for {} (no database configured)",
+                position.id
+            );
+        }
+
+        // Ok(())
+        todo!()
+    }
+
+    pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        let database = if let Some(database) = &self.database {
+            database
+        } else {
+            log::warn!(
+                "Cannot snapshot order state for {} (no database configured)",
+                order.client_order_id()
+            );
+            return Ok(());
+        };
+
+        database.snapshot_order_state(order)
     }
 
     // -- IDENTIFIER QUERIES ----------------------------------------------------------------------
