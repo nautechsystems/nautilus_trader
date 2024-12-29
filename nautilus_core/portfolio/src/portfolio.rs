@@ -1489,7 +1489,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_model::{
         data::QuoteTick,
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
@@ -1734,6 +1734,7 @@ mod tests {
             last_px: Price::new(position.avg_px_open, 0),
             currency: position.settlement_currency,
             avg_px_open: position.avg_px_open,
+            event_id: UUID4::new(),
             ts_event: 0.into(),
             ts_init: 0.into(),
         }
@@ -1762,6 +1763,7 @@ mod tests {
             realized_return: position.avg_px_open,
             realized_pnl: Some(Money::new(10.0, Currency::USD())),
             unrealized_pnl: Money::new(10.0, Currency::USD()),
+            event_id: UUID4::new(),
             ts_opened: 0.into(),
         }
     }
@@ -1789,9 +1791,10 @@ mod tests {
             realized_return: position.avg_px_open,
             realized_pnl: Some(Money::new(10.0, Currency::USD())),
             unrealized_pnl: Money::new(10.0, Currency::USD()),
-            ts_opened: 0.into(),
             closing_order_id: Some(ClientOrderId::new("SSD")),
             duration: 0,
+            event_id: UUID4::new(),
+            ts_opened: 0.into(),
             ts_closed: None,
         }
     }

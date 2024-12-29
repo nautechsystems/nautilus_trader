@@ -78,9 +78,7 @@ impl PositionId {
 
     /// Checks if the position ID is virtual.
     ///
-    /// # Returns
-    ///
-    /// `true` if the position ID starts with "P-", otherwise `false`.
+    /// Returns `true` if the position ID starts with "P-", otherwise `false`.
     #[must_use]
     pub fn is_virtual(&self) -> bool {
         self.0.starts_with("P-")
