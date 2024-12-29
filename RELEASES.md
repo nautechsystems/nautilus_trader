@@ -3,11 +3,12 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Allow bar aggregators to persist after request_aggregated_bars (#2144), thanks @faysou
+- Added `PerContractFeeModel`, thanks @stefansimik
+- Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)
-- Improved validation for `TradeTick` by ensuring `size` is positive
+- Improved validation for `TradeTick` by ensuring `size` is always positive
 - Improved validation for `OrderBookDelta` by ensuring `order.size` is positive when `action` is either `ADD` or `UPDATE`
 
 ### Breaking Changes

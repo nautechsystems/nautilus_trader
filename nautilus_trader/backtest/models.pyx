@@ -274,3 +274,34 @@ cdef class FixedFeeModel(FeeModel):
             return self._commission
         else:
             return self._zero_commission
+
+
+cdef class PerContractFeeModel(FeeModel):
+    """
+    Provides a fee model which charges a commission per contract traded.
+
+    Parameters
+    ----------
+    commission : Money
+        The commission amount per contract.
+
+    Raises
+    ------
+    ValueError
+        If `commission` is not a positive amount.
+
+    """
+
+    def __init__(self, Money commission not None):
+        Condition.positive(commission, "commission")
+
+        self._commission = commission
+
+    cpdef Money get_commission(
+        self,
+        Order order,
+        Quantity fill_qty,
+        Price fill_px,
+        Instrument instrument,
+    ):
+        return Money(self._commission * fill_qty, self._commission.currency)
