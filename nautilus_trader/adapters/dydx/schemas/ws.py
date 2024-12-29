@@ -98,15 +98,14 @@ class DYDXCandle(msgspec.Struct, forbid_unknown_fields=True):
         high_price = Price(Decimal(self.high), price_precision)
         low_price = Price(Decimal(self.low), price_precision)
         close_price = Price(Decimal(self.close), price_precision)
-        avg_price = Decimal("0.25") * (open_price + high_price + low_price + close_price)
-        volume = Decimal(self.usdVolume) / avg_price
+        volume = Quantity(Decimal(self.baseTokenVolume), size_precision)
         return Bar(
             bar_type=bar_type,
             open=open_price,
             high=high_price,
             low=low_price,
             close=close_price,
-            volume=Quantity(volume, size_precision),
+            volume=volume,
             ts_event=dt_to_unix_nanos(self.startedAt),
             ts_init=ts_init,
         )
