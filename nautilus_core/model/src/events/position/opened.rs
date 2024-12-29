@@ -17,7 +17,9 @@ use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     enums::{OrderSide, PositionSide},
+    events::OrderFilled,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+    position::Position,
     types::{Currency, Price, Quantity},
 };
 
@@ -40,4 +42,27 @@ pub struct PositionOpened {
     pub avg_px_open: f64,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
+}
+
+impl PositionOpened {
+    pub fn create(position: &Position, fill: &OrderFilled, ts_init: UnixNanos) -> PositionOpened {
+        PositionOpened {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            last_qty: fill.last_qty,
+            last_px: fill.last_px,
+            currency: position.quote_currency,
+            avg_px_open: position.avg_px_open,
+            ts_event: fill.ts_event,
+            ts_init,
+        }
+    }
 }

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::{ClientOrderId, InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
 };
 use ustr::Ustr;
 
@@ -32,11 +32,14 @@ pub struct MessagingSwitchboard {
     instrument_topics: HashMap<InstrumentId, Ustr>,
     deltas_topics: HashMap<InstrumentId, Ustr>,
     book_snapshots_topics: HashMap<InstrumentId, Ustr>,
+    event_orders_topics: HashMap<StrategyId, Ustr>,
+    event_positions_topics: HashMap<StrategyId, Ustr>,
     depth_topics: HashMap<InstrumentId, Ustr>,
     quote_topics: HashMap<InstrumentId, Ustr>,
     trade_topics: HashMap<InstrumentId, Ustr>,
     bar_topics: HashMap<BarType, Ustr>,
     order_snapshots_topics: HashMap<ClientOrderId, Ustr>,
+    positions_snapshots_topics: HashMap<PositionId, Ustr>,
 }
 
 impl Default for MessagingSwitchboard {
@@ -56,6 +59,9 @@ impl Default for MessagingSwitchboard {
             trade_topics: HashMap::new(),
             bar_topics: HashMap::new(),
             order_snapshots_topics: HashMap::new(),
+            event_orders_topics: HashMap::new(),
+            event_positions_topics: HashMap::new(),
+            positions_snapshots_topics: HashMap::new(),
         }
     }
 }
@@ -149,6 +155,30 @@ impl MessagingSwitchboard {
             .order_snapshots_topics
             .entry(client_order_id)
             .or_insert_with(|| Ustr::from(&format!("order.snapshots.{client_order_id}")))
+    }
+
+    #[must_use]
+    pub fn get_positions_snapshots_topic(&mut self, position_id: PositionId) -> Ustr {
+        *self
+            .positions_snapshots_topics
+            .entry(position_id)
+            .or_insert_with(|| Ustr::from(&format!("positions.snapshots.{position_id}")))
+    }
+
+    #[must_use]
+    pub fn get_event_orders_topic(&mut self, strategy_id: StrategyId) -> Ustr {
+        *self
+            .event_orders_topics
+            .entry(strategy_id)
+            .or_insert_with(|| Ustr::from(&format!("events.order.{strategy_id}")))
+    }
+
+    #[must_use]
+    pub fn get_event_positions_topic(&mut self, strategy_id: StrategyId) -> Ustr {
+        *self
+            .event_positions_topics
+            .entry(strategy_id)
+            .or_insert_with(|| Ustr::from(&format!("events.position.{strategy_id}")))
     }
 }
 

@@ -75,6 +75,16 @@ impl PositionId {
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
+
+    /// Checks if the position ID is virtual.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the position ID starts with "P-", otherwise `false`.
+    #[must_use]
+    pub fn is_virtual(&self) -> bool {
+        self.0.starts_with("P-")
+    }
 }
 
 impl Debug for PositionId {
