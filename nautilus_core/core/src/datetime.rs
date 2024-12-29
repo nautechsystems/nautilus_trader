@@ -146,6 +146,7 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
 }
 
 /// Subtract `n` months from a chrono `DateTime<Utc>`.
+#[must_use]
 pub fn subtract_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
     // A naive approach:
     //   1) Convert dt to y/m/d
@@ -180,6 +181,7 @@ pub fn subtract_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
 }
 
 /// Add `n` months to a chrono `DateTime<Utc>`.
+#[must_use]
 pub fn add_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
     // Same approach but adding months
     let year = dt.year();
@@ -208,6 +210,7 @@ pub fn add_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
 }
 
 /// Returns the last valid day of `(year, month)`.
+#[must_use]
 pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
     // E.g., for February, check leap year logic
     match month {
@@ -234,6 +237,7 @@ pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
 }
 
 /// Basic leap-year check
+#[must_use]
 pub const fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
