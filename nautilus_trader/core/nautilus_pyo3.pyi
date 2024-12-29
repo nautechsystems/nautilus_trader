@@ -762,6 +762,10 @@ class BarAggregation(Enum):
     WEEK = "WEEK"
     MONTH = "MONTH"
 
+class BarIntervalType(Enum):
+    LEFT_OPEN = "LEFT_OPEN"
+    RIGHT_OPEN = "RIGHT_OPEN"
+
 class BookAction(Enum):
     ADD = "ADD"
     UPDATE = "UPDATE"

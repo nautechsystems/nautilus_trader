@@ -311,6 +311,7 @@ pub enum BarAggregation {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -329,7 +330,8 @@ pub enum BarAggregation {
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum BarIntervalType {
-    /// Left-open interval `(start, end]`: start is exclusive, end is inclusive.
+    /// Left-open interval `(start, end]`: start is exclusive, end is inclusive (default).
+    #[default]
     LeftOpen = 1,
     /// Right-open interval `[start, end)`: start is inclusive, end is exclusive.
     RightOpen = 2,
