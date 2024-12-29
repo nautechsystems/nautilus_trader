@@ -354,7 +354,39 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{stubs::stub_trade_ethusdt_buyer, TradeTick};
+    use crate::{
+        data::{stubs::stub_trade_ethusdt_buyer, TradeTick},
+        enums::AggressorSide,
+        identifiers::{InstrumentId, TradeId},
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    fn test_trade_tick_py_new_with_zero_size_returns_error() {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|_py| {
+            let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+            let price = Price::from("10000.00");
+            let zero_size = Quantity::from(0);
+            let aggressor_side = AggressorSide::Buyer;
+            let trade_id = TradeId::from("123456789");
+            let ts_event = 1;
+            let ts_init = 2;
+
+            let result = TradeTick::py_new(
+                instrument_id,
+                price,
+                zero_size,
+                aggressor_side,
+                trade_id,
+                ts_event,
+                ts_init,
+            );
+
+            assert!(result.is_err());
+        });
+    }
 
     #[rstest]
     fn test_as_dict(stub_trade_ethusdt_buyer: TradeTick) {
