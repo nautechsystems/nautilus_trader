@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_book_delta_new_checked_with_zero_size_returns_error() {
+    fn test_order_book_delta_new_checked_with_zero_size_error() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let action = BookAction::Add;
         let price = Price::from("100.00");
@@ -264,6 +264,7 @@ mod tests {
             ts_event,
             ts_init,
         );
+
         assert!(result.is_err());
     }
 

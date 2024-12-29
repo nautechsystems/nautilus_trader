@@ -187,6 +187,7 @@ mod tests {
     };
 
     #[rstest]
+    #[should_panic(expected = "invalid u64 for 'size.raw' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
@@ -196,22 +197,19 @@ mod tests {
         let ts_event = UnixNanos::from(0);
         let ts_init = UnixNanos::from(1);
 
-        let result = std::panic::catch_unwind(|| {
-            let _ = TradeTick::new(
-                instrument_id,
-                price,
-                zero_size,
-                aggressor_side,
-                trade_id,
-                ts_event,
-                ts_init,
-            );
-        });
-        assert!(result.is_err());
+        let _ = TradeTick::new(
+            instrument_id,
+            price,
+            zero_size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_init,
+        );
     }
 
     #[rstest]
-    fn test_trade_tick_new_checked_with_zero_size_returns_error() {
+    fn test_trade_tick_new_checked_with_zero_size_error() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
         let zero_size = Quantity::from(0);
@@ -229,6 +227,7 @@ mod tests {
             ts_event,
             ts_init,
         );
+
         assert!(result.is_err());
     }
 
