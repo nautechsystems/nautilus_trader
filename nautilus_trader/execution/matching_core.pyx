@@ -453,6 +453,6 @@ cdef inline int64_t order_sort_key(Order order):
         return price._mem.raw if order.is_triggered else trigger_price._mem.raw
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"invalid order type to sort in book, "
-            f"was {order_type_to_str(order.order_type)}",
+            f"invalid order type to sort in book, "  # pragma: no cover (design-time error)
+            f"was {order_type_to_str(order.order_type)}",  # pragma: no cover (design-time error)
         )
