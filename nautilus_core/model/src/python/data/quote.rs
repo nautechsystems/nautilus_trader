@@ -397,7 +397,7 @@ mod tests {
     Quantity::from_raw(1_000_000, 6),
     Quantity::from_raw(1_000_000, 7), // Mismatched precision
 )]
-    fn test_quote_tick_py_new_param(
+    fn test_quote_tick_py_new_invalid_precisions(
         #[case] bid_price: Price,
         #[case] ask_price: Price,
         #[case] bid_size: Quantity,
@@ -405,23 +405,21 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|_py| {
-            let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
-            let ts_event = 0;
-            let ts_init = 1;
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let ts_event = 0;
+        let ts_init = 1;
 
-            let result = QuoteTick::py_new(
-                instrument_id,
-                bid_price,
-                ask_price,
-                bid_size,
-                ask_size,
-                ts_event,
-                ts_init,
-            );
+        let result = QuoteTick::py_new(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        );
 
-            assert!(result.is_err());
-        });
+        assert!(result.is_err());
     }
 
     #[rstest]
