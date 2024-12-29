@@ -238,7 +238,7 @@ mod tests {
         let bar2 = Bar::new(
             bar_type,
             Price::from("100.00"),
-            Price::from("100.00"),
+            Price::from("100.10"),
             Price::from("100.00"),
             Price::from("100.10"),
             Quantity::from(1110),
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(open_values.value(1), 100_000_000_000);
         assert_eq!(high_values.len(), 2);
         assert_eq!(high_values.value(0), 102_000_000_000);
-        assert_eq!(high_values.value(1), 100_000_000_000);
+        assert_eq!(high_values.value(1), 100_100_000_000);
         assert_eq!(low_values.len(), 2);
         assert_eq!(low_values.value(0), 100_000_000_000);
         assert_eq!(low_values.value(1), 100_000_000_000);

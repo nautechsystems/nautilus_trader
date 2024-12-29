@@ -223,7 +223,7 @@ impl Bar {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
-        Ok(Self::new(
+        Self::new_checked(
             bar_type,
             open,
             high,
@@ -232,7 +232,8 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -410,7 +411,54 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::Bar;
+    use crate::{
+        data::{Bar, BarType},
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    #[case("10.0000", "10.0010", "10.0020", "10.0005")] // low > high
+    #[case("10.0000", "10.0010", "10.0005", "10.0030")] // close > high
+    #[case("10.0000", "9.9990", "9.9980", "9.9995")] // high < open
+    #[case("10.0000", "10.0010", "10.0015", "10.0020")] // low > close
+    #[case("10.0000", "10.0000", "10.0001", "10.0002")] // low > high (equal high/open edge case)
+    fn test_bar_py_new_invalid(
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] close: &str,
+    ) {
+        pyo3::prepare_freethreaded_python();
+
+        let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from(open);
+        let high = Price::from(high);
+        let low = Price::from(low);
+        let close = Price::from(close);
+        let volume = Quantity::from(100_000);
+        let ts_event = 0;
+        let ts_init = 1;
+
+        let result = Bar::py_new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_bar_py_new() {
+        pyo3::prepare_freethreaded_python();
+
+        let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from("1.00005");
+        let high = Price::from("1.00010");
+        let low = Price::from("1.00000");
+        let close = Price::from("1.00007");
+        let volume = Quantity::from(100_000);
+        let ts_event = 0;
+        let ts_init = 1;
+
+        let result = Bar::py_new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+        assert!(result.is_ok());
+    }
 
     #[rstest]
     fn test_as_dict() {
