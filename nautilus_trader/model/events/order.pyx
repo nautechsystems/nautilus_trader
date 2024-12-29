@@ -4534,7 +4534,7 @@ cdef class OrderFilled(OrderEvent):
         dict info = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
-        Condition.positive(last_qty, "last_qty")
+        Condition.positive_int(last_qty._mem.raw, "last_qty")
 
         if info is None:
             info = {}

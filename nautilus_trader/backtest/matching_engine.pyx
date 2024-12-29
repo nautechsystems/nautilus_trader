@@ -629,9 +629,6 @@ cdef class OrderMatchingEngine:
         cdef double size_value = max(bar.volume.as_double() / 4.0, self.instrument.size_increment.as_double())
         cdef Quantity size = Quantity(size_value, bar._mem.volume.precision)
 
-        if size._mem.raw == 0:
-            raise RuntimeError("Trade size invalid, was zero")
-
         # Create reusable tick
         cdef TradeTick tick = TradeTick(
             bar.bar_type.instrument_id,

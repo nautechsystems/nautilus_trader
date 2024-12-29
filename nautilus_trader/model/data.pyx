@@ -4195,7 +4195,8 @@ cdef class TradeTick(Data):
     ------
     ValueError
         If `trade_id` is not a valid string.
-
+    ValueError
+        If `size` is not positive (> 0).
     """
 
     def __init__(
@@ -4208,6 +4209,8 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ) -> None:
+        Condition.positive_int(size._mem.raw, "size")
+
         self._mem = trade_tick_new(
             instrument_id._mem,
             price._mem.raw,
@@ -4234,12 +4237,15 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
+        cdef uint64_t size_raw = state[3]
+        Condition.positive_int(size_raw, "state[3] (size_raw)")
+
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = trade_tick_new(
             instrument_id._mem,
             state[1],
             state[2],
-            state[3],
+            size_raw,
             state[4],
             state[5],
             TradeId(state[6])._mem,
@@ -4370,6 +4376,7 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        Condition.positive_int(size_raw, "size_raw")
         cdef TradeTick trade = TradeTick.__new__(TradeTick)
         trade._mem = trade_tick_new(
             instrument_id._mem,
@@ -4404,10 +4411,13 @@ cdef class TradeTick(Data):
 
         cdef:
             int i
+            uint64_t size_raw
             AggressorSide aggressor_side
             TradeId trade_id
             TradeTick trade
         for i in range(count):
+            size_raw = sizes_raw[i]
+            Condition.positive_int(size_raw, "size_raw")
             aggressor_side = <AggressorSide>aggressor_sides[i]
             trade_id = TradeId(trade_ids[i])
             trade = TradeTick.__new__(TradeTick)
@@ -4415,7 +4425,7 @@ cdef class TradeTick(Data):
                 instrument_id._mem,
                 prices_raw[i],
                 price_prec,
-                sizes_raw[i],
+                size_raw,
                 size_prec,
                 aggressor_side,
                 trade_id._mem,

@@ -91,8 +91,8 @@ impl TradeTick {
         trade_id: TradeId,
         ts_event: u64,
         ts_init: u64,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             instrument_id,
             price,
             size,
@@ -101,6 +101,7 @@ impl TradeTick {
             ts_event.into(),
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -176,7 +177,7 @@ impl TradeTick {
         Self::new(
             InstrumentId::from("NULL.NULL"),
             Price::zero(0),
-            Quantity::zero(0),
+            Quantity::from(1), // size cannot be zero
             AggressorSide::NoAggressor,
             TradeId::from("NULL"),
             UnixNanos::default(),
