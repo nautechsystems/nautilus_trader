@@ -22,13 +22,14 @@
 
 use std::{cell::RefCell, ops::Add, rc::Rc};
 
-use chrono::{DateTime, Datelike, TimeDelta, TimeZone, Timelike, Utc};
+use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use nautilus_common::{
     clock::Clock,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     correctness::{self, FAILED},
+    datetime::{add_n_months, subtract_n_months},
     nanos::UnixNanos,
 };
 use nautilus_model::{
@@ -63,7 +64,6 @@ pub trait BarAggregator {
         self.update(trade.price, trade.size, trade.ts_event);
     }
     fn handle_bar(&mut self, bar: Bar) {
-        let spec = self.bar_type().spec();
         self.update_bar(bar, bar.volume, bar.ts_init);
     }
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
@@ -544,7 +544,7 @@ where
         let mut raw_volume_update = volume.raw;
         let spec = self.core.bar_type.spec();
         let raw_step = (spec.step as f64 * FIXED_SCALAR) as u64;
-        let mut raw_volume_diff = 0;
+        let mut _raw_volume_diff = 0;
 
         while raw_volume_update > 0 {
             if self.core.builder.volume.raw + raw_volume_update < raw_step {
@@ -556,15 +556,15 @@ where
                 break;
             }
 
-            raw_volume_diff = raw_step - self.core.builder.volume.raw;
+            _raw_volume_diff = raw_step - self.core.builder.volume.raw;
             self.core.builder.update_bar(
                 bar,
-                Quantity::from_raw(raw_volume_diff, volume.precision),
+                Quantity::from_raw(_raw_volume_diff, volume.precision),
                 ts_init,
             );
 
             self.core.build_now_and_send();
-            raw_volume_update -= raw_volume_diff;
+            raw_volume_update -= _raw_volume_diff;
         }
     }
 
@@ -783,7 +783,7 @@ where
         time_bars_origin: Option<DateTime<Utc>>,
         composite_bar_build_delay: i32,
     ) -> Self {
-        let is_left_open = match interval_type {
+        let _is_left_open = match interval_type {
             BarIntervalType::LeftOpen => true,
             BarIntervalType::RightOpen => false,
         };
@@ -1077,99 +1077,6 @@ where
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
     }
-}
-
-/// Subtract `n` months from a chrono `DateTime<Utc>`.
-fn subtract_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
-    // A naive approach:
-    //   1) Convert dt to y/m/d
-    //   2) Subtract n from the month
-    //   3) Adjust year if month < 1
-    //   4) Rebuild and keep day-of-month within valid range
-    //   5) Return new DateTime
-    let year = dt.year();
-    let month = dt.month() as isize; // 1..12
-    let day = dt.day(); // 1..31
-
-    let mut new_month = month - n;
-    let mut new_year = year;
-
-    // If subtracting months dips below 1, wrap around
-    while new_month <= 0 {
-        new_month += 12;
-        new_year -= 1;
-    }
-    // clamp day to something valid for new_year/new_month
-    let last_day_of_new_month = last_day_of_month(new_year, new_month as u32);
-    let new_day = day.min(last_day_of_new_month);
-
-    // Build a new Chrono NaiveDateTime
-    let new_date = chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, new_day)?;
-    let new_naive_datetime =
-        new_date.and_hms_micro_opt(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() / 1000)?;
-
-    // Convert back to UTC
-    let new_dt = DateTime::<Utc>::from_naive_utc_and_offset(new_naive_datetime, chrono::Utc);
-    Some(new_dt)
-}
-
-/// Add `n` months to a chrono `DateTime<Utc>`.
-fn add_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
-    // Same approach but adding months
-    let year = dt.year();
-    let month = dt.month() as isize;
-    let day = dt.day();
-
-    let mut new_month = month + n;
-    let mut new_year = year;
-
-    // If months goes above 12, wrap around
-    while new_month > 12 {
-        new_month -= 12;
-        new_year += 1;
-    }
-    let last_day_of_new_month = last_day_of_month(new_year, new_month as u32);
-    let new_day = day.min(last_day_of_new_month);
-
-    let new_date = chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, new_day)?;
-    let new_naive_datetime =
-        new_date.and_hms_micro_opt(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() / 1000)?;
-
-    Some(DateTime::<Utc>::from_naive_utc_and_offset(
-        new_naive_datetime,
-        chrono::Utc,
-    ))
-}
-
-/// Returns the last valid day of `(year, month)`.
-const fn last_day_of_month(year: i32, month: u32) -> u32 {
-    // E.g., for February, check leap year logic
-    match month {
-        1 => 31,
-        2 => {
-            if is_leap_year(year) {
-                29
-            } else {
-                28
-            }
-        }
-        3 => 31,
-        4 => 30,
-        5 => 31,
-        6 => 30,
-        7 => 31,
-        8 => 31,
-        9 => 30,
-        10 => 31,
-        11 => 30,
-        12 => 31,
-        _ => 31, // fallback
-    }
-}
-
-/// Basic leap-year check
-const fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2169,53 +2076,5 @@ mod tests {
 
         let handler_guard = handler.lock().unwrap();
         assert_eq!(handler_guard.len(), 0);
-    }
-
-    #[rstest]
-    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
-    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 12, Utc.with_ymd_and_hms(2023, 3, 31, 12, 0, 0).unwrap())] // One year earlier
-    #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap())] // Wrapping to previous year
-    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 2, Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap())] // Multiple months back
-    fn test_subtract_n_months(
-        #[case] input: DateTime<Utc>,
-        #[case] months: isize,
-        #[case] expected: DateTime<Utc>,
-    ) {
-        let result = subtract_n_months(input, months);
-        assert_eq!(result, Some(expected));
-    }
-
-    #[rstest]
-    #[case(Utc.with_ymd_and_hms(2023, 2, 28, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 3, 28, 12, 0, 0).unwrap())] // Simple month addition
-    #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
-    #[case(Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap())] // Wrapping to next year
-    #[case(Utc.with_ymd_and_hms(2023, 1, 31, 12, 0, 0).unwrap(), 13, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Crossing year boundary with multiple months
-    fn test_add_n_months(
-        #[case] input: DateTime<Utc>,
-        #[case] months: isize,
-        #[case] expected: DateTime<Utc>,
-    ) {
-        let result = add_n_months(input, months);
-        assert_eq!(result, Some(expected));
-    }
-
-    #[rstest]
-    #[case(2024, 2, 29)] // Leap year February
-    #[case(2023, 2, 28)] // Non-leap year February
-    #[case(2024, 12, 31)] // December
-    #[case(2023, 11, 30)] // November
-    fn test_last_day_of_month(#[case] year: i32, #[case] month: u32, #[case] expected: u32) {
-        let result = last_day_of_month(year, month);
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(2024, true)] // Leap year divisible by 4
-    #[case(1900, false)] // Not leap year, divisible by 100 but not 400
-    #[case(2000, true)] // Leap year, divisible by 400
-    #[case(2023, false)] // Non-leap year
-    fn test_is_leap_year(#[case] year: i32, #[case] expected: bool) {
-        let result = is_leap_year(year);
-        assert_eq!(result, expected);
     }
 }
