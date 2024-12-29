@@ -184,21 +184,19 @@ impl ExecutionEngine {
     pub fn load_cache(&mut self) -> anyhow::Result<()> {
         let ts = SystemTime::now();
 
-        self.cache
-            .borrow_mut()
-            .cache_general()
-            .and_then(|()| self.cache.borrow_mut().cache_currencies())
-            .and_then(|()| self.cache.borrow_mut().cache_instruments())
-            .and_then(|()| self.cache.borrow_mut().cache_accounts())
-            .and_then(|()| self.cache.borrow_mut().cache_orders())
-            .and_then(|()| self.cache.borrow_mut().cache_positions())
-            .map_err(|e| {
-                log::error!("Failed to load cache: {}", e);
-                e
-            })?;
+        {
+            let mut cache = self.cache.borrow_mut();
+            cache.cache_general()?;
+            cache.cache_currencies()?;
+            cache.cache_instruments()?;
+            cache.cache_accounts()?;
+            cache.cache_orders()?;
+            cache.cache_positions()?;
 
-        self.cache.borrow_mut().build_index();
-        let _ = self.cache.borrow_mut().check_integrity();
+            cache.build_index();
+            let _ = cache.check_integrity();
+        }
+
         self.set_position_id_counts();
 
         log::info!(
@@ -228,7 +226,7 @@ impl ExecutionEngine {
 
     fn execute_command(&self, command: TradingCommand) {
         if self.config.debug {
-            log::debug!("{}{} {command:?}", RECV, CMD);
+            log::debug!("{RECV}{CMD} {command:?}");
         }
 
         let client = if let Some(client) = self
@@ -244,10 +242,9 @@ impl ExecutionEngine {
             client
         } else {
             log::error!(
-                "No execution client found for command: client_id={:?}, venue={}, command={:?}",
+                "No execution client found for command: client_id={:?}, venue={}, command={command:?}",
                 command.client_id(),
                 command.instrument_id().venue,
-                command
             );
             return;
         };
@@ -280,7 +277,7 @@ impl ExecutionEngine {
                     Some(command.client_id),
                     true,
                 ) {
-                    log::error!("Error adding order to cache: {}", e);
+                    log::error!("Error adding order to cache: {e}");
                     return;
                 }
             }
@@ -297,9 +294,7 @@ impl ExecutionEngine {
                 instrument.clone()
             } else {
                 log::error!(
-                    "Cannot handle submit order: no instrument found for {}, {}",
-                    instrument_id,
-                    &command
+                    "Cannot handle submit order: no instrument found for {instrument_id}, {command}",
                 );
                 return;
             }
@@ -325,7 +320,7 @@ impl ExecutionEngine {
 
         // Send the order to the execution client
         if let Err(e) = client.submit_order(command.clone()) {
-            log::error!("Error submitting order to client: {}", e);
+            log::error!("Error submitting order to client: {e}");
             self.deny_order(
                 &command.order,
                 &format!("failed-to-submit-order-to-client: {e}"),
@@ -346,7 +341,7 @@ impl ExecutionEngine {
                     Some(command.client_id),
                     true,
                 ) {
-                    log::error!("Error adding order to cache: {}", e);
+                    log::error!("Error adding order to cache: {e}");
                     return;
                 }
 
@@ -363,9 +358,8 @@ impl ExecutionEngine {
             instrument
         } else {
             log::error!(
-                "Cannot handle submit order list: no instrument found for {}, {}",
+                "Cannot handle submit order list: no instrument found for {}, {command}",
                 command.instrument_id,
-                &command
             );
             return;
         };
@@ -403,7 +397,7 @@ impl ExecutionEngine {
 
         // Send to execution client
         if let Err(e) = client.submit_order_list(command) {
-            log::error!("Error submitting order list to client: {}", e);
+            log::error!("Error submitting order list to client: {e}");
             for order in &orders {
                 self.deny_order(
                     order,
@@ -415,42 +409,42 @@ impl ExecutionEngine {
 
     fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
         if let Err(e) = client.modify_order(command) {
-            log::error!("Error modifying order: {}", e);
+            log::error!("Error modifying order: {e}");
         }
     }
 
     fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
         if let Err(e) = client.cancel_order(command) {
-            log::error!("Error canceling order: {}", e);
+            log::error!("Error canceling order: {e}");
         }
     }
 
     fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(command) {
-            log::error!("Error canceling all orders: {}", e);
+            log::error!("Error canceling all orders: {e}");
         };
     }
 
     fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
         if let Err(e) = client.batch_cancel_orders(command) {
-            log::error!("Error batch canceling orders: {}", e);
+            log::error!("Error batch canceling orders: {e}");
         }
     }
 
     fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
         if let Err(e) = client.query_order(command) {
-            log::error!("Error querying order: {}", e);
+            log::error!("Error querying order: {e}");
         }
     }
 
     fn create_order_state_snapshot(&self, order: &OrderAny) {
         if self.config.debug {
-            log::debug!("Creating order state snapshot for {}", order);
+            log::debug!("Creating order state snapshot for {order}");
         }
 
         if self.cache.borrow().has_backing() {
             if let Err(e) = self.cache.borrow().snapshot_order_state(order) {
-                log::error!("Failed to snapshot order state: {}", e);
+                log::error!("Failed to snapshot order state: {e}");
                 return;
             }
         }
@@ -466,7 +460,7 @@ impl ExecutionEngine {
 
     fn create_position_state_snapshot(&self, position: &Position) {
         if self.config.debug {
-            log::debug!("Creating position state snapshot for {}", position);
+            log::debug!("Creating position state snapshot for {position}");
         }
 
         // let mut position: Position = position.clone();
@@ -485,7 +479,7 @@ impl ExecutionEngine {
 
     fn handle_event(&mut self, event: &OrderEventAny) {
         if self.config.debug {
-            log::debug!("{}{} {event:?}", RECV, EVT);
+            log::debug!("{RECV}{EVT} {event:?}");
         }
 
         let client_order_id = event.client_order_id();
@@ -516,26 +510,24 @@ impl ExecutionEngine {
                 id
             } else {
                 log::error!(
-                    "Cannot apply event to any order: {} and {} not found in the cache",
+                    "Cannot apply event to any order: {} and {venue_order_id} not found in the cache",
                     event.client_order_id(),
-                    venue_order_id
                 );
                 return;
             };
 
             // Get order using found client order ID
             if let Some(order) = borrowed_cache.order(client_order_id) {
-                log::info!("Order with {} was found in the cache", client_order_id);
+                log::info!("Order with {client_order_id} was found in the cache");
                 order.clone()
             } else {
                 log::error!(
-                    "Cannot apply event to any order: {} and {} not found in cache",
-                    client_order_id,
-                    venue_order_id
+                    "Cannot apply event to any order: {client_order_id} and {venue_order_id} not found in cache",
                 );
                 return;
             }
         };
+
         drop(borrowed_cache); // Drop immutable borrow before mutable operations
 
         match event {
@@ -637,17 +629,17 @@ impl ExecutionEngine {
         if let Err(e) = order.apply(event.clone()) {
             match e {
                 OrderError::InvalidStateTransition => {
-                    log::warn!("InvalidStateTrigger: {}, did not apply {}", e, event);
+                    log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
                 }
                 _ => {
-                    log::error!("Error applying event: {}, did not apply {}", e, event);
+                    log::error!("Error applying event: {e}, did not apply {event}");
                 }
             }
             return;
         }
 
         if let Err(e) = self.cache.borrow_mut().update_order(order) {
-            log::error!("Error updating order in cache: {}", e);
+            log::error!("Error updating order in cache: {e}");
         }
 
         let mut msgbus = self.msgbus.borrow_mut();
@@ -667,9 +659,8 @@ impl ExecutionEngine {
                 instrument.clone()
             } else {
                 log::error!(
-                    "Cannot handle order fill: no instrument found for {}, {}",
+                    "Cannot handle order fill: no instrument found for {}, {fill}",
                     fill.instrument_id,
-                    fill
                 );
                 return;
             };
@@ -678,9 +669,8 @@ impl ExecutionEngine {
             account_id
         } else {
             log::error!(
-                "Cannot handle order fill: no account found for {}, {}",
+                "Cannot handle order fill: no account found for {}, {fill}",
                 fill.instrument_id.venue,
-                fill
             );
             return;
         };
@@ -688,10 +678,7 @@ impl ExecutionEngine {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
-            log::error!(
-                "Cannot handle order fill: no position ID found for fill {}",
-                fill
-            );
+            log::error!("Cannot handle order fill: no position ID found for fill {fill}",);
             return;
         };
 
@@ -728,7 +715,7 @@ impl ExecutionEngine {
                             &contingent_order.client_order_id(),
                             &contingent_order.strategy_id(),
                         ) {
-                            log::error!("Failed to add position ID: {}", e);
+                            log::error!("Failed to add position ID: {e}");
                         }
                     }
                 }
@@ -781,7 +768,7 @@ impl ExecutionEngine {
         position.apply(&fill);
 
         if let Err(e) = self.cache.borrow_mut().update_position(position) {
-            log::error!("Failed to update position: {:?}", e);
+            log::error!("Failed to update position: {e:?}");
             return;
         }
 
@@ -913,15 +900,15 @@ impl ExecutionEngine {
         if oms_type == OmsType::Hedging {
             if let Some(position_id) = fill.position_id {
                 if position_id.is_virtual() {
-                    log::warn!("Closing position {:?}", fill_split1);
-                    log::warn!("Flipping position {:?}", fill_split2);
+                    log::warn!("Closing position {fill_split1:?}");
+                    log::warn!("Flipping position {fill_split2:?}");
                 }
             }
         }
 
         // Open flipped position
         if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
-            log::error!("Failed to open flipped position: {:?}", e);
+            log::error!("Failed to open flipped position: {e:?}");
         };
     }
 
@@ -943,7 +930,7 @@ impl ExecutionEngine {
 
         for (strategy_id, count) in counts {
             self.pos_id_generator.set_count(count, strategy_id);
-            log::info!("Set PositionId count for {} to {}", strategy_id, count);
+            log::info!("Set PositionId count for {strategy_id} to {count}");
         }
     }
 
@@ -1018,7 +1005,7 @@ impl ExecutionEngine {
                         // contingent_order.set_is_quote_quantity(false);
                     }
                     None => {
-                        log::error!("Contingency order {} not found", client_order_id);
+                        log::error!("Contingency order {client_order_id} not found");
                     }
                 }
             }
@@ -1050,12 +1037,12 @@ impl ExecutionEngine {
         let mut order = order.clone();
 
         if let Err(e) = order.apply(OrderEventAny::Denied(denied)) {
-            log::error!("Failed to apply denied event to order: {}", e);
+            log::error!("Failed to apply denied event to order: {e}");
             return;
         }
 
         if let Err(e) = self.cache.borrow_mut().update_order(&order) {
-            log::error!("Failed to update order in cache: {}", e);
+            log::error!("Failed to update order in cache: {e}");
             return;
         }
 
