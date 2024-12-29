@@ -378,7 +378,51 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{stubs::quote_ethusdt_binance, QuoteTick};
+    use crate::{
+        data::{stubs::quote_ethusdt_binance, QuoteTick},
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    #[case(
+    Price::from_raw(10_000_000, 6),
+    Price::from_raw(10_001_000, 7), // Mismatched precision
+    Quantity::from_raw(1_000_000, 6),
+    Quantity::from_raw(1_000_000, 6),
+)]
+    #[case(
+    Price::from_raw(10_000_000, 6),
+    Price::from_raw(10_001_000, 6),
+    Quantity::from_raw(1_000_000, 6),
+    Quantity::from_raw(1_000_000, 7), // Mismatched precision
+)]
+    fn test_quote_tick_py_new_param(
+        #[case] bid_price: Price,
+        #[case] ask_price: Price,
+        #[case] bid_size: Quantity,
+        #[case] ask_size: Quantity,
+    ) {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|_py| {
+            let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+            let ts_event = 0;
+            let ts_init = 1;
+
+            let result = QuoteTick::py_new(
+                instrument_id,
+                bid_price,
+                ask_price,
+                bid_size,
+                ask_size,
+                ts_event,
+                ts_init,
+            );
+
+            assert!(result.is_err());
+        });
+    }
 
     #[rstest]
     fn test_as_dict(quote_ethusdt_binance: QuoteTick) {

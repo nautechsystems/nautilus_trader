@@ -102,8 +102,8 @@ impl OrderBookDelta {
         sequence: u64,
         ts_event: u64,
         ts_init: u64,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             instrument_id,
             action,
             order,
@@ -112,6 +112,7 @@ impl OrderBookDelta {
             ts_event.into(),
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -284,6 +285,37 @@ mod tests {
 
     use super::*;
     use crate::data::stubs::*;
+
+    #[rstest]
+    fn test_order_book_delta_py_new_with_zero_size_returns_error() {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|_py| {
+            let instrument_id = InstrumentId::from("AAPL.XNAS");
+            let action = BookAction::Add;
+            let zero_size = Quantity::from(0);
+            let price = Price::from("100.00");
+            let side = OrderSide::Buy;
+            let order_id = 123_456;
+            let flags = 0;
+            let sequence = 1;
+            let ts_event = 1;
+            let ts_init = 2;
+
+            let order = BookOrder::new(side, price, zero_size, order_id);
+
+            let result = OrderBookDelta::py_new(
+                instrument_id,
+                action,
+                order,
+                flags,
+                sequence,
+                ts_event,
+                ts_init,
+            );
+            assert!(result.is_err());
+        });
+    }
 
     #[rstest]
     fn test_as_dict(stub_delta: OrderBookDelta) {
