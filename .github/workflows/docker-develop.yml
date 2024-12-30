@@ -45,19 +45,6 @@ jobs:
         id: branch-name
         uses: tj-actions/branch-names@v8.0.1
 
-      - name: Build nautilus_trader image (nightly)
-        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
-        id: docker_build_trader_nightly
-        uses: docker/build-push-action@v5
-        with:
-          file: ".docker/nautilus_trader.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.actor }}/nautilus_trader:nightly
-          cache-from: type=gha
-          cache-to: type=gha
-      - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_nightly.outputs.digest }}
-
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
         id: docker_build_trader_latest
@@ -70,33 +57,3 @@ jobs:
           cache-to: type=gha
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
-
-      - name: Build jupyterlab image (nightly)
-        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
-        id: docker_build_jupyterlab_nightly
-        uses: docker/build-push-action@v5
-        with:
-          file: ".docker/jupyterlab.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:nightly
-          cache-from: type=gha
-          cache-to: type=gha
-          build-args: |
-            GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
-      - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
-
-      - name: Build jupyterlab image (latest)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        id: docker_build_jupyterlab_latest
-        uses: docker/build-push-action@v5
-        with:
-          file: ".docker/jupyterlab.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:latest
-          cache-from: type=gha
-          cache-to: type=gha
-          build-args: |
-            GIT_TAG=latest
-      - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
