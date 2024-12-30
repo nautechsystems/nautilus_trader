@@ -167,6 +167,7 @@ class NautilusKernel:
         self._ts_created: int = self._clock.timestamp_ns()
         self._ts_started: int | None = None
         self._ts_shutdown: int | None = None
+        ts_build = time.time_ns()
 
         register_component_clock(self._instance_id, self._clock)
 
@@ -516,7 +517,7 @@ class NautilusKernel:
 
         self._is_running = False
 
-        build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
+        build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
         self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:
