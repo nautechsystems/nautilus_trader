@@ -32,8 +32,6 @@ from nautilus_trader.adapters.dydx.http.market import DYDXMarketHttpAPI
 from nautilus_trader.adapters.dydx.providers import DYDXInstrumentProvider
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
-from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
-from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookBatchedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookChannelData
@@ -131,8 +129,7 @@ class DYDXDataClient(LiveMarketDataClient):
         self._decoder_ws_trade = msgspec.json.Decoder(DYDXWsTradeChannelData)
         self._decoder_ws_kline = msgspec.json.Decoder(DYDXWsCandlesChannelData)
         self._decoder_ws_kline_subscribed = msgspec.json.Decoder(DYDXWsCandlesSubscribedData)
-        self._decoder_ws_instruments = msgspec.json.Decoder(DYDXWsMarketChannelData)
-        self._decoder_ws_instruments_subscribed = msgspec.json.Decoder(DYDXWsMarketSubscribedData)
+
         self._ws_client = DYDXWebsocketClient(
             clock=clock,
             handler=self._handle_ws_message,
@@ -242,8 +239,6 @@ class DYDXDataClient(LiveMarketDataClient):
             ("v4_trades", "subscribed"): self._handle_trade_subscribed,
             ("v4_candles", "channel_data"): self._handle_kline,
             ("v4_candles", "subscribed"): self._handle_kline_subscribed,
-            ("v4_markets", "channel_data"): self._handle_markets,
-            ("v4_markets", "subscribed"): self._handle_markets_subscribed,
         }
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
@@ -664,24 +659,6 @@ class DYDXDataClient(LiveMarketDataClient):
     def _handle_kline_unsubscribed(self, msg: DYDXWsMessageGeneral) -> None:
         if msg.id is not None:
             self._topic_bar_type.pop(msg.id, None)
-
-    def _handle_markets(self, raw: bytes) -> None:
-        try:
-            msg: DYDXWsMarketChannelData = self._decoder_ws_instruments.decode(raw)
-
-            self._log.debug(f"{msg}")
-
-        except Exception as e:
-            self._log.error(f"Failed to parse market data: {raw.decode()} with error {e}")
-
-    def _handle_markets_subscribed(self, raw: bytes) -> None:
-        try:
-            msg: DYDXWsMarketSubscribedData = self._decoder_ws_instruments_subscribed.decode(raw)
-
-            self._log.debug(f"{msg}")
-
-        except Exception as e:
-            self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
 
     async def _subscribe_trade_ticks(
         self,

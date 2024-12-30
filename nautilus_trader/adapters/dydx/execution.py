@@ -53,6 +53,8 @@ from nautilus_trader.adapters.dydx.providers import DYDXInstrumentProvider
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsFillSubaccountMessageContents
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderSubaccountMessageContents
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsSubaccountsChannelData
@@ -60,6 +62,7 @@ from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsSubaccountsSubscribed
 from nautilus_trader.adapters.dydx.websocket.client import DYDXWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
@@ -110,6 +113,7 @@ class ClientOrderIdHelper:
         Generate integer client order IDs.
         """
         self._cache = cache
+        self._log: Logger = Logger(type(self).__name__)
 
     def generate_client_order_id_int(self, client_order_id: ClientOrderId) -> int:
         """
@@ -143,6 +147,8 @@ class ClientOrderIdHelper:
 
             if value is not None:
                 result = int.from_bytes(value, byteorder="big")
+            else:
+                self._log.error(f"ClientOrderId integer not found in cache for {client_order_id!r}")
 
         return result
 
@@ -154,6 +160,8 @@ class ClientOrderIdHelper:
 
         if value is not None:
             return ClientOrderId(value.decode("utf-8"))
+        else:
+            self._log.error(f"ClientOrderId not found in cache for integer {client_order_id_int}")
 
         return ClientOrderId(str(client_order_id_int))
 
@@ -263,11 +271,14 @@ class DYDXExecutionClient(LiveExecutionClient):
             DYDXWsBlockHeightSubscribedData,
         )
         self._decoder_ws_block_height_channel = msgspec.json.Decoder(DYDXWsBlockHeightChannelData)
+        self._decoder_ws_instruments = msgspec.json.Decoder(DYDXWsMarketChannelData)
+        self._decoder_ws_instruments_subscribed = msgspec.json.Decoder(DYDXWsMarketSubscribedData)
 
         # Hot caches
         self._order_builders: dict[InstrumentId, OrderBuilder] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
         self._block_height: int = 0
+        self._oracle_prices: dict[InstrumentId, Decimal] = {}
 
         self._retry_manager_pool = RetryManagerPool(
             pool_size=100,
@@ -288,11 +299,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         await self._ws_client.connect()
 
         # Subscribe account updates
+        await self._ws_client.subscribe_markets()
+        await self._ws_client.subscribe_block_height()
         await self._ws_client.subscribe_account_update(
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
         )
-        await self._ws_client.subscribe_block_height()
 
         self._block_height = await self._grpc_account.latest_block_height()
 
@@ -304,11 +316,13 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
 
     async def _disconnect(self) -> None:
+        await self._ws_client.unsubscribe_markets()
+        await self._ws_client.unsubscribe_block_height()
         await self._ws_client.unsubscribe_account_update(
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
         )
-        await self._ws_client.unsubscribe_block_height()
+
         await self._ws_client.disconnect()
         await self._grpc_account.disconnect()
 
@@ -710,10 +724,14 @@ class DYDXExecutionClient(LiveExecutionClient):
                 self._handle_block_height_channel_data(raw)
             elif ws_message.channel == "v4_subaccounts" and ws_message.type == "channel_data":
                 self._handle_subaccounts_channel_data(raw)
+            elif ws_message.channel == "v4_markets" and ws_message.type == "channel_data":
+                self._handle_markets(raw)
             elif ws_message.channel == "v4_block_height" and ws_message.type == "subscribed":
                 self._handle_block_height_subscribed(raw)
             elif ws_message.channel == "v4_subaccounts" and ws_message.type == "subscribed":
                 self._handle_subaccounts_subscribed(raw)
+            elif ws_message.channel == "v4_markets" and ws_message.type == "subscribed":
+                self._handle_markets_subscribed(raw)
             elif ws_message.type == "unsubscribed":
                 self._log.info(
                     f"Unsubscribed from channel {ws_message.channel} for {ws_message.id}",
@@ -749,6 +767,30 @@ class DYDXExecutionClient(LiveExecutionClient):
                 f"Failed to parse block height channel message: {raw.decode()} with error {e}",
             )
 
+    def _handle_markets(self, raw: bytes) -> None:
+        try:
+            msg: DYDXWsMarketChannelData = self._decoder_ws_instruments.decode(raw)
+
+            if msg.contents.oraclePrices is not None:
+                for symbol, oracle_price_market in msg.contents.oraclePrices.items():
+                    instrument_id = DYDXSymbol(symbol).to_instrument_id()
+                    self._oracle_prices[instrument_id] = Decimal(oracle_price_market.oraclePrice)
+
+        except Exception as e:
+            self._log.error(f"Failed to parse market data: {raw.decode()} with error {e}")
+
+    def _handle_markets_subscribed(self, raw: bytes) -> None:
+        try:
+            msg: DYDXWsMarketSubscribedData = self._decoder_ws_instruments_subscribed.decode(raw)
+
+            for symbol, oracle_price_market in msg.contents.markets.items():
+                if oracle_price_market.oraclePrice is not None:
+                    instrument_id = DYDXSymbol(symbol).to_instrument_id()
+                    self._oracle_prices[instrument_id] = Decimal(oracle_price_market.oraclePrice)
+
+        except Exception as e:
+            self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
+
     def _handle_subaccounts_subscribed(self, raw: bytes) -> None:
         try:
             msg: DYDXWsSubaccountsSubscribed = self._decoder_ws_msg_subaccounts_subscribed.decode(
@@ -780,6 +822,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 margin_balance = perpetual_position.parse_margin_balance(
                     margin_init=instrument.margin_init,
                     margin_maint=instrument.margin_maint,
+                    oracle_price=self._oracle_prices.get(instrument.id),
                 )
 
                 initial_margins[
