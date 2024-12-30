@@ -15,13 +15,16 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+    },
     events::{
-        position::snapshot::PositionSnapshot, OrderAccepted, OrderCancelRejected, OrderCanceled,
-        OrderDenied, OrderEmulated, OrderEventAny, OrderExpired, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
         OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
@@ -30,6 +33,7 @@ use nautilus_model::{
     },
     types::{Currency, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
 
@@ -52,7 +56,7 @@ pub struct OrderReleasedModel(pub OrderReleased);
 pub struct OrderSubmittedModel(pub OrderSubmitted);
 pub struct OrderTriggeredModel(pub OrderTriggered);
 pub struct OrderUpdatedModel(pub OrderUpdated);
-pub struct PositionSnapshotModel(pub PositionSnapshot);
+pub struct OrderSnapshotModel(pub OrderSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
@@ -349,8 +353,6 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
         let last_px = row.try_get::<&str, _>("last_px").map(Price::from)?;
         let last_qty = row.try_get::<&str, _>("last_qty").map(Quantity::from)?;
         let currency = row.try_get::<&str, _>("currency").map(Currency::from)?;
-        let test = row.try_get::<&str, _>("liquidity_side").unwrap();
-        println!("test: {:?}", test);
         let liquidity_side = row
             .try_get::<&str, _>("liquidity_side")
             .map(|x| LiquiditySide::from_str(x).unwrap())?;
@@ -460,5 +462,213 @@ impl<'r> FromRow<'r, PgRow> for OrderTriggeredModel {
 impl<'r> FromRow<'r, PgRow> for OrderUpdatedModel {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
+        let strategy_id = row
+            .try_get::<&str, _>("strategy_id")
+            .map(StrategyId::from)?;
+        let instrument_id = row
+            .try_get::<&str, _>("instrument_id")
+            .map(InstrumentId::from)?;
+        let client_order_id = row
+            .try_get::<&str, _>("client_order_id")
+            .map(ClientOrderId::from)?;
+        let venue_order_id = row
+            .try_get::<Option<&str>, _>("venue_order_id")
+            .ok()
+            .and_then(|x| x.map(VenueOrderId::from));
+        let position_id = row
+            .try_get::<Option<&str>, _>("position_id")
+            .ok()
+            .and_then(|x| x.map(PositionId::from));
+        let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
+        let last_trade_id = row
+            .try_get::<Option<&str>, _>("last_trade_id")
+            .ok()
+            .and_then(|x| x.map(TradeId::from));
+        let order_type = row
+            .try_get::<&str, _>("order_type")
+            .map(|x| OrderType::from_str(x).unwrap())?;
+        let order_side = row
+            .try_get::<&str, _>("order_side")
+            .map(|x| OrderSide::from_str(x).unwrap())?;
+        let quantity = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
+        let price = row
+            .try_get::<Option<&str>, _>("price")
+            .ok()
+            .and_then(|x| x.map(Price::from));
+        let trigger_price = row
+            .try_get::<Option<&str>, _>("trigger_price")
+            .ok()
+            .and_then(|x| x.map(Price::from));
+        let trigger_type = row
+            .try_get::<Option<&str>, _>("trigger_type")
+            .ok()
+            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+        let limit_offset = row
+            .try_get::<Option<&str>, _>("limit_offset")
+            .ok()
+            .and_then(|x| x.map(|x| Decimal::from_str(x).unwrap()));
+        let trailing_offset = row
+            .try_get::<Option<&str>, _>("trailing_offset")
+            .ok()
+            .and_then(|x| x.map(|x| Decimal::from_str(x).unwrap()));
+        let trailing_offset_type = row
+            .try_get::<Option<&str>, _>("trailing_offset_type")
+            .ok()
+            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+        let time_in_force = row
+            .try_get::<&str, _>("time_in_force")
+            .map(|x| TimeInForce::from_str(x).unwrap())?;
+        let expire_time = row
+            .try_get::<Option<&str>, _>("expire_time")
+            .ok()
+            .and_then(|x| x.map(UnixNanos::from));
+        let filled_qty = row.try_get::<&str, _>("filled_qty").map(Quantity::from)?;
+        let liquidity_side = row
+            .try_get::<Option<&str>, _>("liquidity_side")
+            .ok()
+            .and_then(|x| x.map(|x| LiquiditySide::from_str(x).unwrap()));
+        let avg_px = row.try_get::<Option<f64>, _>("avg_px").ok().flatten();
+        let slippage = row.try_get::<Option<f64>, _>("slippage").ok().flatten();
+        let commissions: Vec<Money> = row
+            .try_get::<&str, _>("commissions")?
+            .parse::<serde_json::Value>()
+            .unwrap()
+            .as_array()
+            .ok_or(sqlx::Error::Decode(
+                "Expected a JSON array for commissions".into(),
+            ))?
+            .iter()
+            .map(|x| {
+                x.as_str()
+                    .ok_or(sqlx::Error::Decode(
+                        "Expected string values in the commissions array".into(),
+                    ))
+                    .and_then(|s| {
+                        Money::from_str(s).map_err(|e| {
+                            sqlx::Error::Decode(format!("Money parsing error: {}", e).into())
+                        })
+                    })
+            })
+            .collect::<Result<Vec<Money>, sqlx::Error>>()?;
+        let status = row
+            .try_get::<&str, _>("status")
+            .map(|x| OrderStatus::from_str(x).unwrap())?;
+        let is_post_only = row.try_get::<bool, _>("is_post_only")?;
+        let is_reduce_only = row.try_get::<bool, _>("is_reduce_only")?;
+        let is_quote_quantity = row.try_get::<bool, _>("is_quote_quantity")?;
+        let display_qty = row
+            .try_get::<Option<&str>, _>("display_qty")
+            .ok()
+            .and_then(|x| x.map(Quantity::from));
+        let emulation_trigger = row
+            .try_get::<Option<&str>, _>("emulation_trigger")
+            .ok()
+            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+        let trigger_instrument_id = row
+            .try_get::<Option<&str>, _>("trigger_instrument_id")
+            .ok()
+            .and_then(|x| x.map(InstrumentId::from));
+        let contingency_type = row
+            .try_get::<Option<&str>, _>("contingency_type")
+            .ok()
+            .and_then(|x| x.map(|x| ContingencyType::from_str(x).unwrap()));
+        let order_list_id = row
+            .try_get::<Option<&str>, _>("order_list_id")
+            .ok()
+            .and_then(|x| x.map(OrderListId::from));
+        let linked_order_ids = row
+            .try_get::<Option<Vec<String>>, _>("linked_order_ids")
+            .ok()
+            .and_then(|ids| ids.map(|ids| ids.into_iter().map(ClientOrderId::from).collect()));
+        let parent_order_id = row
+            .try_get::<Option<&str>, _>("parent_order_id")
+            .ok()
+            .and_then(|x| x.map(ClientOrderId::from));
+        let exec_algorithm_id = row
+            .try_get::<Option<&str>, _>("exec_algorithm_id")
+            .ok()
+            .and_then(|x| x.map(ExecAlgorithmId::from));
+        let exec_algorithm_params: Option<IndexMap<Ustr, Ustr>> = row
+            .try_get::<Option<serde_json::Value>, _>("exec_algorithm_params")
+            .ok()
+            .and_then(|x| x.map(|x| serde_json::from_value::<IndexMap<String, String>>(x).unwrap()))
+            .map(|x| {
+                x.into_iter()
+                    .map(|(k, v)| (Ustr::from(k.as_str()), Ustr::from(v.as_str())))
+                    .collect()
+            });
+        let exec_spawn_id = row
+            .try_get::<Option<&str>, _>("exec_spawn_id")
+            .ok()
+            .and_then(|x| x.map(ClientOrderId::from));
+        let tags = row
+            .try_get::<Option<serde_json::Value>, _>("tags")
+            .ok()
+            .and_then(|tags| {
+                serde_json::from_value::<Vec<String>>(tags.unwrap())
+                    .ok()
+                    .map(|vec| {
+                        vec.into_iter()
+                            .map(|tag| Ustr::from(tag.as_str()))
+                            .collect::<Vec<Ustr>>()
+                    })
+            });
+
+        let init_id = row.try_get::<&str, _>("init_id").map(UUID4::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+        let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;
+
+        let snapshot = OrderSnapshot {
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            position_id,
+            account_id,
+            last_trade_id,
+            order_type,
+            order_side,
+            quantity,
+            price,
+            trigger_price,
+            trigger_type,
+            limit_offset,
+            trailing_offset,
+            trailing_offset_type,
+            time_in_force,
+            expire_time,
+            filled_qty,
+            liquidity_side,
+            avg_px,
+            slippage,
+            commissions,
+            status,
+            is_post_only,
+            is_reduce_only,
+            is_quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            init_id,
+            ts_init,
+            ts_last,
+        };
+
+        Ok(OrderSnapshotModel(snapshot))
     }
 }
