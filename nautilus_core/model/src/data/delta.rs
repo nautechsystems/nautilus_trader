@@ -92,8 +92,8 @@ impl OrderBookDelta {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
-    /// - `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
+    /// This function returns an error:
+    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
     ///
     /// # Notes
     ///

@@ -137,6 +137,16 @@ impl BarSpecification {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
     }
 
+    /// Creates a new [`BarSpecification`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `step` is not positive (> 0).
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(
         step: usize,
         aggregation: BarAggregation,
@@ -584,10 +594,10 @@ impl Bar {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
-    /// - `high` is not >= `low`.
-    /// - `high` is not >= `close`.
-    /// - `low` is not <= `close.
+    /// This function returns an error:
+    /// - If `high` is not >= `low`.
+    /// - If `high` is not >= `close`.
+    /// - If `low` is not <= `close.
     ///
     /// # Notes
     ///
