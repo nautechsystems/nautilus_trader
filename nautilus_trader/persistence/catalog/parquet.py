@@ -918,11 +918,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         data_cls: type,
         other_catalog: ParquetDataCatalog | None = None,
+        subdirectory: str = "backtest",
         **kwargs: Any,
     ) -> None:
         table_name = class_to_filename(data_cls)
-        feather_dir = Path(self.path) / "backtest" / instance_id
-        feather_files = sorted(feather_dir.glob(f"{table_name}_*.feather"))
+        feather_dir = Path(self.path) / subdirectory / instance_id
+
+        if (feather_dir / table_name).is_dir():
+            feather_files = sorted((feather_dir / table_name).glob("*.feather"))
+        else:
+            feather_files = sorted(feather_dir.glob(f"{table_name}_*.feather"))
 
         all_data = []
         for feather_file in feather_files:

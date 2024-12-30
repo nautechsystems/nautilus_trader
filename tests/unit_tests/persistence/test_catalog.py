@@ -166,7 +166,7 @@ def test_catalog_with_databento_instruments(catalog: ParquetDataCatalog) -> None
 
 
 @pytest.mark.skip(reason="Not yet partitioning")
-def test_partioning_min_rows_per_group(
+def test_partitioning_min_rows_per_group(
     catalog_betfair: ParquetDataCatalog,
 ) -> None:
     # Arrange
