@@ -88,9 +88,8 @@ class TradingNode:
         # Async tasks
         self._task_streaming: asyncio.Future | None = None
 
-        # Operation flags
+        # State flags
         self._is_built = False
-        self._is_running = False
 
     @property
     def trader_id(self) -> TraderId:
@@ -164,7 +163,6 @@ class TradingNode:
         """
         return self.kernel.portfolio
 
-    @property
     def is_running(self) -> bool:
         """
         Return whether the trading node is running.
@@ -174,9 +172,8 @@ class TradingNode:
         bool
 
         """
-        return self._is_running
+        return self.kernel.is_running()
 
-    @property
     def is_built(self) -> bool:
         """
         Return whether the trading node clients are built.
@@ -306,7 +303,6 @@ class TradingNode:
                     "Run `node.build()` prior to start.",
                 )
 
-            self._is_running = True
             await self.kernel.start_async()
 
             if self.kernel.loop.is_running():
@@ -371,8 +367,6 @@ class TradingNode:
 
         await self.kernel.stop_async()
 
-        self._is_running = False
-
     def dispose(self) -> None:
         """
         Dispose of the trading node.
@@ -384,7 +378,7 @@ class TradingNode:
             timeout = self.kernel.clock.utc_now() + timedelta(
                 seconds=self._config.timeout_disconnection,
             )
-            while self._is_running:
+            while self.kernel.is_running():
                 time.sleep(0.1)
                 if self.kernel.clock.utc_now() >= timeout:
                     self.kernel.logger.warning(
