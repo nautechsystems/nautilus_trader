@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `PerContractFeeModel`, thanks @stefansimik
 - Added additional timestamp properties for `NautilusKernel`
+- Added `DYDXInternalError` and `DYDXOraclaPrice` data types for dYdX (#2155), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 
