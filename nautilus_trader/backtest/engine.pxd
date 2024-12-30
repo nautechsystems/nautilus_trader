@@ -57,4 +57,21 @@ cdef class BacktestEngine:
         CVec raw_handlers,
         uint64_t ts_now,
         bint only_now,
+        bint asof_now=*,
     )
+
+
+cdef inline bint should_skip_time_event(
+    uint64_t ts_event_init,
+    uint64_t ts_now,
+    bint only_now,
+    bint asof_now,
+):
+    if only_now and ts_event_init < ts_now:
+        return True
+    if (not only_now) and (ts_event_init == ts_now):
+        return True
+    if asof_now and ts_event_init > ts_now:
+        return True
+
+    return False
