@@ -38,7 +38,7 @@ use crate::{
     python::common::PY_MODULE_MODEL,
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -61,12 +61,12 @@ impl QuoteTick {
         let ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
 
         let bid_size_py: Bound<'_, PyAny> = obj.getattr("bid_size")?.extract()?;
-        let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
+        let bid_size_raw: QuantityRaw = bid_size_py.getattr("raw")?.extract()?;
         let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
         let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec);
 
         let ask_size_py: Bound<'_, PyAny> = obj.getattr("ask_size")?.extract()?;
-        let ask_size_raw: u64 = ask_size_py.getattr("raw")?.extract()?;
+        let ask_size_raw: QuantityRaw = ask_size_py.getattr("raw")?.extract()?;
         let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
         let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec);
 
@@ -119,8 +119,8 @@ impl QuoteTick {
         let bid_price_prec: u8 = py_tuple.get_item(3)?.downcast::<PyLong>()?.extract()?;
         let ask_price_prec: u8 = py_tuple.get_item(4)?.downcast::<PyLong>()?.extract()?;
 
-        let bid_size_raw: u64 = py_tuple.get_item(5)?.downcast::<PyLong>()?.extract()?;
-        let ask_size_raw: u64 = py_tuple.get_item(6)?.downcast::<PyLong>()?.extract()?;
+        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.downcast::<PyLong>()?.extract()?;
+        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.downcast::<PyLong>()?.extract()?;
         let bid_size_prec: u8 = py_tuple.get_item(7)?.downcast::<PyLong>()?.extract()?;
         let ask_size_prec: u8 = py_tuple.get_item(8)?.downcast::<PyLong>()?.extract()?;
         let ts_event: u64 = py_tuple.get_item(9)?.downcast::<PyLong>()?.extract()?;
@@ -278,8 +278,8 @@ impl QuoteTick {
         ask_price_raw: PriceRaw,
         bid_price_prec: u8,
         ask_price_prec: u8,
-        bid_size_raw: u64,
-        ask_size_raw: u64,
+        bid_size_raw: QuantityRaw,
+        ask_size_raw: QuantityRaw,
         bid_size_prec: u8,
         ask_size_prec: u8,
         ts_event: u64,

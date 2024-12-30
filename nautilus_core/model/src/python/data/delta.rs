@@ -33,7 +33,7 @@ use crate::{
     python::common::PY_MODULE_MODEL,
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -69,7 +69,7 @@ impl OrderBookDelta {
             let price = Price::from_raw(price_raw, price_prec);
 
             let size_py: Bound<'_, PyAny> = order_pyobject.getattr("size")?;
-            let size_raw: u64 = size_py.getattr("raw")?.extract()?;
+            let size_raw: QuantityRaw = size_py.getattr("raw")?.extract()?;
             let size_prec: u8 = size_py.getattr("precision")?.extract()?;
             let size = Quantity::from_raw(size_raw, size_prec);
 

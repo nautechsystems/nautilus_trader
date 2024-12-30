@@ -48,10 +48,16 @@ pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
 pub const PRICE_ERROR: PriceRaw = PriceRaw::MIN;
 
 /// The maximum valid price value which can be represented.
+#[cfg(not(feature = "high_precision"))]
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
+#[cfg(feature = "high_precision")]
+pub const PRICE_MAX: f64 = 170_141_183_460.0;
 
 /// The minimum valid price value which can be represented.
+#[cfg(not(feature = "high_precision"))]
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
+#[cfg(feature = "high_precision")]
+pub const PRICE_MIN: f64 = -170_141_183_460.0;
 
 /// The sentinel `Price` representing errors (this will be removed when Cython is gone).
 pub const ERROR_PRICE: Price = Price {

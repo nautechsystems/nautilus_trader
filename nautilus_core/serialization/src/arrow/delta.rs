@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::arrow::PRECISION_BYTES;
+use crate::arrow::{get_raw_quantity, PRECISION_BYTES};
 use arrow::{
     array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
@@ -43,7 +43,7 @@ impl ArrowSchemaProvider for OrderBookDelta {
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
             Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::UInt64, false),
+            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
@@ -90,7 +90,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
         let mut action_builder = UInt8Array::builder(data.len());
         let mut side_builder = UInt8Array::builder(data.len());
         let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut size_builder = UInt64Array::builder(data.len());
+        let mut size_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut order_id_builder = UInt64Array::builder(data.len());
         let mut flags_builder = UInt8Array::builder(data.len());
         let mut sequence_builder = UInt64Array::builder(data.len());
@@ -103,7 +103,9 @@ impl EncodeToRecordBatch for OrderBookDelta {
             price_builder
                 .append_value(delta.order.price.raw.to_le_bytes())
                 .unwrap();
-            size_builder.append_value(delta.order.size.raw);
+            size_builder
+                .append_value(delta.order.size.raw.to_le_bytes())
+                .unwrap();
             order_id_builder.append_value(delta.order.order_id);
             flags_builder.append_value(delta.flags);
             sequence_builder.append_value(delta.sequence);
@@ -179,7 +181,12 @@ impl DecodeFromRecordBatch for OrderBookDelta {
             2,
             DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
-        let size_values = extract_column::<UInt64Array>(cols, "size", 3, DataType::UInt64)?;
+        let size_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "size",
+            3,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
         let order_id_values = extract_column::<UInt64Array>(cols, "order_id", 4, DataType::UInt64)?;
         let flags_values = extract_column::<UInt8Array>(cols, "flags", 5, DataType::UInt8)?;
         let sequence_values = extract_column::<UInt64Array>(cols, "sequence", 6, DataType::UInt64)?;
@@ -209,7 +216,8 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                     )
                 })?;
                 let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
-                let size = Quantity::from_raw(size_values.value(i), size_precision);
+                let size =
+                    Quantity::from_raw(get_raw_quantity(size_values.value(i)), size_precision);
                 let order_id = order_id_values.value(i);
                 let flags = flags_values.value(i);
                 let sequence = sequence_values.value(i);
@@ -278,7 +286,7 @@ mod tests {
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
             Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::UInt64, false),
+            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
@@ -299,7 +307,7 @@ mod tests {
             *schema_map.get("price").unwrap(),
             format!("FixedSizeBinary({})", PRECISION_BYTES)
         );
-        assert_eq!(schema_map.get("size").unwrap(), "UInt64");
+        assert_eq!(schema_map.get("size").unwrap(), "FixedSizeBinary(16)");
         assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
         assert_eq!(schema_map.get("flags").unwrap(), "UInt8");
         assert_eq!(schema_map.get("sequence").unwrap(), "UInt64");
@@ -352,7 +360,10 @@ mod tests {
             .as_any()
             .downcast_ref::<FixedSizeBinaryArray>()
             .unwrap();
-        let size_values = columns[3].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let size_values = columns[3]
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
         let order_id_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let flags_values = columns[5].as_any().downcast_ref::<UInt8Array>().unwrap();
         let sequence_values = columns[6].as_any().downcast_ref::<UInt64Array>().unwrap();
@@ -378,8 +389,14 @@ mod tests {
         );
 
         assert_eq!(size_values.len(), 2);
-        assert_eq!(size_values.value(0), 100_000_000_000);
-        assert_eq!(size_values.value(1), 200_000_000_000);
+        assert_eq!(
+            get_raw_price(size_values.value(0)),
+            (100.0 * FIXED_SCALAR) as PriceRaw
+        );
+        assert_eq!(
+            get_raw_price(size_values.value(1)),
+            (200.0 * FIXED_SCALAR) as PriceRaw
+        );
         assert_eq!(order_id_values.len(), 2);
         assert_eq!(order_id_values.value(0), 1);
         assert_eq!(order_id_values.value(1), 2);
@@ -408,7 +425,10 @@ mod tests {
             &((101.10 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((101.20 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let size = UInt64Array::from(vec![10000, 9000]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((10000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((9000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
         let order_id = UInt64Array::from(vec![1, 2]);
         let flags = UInt8Array::from(vec![0, 0]);
         let sequence = UInt64Array::from(vec![1, 2]);

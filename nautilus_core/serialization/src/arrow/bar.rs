@@ -27,8 +27,8 @@ use nautilus_model::{
 };
 
 use super::{
-    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, PRECISION_BYTES,
+    extract_column, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, PRECISION_BYTES,
 };
 use crate::arrow::get_raw_price;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
@@ -40,7 +40,7 @@ impl ArrowSchemaProvider for Bar {
             Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("volume", DataType::UInt64, false),
+            Field::new("volume", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -83,7 +83,7 @@ impl EncodeToRecordBatch for Bar {
         let mut high_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut low_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut close_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut volume_builder = UInt64Array::builder(data.len());
+        let mut volume_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
@@ -98,7 +98,9 @@ impl EncodeToRecordBatch for Bar {
             close_builder
                 .append_value(bar.close.raw.to_le_bytes())
                 .unwrap();
-            volume_builder.append_value(bar.volume.raw);
+            volume_builder
+                .append_value(bar.volume.raw.to_le_bytes())
+                .unwrap();
             ts_event_builder.append_value(bar.ts_event.as_u64());
             ts_init_builder.append_value(bar.ts_init.as_u64());
         }
@@ -162,7 +164,12 @@ impl DecodeFromRecordBatch for Bar {
             3,
             DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
-        let volume_values = extract_column::<UInt64Array>(cols, "volume", 4, DataType::UInt64)?;
+        let volume_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "volume",
+            4,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 6, DataType::UInt64)?;
 
@@ -172,7 +179,8 @@ impl DecodeFromRecordBatch for Bar {
                 let high = Price::from_raw(get_raw_price(high_values.value(i)), price_precision);
                 let low = Price::from_raw(get_raw_price(low_values.value(i)), price_precision);
                 let close = Price::from_raw(get_raw_price(close_values.value(i)), price_precision);
-                let volume = Quantity::from_raw(volume_values.value(i), size_precision);
+                let volume =
+                    Quantity::from_raw(get_raw_quantity(volume_values.value(i)), size_precision);
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
 
@@ -211,12 +219,13 @@ mod tests {
     use std::sync::Arc;
 
     use crate::arrow::get_raw_price;
-    use arrow::array::Array;
+    use arrow::array::{as_fixed_size_list_array, Array};
     use arrow::record_batch::RecordBatch;
     #[cfg(feature = "high_precision")]
     use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
     #[cfg(not(feature = "high_precision"))]
     use nautilus_model::types::fixed::FIXED_SCALAR;
+    use nautilus_model::types::price::PriceRaw;
     use rstest::rstest;
 
     use super::*;
@@ -231,7 +240,7 @@ mod tests {
             Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("volume", DataType::UInt64, false),
+            Field::new("volume", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -248,7 +257,7 @@ mod tests {
         expected_map.insert("high".to_string(), fixed_size_binary.clone());
         expected_map.insert("low".to_string(), fixed_size_binary.clone());
         expected_map.insert("close".to_string(), fixed_size_binary.clone());
-        expected_map.insert("volume".to_string(), "UInt64".to_string());
+        expected_map.insert("volume".to_string(), fixed_size_binary.clone());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(schema_map, expected_map);
@@ -300,7 +309,10 @@ mod tests {
             .as_any()
             .downcast_ref::<FixedSizeBinaryArray>()
             .unwrap();
-        let volume_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let volume_values = columns[4]
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
         let ts_event_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = columns[6].as_any().downcast_ref::<UInt64Array>().unwrap();
 
@@ -308,42 +320,48 @@ mod tests {
         assert_eq!(open_values.len(), 2);
         assert_eq!(
             get_raw_price(open_values.value(0)),
-            (100.10 * FIXED_SCALAR) as i128
+            (100.10 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(open_values.value(1)),
-            (100.00 * FIXED_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(high_values.len(), 2);
         assert_eq!(
             get_raw_price(high_values.value(0)),
-            (102.00 * FIXED_SCALAR) as i128
+            (102.00 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(high_values.value(1)),
-            (100.00 * FIXED_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(
             get_raw_price(low_values.value(0)),
-            (100.00 * FIXED_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(low_values.value(1)),
-            (100.00 * FIXED_SCALAR) as i128
+            (100.00 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(close_values.len(), 2);
         assert_eq!(
             get_raw_price(close_values.value(0)),
-            (101.00 * FIXED_SCALAR) as i128
+            (101.00 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(close_values.value(1)),
-            (100.10 * FIXED_SCALAR) as i128
+            (100.10 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(volume_values.len(), 2);
-        assert_eq!(volume_values.value(0), 1_100_000_000_000);
-        assert_eq!(volume_values.value(1), 1_110_000_000_000);
+        assert_eq!(
+            get_raw_quantity(volume_values.value(0)),
+            (1100.0 * FIXED_SCALAR) as QuantityRaw
+        );
+        assert_eq!(
+            get_raw_quantity(volume_values.value(1)),
+            (1110.0 * FIXED_SCALAR) as QuantityRaw
+        );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
         assert_eq!(ts_event_values.value(1), 2);
@@ -375,7 +393,10 @@ mod tests {
             &(101_000_000_000 as PriceRaw).to_le_bytes(),
             &(10_010_000_000 as PriceRaw).to_le_bytes(),
         ]);
-        let volume = UInt64Array::from(vec![11_000_000_000, 10_000_000_000]);
+        let volume = FixedSizeBinaryArray::from(vec![
+            &(11_000_000_000 as QuantityRaw).to_le_bytes(),
+            &(10_000_000_000 as QuantityRaw).to_le_bytes(),
+        ]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 

@@ -32,8 +32,8 @@ use nautilus_model::{
 };
 
 use super::{
-    extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    extract_column, get_raw_price, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError,
+    KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{
     ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, PRECISION_BYTES,
@@ -43,7 +43,7 @@ impl ArrowSchemaProvider for TradeTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
             Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::UInt64, false),
+            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("aggressor_side", DataType::UInt8, false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
@@ -87,8 +87,8 @@ impl EncodeToRecordBatch for TradeTick {
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
         let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        let mut size_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
 
-        let mut size_builder = UInt64Array::builder(data.len());
         let mut aggressor_side_builder = UInt8Array::builder(data.len());
         let mut trade_id_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
@@ -98,8 +98,9 @@ impl EncodeToRecordBatch for TradeTick {
             price_builder
                 .append_value(tick.price.raw.to_le_bytes())
                 .unwrap();
-
-            size_builder.append_value(tick.size.raw);
+            size_builder
+                .append_value(tick.size.raw.to_le_bytes())
+                .unwrap();
             aggressor_side_builder.append_value(tick.aggressor_side as u8);
             trade_id_builder.append_value(tick.trade_id.to_string());
             ts_event_builder.append_value(tick.ts_event.as_u64());
@@ -150,7 +151,12 @@ impl DecodeFromRecordBatch for TradeTick {
             DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
 
-        let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
+        let size_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "size",
+            1,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
@@ -178,7 +184,8 @@ impl DecodeFromRecordBatch for TradeTick {
             .map(|i| {
                 let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
 
-                let size = Quantity::from_raw(size_values.value(i), size_precision);
+                let size =
+                    Quantity::from_raw(get_raw_quantity(size_values.value(i)), size_precision);
                 let aggressor_side_value = aggressor_side_values.value(i);
                 let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
                     .ok_or_else(|| {
@@ -233,9 +240,10 @@ mod tests {
     #[cfg(not(feature = "high_precision"))]
     use nautilus_model::types::fixed::FIXED_SCALAR;
     use nautilus_model::types::price::PriceRaw;
+    use nautilus_model::types::quantity::QuantityRaw;
     use rstest::rstest;
 
-    use crate::arrow::get_raw_price;
+    use crate::arrow::{get_raw_price, get_raw_quantity};
 
     use super::*;
 
@@ -254,7 +262,7 @@ mod tests {
         ));
 
         expected_fields.extend(vec![
-            Field::new("size", DataType::UInt64, false),
+            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
             Field::new("aggressor_side", DataType::UInt8, false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
@@ -274,7 +282,7 @@ mod tests {
             "price".to_string(),
             format!("FixedSizeBinary({PRECISION_BYTES})"),
         );
-        expected_map.insert("size".to_string(), "UInt64".to_string());
+        expected_map.insert("size".to_string(), "FixedSizeBinary(8)".to_string());
         expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
         expected_map.insert("trade_id".to_string(), "Utf8".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
@@ -324,7 +332,19 @@ mod tests {
             (100.50 * FIXED_SCALAR) as PriceRaw
         );
 
-        let size_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let size_values = columns[1]
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
+        assert_eq!(
+            get_raw_quantity(size_values.value(0)),
+            (1000.0 * FIXED_SCALAR) as QuantityRaw
+        );
+        assert_eq!(
+            get_raw_quantity(size_values.value(1)),
+            (500.0 * FIXED_SCALAR) as QuantityRaw
+        );
+
         let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
         let trade_id_values = columns[3].as_any().downcast_ref::<StringArray>().unwrap();
         let ts_event_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
@@ -332,8 +352,14 @@ mod tests {
 
         assert_eq!(columns.len(), 6);
         assert_eq!(size_values.len(), 2);
-        assert_eq!(size_values.value(0), 1_000_000_000_000);
-        assert_eq!(size_values.value(1), 500_000_000_000);
+        assert_eq!(
+            get_raw_quantity(size_values.value(0)),
+            (1000.0 * FIXED_SCALAR) as QuantityRaw
+        );
+        assert_eq!(
+            get_raw_quantity(size_values.value(1)),
+            (500.0 * FIXED_SCALAR) as QuantityRaw
+        );
         assert_eq!(aggressor_side_values.len(), 2);
         assert_eq!(aggressor_side_values.value(0), 1);
         assert_eq!(aggressor_side_values.value(1), 2);
@@ -358,7 +384,10 @@ mod tests {
             &(1_010_000_000_000 as PriceRaw).to_le_bytes(),
         ]);
 
-        let size = UInt64Array::from(vec![1000, 900]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+            &((900.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
         let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
         let trade_id = StringArray::from(vec!["1", "2"]);
         let ts_event = UInt64Array::from(vec![1, 2]);

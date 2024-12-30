@@ -32,9 +32,18 @@ pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 1_000_000_000_000_000_000.0; // 10.
 ///
 /// This function returns an error:
 /// - If `precision` exceeds `FIXED_PRECISION`.
+#[cfg(not(feature = "high_precision"))]
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     if precision > FIXED_PRECISION {
         anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
+    }
+    Ok(())
+}
+
+#[cfg(feature = "high_precision")]
+pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
+    if precision > FIXED_HIGH_PRECISION {
+        anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_HIGH_PRECISION` (18), was {precision}")
     }
     Ok(())
 }
@@ -86,6 +95,24 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     rounded * pow2
 }
 
+/// Converts an `f64` value to a raw fixed-point `u128` representation with a specified precision.
+///
+/// # Panics
+///
+/// This function panics:
+/// - If `precision` exceeds `FIXED_HIGH_PRECISION`.
+#[must_use]
+pub fn f64_to_fixed_u128(value: f64, precision: u8) -> u128 {
+    assert!(
+        precision <= FIXED_HIGH_PRECISION,
+        "precision exceeded maximum 18"
+    );
+    let pow1 = 10_u128.pow(u32::from(precision));
+    let pow2 = 10_u128.pow(u32::from(FIXED_HIGH_PRECISION - precision));
+    let rounded = (value * pow1 as f64).round() as u128;
+    rounded * pow2
+}
+
 /// Converts a raw fixed-point `i64` value back to an `f64` value.
 #[must_use]
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
@@ -102,6 +129,20 @@ pub fn fixed_i128_to_f64(value: i128) -> f64 {
 #[must_use]
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
     (value as f64) / FIXED_SCALAR
+}
+
+/// Converts a raw fixed-point `u128` value back to an `f64` value.
+#[must_use]
+pub fn fixed_u128_to_f64(value: u128) -> f64 {
+    (value as f64) / FIXED_HIGH_PRECISION_SCALAR
+}
+
+pub fn raw_i64_to_raw_i128(value: i64) -> i128 {
+    value as i128 * 10_i128.pow(FIXED_PRECISION as u32)
+}
+
+pub fn raw_u64_to_raw_u128(value: u64) -> u128 {
+    value as u128 * 10_u128.pow(FIXED_PRECISION as u32)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

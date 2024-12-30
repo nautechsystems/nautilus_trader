@@ -209,12 +209,14 @@ pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
     book.best_bid_size()
         .expect("Error: No bid orders for best bid size")
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
     book.best_ask_size()
         .expect("Error: No ask orders for best ask size")
@@ -233,6 +235,7 @@ pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_avg_px_for_quantity(
     book: &mut OrderBook_API,
     qty: Quantity,

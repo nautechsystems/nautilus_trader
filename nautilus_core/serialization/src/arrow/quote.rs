@@ -28,35 +28,37 @@ use nautilus_model::{
 };
 
 use super::{
-    extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    extract_column, get_raw_price, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError,
+    KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, PRECISION_BYTES,
 };
-use crate::arrow::{
-    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, PRECISION_BYTES,
-};
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for QuoteTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let mut fields = Vec::with_capacity(6);
-
-        fields.push(Field::new(
-            "bid_price",
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-            false,
-        ));
-        fields.push(Field::new(
-            "ask_price",
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-            false,
-        ));
-
-        // Add remaining fields (unchanged)
-        fields.extend(vec![
-            Field::new("bid_size", DataType::UInt64, false),
-            Field::new("ask_size", DataType::UInt64, false),
+        let fields = vec![
+            Field::new(
+                "bid_price",
+                DataType::FixedSizeBinary(PRECISION_BYTES),
+                false,
+            ),
+            Field::new(
+                "ask_price",
+                DataType::FixedSizeBinary(PRECISION_BYTES),
+                false,
+            ),
+            Field::new(
+                "bid_size",
+                DataType::FixedSizeBinary(PRECISION_BYTES),
+                false,
+            ),
+            Field::new(
+                "ask_size",
+                DataType::FixedSizeBinary(PRECISION_BYTES),
+                false,
+            ),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ]);
+        ];
 
         match metadata {
             Some(metadata) => Schema::new_with_metadata(fields, metadata),
@@ -98,9 +100,10 @@ impl EncodeToRecordBatch for QuoteTick {
             FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut ask_price_builder =
             FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-
-        let mut bid_size_builder = UInt64Array::builder(data.len());
-        let mut ask_size_builder = UInt64Array::builder(data.len());
+        let mut bid_size_builder =
+            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        let mut ask_size_builder =
+            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
@@ -111,28 +114,25 @@ impl EncodeToRecordBatch for QuoteTick {
             ask_price_builder
                 .append_value(quote.ask_price.raw.to_le_bytes())
                 .unwrap();
-            bid_size_builder.append_value(quote.bid_size.raw);
-            ask_size_builder.append_value(quote.ask_size.raw);
+            bid_size_builder
+                .append_value(quote.bid_size.raw.to_le_bytes())
+                .unwrap();
+            ask_size_builder
+                .append_value(quote.ask_size.raw.to_le_bytes())
+                .unwrap();
             ts_event_builder.append_value(quote.ts_event.as_u64());
             ts_init_builder.append_value(quote.ts_init.as_u64());
         }
 
-        let bid_price_array = Arc::new(bid_price_builder.finish());
-        let ask_price_array = Arc::new(ask_price_builder.finish());
-        let bid_size_array = Arc::new(bid_size_builder.finish());
-        let ask_size_array = Arc::new(ask_size_builder.finish());
-        let ts_event_array = Arc::new(ts_event_builder.finish());
-        let ts_init_array = Arc::new(ts_init_builder.finish());
-
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                bid_price_array,
-                ask_price_array,
-                bid_size_array,
-                ask_size_array,
-                ts_event_array,
-                ts_init_array,
+                Arc::new(bid_price_builder.finish()),
+                Arc::new(ask_price_builder.finish()),
+                Arc::new(bid_size_builder.finish()),
+                Arc::new(ask_size_builder.finish()),
+                Arc::new(ts_event_builder.finish()),
+                Arc::new(ts_init_builder.finish()),
             ],
         )
     }
@@ -154,24 +154,30 @@ impl DecodeFromRecordBatch for QuoteTick {
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
 
-        let (bid_price_values, ask_price_values) = {
-            let bid_price_values = extract_column::<FixedSizeBinaryArray>(
-                cols,
-                "bid_price",
-                0,
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-            )?;
-            let ask_price_values = extract_column::<FixedSizeBinaryArray>(
-                cols,
-                "ask_price",
-                1,
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-            )?;
-            (bid_price_values, ask_price_values)
-        };
-
-        let bid_size_values = extract_column::<UInt64Array>(cols, "bid_size", 2, DataType::UInt64)?;
-        let ask_size_values = extract_column::<UInt64Array>(cols, "ask_size", 3, DataType::UInt64)?;
+        let bid_price_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "bid_price",
+            0,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
+        let ask_price_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "ask_price",
+            1,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
+        let bid_size_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "bid_size",
+            2,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
+        let ask_size_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "ask_size",
+            3,
+            DataType::FixedSizeBinary(PRECISION_BYTES),
+        )?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
@@ -188,17 +194,24 @@ impl DecodeFromRecordBatch for QuoteTick {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
-                let (bid_price, ask_price) = (
-                    Price::from_raw(get_raw_price(bid_price_values.value(row)), price_precision),
-                    Price::from_raw(get_raw_price(ask_price_values.value(row)), price_precision),
-                );
-
                 Ok(Self {
                     instrument_id,
-                    bid_price,
-                    ask_price,
-                    bid_size: Quantity::from_raw(bid_size_values.value(row), size_precision),
-                    ask_size: Quantity::from_raw(ask_size_values.value(row), size_precision),
+                    bid_price: Price::from_raw(
+                        get_raw_price(bid_price_values.value(row)),
+                        price_precision,
+                    ),
+                    ask_price: Price::from_raw(
+                        get_raw_price(ask_price_values.value(row)),
+                        price_precision,
+                    ),
+                    bid_size: Quantity::from_raw(
+                        get_raw_quantity(bid_size_values.value(row)),
+                        size_precision,
+                    ),
+                    ask_size: Quantity::from_raw(
+                        get_raw_quantity(ask_size_values.value(row)),
+                        size_precision,
+                    ),
                     ts_event: ts_event_values.value(row).into(),
                     ts_init: ts_init_values.value(row).into(),
                 })
@@ -226,12 +239,13 @@ impl DecodeDataFromRecordBatch for QuoteTick {
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
+    use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
     #[cfg(feature = "high_precision")]
     use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
     #[cfg(not(feature = "high_precision"))]
     use nautilus_model::types::fixed::FIXED_SCALAR;
-    use nautilus_model::types::price::PriceRaw;
+    use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
     use crate::arrow::get_raw_price;
@@ -258,8 +272,16 @@ mod tests {
         ));
 
         expected_fields.extend(vec![
-            Field::new("bid_size", DataType::UInt64, false),
-            Field::new("ask_size", DataType::UInt64, false),
+            Field::new(
+                "bid_size",
+                DataType::FixedSizeBinary(PRECISION_BYTES),
+                false,
+            ),
+            Field::new(
+                "ask_size",
+                DataType::FixedSizeBinary(PRECISION_BYTES),
+                false,
+            ),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ]);
@@ -277,8 +299,8 @@ mod tests {
         expected_map.insert("bid_price".to_string(), fixed_size_binary.clone());
         expected_map.insert("ask_price".to_string(), fixed_size_binary);
 
-        expected_map.insert("bid_size".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size".to_string(), "UInt64".to_string());
+        expected_map.insert("bid_size".to_string(), "FixedSizeBinary(16)".to_string());
+        expected_map.insert("ask_size".to_string(), "FixedSizeBinary(16)".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(arrow_schema, expected_map);
@@ -340,18 +362,36 @@ mod tests {
             (100.20 * FIXED_SCALAR) as PriceRaw
         );
 
-        let bid_size_values = columns[2].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_values = columns[3].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_values = columns[2]
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
+        let ask_size_values = columns[3]
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
         let ts_event_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
         assert_eq!(columns.len(), 6);
         assert_eq!(bid_size_values.len(), 2);
-        assert_eq!(bid_size_values.value(0), 1_000_000_000_000);
-        assert_eq!(bid_size_values.value(1), 750_000_000_000);
+        assert_eq!(
+            get_raw_quantity(bid_size_values.value(0)),
+            (1000.0 * FIXED_SCALAR) as QuantityRaw
+        );
+        assert_eq!(
+            get_raw_quantity(bid_size_values.value(1)),
+            (750.0 * FIXED_SCALAR) as QuantityRaw
+        );
         assert_eq!(ask_size_values.len(), 2);
-        assert_eq!(ask_size_values.value(0), 500_000_000_000);
-        assert_eq!(ask_size_values.value(1), 300_000_000_000);
+        assert_eq!(
+            get_raw_quantity(ask_size_values.value(0)),
+            (500.0 * FIXED_SCALAR) as QuantityRaw
+        );
+        assert_eq!(
+            get_raw_quantity(ask_size_values.value(1)),
+            (300.0 * FIXED_SCALAR) as QuantityRaw
+        );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
         assert_eq!(ts_event_values.value(1), 2);
@@ -376,8 +416,14 @@ mod tests {
             ]),
         );
 
-        let bid_size = UInt64Array::from(vec![100, 90]);
-        let ask_size = UInt64Array::from(vec![110, 100]);
+        let bid_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((90.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let ask_size = FixedSizeBinaryArray::from(vec![
+            &((110.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 

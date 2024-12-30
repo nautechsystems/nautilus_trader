@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_u64, FAILED},
+    correctness::{check_equal_u8, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -32,7 +32,7 @@ use crate::{
         currency::Currency,
         money::Money,
         price::{check_positive_price, Price},
-        quantity::Quantity,
+        quantity::{check_positive_quantity, Quantity},
     },
 };
 
@@ -141,7 +141,7 @@ impl CryptoPerpetual {
             stringify!(size_increment.precision),
         )?;
         check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
+        check_positive_quantity(size_increment.raw, stringify!(size_increment.raw))?;
 
         Ok(Self {
             id,

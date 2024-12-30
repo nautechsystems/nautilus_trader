@@ -29,14 +29,17 @@ cdef extern from "../includes/model.h":
     # The maximum valid price value which can be represented.
     const double PRICE_MAX # = 9223372036.0
 
+    const double PRICE_MAX # = 170141183460.0
+
     # The minimum valid price value which can be represented.
     const double PRICE_MIN # = -9223372036.0
 
-    # The sentinel value for an unset or null quantity.
-    const uint64_t QUANTITY_UNDEF # = UINT64_MAX
+    const double PRICE_MIN # = -170141183460.0
 
     # The maximum valid quantity value which can be represented.
     const double QUANTITY_MAX # = 18446744073.0
+
+    const double QUANTITY_MAX # = 340282366920.0
 
     # The minimum valid quantity value which can be represented.
     const double QUANTITY_MIN # = 0.0
@@ -482,6 +485,10 @@ cdef extern from "../includes/model.h":
         # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
+    ctypedef uint64_t QuantityRaw;
+
+    ctypedef u128 QuantityRaw;
+
     # Represents a quantity with a non-negative value.
     #
     # Capable of storing either a whole number (no decimal places) of 'contracts'
@@ -495,7 +502,7 @@ cdef extern from "../includes/model.h":
     cdef struct Quantity_t:
         # The raw quantity as an unsigned 64-bit integer.
         # Represents the unscaled value, with `precision` defining the number of decimal places.
-        uint64_t raw;
+        QuantityRaw raw;
         # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
@@ -869,6 +876,8 @@ cdef extern from "../includes/model.h":
     # The sentinel `Price` representing errors (this will be removed when Cython is gone).
     const Price_t ERROR_PRICE # = <Price_t>{ PRICE_ERROR, 0 }
 
+
+
     Data_t data_clone(const Data_t *data);
 
     void interned_string_stats();
@@ -961,7 +970,7 @@ cdef extern from "../includes/model.h":
                            PriceRaw low,
                            PriceRaw close,
                            uint8_t price_prec,
-                           uint64_t volume,
+                           QuantityRaw volume,
                            uint8_t size_prec,
                            uint64_t ts_event,
                            uint64_t ts_init);
@@ -1043,7 +1052,7 @@ cdef extern from "../includes/model.h":
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     PriceRaw price_raw,
                                     uint8_t price_prec,
-                                    uint64_t size_raw,
+                                    QuantityRaw size_raw,
                                     uint8_t size_prec,
                                     uint64_t order_id);
 
@@ -1066,8 +1075,8 @@ cdef extern from "../includes/model.h":
                                PriceRaw ask_price_raw,
                                uint8_t bid_price_prec,
                                uint8_t ask_price_prec,
-                               uint64_t bid_size_raw,
-                               uint64_t ask_size_raw,
+                               QuantityRaw bid_size_raw,
+                               QuantityRaw ask_size_raw,
                                uint8_t bid_size_prec,
                                uint8_t ask_size_prec,
                                uint64_t ts_event,
@@ -1083,7 +1092,7 @@ cdef extern from "../includes/model.h":
     TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
                                PriceRaw price_raw,
                                uint8_t price_prec,
-                               uint64_t size_raw,
+                               QuantityRaw size_raw,
                                uint8_t size_prec,
                                AggressorSide aggressor_side,
                                TradeId_t trade_id,
@@ -1768,7 +1777,7 @@ cdef extern from "../includes/model.h":
 
     Quantity_t quantity_new(double value, uint8_t precision);
 
-    Quantity_t quantity_from_raw(uint64_t raw, uint8_t precision);
+    Quantity_t quantity_from_raw(QuantityRaw raw, uint8_t precision);
 
     double quantity_as_f64(const Quantity_t *qty);
 

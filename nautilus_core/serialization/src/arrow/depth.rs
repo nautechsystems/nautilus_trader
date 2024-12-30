@@ -38,16 +38,16 @@ use super::{
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{
-    get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,
-    PRECISION_BYTES,
+    get_raw_price, get_raw_quantity, ArrowSchemaProvider, Data, DecodeFromRecordBatch,
+    EncodeToRecordBatch, PRECISION_BYTES,
 };
 
 fn get_field_data() -> Vec<(&'static str, DataType)> {
     vec![
         ("bid_price", DataType::FixedSizeBinary(PRECISION_BYTES)),
         ("ask_price", DataType::FixedSizeBinary(PRECISION_BYTES)),
-        ("bid_size", DataType::UInt64),
-        ("ask_size", DataType::UInt64),
+        ("bid_size", DataType::FixedSizeBinary(PRECISION_BYTES)),
+        ("ask_size", DataType::FixedSizeBinary(PRECISION_BYTES)),
         ("bid_count", DataType::UInt32),
         ("ask_count", DataType::UInt32),
     ]
@@ -127,8 +127,14 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
                 data.len(),
                 PRECISION_BYTES,
             ));
-            bid_size_builders.push(UInt64Array::builder(data.len()));
-            ask_size_builders.push(UInt64Array::builder(data.len()));
+            bid_size_builders.push(FixedSizeBinaryBuilder::with_capacity(
+                data.len(),
+                PRECISION_BYTES,
+            ));
+            ask_size_builders.push(FixedSizeBinaryBuilder::with_capacity(
+                data.len(),
+                PRECISION_BYTES,
+            ));
             bid_count_builders.push(UInt32Array::builder(data.len()));
             ask_count_builders.push(UInt32Array::builder(data.len()));
         }
@@ -146,8 +152,12 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
                 ask_price_builders[i]
                     .append_value(depth.asks[i].price.raw.to_le_bytes())
                     .unwrap();
-                bid_size_builders[i].append_value(depth.bids[i].size.raw);
-                ask_size_builders[i].append_value(depth.asks[i].size.raw);
+                bid_size_builders[i]
+                    .append_value(depth.bids[i].size.raw.to_le_bytes())
+                    .unwrap();
+                ask_size_builders[i]
+                    .append_value(depth.asks[i].size.raw.to_le_bytes())
+                    .unwrap();
                 bid_count_builders[i].append_value(depth.bid_counts[i]);
                 ask_count_builders[i].append_value(depth.ask_counts[i]);
             }
@@ -249,18 +259,18 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 DataType::FixedSizeBinary(PRECISION_BYTES)
             ));
             bid_sizes.push(extract_depth_column!(
-                UInt64Array,
+                FixedSizeBinaryArray,
                 "bid_size",
                 i,
                 2 * DEPTH10_LEN + i,
-                DataType::UInt64
+                DataType::FixedSizeBinary(PRECISION_BYTES)
             ));
             ask_sizes.push(extract_depth_column!(
-                UInt64Array,
+                FixedSizeBinaryArray,
                 "ask_size",
                 i,
                 3 * DEPTH10_LEN + i,
-                DataType::UInt64
+                DataType::FixedSizeBinary(PRECISION_BYTES)
             ));
             bid_counts.push(extract_depth_column!(
                 UInt32Array,
@@ -278,20 +288,27 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
             ));
         }
 
-        #[cfg(feature = "high_precision")]
-        {
-            for i in 0..DEPTH10_LEN {
-                assert_eq!(
-                    bid_prices[i].value_length(),
-                    PRECISION_BYTES,
-                    "Price precision uses {PRECISION_BYTES} byte value"
-                );
-                assert_eq!(
-                    ask_prices[i].value_length(),
-                    PRECISION_BYTES,
-                    "Price precision uses {PRECISION_BYTES} byte value"
-                );
-            }
+        for i in 0..DEPTH10_LEN {
+            assert_eq!(
+                bid_prices[i].value_length(),
+                PRECISION_BYTES,
+                "Price precision uses {PRECISION_BYTES} byte value"
+            );
+            assert_eq!(
+                ask_prices[i].value_length(),
+                PRECISION_BYTES,
+                "Price precision uses {PRECISION_BYTES} byte value"
+            );
+            assert_eq!(
+                bid_sizes[i].value_length(),
+                PRECISION_BYTES,
+                "Size precision uses {PRECISION_BYTES} byte value"
+            );
+            assert_eq!(
+                ask_sizes[i].value_length(),
+                PRECISION_BYTES,
+                "Size precision uses {PRECISION_BYTES} byte value"
+            );
         }
 
         let flags = extract_column::<UInt8Array>(cols, "flags", 6 * DEPTH10_LEN, DataType::UInt8)?;
@@ -314,13 +331,19 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                     bids[i] = BookOrder::new(
                         OrderSide::Buy,
                         Price::from_raw(get_raw_price(bid_prices[i].value(row)), price_precision),
-                        Quantity::from_raw(bid_sizes[i].value(row), size_precision),
+                        Quantity::from_raw(
+                            get_raw_quantity(bid_sizes[i].value(row)),
+                            size_precision,
+                        ),
                         0, // Order id always zero
                     );
                     asks[i] = BookOrder::new(
                         OrderSide::Sell,
                         Price::from_raw(get_raw_price(ask_prices[i].value(row)), price_precision),
-                        Quantity::from_raw(ask_sizes[i].value(row), size_precision),
+                        Quantity::from_raw(
+                            get_raw_quantity(ask_sizes[i].value(row)),
+                            size_precision,
+                        ),
                         0, // Order id always zero
                     );
                     bid_count_arr[i] = bid_counts[i].value(row);
@@ -509,14 +532,17 @@ mod tests {
             .map(|i| {
                 columns[2 * DEPTH10_LEN + i]
                     .as_any()
-                    .downcast_ref::<UInt64Array>()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .unwrap()
             })
             .collect();
 
         for (i, bid_size) in bid_sizes.iter().enumerate() {
             assert_eq!(bid_size.len(), 1);
-            assert_eq!(bid_size.value(0), 100_000_000_000 * (i + 1) as u64);
+            assert_eq!(
+                get_raw_quantity(bid_size.value(0)),
+                ((FIXED_SCALAR * (i + 1) as f64) as QuantityRaw)
+            );
         }
 
         // Extract and test ask sizes
@@ -524,14 +550,17 @@ mod tests {
             .map(|i| {
                 columns[3 * DEPTH10_LEN + i]
                     .as_any()
-                    .downcast_ref::<UInt64Array>()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .unwrap()
             })
             .collect();
 
         for (i, ask_size) in ask_sizes.iter().enumerate() {
             assert_eq!(ask_size.len(), 1);
-            assert_eq!(ask_size.value(0), 100_000_000_000 * (i + 1) as u64);
+            assert_eq!(
+                get_raw_quantity(ask_size.value(0)),
+                ((FIXED_SCALAR * (i + 1) as f64) as QuantityRaw)
+            );
         }
 
         // Extract and test bid counts

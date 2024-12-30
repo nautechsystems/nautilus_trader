@@ -26,7 +26,7 @@ use crate::{
     identifiers::InstrumentId,
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -38,8 +38,8 @@ pub extern "C" fn quote_tick_new(
     ask_price_raw: PriceRaw,
     bid_price_prec: u8,
     ask_price_prec: u8,
-    bid_size_raw: u64,
-    ask_size_raw: u64,
+    bid_size_raw: QuantityRaw,
+    ask_size_raw: QuantityRaw,
     bid_size_prec: u8,
     ask_size_prec: u8,
     ts_event: UnixNanos,

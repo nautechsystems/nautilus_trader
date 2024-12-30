@@ -36,7 +36,7 @@ use crate::{
     python::common::PY_MODULE_MODEL,
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -192,7 +192,7 @@ impl Bar {
         let close = Price::from_raw(close_raw, price_prec);
 
         let volume_py: Bound<'_, PyAny> = obj.getattr("volume")?;
-        let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
+        let volume_raw: QuantityRaw = volume_py.getattr("raw")?.extract()?;
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
         let volume = Quantity::from_raw(volume_raw, volume_prec);
 

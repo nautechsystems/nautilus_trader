@@ -35,7 +35,10 @@ use super::GetTsInit;
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
-    types::{fixed::FIXED_PRECISION, Price, Quantity},
+    types::{
+        fixed::{FIXED_HIGH_PRECISION, FIXED_PRECISION},
+        Price, Quantity,
+    },
 };
 
 /// Represents a single quote tick in a market.
@@ -179,6 +182,9 @@ impl QuoteTick {
             PriceType::Ask => self.ask_size,
             PriceType::Mid => Quantity::from_raw(
                 (self.bid_size.raw + self.ask_size.raw) / 2,
+                #[cfg(feature = "high_precision")]
+                cmp::min(self.bid_size.precision + 1, FIXED_HIGH_PRECISION),
+                #[cfg(not(feature = "high_precision"))]
                 cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
             ),
             _ => panic!("Cannot extract with price type {price_type}"),
@@ -218,10 +224,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::{
-        data::{stubs::quote_ethusdt_binance, QuoteTick},
-        enums::PriceType,
-    };
+    use crate::data::{stubs::quote_ethusdt_binance, QuoteTick};
 
     #[rstest]
     fn test_to_string(quote_ethusdt_binance: QuoteTick) {
@@ -236,6 +239,7 @@ mod tests {
     #[case(PriceType::Bid, 10_000_000_000_000)]
     #[case(PriceType::Ask, 10_001_000_000_000)]
     #[case(PriceType::Mid, 10_000_500_000_000)]
+    #[cfg(not(feature = "high_precision"))]
     fn test_extract_price(
         #[case] input: PriceType,
         #[case] expected: i64,

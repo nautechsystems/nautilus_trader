@@ -21,7 +21,7 @@ use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
-    types::{Price, Quantity},
+    types::{quantity::QuantityRaw, Price, Quantity},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
@@ -58,7 +58,7 @@ pub fn get_quantity_for_price(
 /// order book levels.
 #[must_use]
 pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookLevel>) -> f64 {
-    let mut cumulative_size_raw = 0u64;
+    let mut cumulative_size_raw: QuantityRaw = 0;
     let mut cumulative_value = 0.0;
 
     for (book_price, level) in levels {

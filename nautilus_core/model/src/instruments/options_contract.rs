@@ -16,9 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{
-        check_equal_u8, check_positive_u64, check_valid_string, check_valid_string_optional, FAILED,
-    },
+    correctness::{check_equal_u8, check_valid_string, check_valid_string_optional, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -33,7 +31,7 @@ use crate::{
         currency::Currency,
         money::Money,
         price::{check_positive_price, Price},
-        quantity::Quantity,
+        quantity::{check_positive_quantity, Quantity},
     },
 };
 
@@ -142,8 +140,8 @@ impl OptionsContract {
             stringify!(price_increment.precision),
         )?;
         check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_u64(multiplier.raw, stringify!(multiplier.raw))?;
-        check_positive_u64(lot_size.raw, stringify!(lot_size.raw))?;
+        check_positive_quantity(multiplier.raw, stringify!(multiplier.raw))?;
+        check_positive_quantity(lot_size.raw, stringify!(lot_size.raw))?;
 
         Ok(Self {
             id,

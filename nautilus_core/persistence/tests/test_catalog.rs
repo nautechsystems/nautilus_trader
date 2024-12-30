@@ -332,8 +332,6 @@ fn test_bar_query() {
 
 #[rstest]
 fn test_catalog_serialization_json_round_trip() {
-    use pretty_assertions::assert_eq;
-
     // Setup
     // let temp_dir = tempfile::tempdir().unwrap();
     let temp_dir = PathBuf::from(".");
@@ -378,12 +376,9 @@ fn simple_test() {
     use std::collections::HashMap;
 
     use datafusion::parquet::{
-        arrow::ArrowWriter,
-        basic::{Compression, ZstdLevel},
-        file::properties::WriterProperties,
+        arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties,
     };
     use nautilus_serialization::arrow::EncodeToRecordBatch;
-    use pretty_assertions::assert_eq;
 
     // Read back from JSON
     let json_path = "/home/twitu/Code/nautilus_trader/nautilus_core/persistence/data/nautilus_model_data_quote_quote_tick/quotes_perf_data.json";

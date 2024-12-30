@@ -27,7 +27,7 @@ use crate::{
     identifiers::{InstrumentId, TradeId},
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -37,7 +37,7 @@ pub extern "C" fn trade_tick_new(
     instrument_id: InstrumentId,
     price_raw: PriceRaw,
     price_prec: u8,
-    size_raw: u64,
+    size_raw: QuantityRaw,
     size_prec: u8,
     aggressor_side: AggressorSide,
     trade_id: TradeId,

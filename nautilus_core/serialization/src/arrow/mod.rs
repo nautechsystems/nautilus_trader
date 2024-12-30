@@ -38,7 +38,7 @@ use nautilus_model::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
         trade::TradeTick, Data,
     },
-    types::price::PriceRaw,
+    types::{price::PriceRaw, quantity::QuantityRaw},
 };
 use pyo3::prelude::*;
 
@@ -84,6 +84,11 @@ pub enum EncodingError {
 #[inline]
 fn get_raw_price(bytes: &[u8]) -> PriceRaw {
     PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+}
+
+#[inline]
+fn get_raw_quantity(bytes: &[u8]) -> QuantityRaw {
+    QuantityRaw::from_le_bytes(bytes.try_into().unwrap())
 }
 
 pub trait ArrowSchemaProvider {

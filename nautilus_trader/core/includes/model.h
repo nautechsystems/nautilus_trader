@@ -41,20 +41,21 @@
  */
 #define PRICE_MAX 9223372036.0
 
+#define PRICE_MAX 170141183460.0
+
 /**
  * The minimum valid price value which can be represented.
  */
 #define PRICE_MIN -9223372036.0
 
-/**
- * The sentinel value for an unset or null quantity.
- */
-#define QUANTITY_UNDEF UINT64_MAX
+#define PRICE_MIN -170141183460.0
 
 /**
  * The maximum valid quantity value which can be represented.
  */
 #define QUANTITY_MAX 18446744073.0
+
+#define QUANTITY_MAX 340282366920.0
 
 /**
  * The minimum valid quantity value which can be represented.
@@ -875,6 +876,10 @@ typedef struct Price_t {
     uint8_t precision;
 } Price_t;
 
+typedef uint64_t QuantityRaw;
+
+typedef u128 QuantityRaw;
+
 /**
  * Represents a quantity with a non-negative value.
  *
@@ -892,7 +897,7 @@ typedef struct Quantity_t {
      * The raw quantity as an unsigned 64-bit integer.
      * Represents the unscaled value, with `precision` defining the number of decimal places.
      */
-    uint64_t raw;
+    QuantityRaw raw;
     /**
      * The number of decimal places, with a maximum precision of 9.
      */
@@ -1501,6 +1506,8 @@ typedef struct Money_t {
  */
 #define ERROR_PRICE (Price_t){ .raw = PRICE_ERROR, .precision = 0 }
 
+
+
 struct Data_t data_clone(const struct Data_t *data);
 
 void interned_string_stats(void);
@@ -1606,7 +1613,7 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
                               int128_t low,
                               int128_t close,
                               uint8_t price_prec,
-                              uint64_t volume,
+                              QuantityRaw volume,
                               uint8_t size_prec,
                               uint64_t ts_event,
                               uint64_t ts_init);
@@ -1695,7 +1702,7 @@ const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int128_t price_raw,
                                        uint8_t price_prec,
-                                       uint64_t size_raw,
+                                       QuantityRaw size_raw,
                                        uint8_t size_prec,
                                        uint64_t order_id);
 
@@ -1722,8 +1729,8 @@ struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   int128_t ask_price_raw,
                                   uint8_t bid_price_prec,
                                   uint8_t ask_price_prec,
-                                  uint64_t bid_size_raw,
-                                  uint64_t ask_size_raw,
+                                  QuantityRaw bid_size_raw,
+                                  QuantityRaw ask_size_raw,
                                   uint8_t bid_size_prec,
                                   uint8_t ask_size_prec,
                                   uint64_t ts_event,
@@ -1741,7 +1748,7 @@ const char *quote_tick_to_cstr(const struct QuoteTick_t *quote);
 struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
                                   int128_t price_raw,
                                   uint8_t price_prec,
-                                  uint64_t size_raw,
+                                  QuantityRaw size_raw,
                                   uint8_t size_prec,
                                   enum AggressorSide aggressor_side,
                                   struct TradeId_t trade_id,
@@ -2539,7 +2546,7 @@ void price_sub_assign(struct Price_t a, struct Price_t b);
 
 struct Quantity_t quantity_new(double value, uint8_t precision);
 
-struct Quantity_t quantity_from_raw(uint64_t raw, uint8_t precision);
+struct Quantity_t quantity_from_raw(QuantityRaw raw, uint8_t precision);
 
 double quantity_as_f64(const struct Quantity_t *qty);
 

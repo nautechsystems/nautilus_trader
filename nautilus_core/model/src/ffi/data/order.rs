@@ -26,7 +26,7 @@ use crate::{
     enums::OrderSide,
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -36,7 +36,7 @@ pub extern "C" fn book_order_from_raw(
     order_side: OrderSide,
     price_raw: PriceRaw,
     price_prec: u8,
-    size_raw: u64,
+    size_raw: QuantityRaw,
     size_prec: u8,
     order_id: u64,
 ) -> BookOrder {

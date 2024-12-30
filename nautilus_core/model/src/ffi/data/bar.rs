@@ -31,7 +31,7 @@ use crate::{
     identifiers::InstrumentId,
     types::{
         price::{Price, PriceRaw},
-        quantity::Quantity,
+        quantity::{Quantity, QuantityRaw},
     },
 };
 
@@ -254,7 +254,7 @@ pub extern "C" fn bar_new_from_raw(
     low: PriceRaw,
     close: PriceRaw,
     price_prec: u8,
-    volume: u64,
+    volume: QuantityRaw,
     size_prec: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,

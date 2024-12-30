@@ -155,6 +155,14 @@ pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Checks the `u128` value is positive (> 0).
+pub fn check_positive_u128(value: u128, param: &str) -> anyhow::Result<()> {
+    if value == 0 {
+        anyhow::bail!("invalid u128 for '{param}' not positive, was {value}")
+    }
+    Ok(())
+}
+
 /// Checks the `i64` value is positive (> 0).
 pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     if value <= 0 {

@@ -30,6 +30,10 @@ use nautilus_core::{
     correctness::{self, FAILED},
     nanos::UnixNanos,
 };
+#[cfg(feature = "high_precision")]
+use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
+#[cfg(not(feature = "high_precision"))]
+use nautilus_model::types::fixed::FIXED_SCALAR;
 use nautilus_model::{
     data::{
         bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
@@ -37,7 +41,7 @@ use nautilus_model::{
     },
     enums::AggregationSource,
     instruments::InstrumentAny,
-    types::{fixed::FIXED_SCALAR, Price, Quantity},
+    types::{quantity::QuantityRaw, Price, Quantity},
 };
 
 pub trait BarAggregator {
@@ -373,7 +377,7 @@ where
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
         let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (spec.step as f64 * FIXED_SCALAR) as QuantityRaw;
         let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
