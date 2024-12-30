@@ -359,6 +359,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         self._log.error(
                             f"Cannot handle order report: instrument {instrument_id} not found",
                         )
+                        continue
 
                     venue_order_id = polymarket_order.get_venue_order_id()
                     client_order_id = self._cache.client_order_id(venue_order_id)
@@ -414,6 +415,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     self._log.error(
                         f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
                     )
+                    continue
 
                 order_type = (
                     OrderType.MARKET
@@ -520,6 +522,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._log.error(
                     f"Cannot handle order report: instrument {instrument_id} not found",
                 )
+                return None
+
             return polymarket_order.parse_to_order_status_report(
                 account_id=self.account_id,
                 instrument=instrument,
@@ -573,6 +577,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         self._log.error(
                             f"Cannot handle trade report: instrument {instrument_id} not found",
                         )
+                        continue
 
                     venue_order_id = polymarket_trade.venue_order_id(self._wallet_address)
                     client_order_id = self._cache.client_order_id(venue_order_id)

@@ -18,6 +18,7 @@ None
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
 - Fixed processing trade ticks from bars in `OrderMatchingEngine` - that could result in zero-size trades, thanks for reporting @stefansimik
+- Fixed `instrument is None` check flows for `DataEngine` and `PolymarketExecutionClient`
 
 ---
 

@@ -2135,6 +2135,7 @@ cdef class DataEngine(Component):
                         f"Cannot start bar aggregation: "
                         f"no instrument found for {bar_type.instrument_id}",
                     )
+                    continue
 
                 # Create aggregator
                 aggregator = self._create_bar_aggregator(instrument, bar_type)
@@ -2285,6 +2286,7 @@ cdef class DataEngine(Component):
                 f"Cannot start bar aggregation: "
                 f"no instrument found for {bar_type.instrument_id}",
             )
+            return
 
         # An aggregator may already have been created with actor.request_aggregated_bars and _handle_aggregated_bars
         aggregator = self._bar_aggregators.get(bar_type.standard())
