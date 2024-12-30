@@ -26,6 +26,7 @@ from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
+from nautilus_trader.adapters.dydx.common.types import DYDXInternalError
 from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 from nautilus_trader.adapters.dydx.http.market import DYDXMarketHttpAPI
@@ -259,6 +260,13 @@ class DYDXDataClient(LiveMarketDataClient):
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
                 self._log.error(f"Websocket error: {ws_message.message}")
+                ts_init = self._clock.timestamp_ns()
+                dydx_internal_error = DYDXInternalError(
+                    error_msg=ws_message.message,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                self._handle_data(dydx_internal_error)
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
