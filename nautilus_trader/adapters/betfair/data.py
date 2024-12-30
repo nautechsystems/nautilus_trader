@@ -345,6 +345,7 @@ class BetfairDataClient(LiveMarketDataClient):
         cache_instrument = self._cache.instrument(instrument.id)
         if cache_instrument is None:
             self._handle_data(instrument)
+            return
 
         # We've received an update to an existing instrument, update any fields that have changed
         instrument = merge_instrument_fields(cache_instrument, instrument, self._log)
