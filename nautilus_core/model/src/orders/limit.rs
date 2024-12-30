@@ -14,11 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
     fmt::Display,
     ops::{Deref, DerefMut},
 };
 
+use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -79,7 +79,7 @@ impl LimitOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
@@ -304,7 +304,7 @@ impl Order for LimitOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>> {
+    fn exec_algorithm_params(&self) -> Option<&IndexMap<Ustr, Ustr>> {
         self.exec_algorithm_params.as_ref()
     }
 

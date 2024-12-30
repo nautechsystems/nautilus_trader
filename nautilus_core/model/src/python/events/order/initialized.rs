@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, python::serialization::from_dict_pyo3, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
@@ -29,7 +28,7 @@ use crate::{
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::base::str_hashmap_to_ustr,
+    orders::base::str_indexmap_to_ustr,
     types::{Price, Quantity},
 };
 
@@ -69,7 +68,7 @@ impl OrderInitialized {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
     ) -> Self {
@@ -104,7 +103,7 @@ impl OrderInitialized {
             linked_order_ids,
             parent_order_id,
             exec_algorithm_id,
-            exec_algorithm_params.map(str_hashmap_to_ustr),
+            exec_algorithm_params.map(str_indexmap_to_ustr),
             exec_spawn_id,
             tags.map(|vec| vec.iter().map(|s| Ustr::from(s)).collect()),
         )

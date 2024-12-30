@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use ustr::Ustr;
 
@@ -66,7 +65,7 @@ pub struct OrderTestBuilder {
     linked_order_ids: Option<Vec<ClientOrderId>>,
     parent_order_id: Option<ClientOrderId>,
     exec_algorithm_id: Option<ExecAlgorithmId>,
-    exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+    exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
     exec_spawn_id: Option<ClientOrderId>,
     tags: Option<Vec<Ustr>>,
     init_id: Option<UUID4>,
@@ -365,13 +364,13 @@ impl OrderTestBuilder {
     // ----------- ExecAlgorithmParams ----------
     pub fn exec_algorithm_params(
         &mut self,
-        exec_algorithm_params: HashMap<Ustr, Ustr>,
+        exec_algorithm_params: IndexMap<Ustr, Ustr>,
     ) -> &mut Self {
         self.exec_algorithm_params = Some(exec_algorithm_params);
         self
     }
 
-    fn get_exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
+    fn get_exec_algorithm_params(&self) -> Option<IndexMap<Ustr, Ustr>> {
         self.exec_algorithm_params.clone()
     }
 
