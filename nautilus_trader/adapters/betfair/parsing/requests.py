@@ -151,7 +151,7 @@ def nautilus_market_to_place_instructions(
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
     assert isinstance(command.order, NautilusMarketOrder)
-    price = MIN_BET_PRICE if command.order.side == OrderSide.BUY else MAX_BET_PRICE
+    price = MAX_BET_PRICE if command.order.side == OrderSide.BUY else MIN_BET_PRICE
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
         selection_id=int(instrument.selection_id),

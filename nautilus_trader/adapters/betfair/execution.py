@@ -885,6 +885,10 @@ class BetfairExecutionClient(LiveExecutionClient):
             # We've already sent an accept for this order in self._submit_order
             self._log.info(f"Skipping order_accept as order exists: {venue_order_id=}")
 
+        if venue_order_id not in self.venue_order_id_to_client_order_id:
+            self._log.error(f"Order not found in cache: {venue_order_id=}, SKIPPING!")
+            return
+
         client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
         order = self._cache.order(client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
