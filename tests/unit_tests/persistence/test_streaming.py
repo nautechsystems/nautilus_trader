@@ -257,6 +257,14 @@ class TestPersistenceStreaming:
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
         assert result["NewsEventData"] == 86_985  # type: ignore
 
+    def test_stream_to_data_directory(self, catalog_betfair: ParquetDataCatalog):
+        [backtest_result] = self._run_default_backtest(catalog_betfair)
+        catalog_betfair.convert_stream_to_data(
+            backtest_result.instance_id,
+            subdirectory="backtest",
+            data_cls=TradeTick,
+        )
+
     def test_feather_writer_signal_data(
         self,
         catalog_betfair: ParquetDataCatalog,
