@@ -13,17 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsInverseResponse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsLinearResponse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsOptionResponse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSpotResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 
 
 class BybitInstrumentsInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=True):

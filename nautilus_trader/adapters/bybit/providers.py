@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
@@ -20,20 +24,23 @@ from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.asset import BybitAssetHttpAPI
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentInverse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentLinear
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOption
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentSpot
-from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.identifiers import InstrumentId
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+    from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
+    from nautilus_trader.common.component import LiveClock
+    from nautilus_trader.config import InstrumentProviderConfig
+    from nautilus_trader.model.identifiers import InstrumentId
 
 
 class BybitInstrumentProvider(InstrumentProvider):
