@@ -17,6 +17,7 @@ Provide a data client for the dYdX decentralized cypto exchange.
 """
 
 import asyncio
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -26,12 +27,16 @@ from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
+from nautilus_trader.adapters.dydx.common.types import DYDXInternalError
+from nautilus_trader.adapters.dydx.common.types import DYDXOraclePrice
 from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 from nautilus_trader.adapters.dydx.http.market import DYDXMarketHttpAPI
 from nautilus_trader.adapters.dydx.providers import DYDXInstrumentProvider
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookBatchedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookChannelData
@@ -44,6 +49,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model import DataType
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -129,6 +135,8 @@ class DYDXDataClient(LiveMarketDataClient):
         self._decoder_ws_trade = msgspec.json.Decoder(DYDXWsTradeChannelData)
         self._decoder_ws_kline = msgspec.json.Decoder(DYDXWsCandlesChannelData)
         self._decoder_ws_kline_subscribed = msgspec.json.Decoder(DYDXWsCandlesSubscribedData)
+        self._decoder_ws_instruments = msgspec.json.Decoder(DYDXWsMarketChannelData)
+        self._decoder_ws_instruments_subscribed = msgspec.json.Decoder(DYDXWsMarketSubscribedData)
 
         self._ws_client = DYDXWebsocketClient(
             clock=clock,
@@ -171,6 +179,8 @@ class DYDXDataClient(LiveMarketDataClient):
         self._log.info("Initializing websocket connection")
         await self._ws_client.connect()
 
+        await self._ws_client.subscribe_markets()
+
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
             self._log.debug("Cancelling 'update_instruments' task")
@@ -182,6 +192,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._resubscribe_orderbook_task.cancel()
             self._resubscribe_orderbook_task = None
 
+        await self._ws_client.unsubscribe_markets()
         await self._ws_client.disconnect()
 
     async def _update_instruments(self, interval_mins: int) -> None:
@@ -239,6 +250,8 @@ class DYDXDataClient(LiveMarketDataClient):
             ("v4_trades", "subscribed"): self._handle_trade_subscribed,
             ("v4_candles", "channel_data"): self._handle_kline,
             ("v4_candles", "subscribed"): self._handle_kline_subscribed,
+            ("v4_markets", "channel_data"): self._handle_markets,
+            ("v4_markets", "subscribed"): self._handle_markets_subscribed,
         }
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
@@ -258,7 +271,15 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
-                self._log.error(f"Websocket error: {ws_message.message}")
+                self._log.warning(f"Websocket error: {ws_message.message}")
+                ts_init = self._clock.timestamp_ns()
+                dydx_internal_error = DYDXInternalError(
+                    error_msg=ws_message.message,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                data_type = DataType(DYDXInternalError)
+                self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_internal_error)
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
@@ -659,6 +680,67 @@ class DYDXDataClient(LiveMarketDataClient):
     def _handle_kline_unsubscribed(self, msg: DYDXWsMessageGeneral) -> None:
         if msg.id is not None:
             self._topic_bar_type.pop(msg.id, None)
+
+    def _handle_markets(self, raw: bytes) -> None:
+        try:
+            msg: DYDXWsMarketChannelData = self._decoder_ws_instruments.decode(raw)
+
+            if msg.contents.oraclePrices is not None:
+                ts_init = self._clock.timestamp_ns()
+
+                for symbol, oracle_price_market in msg.contents.oraclePrices.items():
+                    instrument_id = DYDXSymbol(symbol).to_instrument_id()
+                    oracle_price = Decimal(oracle_price_market.oraclePrice)
+
+                    instrument = self._cache.instrument(instrument_id)
+
+                    if instrument is None:
+                        self._log.debug(
+                            f"Cannot parse market message: no instrument for {instrument_id}",
+                        )
+                        continue
+
+                    dydx_oracle_price = DYDXOraclePrice(
+                        instrument_id=instrument_id,
+                        price=oracle_price,
+                        ts_event=ts_init,
+                        ts_init=ts_init,
+                    )
+                    data_type = DataType(DYDXOraclePrice)
+                    self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_oracle_price)
+
+        except Exception as e:
+            self._log.error(f"Failed to parse market data: {raw.decode()} with error {e}")
+
+    def _handle_markets_subscribed(self, raw: bytes) -> None:
+        try:
+            msg: DYDXWsMarketSubscribedData = self._decoder_ws_instruments_subscribed.decode(raw)
+            ts_init = self._clock.timestamp_ns()
+
+            for symbol, oracle_price_market in msg.contents.markets.items():
+                if oracle_price_market.oraclePrice is not None:
+                    instrument_id = DYDXSymbol(symbol).to_instrument_id()
+                    oracle_price = Decimal(oracle_price_market.oraclePrice)
+
+                    instrument = self._cache.instrument(instrument_id)
+
+                    if instrument is None:
+                        self._log.debug(
+                            f"Cannot parse market message: no instrument for {instrument_id}",
+                        )
+                        continue
+
+                    dydx_oracle_price = DYDXOraclePrice(
+                        instrument_id=instrument_id,
+                        price=oracle_price,
+                        ts_event=ts_init,
+                        ts_init=ts_init,
+                    )
+                    data_type = DataType(DYDXOraclePrice)
+                    self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_oracle_price)
+
+        except Exception as e:
+            self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
 
     async def _subscribe_trade_ticks(
         self,
