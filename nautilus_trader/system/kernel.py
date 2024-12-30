@@ -515,6 +515,7 @@ class NautilusKernel:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
             self._trader.add_exec_algorithm(exec_algorithm)
 
+        # State flags
         self._is_running = False
 
         build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
@@ -926,6 +927,17 @@ class NautilusKernel:
 
         """
         return self._log_guard
+
+    def is_running(self) -> bool:
+        """
+        Return whether the kernel is running.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._is_running
 
     def start(self) -> None:
         """

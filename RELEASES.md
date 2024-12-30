@@ -20,7 +20,8 @@ Released on TBD (UTC).
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 
 ### Breaking Changes
-None
+- Changed `TradingNode.is_built` from a property to a method `.is_built()`
+- Changed `TradingNode.is_running` from a property to a method `.is_running()`
 
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
