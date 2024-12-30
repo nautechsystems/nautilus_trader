@@ -153,7 +153,6 @@ class NautilusKernel:
         self._trader_id: TraderId = trader_id
         self._machine_id: str = socket.gethostname()
         self._instance_id: UUID4 = config.instance_id or UUID4()
-        self._ts_created: int = time.time_ns()
 
         # Components
         if self._environment == Environment.BACKTEST:
@@ -164,6 +163,10 @@ class NautilusKernel:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        self._ts_created: int = self._clock.timestamp_ns()
+        self._ts_started: int | None = None
+        self._ts_shutdown: int | None = None
 
         register_component_clock(self._instance_id, self._clock)
 
@@ -689,10 +692,34 @@ class NautilusKernel:
 
         Returns
         -------
-        uint64_t
+        int
 
         """
         return self._ts_created
+
+    @property
+    def ts_started(self) -> int | None:
+        """
+        Return the UNIX timestamp (nanoseconds) when the kernel was last started.
+
+        Returns
+        -------
+        int or ``None``
+
+        """
+        return self._ts_started
+
+    @property
+    def ts_shutdown(self) -> int | None:
+        """
+        Return the UNIX timestamp (nanoseconds) when the kernel was last shutdown.
+
+        Returns
+        -------
+        int or ``None``
+
+        """
+        return self._ts_shutdown
 
     @property
     def load_state(self) -> bool:
@@ -904,6 +931,7 @@ class NautilusKernel:
         Start the Nautilus system kernel.
         """
         self._log.info("STARTING")
+        self._ts_started = self._clock.timestamp_ns()
         self._is_running = True
 
         self._start_engines()
@@ -929,6 +957,7 @@ class NautilusKernel:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
         self._log.info("STARTING")
+        self._ts_started = self._clock.timestamp_ns()
         self._is_running = True
 
         self._register_executor()
@@ -977,6 +1006,7 @@ class NautilusKernel:
 
         self._log.info("STOPPED")
         self._is_running = False
+        self._ts_shutdown = self._clock.timestamp_ns()
 
     async def stop_async(self) -> None:
         """
@@ -1015,6 +1045,7 @@ class NautilusKernel:
 
         self._log.info("STOPPED")
         self._is_running = False
+        self._ts_shutdown = self._clock.timestamp_ns()
 
     def dispose(self) -> None:
         """
