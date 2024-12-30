@@ -73,6 +73,9 @@ class PolymarketOrderStatus(Enum):
     # Order canceled
     CANCELED = "CANCELED"
 
+    # Order canceled as market resolved
+    CANCELED_MARKET_RESOLVED = "CANCELED_MARKET_RESOLVED"
+
 
 @unique
 class PolymarketTradeStatus(Enum):

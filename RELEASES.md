@@ -23,6 +23,7 @@ None
 - Fixed `instrument is None` check flows for `DataEngine` and `PolymarketExecutionClient`
 - Fixed instrument updates in `BetfairDataClient` (#2152), thanks @limx0
 - Fixed processing of time events on backtest completion when they occur after the final data timestamp
+- Fixed missing enum member `CANCELED_MARKET_RESOLVED` for `PolymarketOrderStatus`
 
 ---
 
