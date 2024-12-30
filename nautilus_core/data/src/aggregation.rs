@@ -406,7 +406,7 @@ where
         self.core.apply_update(price, size, ts_event);
         let spec = self.core.bar_type.spec();
 
-        if self.core.builder.count >= spec.step {
+        if self.core.builder.count >= spec.step.get() {
             self.core.build_now_and_send();
         }
     }
@@ -420,13 +420,13 @@ where
 
         while volume_update.as_f64() > 0.0 {
             let value_update = average_price.as_f64() * volume_update.as_f64();
-            if self.cum_value + value_update < self.core.bar_type.spec().step as f64 {
+            if self.cum_value + value_update < self.core.bar_type.spec().step.get() as f64 {
                 self.cum_value += value_update;
                 self.core.builder.update_bar(bar, volume_update, ts_init);
                 break;
             }
 
-            let value_diff = self.core.bar_type.spec().step as f64 - self.cum_value;
+            let value_diff = self.core.bar_type.spec().step.get() as f64 - self.cum_value;
             let volume_diff = volume_update.as_f64() * (value_diff / value_update);
             self.core.builder.update_bar(
                 bar,
@@ -515,7 +515,7 @@ where
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
         let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as u64;
         let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
@@ -543,7 +543,7 @@ where
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
         let mut raw_volume_update = volume.raw;
         let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as u64;
         let mut _raw_volume_diff = 0;
 
         while raw_volume_update > 0 {
@@ -653,14 +653,14 @@ where
 
         while size_update > 0.0 {
             let value_update = price.as_f64() * size_update;
-            if self.cum_value + value_update < spec.step as f64 {
+            if self.cum_value + value_update < spec.step.get() as f64 {
                 self.cum_value += value_update;
                 self.core
                     .apply_update(price, Quantity::new(size_update, size.precision), ts_event);
                 break;
             }
 
-            let value_diff = spec.step as f64 - self.cum_value;
+            let value_diff = spec.step.get() as f64 - self.cum_value;
             let size_diff = size_update * (value_diff / value_update);
             self.core
                 .apply_update(price, Quantity::new(size_diff, size.precision), ts_event);
@@ -680,13 +680,13 @@ where
 
         while volume_update.as_f64() > 0.0 {
             let value_update = average_price.as_f64() * volume_update.as_f64();
-            if self.cum_value + value_update < self.core.bar_type.spec().step as f64 {
+            if self.cum_value + value_update < self.core.bar_type.spec().step.get() as f64 {
                 self.cum_value += value_update;
                 self.core.builder.update_bar(bar, volume_update, ts_init);
                 break;
             }
 
-            let value_diff = self.core.bar_type.spec().step as f64 - self.cum_value;
+            let value_diff = self.core.bar_type.spec().step.get() as f64 - self.cum_value;
             let volume_diff = volume_update.as_f64() * (value_diff / value_update);
             self.core.builder.update_bar(
                 bar,
@@ -937,7 +937,7 @@ where
         );
 
         let spec = self.bar_type().spec();
-        let step = spec.step as isize;
+        let step = spec.step.get() as isize;
 
         if spec.aggregation == BarAggregation::Month {
             if self.batch_open_ns == time_ns {

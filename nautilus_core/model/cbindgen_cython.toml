@@ -49,6 +49,7 @@ exclude = [
 "ExecAlgorithmId" = "ExecAlgorithmId_t"
 "InstrumentId" = "InstrumentId_t"
 "Money" = "Money_t"
+"NonZeroUsize" = "uintptr_t"
 "OrderId" = "uint64_t"
 "OrderBookDelta" = "OrderBookDelta_t"
 "OrderBookDeltas" = "OrderBookDeltas_t"

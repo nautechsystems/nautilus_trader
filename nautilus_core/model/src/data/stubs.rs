@@ -326,11 +326,7 @@ pub fn stub_bar() -> Bar {
         symbol: Symbol::new("AUD/USD"),
         venue: Venue::new("SIM"),
     };
-    let bar_spec = BarSpecification {
-        step: 1,
-        aggregation: BarAggregation::Minute,
-        price_type: PriceType::Bid,
-    };
+    let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
     let bar_type = BarType::Standard {
         instrument_id,
         spec: bar_spec,

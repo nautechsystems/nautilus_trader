@@ -40,12 +40,8 @@ use crate::{
 #[pymethods]
 impl BarSpecification {
     #[new]
-    fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
-        Self {
-            step,
-            aggregation,
-            price_type,
-        }
+    fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> PyResult<Self> {
+        Self::new_checked(step, aggregation, price_type).map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
