@@ -259,7 +259,7 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
-                self._log.error(f"Websocket error: {ws_message.message}")
+                self._log.warning(f"Websocket error: {ws_message.message}")
                 ts_init = self._clock.timestamp_ns()
                 dydx_internal_error = DYDXInternalError(
                     error_msg=ws_message.message,
