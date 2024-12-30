@@ -45,6 +45,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model import DataType
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -266,7 +267,8 @@ class DYDXDataClient(LiveMarketDataClient):
                     ts_event=ts_init,
                     ts_init=ts_init,
                 )
-                self._handle_data(dydx_internal_error)
+                data_type = DataType(DYDXInternalError)
+                self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_internal_error)
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
