@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     uuid::UUID4,
@@ -35,11 +34,11 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_hashmap_to_ustr, Order, OrderCore},
+        base::{str_indexmap_to_ustr, Order, OrderCore},
         MarketOrder,
     },
     python::{
-        common::commissions_from_hashmap,
+        common::commissions_from_indexmap,
         events::order::{order_event_to_pyobject, pyobject_to_order_event},
     },
     types::{Currency, Money, Quantity},
@@ -67,11 +66,11 @@ impl MarketOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
+        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
         Self::new_checked(
             trader_id,
             strategy_id,
@@ -134,7 +133,7 @@ impl MarketOrder {
     }
 
     #[pyo3(name = "commissions")]
-    fn py_commissions(&self) -> HashMap<Currency, Money> {
+    fn py_commissions(&self) -> IndexMap<Currency, Money> {
         self.commissions()
     }
 
@@ -206,7 +205,7 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
-    fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
+    fn py_exec_algorithm_params(&self) -> Option<IndexMap<&str, &str>> {
         self.exec_algorithm_params
             .as_ref()
             .map(|x| x.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
@@ -315,7 +314,7 @@ impl MarketOrder {
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item(
             "commissions",
-            commissions_from_hashmap(py, self.commissions())?,
+            commissions_from_indexmap(py, self.commissions())?,
         )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),
@@ -466,9 +465,9 @@ impl MarketOrder {
             }
         })?;
         let exec_algorithm_params = dict.get_item("exec_algorithm_params").map(|x| {
-            let extracted_str = x.extract::<HashMap<String, String>>();
+            let extracted_str = x.extract::<IndexMap<String, String>>();
             match extracted_str {
-                Ok(item) => Some(str_hashmap_to_ustr(item)),
+                Ok(item) => Some(str_indexmap_to_ustr(item)),
                 Err(_) => None,
             }
         })?;

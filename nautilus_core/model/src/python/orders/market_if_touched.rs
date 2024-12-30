@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::{python::to_pyruntime_err, uuid::UUID4};
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -26,7 +25,7 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_hashmap_to_ustr, Order},
+        base::{str_indexmap_to_ustr, Order},
         MarketIfTouchedOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
@@ -61,11 +60,11 @@ impl MarketIfTouchedOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
     ) -> Self {
-        let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
+        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
         Self::new(
             trader_id,
             strategy_id,

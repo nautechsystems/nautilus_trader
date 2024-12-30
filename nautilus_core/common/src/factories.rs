@@ -15,8 +15,7 @@
 
 //! Factories for constructing domain objects such as orders.
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::{time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce},
@@ -102,7 +101,7 @@ impl OrderFactory {
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         tags: Option<Vec<Ustr>>,
         client_order_id: Option<ClientOrderId>,
     ) -> OrderAny {

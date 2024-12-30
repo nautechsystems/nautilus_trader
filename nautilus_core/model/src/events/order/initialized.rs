@@ -13,12 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
+use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -76,7 +74,7 @@ pub struct OrderInitialized {
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
     pub parent_order_id: Option<ClientOrderId>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
-    pub exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+    pub exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
     pub exec_spawn_id: Option<ClientOrderId>,
     pub tags: Option<Vec<Ustr>>,
 }
@@ -156,7 +154,7 @@ impl OrderInitialized {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
     ) -> Self {

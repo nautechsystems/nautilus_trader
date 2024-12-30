@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -204,10 +204,10 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             .try_get::<Option<&str>, _>("exec_algorithm_id")
             .ok()
             .and_then(|x| x.map(ExecAlgorithmId::from));
-        let exec_algorithm_params: Option<HashMap<Ustr, Ustr>> = row
+        let exec_algorithm_params: Option<IndexMap<Ustr, Ustr>> = row
             .try_get::<Option<serde_json::Value>, _>("exec_algorithm_params")
             .ok()
-            .and_then(|x| x.map(|x| serde_json::from_value::<HashMap<String, String>>(x).unwrap()))
+            .and_then(|x| x.map(|x| serde_json::from_value::<IndexMap<String, String>>(x).unwrap()))
             .map(|x| {
                 x.into_iter()
                     .map(|(k, v)| (Ustr::from(k.as_str()), Ustr::from(v.as_str())))
