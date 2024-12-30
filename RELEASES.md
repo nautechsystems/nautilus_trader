@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added `PerContractFeeModel`, thanks @stefansimik
 - Added additional timestamp properties for `NautilusKernel`
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
+- Handle directory and live streams to catalog (#2153), thanks @limx0
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)
