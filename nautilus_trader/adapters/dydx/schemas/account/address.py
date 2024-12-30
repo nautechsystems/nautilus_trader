@@ -75,20 +75,28 @@ class DYDXPerpetualPosition(msgspec.Struct, forbid_unknown_fields=True):
         currency = self.market.split("-")[1]
         return CURRENCY_MAP.get(currency, currency)
 
-    def parse_margin_balance(self, margin_init: Decimal, margin_maint: Decimal) -> MarginBalance:
+    def parse_margin_balance(
+        self,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        oracle_price: Decimal | None = None,
+    ) -> MarginBalance:
         """
         Parse the position message into a margin balance report.
         """
         currency = Currency.from_str(self.quote_currency())
 
         if self.status == DYDXPerpetualPositionStatus.OPEN:
+            if oracle_price is None:
+                oracle_price = Decimal(self.entryPrice)
+
             return MarginBalance(
                 initial=Money(
-                    margin_init * abs(Decimal(self.size)) * Decimal(self.entryPrice),
+                    margin_init * abs(Decimal(self.size)) * oracle_price,
                     currency,
                 ),
                 maintenance=Money(
-                    margin_maint * abs(Decimal(self.size)) * Decimal(self.entryPrice),
+                    margin_maint * abs(Decimal(self.size)) * oracle_price,
                     currency,
                 ),
             )
