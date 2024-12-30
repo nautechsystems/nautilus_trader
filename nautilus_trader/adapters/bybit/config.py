@@ -13,11 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 
 
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):

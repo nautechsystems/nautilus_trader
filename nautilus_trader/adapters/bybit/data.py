@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 from collections import defaultdict
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_INVERSE_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_LINEAR_DEPTHS
@@ -32,10 +33,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
@@ -44,13 +42,9 @@ from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.component import LiveClock
-from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
-from nautilus_trader.core.message import Request
 from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import DataResponse
@@ -67,9 +61,21 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+    from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+    from nautilus_trader.cache.cache import Cache
+    from nautilus_trader.common.component import LiveClock
+    from nautilus_trader.common.component import MessageBus
+    from nautilus_trader.core.message import Request
+    from nautilus_trader.model.instruments import Instrument
 
 
 class BybitDataClient(LiveMarketDataClient):

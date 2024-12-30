@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from enum import Enum
 from enum import unique
+from typing import TYPE_CHECKING
 
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -25,6 +27,10 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import time_in_force_to_str
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.model.data import BarType
 
 
 def raise_error(error):

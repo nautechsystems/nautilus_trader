@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import json
-from os import PathLike
+from typing import TYPE_CHECKING
 from zipfile import ZipFile
 from zipfile import is_zipfile
 
@@ -22,6 +24,10 @@ import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.model.enums import RecordFlag
+
+
+if TYPE_CHECKING:
+    from os import PathLike
 
 
 class BybitOrderBookDeltaDataLoader:

@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -24,9 +28,12 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 
 
 class BybitBatchPlaceOrder(
