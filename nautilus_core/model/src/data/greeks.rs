@@ -123,8 +123,9 @@ pub fn imply_vol_and_greeks(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_greeks_accuracy_call() {

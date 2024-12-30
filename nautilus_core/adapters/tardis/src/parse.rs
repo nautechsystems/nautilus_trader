@@ -173,11 +173,7 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
         _ => panic!("Unsupported bar aggregation type"),
     };
 
-    BarSpecification {
-        step,
-        aggregation,
-        price_type: PriceType::Last,
-    }
+    BarSpecification::new(step, aggregation, PriceType::Last)
 }
 
 /// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
@@ -329,7 +325,7 @@ mod tests {
         #[case] expected_aggregation: BarAggregation,
     ) {
         let spec = parse_bar_spec(value);
-        assert_eq!(spec.step, expected_step);
+        assert_eq!(spec.step.get(), expected_step);
         assert_eq!(spec.aggregation, expected_aggregation);
         assert_eq!(spec.price_type, PriceType::Last);
     }

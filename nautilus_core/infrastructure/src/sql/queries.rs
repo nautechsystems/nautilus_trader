@@ -755,7 +755,7 @@ impl DatabaseQueries {
                 open = $6, high = $7, low = $8, close = $9, volume = $10, ts_event = $11, ts_init = $12, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(bar.bar_type.instrument_id().to_string())
-            .bind(bar.bar_type.spec().step as i32)
+            .bind(bar.bar_type.spec().step.get() as i32)
             .bind(BarAggregationModel(bar.bar_type.spec().aggregation))
             .bind(PriceTypeModel(bar.bar_type.spec().price_type))
             .bind(AggregationSourceModel(bar.bar_type.aggregation_source()))

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp, ffi::c_char};
+use std::{cmp, ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn::{self};
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos};
@@ -39,23 +39,26 @@ use super::{
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 
+// SAFETY: Known valid value
+const STEP_ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
+
 const BAR_SPEC_1S: BarSpecification = BarSpecification {
-    step: 1,
+    step: STEP_ONE,
     aggregation: BarAggregation::Second,
     price_type: PriceType::Last,
 };
 const BAR_SPEC_1M: BarSpecification = BarSpecification {
-    step: 1,
+    step: STEP_ONE,
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
 const BAR_SPEC_1H: BarSpecification = BarSpecification {
-    step: 1,
+    step: STEP_ONE,
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
 const BAR_SPEC_1D: BarSpecification = BarSpecification {
-    step: 1,
+    step: STEP_ONE,
     aggregation: BarAggregation::Day,
     price_type: PriceType::Last,
 };
