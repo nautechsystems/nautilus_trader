@@ -12,6 +12,8 @@ Released on TBD (UTC).
 - Improved validation for `TradeTick` by ensuring `size` is always positive
 - Improved validation for `OrderBookDelta` by ensuring `order.size` is positive when `action` is either `ADD` or `UPDATE`
 - Improved validation for `BarSpecification` by ensuring `step` is always positive
+- Refined parsing candles for dYdX (#2148), thanks @davidsblom
+- Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 
 ### Breaking Changes
