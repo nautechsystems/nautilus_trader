@@ -28,6 +28,7 @@ from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
+from nautilus_trader.adapters.betfair.parsing.common import merge_instrument_fields
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
@@ -335,7 +336,20 @@ class BetfairDataClient(LiveMarketDataClient):
         for data in updates:
             self._log.debug(f"{data=}")
             PyCondition.type(data, Data, "data")
-            self._handle_data(data)
+            if isinstance(data, BettingInstrument):
+                self._on_instrument(data)
+            else:
+                self._handle_data(data)
+
+    def _on_instrument(self, instrument: BettingInstrument):
+        cache_instrument = self._cache.instrument(instrument.id)
+        if cache_instrument is None:
+            self._handle_data(instrument)
+            return
+
+        # We've received an update to an existing instrument, update any fields that have changed
+        instrument = merge_instrument_fields(cache_instrument, instrument, self._log)
+        self._handle_data(instrument)
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
