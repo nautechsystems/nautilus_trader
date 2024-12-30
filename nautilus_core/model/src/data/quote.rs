@@ -65,28 +65,6 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
-    /// Creates a new [`QuoteTick`] instance.
-    pub fn new(
-        instrument_id: InstrumentId,
-        bid_price: Price,
-        ask_price: Price,
-        bid_size: Quantity,
-        ask_size: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            ts_event,
-            ts_init,
-        )
-        .expect(FAILED)
-    }
-
     /// Creates a new [`QuoteTick`] instance with correctness checking.
     ///
     /// # Errors
@@ -128,6 +106,34 @@ impl QuoteTick {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`QuoteTick`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `bid_price.precision` does not equal `ask_price.precision`.
+    /// - If `bid_size.precision` does not equal `ask_size.precision`.
+    pub fn new(
+        instrument_id: InstrumentId,
+        bid_price: Price,
+        ask_price: Price,
+        bid_size: Quantity,
+        ask_size: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 
     /// Returns the metadata for the type, for use with serialization formats.

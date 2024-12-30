@@ -65,29 +65,6 @@ pub struct OrderBookDelta {
 }
 
 impl OrderBookDelta {
-    /// Creates a new [`OrderBookDelta`] instance.
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        action: BookAction,
-        order: BookOrder,
-        flags: u8,
-        sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        )
-        .expect(FAILED)
-    }
-
     /// Creates a new [`OrderBookDelta`] instance with correctness checking.
     ///
     /// # Errors
@@ -120,6 +97,34 @@ impl OrderBookDelta {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`OrderBookDelta`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
+    #[must_use]
+    pub fn new(
+        instrument_id: InstrumentId,
+        action: BookAction,
+        order: BookOrder,
+        flags: u8,
+        sequence: u64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 
     /// Creates a new [`OrderBookDelta`] instance with a `Clear` action and and NULL order.
