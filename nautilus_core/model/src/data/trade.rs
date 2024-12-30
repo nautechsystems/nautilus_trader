@@ -64,29 +64,6 @@ pub struct TradeTick {
 }
 
 impl TradeTick {
-    /// Creates a new [`TradeTick`] instance.
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        price: Price,
-        size: Quantity,
-        aggressor_side: AggressorSide,
-        trade_id: TradeId,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            price,
-            size,
-            aggressor_side,
-            trade_id,
-            ts_event,
-            ts_init,
-        )
-        .expect(FAILED)
-    }
-
     /// Creates a new [`TradeTick`] instance with correctness checking.
     ///
     /// # Errors
@@ -117,6 +94,34 @@ impl TradeTick {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`TradeTick`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `size` is not positive (> 0).
+    #[must_use]
+    pub fn new(
+        instrument_id: InstrumentId,
+        price: Price,
+        size: Quantity,
+        aggressor_side: AggressorSide,
+        trade_id: TradeId,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            instrument_id,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 
     /// Returns the metadata for the type, for use with serialization formats.

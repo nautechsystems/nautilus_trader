@@ -70,9 +70,9 @@ impl TradeId {
     ///
     /// Maximum length is 36 characters.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// This function returns an error:
+    /// This function panics:
     /// - If `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
     /// - If `value` length exceeds 36 characters.
     pub fn new<T: AsRef<str>>(value: T) -> Self {

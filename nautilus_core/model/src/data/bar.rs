@@ -131,12 +131,6 @@ pub struct BarSpecification {
 }
 
 impl BarSpecification {
-    /// Creates a new [`BarSpecification`] instance.
-    #[must_use]
-    pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
-        Self::new_checked(step, aggregation, price_type).expect(FAILED)
-    }
-
     /// Creates a new [`BarSpecification`] instance with correctness checking.
     ///
     /// # Errors
@@ -159,6 +153,17 @@ impl BarSpecification {
             aggregation,
             price_type,
         })
+    }
+
+    /// Creates a new [`BarSpecification`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `step` is not positive (> 0).
+    #[must_use]
+    pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
+        Self::new_checked(step, aggregation, price_type).expect(FAILED)
     }
 
     pub fn timedelta(&self) -> TimeDelta {
@@ -574,22 +579,6 @@ pub struct Bar {
 }
 
 impl Bar {
-    /// Creates a new [`Bar`] instance.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        bar_type: BarType,
-        open: Price,
-        high: Price,
-        low: Price,
-        close: Price,
-        volume: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
-            .expect(FAILED)
-    }
-
     /// Creates a new [`Bar`] instance with correctness checking.
     ///
     /// # Errors
@@ -629,6 +618,29 @@ impl Bar {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`Bar`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `high` is not >= `low`.
+    /// - If `high` is not >= `close`.
+    /// - If `low` is not <= `close.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+            .expect(FAILED)
     }
 
     pub fn instrument_id(&self) -> InstrumentId {
