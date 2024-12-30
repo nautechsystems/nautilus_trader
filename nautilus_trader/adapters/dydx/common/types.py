@@ -13,9 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+import pyarrow as pa
 
 from nautilus_trader.core import Data
 from nautilus_trader.model.custom import customdataclass
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 @customdataclass
@@ -25,3 +32,71 @@ class DYDXInternalError(Data):
     """
 
     error_msg: str
+
+    _schema = pa.schema(
+        {
+            "error_msg": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "DYDXInternalError"},
+    )
+
+
+@customdataclass
+class DYDXOraclePrice(Data):
+    """
+    Represents an oracle price.
+    """
+
+    instrument_id: InstrumentId
+    price: Decimal
+
+    _schema = pa.schema(
+        {
+            "instrument_id": pa.string(),
+            "price": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "DYDXOraclePrice"},
+    )
+
+    @staticmethod
+    def to_dict(obj: DYDXOraclePrice) -> dict[str, Any]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {
+            "instrument_id": obj.instrument_id.value,
+            "price": str(obj.price),
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(values: dict[str, Any]) -> DYDXOraclePrice:
+        """
+        Return a DYDXOraclePrice parsed from the given values.
+
+        Parameters
+        ----------
+        values : dict[str, Any]
+            The values for initialization.
+
+        Returns
+        -------
+        DYDXOraclePrice
+
+        """
+        return DYDXOraclePrice(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            price=Decimal(values["price"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
