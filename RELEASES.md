@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Improved validation for `BarSpecification` by ensuring `step` is always positive
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
+- Refined margin balance report for dYdX (#2154), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 
 ### Breaking Changes
