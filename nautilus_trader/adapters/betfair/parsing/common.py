@@ -25,6 +25,7 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments.betting import make_symbol
 from nautilus_trader.model.instruments.betting import null_handicap
 
@@ -87,3 +88,21 @@ def bet_side_to_order_side(side: BetSide) -> OrderSide:
         return OrderSide.SELL
     else:
         raise RuntimeError(f"Unknown side: {side}")
+
+
+def merge_instrument_fields(
+    old: BettingInstrument,
+    new: BettingInstrument,
+    logger,
+) -> BettingInstrument:
+    old_dict = old.to_dict(old)
+    new_dict = new.to_dict(new)
+    for key, value in new_dict.items():
+        if key in ("type", "id", "info"):
+            continue
+        if value != old_dict[key] and value:
+            old_value = old_dict[key]
+            logger.debug(f"Got updated field for {old.id}: {key=} {value=} {old_value=}")
+            old_dict[key] = value
+
+    return BettingInstrument.from_dict(old_dict)
