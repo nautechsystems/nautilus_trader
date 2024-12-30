@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `PerContractFeeModel`, thanks @stefansimik
+- Added additional timestamp properties for `NautilusKernel`
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 
 ### Internal Improvements
@@ -19,6 +20,8 @@ None
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
 - Fixed processing trade ticks from bars in `OrderMatchingEngine` - that could result in zero-size trades, thanks for reporting @stefansimik
 - Fixed `instrument is None` check flows for `DataEngine` and `PolymarketExecutionClient`
+- Fixed instrument updates in `BetfairDataClient` (#2152), thanks @limx0
+- Fixed processing of time events on backtest completion when they occur after the final data timestamp
 
 ---
 

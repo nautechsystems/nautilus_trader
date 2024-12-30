@@ -1202,6 +1202,7 @@ cdef class BacktestEngine:
                 raw_handlers,
                 last_ns,
                 only_now=True,
+                asof_now=True,
             )
             vec_time_event_handlers_drop(raw_handlers)
 
@@ -1248,6 +1249,7 @@ cdef class BacktestEngine:
         CVec raw_handler_vec,
         uint64_t ts_now,
         bint only_now,
+        bint asof_now = False,
     ):
         cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
@@ -1263,8 +1265,8 @@ cdef class BacktestEngine:
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
-            if (only_now and ts_event_init < ts_now) or (not only_now and ts_event_init == ts_now):
-                continue
+            if should_skip_time_event(ts_event_init, ts_now, only_now, asof_now):
+                continue  # Do not process event
 
             # Set all clocks to event timestamp
             set_logging_clock_static_time(ts_event_init)
