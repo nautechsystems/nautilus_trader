@@ -151,6 +151,7 @@ cdef class DataEngine(Component):
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_interval_type = config.time_bars_interval_type
         self._time_bars_origins = config.time_bars_origins or {}
+        self._time_bars_skip_first_non_full_bar = config.time_bars_skip_first_non_full_bar
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
 
@@ -2245,6 +2246,7 @@ cdef class DataEngine(Component):
                 timestamp_on_close=self._time_bars_timestamp_on_close,
                 interval_type=self._time_bars_interval_type,
                 time_bars_origin=self._time_bars_origins.get(bar_type.spec.aggregation),
+                skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
