@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added `PerContractFeeModel`, thanks @stefansimik
 - Added additional timestamp properties for `NautilusKernel`
 - Added `DYDXInternalError` and `DYDXOraclaPrice` data types for dYdX (#2155), thanks @davidsblom
+- Added proper `OrderBookDeltas` flags parsing for Betfair
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 
@@ -14,6 +15,7 @@ Released on TBD (UTC).
 - Improved validation for `TradeTick` by ensuring `size` is always positive
 - Improved validation for `OrderBookDelta` by ensuring `order.size` is positive when `action` is either `ADD` or `UPDATE`
 - Improved validation for `BarSpecification` by ensuring `step` is always positive
+- Standardized flags for `OrderBookDeltas` parsing across adapters
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom

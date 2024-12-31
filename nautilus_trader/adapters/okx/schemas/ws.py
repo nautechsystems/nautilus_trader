@@ -193,15 +193,15 @@ class OKXWsOrderbookData(msgspec.Struct):
             ts_init=ts_init,
         )
         deltas.append(clear)
-        num_bids_raw = len(bids_raw)
-        num_asks_raw = len(asks_raw)
 
-        for bid_id, bid in enumerate(bids_raw):
+        bids_len = len(bids_raw)
+        asks_len = len(asks_raw)
+
+        for idx, bid in enumerate(bids_raw):
             flags = 0
-
-            if bid_id == num_bids_raw - 1 and num_asks_raw == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = parse_okx_ws_delta(
@@ -216,12 +216,11 @@ class OKXWsOrderbookData(msgspec.Struct):
             )
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(asks_raw):
+        for idx, ask in enumerate(asks_raw):
             flags = 0
-
-            if ask_id == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = parse_okx_ws_delta(
@@ -263,15 +262,14 @@ class OKXWsOrderbookData(msgspec.Struct):
         ]
         deltas: list[OrderBookDelta] = []
 
-        num_bids_raw = len(bids_raw)
-        num_asks_raw = len(asks_raw)
+        bids_len = len(bids_raw)
+        asks_len = len(asks_raw)
 
-        for bid_id, bid in enumerate(bids_raw):
+        for idx, bid in enumerate(bids_raw):
             flags = 0
-
-            if bid_id == num_bids_raw - 1 and num_asks_raw == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = parse_okx_ws_delta(
@@ -286,12 +284,11 @@ class OKXWsOrderbookData(msgspec.Struct):
             )
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(asks_raw):
+        for idx, ask in enumerate(asks_raw):
             flags = 0
-
-            if ask_id == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = parse_okx_ws_delta(

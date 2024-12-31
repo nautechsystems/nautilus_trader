@@ -79,10 +79,8 @@ def test_catalog_query_filtered(
     deltas = catalog_betfair.order_book_deltas()
     assert len(deltas) == 2384
 
-    # No record flags so everything batched into one `OrderBookDeltas`
-    # Batching only makes sense with correct flags
     deltas = catalog_betfair.order_book_deltas(batched=True)
-    assert len(deltas) == 1
+    assert len(deltas) == 2007
 
 
 def test_catalog_query_custom_filtered(

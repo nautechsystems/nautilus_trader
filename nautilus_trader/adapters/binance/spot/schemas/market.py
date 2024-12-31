@@ -122,16 +122,16 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> OrderBookDeltas:
-        num_bids_raw = len(self.bids)
-        num_asks_raw = len(self.asks)
-
         deltas: list[OrderBookDelta] = [OrderBookDelta.clear(instrument_id, 0, ts_init, ts_init)]
+
+        bids_len = len(self.bids)
+        asks_len = len(self.asks)
 
         for idx, bid in enumerate(self.bids):
             flags = 0
-            if idx == num_bids_raw - 1 and num_asks_raw == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = bid.parse_to_order_book_delta(
@@ -146,7 +146,7 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
 
         for idx, ask in enumerate(self.asks):
             flags = 0
-            if idx == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST

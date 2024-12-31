@@ -38,7 +38,6 @@ from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_i
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
-from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
@@ -53,6 +52,7 @@ from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -321,11 +321,8 @@ def runner_change_to_order_book_snapshot(
     ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
 
     deltas: list[OrderBookDelta] = [
-        OrderBookDelta(
+        OrderBookDelta.clear(
             instrument_id,
-            BookAction.CLEAR,
-            NULL_ORDER,
-            flags=0,
             sequence=0,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -340,7 +337,7 @@ def runner_change_to_order_book_snapshot(
                 instrument_id,
                 BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                flags=0,
+                flags=RecordFlag.F_SNAPSHOT,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -355,7 +352,7 @@ def runner_change_to_order_book_snapshot(
                 instrument_id,
                 BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                flags=0,
+                flags=RecordFlag.F_SNAPSHOT,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -415,15 +412,24 @@ def runner_change_to_order_book_deltas(
 
     deltas: list[OrderBookDelta] = []
 
+    bids_len = len(rc.atb) if rc.atb else 0
+    asks_len = len(rc.atl) if rc.atl else 0
+
     # Bids are available to back (atb)
     if rc.atb is not None:
-        for bid in rc.atb:
+        for idx, bid in enumerate(rc.atb):
+            flags = 0
+            if idx == bids_len - 1 and asks_len == 0:
+                # F_LAST, 1 << 7
+                # Last message in the book event or packet from the venue for a given `instrument_id`
+                flags = RecordFlag.F_LAST
+
             book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
             delta = OrderBookDelta(
                 instrument_id,
                 BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                flags=0,
+                flags=flags,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -432,14 +438,20 @@ def runner_change_to_order_book_deltas(
 
     # Asks are available to back (atl)
     if rc.atl is not None:
-        for ask in rc.atl:
+        for idx, ask in enumerate(rc.atl):
+            flags = 0
+            if idx == asks_len - 1:
+                # F_LAST, 1 << 7
+                # Last message in the book event or packet from the venue for a given `instrument_id`
+                flags = RecordFlag.F_LAST
+
             book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
 
             delta = OrderBookDelta(
                 instrument_id,
                 BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                flags=0,
+                flags=flags,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -492,30 +504,46 @@ def runner_change_to_bsp_order_book_deltas(
 ) -> list[CustomData] | None:
     if not (rc.spb or rc.spl):
         return None
+
     deltas: list[BSPOrderBookDelta] = []
 
-    if rc.spb is not None:
-        for spb in rc.spb:
-            book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
+    bids_len = len(rc.spb) if rc.spb else 0
+    asks_len = len(rc.spl) if rc.spl else 0
+
+    if rc.spl is not None:
+        for idx, spl in enumerate(rc.spl):
+            flags = 0
+            if idx == bids_len - 1 and asks_len == 0:
+                # F_LAST, 1 << 7
+                # Last message in the book event or packet from the venue for a given `instrument_id`
+                flags = RecordFlag.F_LAST
+
+            book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
             delta = BSPOrderBookDelta(
                 instrument_id,
-                BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
+                BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
                 book_order,
-                flags=0,
+                flags=flags,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
             deltas.append(delta)
 
-    if rc.spl is not None:
-        for spl in rc.spl:
-            book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
+    if rc.spb is not None:
+        for idx, spb in enumerate(rc.spb):
+            flags = 0
+            if idx == asks_len - 1:
+                # F_LAST, 1 << 7
+                # Last message in the book event or packet from the venue for a given `instrument_id`
+                flags = RecordFlag.F_LAST
+
+            book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
             delta = BSPOrderBookDelta(
                 instrument_id,
-                BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
+                BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
                 book_order,
-                flags=0,
+                flags=flags,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
