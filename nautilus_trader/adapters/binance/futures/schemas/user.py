@@ -322,7 +322,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             )
         elif self.x == BinanceExecutionType.TRADE:
             # Determine commission
-            commission_asset: str | float | None = self.N
+            commission_asset: str | None = self.N
             commission_amount: str | float | None = self.n
 
             last_qty = Quantity(float(self.l), size_precision)
