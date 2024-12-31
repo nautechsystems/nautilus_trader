@@ -266,9 +266,9 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
         bids_len = len(self.contents.bids)
         asks_len = len(self.contents.asks)
 
-        for bid_id, bid in enumerate(self.contents.bids):
+        for idx, bid in enumerate(self.contents.bids):
             flags = 0
-            if bid_id == bids_len - 1 and asks_len == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
@@ -291,9 +291,9 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
             )
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(self.contents.asks):
+        for idx, ask in enumerate(self.contents.asks):
             flags = 0
-            if ask_id == asks_len - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
@@ -381,9 +381,9 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
         bids_len = len(self.contents.bids)
         asks_len = len(self.contents.asks)
 
-        for bid_id, bid in enumerate(self.contents.bids):
+        for idx, bid in enumerate(self.contents.bids):
             flags = 0
-            if bid_id == bids_len - 1 and asks_len == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
@@ -407,9 +407,9 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
 
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(self.contents.asks):
+        for idx, ask in enumerate(self.contents.asks):
             flags = 0
-            if ask_id == asks_len - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
@@ -471,11 +471,11 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
             bids_len = len(deltas_message.bids)
             asks_len = len(deltas_message.asks)
 
-            for bid_id, bid in enumerate(deltas_message.bids):
+            for idx, bid in enumerate(deltas_message.bids):
                 flags = 0
                 if (
                     delta_message_id == num_delta_messages - 1
-                    and bid_id == bids_len - 1
+                    and idx == bids_len - 1
                     and asks_len == 0
                 ):
                     # F_LAST, 1 << 7
@@ -500,9 +500,9 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
                 )
                 deltas.append(delta)
 
-            for ask_id, ask in enumerate(deltas_message.asks):
+            for idx, ask in enumerate(deltas_message.asks):
                 flags = 0
-                if delta_message_id == num_delta_messages - 1 and ask_id == asks_len - 1:
+                if delta_message_id == num_delta_messages - 1 and idx == asks_len - 1:
                     # F_LAST, 1 << 7
                     # Last message in the book event or packet from the venue for a given `instrument_id`
                     flags = RecordFlag.F_LAST
