@@ -485,7 +485,10 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .try_get::<Option<&str>, _>("position_id")
             .ok()
             .and_then(|x| x.map(PositionId::from));
-        let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
+        let account_id = row
+            .try_get::<Option<&str>, _>("account_id")
+            .ok()
+            .and_then(|x| x.map(AccountId::from));
         let last_trade_id = row
             .try_get::<Option<&str>, _>("last_trade_id")
             .ok()
@@ -518,9 +521,9 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .ok()
             .and_then(|x| x.map(|x| Decimal::from_str(x).unwrap()));
         let trailing_offset_type = row
-            .try_get::<Option<&str>, _>("trailing_offset_type")
+            .try_get::<Option<TrailingOffsetTypeModel>, _>("trailing_offset_type")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(|x| x.map(|x| x.0));
         let time_in_force = row
             .try_get::<&str, _>("time_in_force")
             .map(|x| TimeInForce::from_str(x).unwrap())?;
@@ -536,22 +539,18 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let avg_px = row.try_get::<Option<f64>, _>("avg_px").ok().flatten();
         let slippage = row.try_get::<Option<f64>, _>("slippage").ok().flatten();
         let commissions: Vec<Money> = row
-            .try_get::<&str, _>("commissions")?
-            .parse::<serde_json::Value>()
-            .unwrap()
+            .try_get::<serde_json::Value, _>("commissions")?
             .as_array()
-            .ok_or(sqlx::Error::Decode(
-                "Expected a JSON array for commissions".into(),
-            ))?
+            .ok_or_else(|| sqlx::Error::Decode("Expected a JSON array for commissions".into()))?
             .iter()
-            .map(|x| {
-                x.as_str()
-                    .ok_or(sqlx::Error::Decode(
-                        "Expected string values in the commissions array".into(),
-                    ))
+            .map(|val| {
+                val.as_str()
+                    .ok_or_else(|| {
+                        sqlx::Error::Decode("Expected string values in commissions array".into())
+                    })
                     .and_then(|s| {
                         Money::from_str(s).map_err(|e| {
-                            sqlx::Error::Decode(format!("Money parsing error: {}", e).into())
+                            sqlx::Error::Decode(format!("Invalid money format: {e}").into())
                         })
                     })
             })

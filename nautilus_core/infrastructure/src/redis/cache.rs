@@ -32,7 +32,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -866,6 +866,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 

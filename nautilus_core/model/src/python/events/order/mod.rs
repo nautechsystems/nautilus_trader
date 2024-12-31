@@ -35,6 +35,7 @@ pub mod pending_cancel;
 pub mod pending_update;
 pub mod rejected;
 pub mod released;
+pub mod snapshot;
 pub mod submitted;
 pub mod triggered;
 pub mod updated;

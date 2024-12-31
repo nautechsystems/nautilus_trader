@@ -19,7 +19,10 @@ use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny},
+    events::{
+        position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny,
+        OrderSnapshot,
+    },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -261,6 +264,137 @@ impl DatabaseQueries {
                 DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
         }
+    }
+
+    pub async fn add_order_snapshot(pool: &PgPool, snapshot: OrderSnapshot) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        // Insert trader if it does not exist
+        // TODO remove this when node and trader initialization is implemented
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+            "#,
+        )
+        .bind(snapshot.trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO "order" (
+                id, trader_id, strategy_id, instrument_id, client_order_id, venue_order_id, position_id,
+                account_id, last_trade_id, order_type, order_side, quantity, price, trigger_price,
+                trigger_type, limit_offset, trailing_offset, trailing_offset_type, time_in_force,
+                expire_time, filled_qty, liquidity_side, avg_px, slippage, commissions, status,
+                is_post_only, is_reduce_only, is_quote_quantity, display_qty, emulation_trigger,
+                trigger_instrument_id, contingency_type, order_list_id, linked_order_ids,
+                parent_order_id, exec_algorithm_id, exec_algorithm_params, exec_spawn_id, tags, init_id, ts_init, ts_last,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $1, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                $17::TRAILING_OFFSET_TYPE, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE SET
+                trader_id = $2,
+                strategy_id = $3,
+                instrument_id = $4,
+                venue_order_id = $5,
+                position_id = $6,
+                account_id = $7,
+                last_trade_id = $8,
+                order_type = $9,
+                order_side = $10,
+                quantity = $11,
+                price = $12,
+                trigger_price = $13,
+                trigger_type = $14,
+                limit_offset = $15,
+                trailing_offset = $16,
+                trailing_offset_type = $17::TRAILING_OFFSET_TYPE,
+                time_in_force = $18,
+                expire_time = $19,
+                filled_qty = $20,
+                liquidity_side = $21,
+                avg_px = $22,
+                slippage = $23,
+                commissions = $24,
+                status = $25,
+                is_post_only = $26,
+                is_reduce_only = $27,
+                is_quote_quantity = $28,
+                display_qty = $29,
+                emulation_trigger = $30,
+                trigger_instrument_id = $31,
+                contingency_type = $32,
+                order_list_id = $33,
+                linked_order_ids = $34,
+                parent_order_id = $35,
+                exec_algorithm_id = $36,
+                exec_algorithm_params = $37,
+                exec_spawn_id = $38,
+                tags = $39,
+                init_id = $40,
+                ts_init = $41,
+                ts_last = $42,
+                updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(snapshot.client_order_id.to_string())  // Used for both id and client_order_id
+            .bind(snapshot.trader_id.to_string())
+            .bind(snapshot.strategy_id.to_string())
+            .bind(snapshot.instrument_id.to_string())
+            .bind(snapshot.venue_order_id.map(|x| x.to_string()))
+            .bind(snapshot.position_id.map(|x| x.to_string()))
+            .bind(snapshot.account_id.map(|x| x.to_string()))
+            .bind(snapshot.last_trade_id.map(|x| x.to_string()))
+            .bind(snapshot.order_type.to_string())
+            .bind(snapshot.order_side.to_string())
+            .bind(snapshot.quantity.to_string())
+            .bind(snapshot.price.map(|x| x.to_string()))
+            .bind(snapshot.trigger_price.map(|x| x.to_string()))
+            .bind(snapshot.trigger_type.map(|x| x.to_string()))
+            .bind(snapshot.limit_offset.map(|x| x.to_string()))
+            .bind(snapshot.trailing_offset.map(|x| x.to_string()))
+            .bind(snapshot.trailing_offset_type.map(|x| x.to_string()))
+            .bind(snapshot.time_in_force.to_string())
+            .bind(snapshot.expire_time.map(|x| x.to_string()))
+            .bind(snapshot.filled_qty.to_string())
+            .bind(snapshot.liquidity_side.map(|x| x.to_string()))
+            .bind(snapshot.avg_px.map(|x| x.to_string()))
+            .bind(snapshot.slippage.map(|x| x.to_string()))
+            .bind(serde_json::to_string(&snapshot.commissions.iter().map(|x| x.to_string()).collect::<Vec<String>>()).unwrap())
+            .bind(snapshot.status.to_string())
+            .bind(snapshot.is_post_only)
+            .bind(snapshot.is_reduce_only)
+            .bind(snapshot.is_quote_quantity)
+            .bind(snapshot.display_qty.map(|x| x.to_string()))
+            .bind(snapshot.emulation_trigger.map(|x| x.to_string()))
+            .bind(snapshot.trigger_instrument_id.map(|x| x.to_string()))
+            .bind(snapshot.contingency_type.map(|x| x.to_string()))
+            .bind(snapshot.order_list_id.map(|x| x.to_string()))
+            .bind(snapshot.linked_order_ids.map(|x| x.iter().map(|x| x.to_string()).collect::<Vec<String>>()))
+            .bind(snapshot.parent_order_id.map(|x| x.to_string()))
+            .bind(snapshot.exec_algorithm_id.map(|x| x.to_string()))
+            .bind(snapshot.exec_algorithm_params.map(|x| serde_json::to_value(x).unwrap()))
+            .bind(snapshot.exec_spawn_id.map(|x| x.to_string()))
+            .bind(snapshot.tags.map(|x| x.iter().map(|x| x.to_string()).collect::<Vec<String>>()))
+            .bind(snapshot.init_id.to_string())
+            .bind(snapshot.ts_init.to_string())
+            .bind(snapshot.ts_last.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to insert into order table: {e}"))?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
     pub async fn add_position_snapshot(

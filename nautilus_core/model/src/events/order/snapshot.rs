@@ -21,7 +21,8 @@ use ustr::Ustr;
 
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
@@ -50,7 +51,7 @@ pub struct OrderSnapshot {
     /// The position ID associated with the order.
     pub position_id: Option<PositionId>,
     /// The account ID associated with the order.
-    pub account_id: AccountId,
+    pub account_id: Option<AccountId>,
     /// The orders last trade match ID.
     pub last_trade_id: Option<TradeId>,
     /// The order type.
@@ -70,7 +71,7 @@ pub struct OrderSnapshot {
     /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
-    pub trailing_offset_type: Option<TriggerType>,
+    pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order time in force.
     pub time_in_force: TimeInForce,
     /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.

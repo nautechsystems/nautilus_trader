@@ -26,7 +26,7 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -64,6 +64,7 @@ pub enum DatabaseQuery {
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, Option<ClientId>, bool),
+    AddOrderSnapshot(OrderSnapshot),
     AddPositionSnapshot(PositionSnapshot),
     AddAccount(AccountAny, bool),
     AddSignal(Signal),
@@ -518,6 +519,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
+    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrderSnapshot(snapshot.to_owned());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send query add_order_snapshot to database message handler: {e}"
+            )
+        })
+    }
+
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
@@ -876,6 +886,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                     .await
                 }
             },
+            DatabaseQuery::AddOrderSnapshot(snapshot) => {
+                DatabaseQueries::add_order_snapshot(pool, snapshot).await
+            }
             DatabaseQuery::AddPositionSnapshot(snapshot) => {
                 DatabaseQueries::add_position_snapshot(pool, snapshot).await
             }
