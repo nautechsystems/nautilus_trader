@@ -70,11 +70,11 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, int] _query_group_n_components
     cdef readonly dict[UUID4, list] _query_group_components
 
-    cdef readonly bint _time_bars_build_with_no_updates
-    cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
+    cdef readonly bint _time_bars_timestamp_on_close
+    cdef readonly bint _time_bars_skip_first_non_full_bar
+    cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly dict[BarAggregation, object] _time_bars_origins # pd.Timedelta or pd.DateOffset
-    cdef bint _time_bars_skip_first_non_full_bar
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
 
