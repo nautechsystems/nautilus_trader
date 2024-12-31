@@ -408,24 +408,25 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
     ) -> OrderBookDeltas:
         ts_event: int = millis_to_nanos(self.T) if self.T is not None else millis_to_nanos(self.E)
 
-        num_bids_raw = len(self.b)
-        num_asks_raw = len(self.a)
         deltas: list[OrderBookDelta] = []
 
         if snapshot:
             deltas.append(OrderBookDelta.clear(instrument_id, 0, ts_event, ts_init))
 
+        bids_len = len(self.b)
+        asks_len = len(self.a)
+
         for idx, bid in enumerate(self.b):
             flags = 0
-            if idx == num_bids_raw - 1 and num_asks_raw == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = bid.parse_to_order_book_delta(
                 instrument_id=instrument_id,
                 side=OrderSide.BUY,
-                flags=flags,
+                flags=RecordFlag.SNAPSHOT if snapshot else flags,
                 sequence=self.u,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -434,7 +435,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
 
         for idx, ask in enumerate(self.a):
             flags = 0
-            if idx == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
@@ -442,7 +443,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             delta = ask.parse_to_order_book_delta(
                 instrument_id=instrument_id,
                 side=OrderSide.SELL,
-                flags=flags,
+                flags=RecordFlag.SNAPSHOT if snapshot else flags,
                 sequence=self.u,
                 ts_event=ts_event,
                 ts_init=ts_init,

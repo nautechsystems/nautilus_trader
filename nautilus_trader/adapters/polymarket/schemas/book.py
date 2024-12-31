@@ -61,15 +61,15 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             ts_init=ts_init,
         )
         deltas.append(clear)
-        num_bids = len(self.bids)
-        num_asks = len(self.asks)
 
-        for bid_id, bid in enumerate(self.bids):
+        bids_len = len(self.bids)
+        asks_len = len(self.asks)
+
+        for idx, bid in enumerate(self.bids):
             flags = 0
-
-            if bid_id == num_bids - 1 and num_asks == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             order = BookOrder(
@@ -89,12 +89,11 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             )
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(self.asks):
+        for idx, ask in enumerate(self.asks):
             flags = 0
-
-            if ask_id == num_asks - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             order = BookOrder(

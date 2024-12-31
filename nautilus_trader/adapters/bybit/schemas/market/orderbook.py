@@ -47,18 +47,19 @@ class BybitDeltasList(msgspec.Struct, array_like=True):
         bids_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.b]
         asks_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.a]
 
-        num_bids_raw = len(bids_raw)
-        num_asks_raw = len(asks_raw)
         deltas: list[OrderBookDelta] = []
 
         if snapshot:
             deltas.append(OrderBookDelta.clear(instrument_id, 0, ts_event, ts_init))
 
+        bids_len = len(bids_raw)
+        asks_len = len(asks_raw)
+
         for idx, bid in enumerate(bids_raw):
             flags = 0
-            if idx == num_bids_raw - 1 and num_asks_raw == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = parse_bybit_delta(
@@ -76,7 +77,7 @@ class BybitDeltasList(msgspec.Struct, array_like=True):
 
         for idx, ask in enumerate(asks_raw):
             flags = 0
-            if idx == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
