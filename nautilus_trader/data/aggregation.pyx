@@ -702,6 +702,7 @@ cdef class TimeBarAggregator(BarAggregator):
         str interval_type = "left-open",
         object time_bars_origin=None, # pd.Timedelta or pd.DateOffset
         int composite_bar_build_delay=15, # in microsecond
+        bint skip_first_non_full_bar=False,
     ):
         super().__init__(
             instrument=instrument,
@@ -727,6 +728,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._batch_open_ns = 0
         self._batch_next_close_ns = 0
         self._time_bars_origin = time_bars_origin
+        self._skip_first_non_full_bar = skip_first_non_full_bar
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -840,6 +842,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"was {bar_aggregation_to_str(aggregation)}",
             )
 
+        if start_time == now:
+            self._skip_first_non_full_bar = False
+
         if self._add_delay and enable_delay:
             start_time += timedelta(microseconds=self._composite_bar_build_delay)
 
@@ -927,6 +932,13 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
         self._log.debug(f"Started timer {self._timer_name}")
+
+    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
+        if self._skip_first_non_full_bar:
+            self._builder.reset()
+            self._skip_first_non_full_bar = False
+        else:
+            BarAggregator._build_and_send(self, ts_event, ts_init)
 
     def _start_batch_time(self, uint64_t time_ns):
         cdef int step = self.bar_type.spec.step

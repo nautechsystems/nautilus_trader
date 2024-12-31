@@ -52,6 +52,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_timestamp_on_close: bool = True
     time_bars_interval_type: str = "left-open"
     time_bars_origins: dict | None = None
+    time_bars_skip_first_non_full_bar: bool = False
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
     external_clients: list[ClientId] | None = None
