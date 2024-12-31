@@ -275,11 +275,9 @@ mod tests {
         let schema_map = TradeTick::get_schema_map();
         let mut expected_map = HashMap::new();
 
-        expected_map.insert(
-            "price".to_string(),
-            format!("FixedSizeBinary({PRECISION_BYTES})"),
-        );
-        expected_map.insert("size".to_string(), "FixedSizeBinary(8)".to_string());
+        let precision_bytes = format!("FixedSizeBinary({PRECISION_BYTES})");
+        expected_map.insert("price".to_string(), precision_bytes.clone());
+        expected_map.insert("size".to_string(), precision_bytes);
         expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
         expected_map.insert("trade_id".to_string(), "Utf8".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());

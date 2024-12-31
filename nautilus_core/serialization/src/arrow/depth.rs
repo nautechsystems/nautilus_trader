@@ -541,7 +541,7 @@ mod tests {
             assert_eq!(bid_size.len(), 1);
             assert_eq!(
                 get_raw_quantity(bid_size.value(0)),
-                ((SCALAR * (i + 1) as f64) as QuantityRaw)
+                ((100.0 * SCALAR * (i + 1) as f64) as QuantityRaw)
             );
         }
 
