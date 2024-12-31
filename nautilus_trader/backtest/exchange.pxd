@@ -87,6 +87,8 @@ cdef class SimulatedExchange:
     """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
+    cdef readonly bint slip_and_fill_market_orders
+    """If market orders slip to the next price level after exhausting the top level to fill any remaining size.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
     """If orders with GTD time in force will be supported by the venue.\n\n:returns: `bool`"""
     cdef readonly bint support_contingent_orders

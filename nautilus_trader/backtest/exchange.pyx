@@ -108,6 +108,9 @@ cdef class SimulatedExchange:
         If trades should be processed by the matching engine(s) (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
+    slip_and_fill_market_orders : bool, default True
+        If market orders slip to the next price level after exhausting the top level to fill any remaining size.
+        If False, market orders behave like IOC (Immediate or Cancel) orders.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the exchange.
     support_contingent_orders : bool, default True
@@ -164,6 +167,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint trade_execution = False,
         bint reject_stop_orders = True,
+        bint slip_and_fill_market_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
         bint use_position_ids = True,
@@ -203,6 +207,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.trade_execution = trade_execution
         self.reject_stop_orders = reject_stop_orders
+        self.slip_and_fill_market_orders = slip_and_fill_market_orders
         self.support_gtd_orders = support_gtd_orders
         self.support_contingent_orders = support_contingent_orders
         self.use_position_ids = use_position_ids
@@ -351,6 +356,7 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             trade_execution=self.trade_execution,
             reject_stop_orders=self.reject_stop_orders,
+            slip_and_fill_market_orders=self.slip_and_fill_market_orders,
             support_gtd_orders=self.support_gtd_orders,
             support_contingent_orders=self.support_contingent_orders,
             use_position_ids=self.use_position_ids,

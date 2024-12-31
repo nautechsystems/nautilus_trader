@@ -145,8 +145,8 @@ class TestOrderMatchingEngine:
         )
         self.cache.add_order(client_order)
         self.matching_engine.process_order(client_order, self.account_id)
-        self.matching_engine.process_status(MarketStatusAction.OPEN)
         self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)
+
         messages: list[Any] = []
         self.msgbus.register("ExecEngine.process", messages.append)
 

@@ -395,6 +395,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         trade_execution: bool = False,
         reject_stop_orders: bool = True,
+        slip_and_fill_market_orders: bool = True,
         support_gtd_orders: bool = True,
         support_contingent_orders: bool = True,
         use_position_ids: bool = True,
@@ -441,6 +442,9 @@ cdef class BacktestEngine:
             If trades should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
+        slip_and_fill_market_orders : bool, default True
+            If market orders slip to the next price level after exhausting the top level to fill any remaining size.
+            If False, market orders behave like IOC (Immediate or Cancel) orders.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
         support_contingent_orders : bool, default True
@@ -500,6 +504,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             trade_execution=trade_execution,
             reject_stop_orders=reject_stop_orders,
+            slip_and_fill_market_orders=slip_and_fill_market_orders,
             support_gtd_orders=support_gtd_orders,
             support_contingent_orders=support_contingent_orders,
             use_position_ids=use_position_ids,
