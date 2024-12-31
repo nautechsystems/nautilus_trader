@@ -333,6 +333,7 @@ cdef class LimitIfTouchedOrder(Order):
             "exec_algorithm_params": self.exec_algorithm_params,
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
+            "init_id": str(self.init_id),
             "ts_init": self.ts_init,
             "ts_last": self.ts_last,
         }

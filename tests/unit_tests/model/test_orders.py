@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 
@@ -590,6 +591,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -764,6 +767,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -844,6 +849,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -934,6 +941,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -1052,6 +1061,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -1105,6 +1116,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -1222,6 +1235,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
@@ -1282,6 +1297,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
+        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
