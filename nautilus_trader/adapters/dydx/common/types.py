@@ -62,8 +62,7 @@ class DYDXOraclePrice(Data):
         metadata={"type": "DYDXOraclePrice"},
     )
 
-    @staticmethod
-    def to_dict(obj: DYDXOraclePrice) -> dict[str, Any]:
+    def to_dict(self, to_arrow=False) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 
@@ -73,10 +72,10 @@ class DYDXOraclePrice(Data):
 
         """
         return {
-            "instrument_id": obj.instrument_id.value,
-            "price": str(obj.price),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "instrument_id": self.instrument_id.value,
+            "price": str(self.price),
+            "ts_event": self.ts_event,
+            "ts_init": self.ts_init,
         }
 
     @staticmethod
