@@ -264,10 +264,7 @@ mod tests {
 
     use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
-    #[cfg(feature = "high_precision")]
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
-    #[cfg(not(feature = "high_precision"))]
-    use nautilus_model::types::fixed::FIXED_SCALAR;
+    use nautilus_model::types::fixed::SCALAR;
     use nautilus_model::types::price::PriceRaw;
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -381,21 +378,21 @@ mod tests {
         assert_eq!(price_values.len(), 2);
         assert_eq!(
             get_raw_price(price_values.value(0)),
-            (100.10 * FIXED_SCALAR) as PriceRaw
+            (100.10 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(price_values.value(1)),
-            (101.20 * FIXED_SCALAR) as PriceRaw
+            (101.20 * SCALAR) as PriceRaw
         );
 
         assert_eq!(size_values.len(), 2);
         assert_eq!(
             get_raw_price(size_values.value(0)),
-            (100.0 * FIXED_SCALAR) as PriceRaw
+            (100.0 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(size_values.value(1)),
-            (200.0 * FIXED_SCALAR) as PriceRaw
+            (200.0 * SCALAR) as PriceRaw
         );
         assert_eq!(order_id_values.len(), 2);
         assert_eq!(order_id_values.value(0), 1);
@@ -422,12 +419,12 @@ mod tests {
         let action = UInt8Array::from(vec![1, 2]);
         let side = UInt8Array::from(vec![1, 1]);
         let price = FixedSizeBinaryArray::from(vec![
-            &((101.10 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
-            &((101.20 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((101.10 * SCALAR) as PriceRaw).to_le_bytes(),
+            &((101.20 * SCALAR) as PriceRaw).to_le_bytes(),
         ]);
         let size = FixedSizeBinaryArray::from(vec![
-            &((10000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
-            &((9000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((10000.0 * SCALAR) as PriceRaw).to_le_bytes(),
+            &((9000.0 * SCALAR) as PriceRaw).to_le_bytes(),
         ]);
         let order_id = UInt64Array::from(vec![1, 2]);
         let flags = UInt8Array::from(vec![0, 0]);

@@ -241,10 +241,7 @@ mod tests {
 
     use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
-    #[cfg(feature = "high_precision")]
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
-    #[cfg(not(feature = "high_precision"))]
-    use nautilus_model::types::fixed::FIXED_SCALAR;
+    use nautilus_model::types::fixed::SCALAR;
     use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
@@ -347,19 +344,19 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_raw_price(bid_price_values.value(0)),
-            (100.10 * FIXED_SCALAR) as PriceRaw
+            (100.10 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(bid_price_values.value(1)),
-            (100.75 * FIXED_SCALAR) as PriceRaw
+            (100.75 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(ask_price_values.value(0)),
-            (101.50 * FIXED_SCALAR) as PriceRaw
+            (101.50 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(ask_price_values.value(1)),
-            (100.20 * FIXED_SCALAR) as PriceRaw
+            (100.20 * SCALAR) as PriceRaw
         );
 
         let bid_size_values = columns[2]
@@ -377,20 +374,20 @@ mod tests {
         assert_eq!(bid_size_values.len(), 2);
         assert_eq!(
             get_raw_quantity(bid_size_values.value(0)),
-            (1000.0 * FIXED_SCALAR) as QuantityRaw
+            (1000.0 * SCALAR) as QuantityRaw
         );
         assert_eq!(
             get_raw_quantity(bid_size_values.value(1)),
-            (750.0 * FIXED_SCALAR) as QuantityRaw
+            (750.0 * SCALAR) as QuantityRaw
         );
         assert_eq!(ask_size_values.len(), 2);
         assert_eq!(
             get_raw_quantity(ask_size_values.value(0)),
-            (500.0 * FIXED_SCALAR) as QuantityRaw
+            (500.0 * SCALAR) as QuantityRaw
         );
         assert_eq!(
             get_raw_quantity(ask_size_values.value(1)),
-            (300.0 * FIXED_SCALAR) as QuantityRaw
+            (300.0 * SCALAR) as QuantityRaw
         );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
@@ -417,12 +414,12 @@ mod tests {
         );
 
         let bid_size = FixedSizeBinaryArray::from(vec![
-            &((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
-            &((90.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((100.0 * SCALAR) as PriceRaw).to_le_bytes(),
+            &((90.0 * SCALAR) as PriceRaw).to_le_bytes(),
         ]);
         let ask_size = FixedSizeBinaryArray::from(vec![
-            &((110.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
-            &((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+            &((110.0 * SCALAR) as PriceRaw).to_le_bytes(),
+            &((100.0 * SCALAR) as PriceRaw).to_le_bytes(),
         ]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
