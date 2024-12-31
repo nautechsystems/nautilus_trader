@@ -384,11 +384,11 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field};
-    #[cfg(feature = "high_precision")]
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
-    #[cfg(not(feature = "high_precision"))]
-    use nautilus_model::types::fixed::FIXED_SCALAR;
-    use nautilus_model::{data::stubs::stub_depth10, types::price::PriceRaw};
+    use nautilus_model::types::fixed::SCALAR;
+    use nautilus_model::{
+        data::stubs::stub_depth10,
+        types::{price::PriceRaw, quantity::QuantityRaw},
+    };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
@@ -493,7 +493,7 @@ mod tests {
             assert_eq!(bid_price.len(), 1);
             assert_eq!(
                 get_raw_price(bid_price.value(0)),
-                (expected_bid_prices[i] * FIXED_SCALAR) as PriceRaw
+                (expected_bid_prices[i] * SCALAR) as PriceRaw
             );
             assert_eq!(
                 Price::from_raw(get_raw_price(bid_price.value(0)), price_precision).as_f64(),
@@ -519,7 +519,7 @@ mod tests {
             assert_eq!(ask_price.len(), 1);
             assert_eq!(
                 get_raw_price(ask_price.value(0)),
-                (expected_ask_prices[i] * FIXED_SCALAR) as PriceRaw
+                (expected_ask_prices[i] * SCALAR) as PriceRaw
             );
             assert_eq!(
                 Price::from_raw(get_raw_price(ask_price.value(0)), price_precision).as_f64(),
@@ -541,7 +541,7 @@ mod tests {
             assert_eq!(bid_size.len(), 1);
             assert_eq!(
                 get_raw_quantity(bid_size.value(0)),
-                ((FIXED_SCALAR * (i + 1) as f64) as QuantityRaw)
+                ((SCALAR * (i + 1) as f64) as QuantityRaw)
             );
         }
 
@@ -559,7 +559,7 @@ mod tests {
             assert_eq!(ask_size.len(), 1);
             assert_eq!(
                 get_raw_quantity(ask_size.value(0)),
-                ((FIXED_SCALAR * (i + 1) as f64) as QuantityRaw)
+                ((SCALAR * (i + 1) as f64) as QuantityRaw)
             );
         }
 

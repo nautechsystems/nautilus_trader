@@ -12,19 +12,13 @@
  */
 #define TRADE_ID_LEN 37
 
-/**
- * The maximum fixed-point precision.
- */
-#define FIXED_PRECISION 9
+#define PRECISION FIXED_HIGH_PRECISION
 
-#define FIXED_HIGH_PRECISION 18
+#define PRECISION FIXED_PRECISION
 
-/**
- * The scalar value corresponding to the maximum precision (10^9).
- */
-#define FIXED_SCALAR 1000000000.0
+#define SCALAR FIXED_HIGH_PRECISION_SCALAR
 
-#define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
+#define SCALAR FIXED_SCALAR
 
 /**
  * The maximum valid money amount which can be represented.

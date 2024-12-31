@@ -219,13 +219,9 @@ mod tests {
     use std::sync::Arc;
 
     use crate::arrow::get_raw_price;
-    use arrow::array::{as_fixed_size_list_array, Array};
+    use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
-    #[cfg(feature = "high_precision")]
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR;
-    #[cfg(not(feature = "high_precision"))]
-    use nautilus_model::types::fixed::FIXED_SCALAR;
-    use nautilus_model::types::price::PriceRaw;
+    use nautilus_model::types::{fixed::SCALAR, price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
     use super::*;
@@ -320,47 +316,47 @@ mod tests {
         assert_eq!(open_values.len(), 2);
         assert_eq!(
             get_raw_price(open_values.value(0)),
-            (100.10 * FIXED_SCALAR) as PriceRaw
+            (100.10 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(open_values.value(1)),
-            (100.00 * FIXED_SCALAR) as PriceRaw
+            (100.00 * SCALAR) as PriceRaw
         );
         assert_eq!(high_values.len(), 2);
         assert_eq!(
             get_raw_price(high_values.value(0)),
-            (102.00 * FIXED_SCALAR) as PriceRaw
+            (102.00 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(high_values.value(1)),
-            (100.00 * FIXED_SCALAR) as PriceRaw
+            (100.00 * SCALAR) as PriceRaw
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(
             get_raw_price(low_values.value(0)),
-            (100.00 * FIXED_SCALAR) as PriceRaw
+            (100.00 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(low_values.value(1)),
-            (100.00 * FIXED_SCALAR) as PriceRaw
+            (100.00 * SCALAR) as PriceRaw
         );
         assert_eq!(close_values.len(), 2);
         assert_eq!(
             get_raw_price(close_values.value(0)),
-            (101.00 * FIXED_SCALAR) as PriceRaw
+            (101.00 * SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(close_values.value(1)),
-            (100.10 * FIXED_SCALAR) as PriceRaw
+            (100.10 * SCALAR) as PriceRaw
         );
         assert_eq!(volume_values.len(), 2);
         assert_eq!(
             get_raw_quantity(volume_values.value(0)),
-            (1100.0 * FIXED_SCALAR) as QuantityRaw
+            (1100.0 * SCALAR) as QuantityRaw
         );
         assert_eq!(
             get_raw_quantity(volume_values.value(1)),
-            (1110.0 * FIXED_SCALAR) as QuantityRaw
+            (1110.0 * SCALAR) as QuantityRaw
         );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
@@ -372,7 +368,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        use nautilus_model::types::price::PriceRaw;
+        use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
 
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);

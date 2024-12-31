@@ -31,8 +31,9 @@ use nautilus_model::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
     types::{
-        fixed::{raw_i64_to_raw_i128, raw_u64_to_raw_u128, FIXED_SCALAR},
-        price::PriceRaw,
+        fixed::SCALAR,
+        price::{decode_raw_price_i64, PriceRaw},
+        quantity::decode_raw_quantity_u64,
         Currency, Price, Quantity,
     },
 };
@@ -224,7 +225,7 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => Price::from(format!("{}", value as f64 / FIXED_SCALAR)),
+        _ => Price::from(format!("{}", value as f64 / SCALAR)),
     }
 }
 
@@ -233,7 +234,7 @@ pub fn decode_price_increment(value: i64, precision: u8) -> Price {
 pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
     match value {
         i64::MAX => None,
-        _ => Some(Price::from_raw(raw_i64_to_raw_i128(value), precision)),
+        _ => Some(Price::from_raw(decode_raw_price_i64(value), precision)),
     }
 }
 
@@ -252,8 +253,8 @@ pub fn decode_multiplier(value: i64) -> Quantity {
     match value {
         0 | i64::MAX => Quantity::from(1),
         value => {
-            let scaled_value = std::cmp::max(value as u64, FIXED_SCALAR as u64);
-            Quantity::from_raw(raw_u64_to_raw_u128(scaled_value), 0)
+            let scaled_value = std::cmp::max(value as u64, SCALAR as u64);
+            Quantity::from_raw(decode_raw_quantity_u64(scaled_value), 0)
         }
     }
 }
@@ -397,7 +398,7 @@ pub fn decode_options_contract_v1(
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
     let strike_price = Price::from_raw(
-        raw_i64_to_raw_i128(msg.strike_price),
+        decode_raw_price_i64(msg.strike_price),
         strike_price_currency.precision,
     );
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
@@ -497,8 +498,8 @@ pub fn decode_mbo_msg(
         if include_trades {
             let trade = TradeTick::new(
                 instrument_id,
-                Price::from_raw(raw_i64_to_raw_i128(msg.price), price_precision),
-                Quantity::from_raw(raw_u64_to_raw_u128(msg.size as u64), 0),
+                Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+                Quantity::from_raw(decode_raw_quantity_u64(msg.size as u64), 0),
                 parse_aggressor_side(msg.side),
                 TradeId::new(itoa::Buffer::new().format(msg.sequence)),
                 msg.ts_recv.into(),
@@ -512,8 +513,8 @@ pub fn decode_mbo_msg(
 
     let order = BookOrder::new(
         side,
-        Price::from_raw(raw_i64_to_raw_i128(msg.price), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(msg.size as u64), 0),
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(msg.size as u64), 0),
         msg.order_id,
     );
 
@@ -538,8 +539,8 @@ pub fn decode_trade_msg(
 ) -> anyhow::Result<TradeTick> {
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(raw_i64_to_raw_i128(msg.price), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(msg.size as u64), 0),
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(msg.size as u64), 0),
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         msg.ts_recv.into(),
@@ -558,18 +559,18 @@ pub fn decode_tbbo_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(raw_i64_to_raw_i128(top_level.bid_px), price_precision),
-        Price::from_raw(raw_i64_to_raw_i128(top_level.ask_px), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(top_level.bid_sz as u64), 0),
-        Quantity::from_raw(raw_u64_to_raw_u128(top_level.ask_sz as u64), 0),
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(top_level.bid_sz as u64), 0),
+        Quantity::from_raw(decode_raw_quantity_u64(top_level.ask_sz as u64), 0),
         msg.ts_recv.into(),
         ts_init,
     );
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(raw_i64_to_raw_i128(msg.price), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(msg.size as u64), 0),
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(msg.size as u64), 0),
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         msg.ts_recv.into(),
@@ -589,10 +590,10 @@ pub fn decode_mbp1_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(raw_i64_to_raw_i128(top_level.bid_px), price_precision),
-        Price::from_raw(raw_i64_to_raw_i128(top_level.ask_px), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(top_level.bid_sz as u64), 0),
-        Quantity::from_raw(raw_u64_to_raw_u128(top_level.ask_sz as u64), 0),
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(top_level.bid_sz as u64), 0),
+        Quantity::from_raw(decode_raw_quantity_u64(top_level.ask_sz as u64), 0),
         msg.ts_recv.into(),
         ts_init,
     );
@@ -600,8 +601,8 @@ pub fn decode_mbp1_msg(
     let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
         Some(TradeTick::new(
             instrument_id,
-            Price::from_raw(raw_i64_to_raw_i128(msg.price), price_precision),
-            Quantity::from_raw(raw_u64_to_raw_u128(msg.size as u64), 0),
+            Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+            Quantity::from_raw(decode_raw_quantity_u64(msg.size as u64), 0),
             parse_aggressor_side(msg.side),
             TradeId::new(itoa::Buffer::new().format(msg.sequence)),
             msg.ts_recv.into(),
@@ -623,10 +624,10 @@ pub fn decode_bbo_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(raw_i64_to_raw_i128(top_level.bid_px), price_precision),
-        Price::from_raw(raw_i64_to_raw_i128(top_level.ask_px), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(top_level.bid_sz as u64), 0),
-        Quantity::from_raw(raw_u64_to_raw_u128(top_level.ask_sz as u64), 0),
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(top_level.bid_sz as u64), 0),
+        Quantity::from_raw(decode_raw_quantity_u64(top_level.ask_sz as u64), 0),
         msg.ts_recv.into(),
         ts_init,
     );
@@ -648,15 +649,15 @@ pub fn decode_mbp10_msg(
     for level in &msg.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
-            Price::from_raw(raw_i64_to_raw_i128(level.bid_px), price_precision),
-            Quantity::from_raw(raw_u64_to_raw_u128(level.bid_sz as u64), 0),
+            Price::from_raw(decode_raw_price_i64(level.bid_px), price_precision),
+            Quantity::from_raw(decode_raw_quantity_u64(level.bid_sz as u64), 0),
             0,
         );
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
-            Price::from_raw(raw_i64_to_raw_i128(level.ask_px), price_precision),
-            Quantity::from_raw(raw_u64_to_raw_u128(level.ask_sz as u64), 0),
+            Price::from_raw(decode_raw_price_i64(level.ask_px), price_precision),
+            Quantity::from_raw(decode_raw_quantity_u64(level.ask_sz as u64), 0),
             0,
         );
 
@@ -758,11 +759,11 @@ pub fn decode_ohlcv_msg(
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(raw_i64_to_raw_i128(msg.open), price_precision),
-        Price::from_raw(raw_i64_to_raw_i128(msg.high), price_precision),
-        Price::from_raw(raw_i64_to_raw_i128(msg.low), price_precision),
-        Price::from_raw(raw_i64_to_raw_i128(msg.close), price_precision),
-        Quantity::from_raw(raw_u64_to_raw_u128(msg.volume), 0),
+        Price::from_raw(decode_raw_price_i64(msg.open), price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.high), price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.low), price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.close), price_precision),
+        Quantity::from_raw(decode_raw_quantity_u64(msg.volume), 0),
         ts_event,
         ts_init,
     );

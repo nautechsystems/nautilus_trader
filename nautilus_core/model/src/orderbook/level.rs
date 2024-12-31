@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use crate::{
     data::order::{BookOrder, OrderId},
     orderbook::{BookIntegrityError, BookPrice},
-    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw},
+    types::{fixed::SCALAR, quantity::QuantityRaw},
 };
 
 /// Represents a discrete price level in an order book.
@@ -126,7 +126,7 @@ impl BookLevel {
     pub fn exposure_raw(&self) -> u64 {
         self.orders
             .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64)
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as u64)
             .sum()
     }
 

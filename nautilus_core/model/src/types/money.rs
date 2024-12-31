@@ -28,11 +28,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::FIXED_PRECISION;
-use crate::types::{
-    fixed::{f64_to_fixed_i64, fixed_i64_to_f64},
-    Currency,
-};
+use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64, PRECISION};
+use crate::types::Currency;
 
 /// The maximum valid money amount which can be represented.
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
@@ -112,7 +109,7 @@ impl Money {
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
         let precision = self.currency.precision;
-        let rescaled_raw = self.raw / i64::pow(10, u32::from(FIXED_PRECISION - precision));
+        let rescaled_raw = self.raw / i64::pow(10, u32::from(PRECISION - precision));
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
 

@@ -31,14 +31,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::check_fixed_precision;
-#[cfg(feature = "high_precision")]
 use super::fixed::{
-    FIXED_HIGH_PRECISION as FIXED_PRECISION, FIXED_HIGH_PRECISION_SCALAR as FIXED_SCALAR,
+    check_fixed_precision, f64_to_fixed_u128, fixed_u128_to_f64, PRECISION, SCALAR,
 };
-#[cfg(not(feature = "high_precision"))]
-use super::fixed::{FIXED_PRECISION, FIXED_SCALAR};
-use crate::types::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 use nautilus_core::correctness::check_positive_u128;
 
 /// The sentinel value for an unset or null quantity.
@@ -66,6 +61,16 @@ pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Resul
 #[cfg(feature = "high_precision")]
 pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
     check_positive_u128(value, param)
+}
+
+#[cfg(feature = "high_precision")]
+pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
+    value as QuantityRaw * (10 as QuantityRaw).pow(PRECISION as u32)
+}
+
+#[cfg(not(feature = "high_precision"))]
+pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
+    value
 }
 
 /// Represents a quantity with a non-negative value.
@@ -170,8 +175,7 @@ impl Quantity {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw =
-            self.raw / QuantityRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
+        let rescaled_raw = self.raw / QuantityRaw::pow(10, u32::from(PRECISION - self.precision));
         // TODO: casting u128 to i128 is not a good idea
         // check if decimal library provides a better way
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
@@ -317,7 +321,7 @@ impl Mul for Quantity {
             .expect("Overflow occurred when multiplying `Quantity`");
 
         Self {
-            raw: result_raw / (FIXED_SCALAR as QuantityRaw),
+            raw: result_raw / (SCALAR as QuantityRaw),
             precision,
         }
     }

@@ -19,12 +19,22 @@
 //! ensuring consistent precision and scaling across various types and calculations.
 
 /// The maximum fixed-point precision.
-pub const FIXED_PRECISION: u8 = 9;
-pub const FIXED_HIGH_PRECISION: u8 = 18;
+const FIXED_PRECISION: u8 = 9;
+const FIXED_HIGH_PRECISION: u8 = 18;
+
+#[cfg(feature = "high_precision")]
+pub const PRECISION: u8 = FIXED_HIGH_PRECISION;
+#[cfg(not(feature = "high_precision"))]
+pub const PRECISION: u8 = FIXED_PRECISION;
 
 /// The scalar value corresponding to the maximum precision (10^9).
-pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
-pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 1_000_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
+const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
+const FIXED_HIGH_PRECISION_SCALAR: f64 = 1_000_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
+
+#[cfg(feature = "high_precision")]
+pub const SCALAR: f64 = FIXED_HIGH_PRECISION_SCALAR;
+#[cfg(not(feature = "high_precision"))]
+pub const SCALAR: f64 = FIXED_SCALAR;
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
 ///
@@ -135,14 +145,6 @@ pub fn fixed_u64_to_f64(value: u64) -> f64 {
 #[must_use]
 pub fn fixed_u128_to_f64(value: u128) -> f64 {
     (value as f64) / FIXED_HIGH_PRECISION_SCALAR
-}
-
-pub fn raw_i64_to_raw_i128(value: i64) -> i128 {
-    value as i128 * 10_i128.pow(FIXED_PRECISION as u32)
-}
-
-pub fn raw_u64_to_raw_u128(value: u64) -> u128 {
-    value as u128 * 10_u128.pow(FIXED_PRECISION as u32)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

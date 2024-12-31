@@ -35,9 +35,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-#[cfg(not(feature = "high_precision"))]
-use super::fixed::FIXED_PRECISION;
-use super::fixed::{check_fixed_precision, f64_to_fixed_i128, fixed_i128_to_f64, FIXED_SCALAR};
+use super::fixed::{
+    check_fixed_precision, f64_to_fixed_i128, fixed_i128_to_f64, PRECISION, SCALAR,
+};
 #[cfg(not(feature = "high_precision"))]
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
@@ -80,6 +80,16 @@ pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> 
     check_positive_i128(value, param)
 }
 
+#[cfg(feature = "high_precision")]
+pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
+    value as PriceRaw * (10 as PriceRaw).pow(PRECISION as u32)
+}
+
+#[cfg(not(feature = "high_precision"))]
+pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
+    value
+}
+
 /// Represents a price in a market.
 ///
 /// The number of decimal places may vary. For certain asset classes, prices may
@@ -115,7 +125,7 @@ impl Price {
     pub fn max(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self {
-            raw: (PRICE_MAX * FIXED_SCALAR) as PriceRaw,
+            raw: (PRICE_MAX * SCALAR) as PriceRaw,
             precision,
         }
     }
@@ -130,7 +140,7 @@ impl Price {
     pub fn min(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self {
-            raw: (PRICE_MIN * FIXED_SCALAR) as PriceRaw,
+            raw: (PRICE_MIN * SCALAR) as PriceRaw,
             precision,
         }
     }
@@ -220,7 +230,7 @@ impl Price {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / i64::pow(10, u32::from(FIXED_PRECISION - self.precision));
+        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
     }
 }
@@ -257,7 +267,10 @@ impl Price {
     /// Returns the value of this instance as a `Decimal`.
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
-        todo!()
+        // Scale down the raw value to match the precision
+        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
+        #[allow(clippy::useless_conversion)]
+        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
     }
 }
 
