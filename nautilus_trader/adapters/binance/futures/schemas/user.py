@@ -323,12 +323,18 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         elif self.x == BinanceExecutionType.TRADE:
             # Determine commission
             commission_asset: str | None = self.N
-            commission_amount: str | None = self.n
+            commission_amount: str | float | None = self.n
+
+            last_qty = Quantity(float(self.l), size_precision)
+            last_px = Price(float(self.L), price_precision)
+
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
-                # Commission in margin collateral currency
-                commission = Money(0, instrument.quote_currency)
+                fee = instrument.maker_fee if self.m else instrument.taker_fee
+                commission_asset = instrument.quote_currency
+                commission_amount = float(last_qty * last_px * fee)
+                commission = Money(commission_amount, commission_asset)
 
             venue_position_id: PositionId | None = None
             if exec_client.use_position_ids:
@@ -343,8 +349,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 trade_id=TradeId(str(self.t)),  # Trade ID
                 order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
                 order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
-                last_qty=Quantity(float(self.l), size_precision),
-                last_px=Price(float(self.L), price_precision),
+                last_qty=last_qty,
+                last_px=last_px,
                 quote_currency=instrument.quote_currency,
                 commission=commission,
                 liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
@@ -442,6 +448,43 @@ class BinanceFuturesTradeLiteMsg(msgspec.Struct, frozen=True):
     L: str  # Last Filled Price
     t: int  # Trade ID
     m: bool  # Is trade the maker side
+
+    def to_order_data(self) -> BinanceFuturesOrderData:
+        """
+        Convert TradeLite message to OrderData format.
+        """
+        return BinanceFuturesOrderData(
+            s=self.s,
+            c=self.c,
+            S=self.S,
+            o=BinanceOrderType.LIMIT,
+            f=BinanceTimeInForce.GTC,
+            q=self.q,
+            p=self.p,
+            ap="0",
+            x=BinanceExecutionType.TRADE,
+            X=BinanceOrderStatus.FILLED,
+            i=self.i,
+            l=self.l,
+            z=self.l,
+            L=self.L,
+            N=None,
+            n=None,
+            T=self.T,
+            t=self.t,
+            b="0",
+            a="0",
+            m=self.m,
+            R=False,
+            wt=BinanceFuturesWorkingType.CONTRACT_PRICE,
+            ot=BinanceOrderType.LIMIT,
+            ps=BinanceFuturesPositionSide.BOTH,
+            rp="0",
+            gtd=0,
+            pP=False,
+            si=0,
+            ss=0,
+        )
 
 
 class BinanceFuturesTradeLiteWrapper(msgspec.Struct, frozen=True):

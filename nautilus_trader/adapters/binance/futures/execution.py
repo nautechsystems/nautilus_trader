@@ -21,6 +21,7 @@ import msgspec
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
@@ -136,6 +137,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
             BinanceFuturesEventType.TRADE_LITE: self._handle_trade_lite,
         }
+
+        self._use_trade_lite = config.use_trade_lite
+        if self._use_trade_lite:
+            self._log.info("TRADE_LITE events will be used", LogColor.BLUE)
 
         # WebSocket futures schema decoders
         self._decoder_futures_user_msg_wrapper = msgspec.json.Decoder(BinanceFuturesUserMsgWrapper)
@@ -290,7 +295,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     def _handle_order_trade_update(self, raw: bytes) -> None:
         order_update = self._decoder_futures_order_update_wrapper.decode(raw)
-        order_update.data.o.handle_order_trade_update(self)
+        if not (self._use_trade_lite and order_update.data.o.x == BinanceExecutionType.TRADE):
+            order_update.data.o.handle_order_trade_update(self)
 
     def _handle_margin_call(self, raw: bytes) -> None:
         self._log.warning("MARGIN CALL received")  # Implement
@@ -303,6 +309,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     def _handle_trade_lite(self, raw: bytes) -> None:
         trade_lite = self._decoder_futures_trade_lite_wrapper.decode(raw)
-        self._log.warning(
-            f"Received {trade_lite} which is not entirely implemented (needs to be parsed into a fill report)",
-        )
+        if not self._use_trade_lite:
+            self._log.debug(
+                "TradeLite event received but not enabled in config",
+            )
+            return
+        order_data = trade_lite.data.to_order_data()
+        order_data.handle_order_trade_update(self)
