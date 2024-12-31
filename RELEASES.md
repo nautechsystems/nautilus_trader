@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added additional timestamp properties for `NautilusKernel`
 - Added `DYDXInternalError` and `DYDXOraclaPrice` data types for dYdX (#2155), thanks @davidsblom
 - Added proper `OrderBookDeltas` flags parsing for Betfair
+- Added `slip_and_fill_market_orders` config option for `BacktestVenueConfig` and `OrderMatchingEngine` (default `True` to retain current behavior)
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 
@@ -43,7 +44,7 @@ Released on 25th December 2024 (UTC).
 - Added WebSocket API trading support for Bybit (#2129), thanks @sunlei
 - Added `BybitOrderBookDeltaDataLoader` with tutorial for Bybit backtesting (#2131), thanks @DeevsDeevs
 - Added margin and commission docs (#2128), thanks @stefansimik
-- Added optional `depth` param for some `OrderBook` methods
+- Added optional `depth` parameter for some `OrderBook` methods
 - Added trade execution support where trades are processed by the matching engine (can be useful backtesting with throttled book and trades data)
 - Refactored to use `exchange` MIC code as `venue` for instrument IDs with Databento GLBX dataset (#2108, #2121, #2124, #2126), thanks @faysou
 - Refactored to use `self.config` attributes consistently (#2120), thanks @stefansimik
@@ -277,7 +278,7 @@ Released on 22nd October 2024 (UTC).
 - Added `Clock.timestamp_us()` method for UNIX timestamps in microseconds (μs)
 - Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Added validation for venue `book_type` configuration vs data (prevents an issue where top-of-book data is used when order book data is expected)
-- Added `compute_effective_deltas` config option for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)
+- Added `compute_effective_deltas` config option for `PolymarketDataClientConfig`, reducing snapshot size (default `False` to retain current behavior)
 - Added rate limiter for `WebSocketClient` (#1994), thanks @Pushkarm029
 - Added in the money probability field to GreeksData (#1995), thanks @faysou
 - Added `on_signal(signal)` handler for custom signal data
@@ -373,8 +374,8 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Added `Symbol.topic()` method for obtaining the subscription topic of parent or composite symbols
 - Added `Symbol.is_composite()` method to determine if symbol is made up of parts with period (`.`) delimiters
 - Added `underlying` filter parameter for `Cache.instruments(...)` method
-- Added `reduce_only` parameter for `Strategy.close_position(...)` method (`True` by default to maintain current behavior)
-- Added `reduce_only` parameter for `Strategy.close_all_positions(...)` method (`True` by default to maintain current behavior)
+- Added `reduce_only` parameter for `Strategy.close_position(...)` method (default `True` to retain current behavior)
+- Added `reduce_only` parameter for `Strategy.close_all_positions(...)` method (default `True` to retain current behavior)
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 - Implemented file rotation for `StreamingFeatherWriter` with internal improvements using `Clock` and `Cache` (#1954, #1961), thanks @graceyangfan
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
@@ -391,7 +392,7 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 
 ### Breaking Changes
 - Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
-- Standardized Stop-Loss (SL) and Take-Profit (TP) param ordering for `OrderFactory.bracket(...)` including: `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
+- Standardized Stop-Loss (SL) and Take-Profit (TP) parameter ordering for `OrderFactory.bracket(...)` including: `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
 
 ### Fixes
 - Fixed `LoggingConfig` issue for `level_file` when used with `use_pyo3=True` (was not passing through the `level_file` setting), thanks for reporting @xt2014
@@ -401,7 +402,7 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Fixed edge case where exceptions raised in `BacktestNode` prior to engine initialization would not produce logs, thanks for reporting @faysou
 - Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
 - Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
-- Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
+- Fixed `OrderFactory.bracket(...)` parameter ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
 - Fixed `Cfd` instrument Arrow schema and serialization
 - Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
 - Fixed Databento parent and continuous contract subscriptions (using new symbol root)
@@ -441,7 +442,7 @@ Released on 7th September 2024 (UTC).
 - Added `OrderBookDeltas` batching support for `ParquetDataCatalog` (use `data_cls` of `OrderBookDeltas` to batch with the same flags method as live adapters)
 - Added `RetryManagerPool` to abstract common retry functionality for all adapters
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
-- Added `BacktestRunConfig.dispose_on_completion` config option to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
+- Added `BacktestRunConfig.dispose_on_completion` config option to control post-run disposal behavior for each internal backtest engine (default `True` to retain current behavior)
 - Added `recv_window_ms` config option for `BinanceExecClientConfig`
 - Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Added custom `client_order_id` parameters to `OrderFactory` methods
@@ -710,13 +711,13 @@ Released on 18th May 2024 (UTC).
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 - Added `ParquetDataCatalog` S3 support (#1620), thanks @benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks @rsmb7z
-- Added `SandboxExecutionClientConfig.bar_execution` option (#1646), thanks @davidsblom
+- Added `SandboxExecutionClientConfig.bar_execution` config option (#1646), thanks @davidsblom
 - Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
 - Improved `LiveTimer` robustness and flexibility by not requiring positive intervals or stop times in the future (will immediately produce a time event), thanks for reporting @davidsblom
 
 ### Breaking Changes
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
-- Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
+- Changed `tags` parameter and return type from `str` to `list[str]` (more naturally expresses multiple tags)
 - Changed `Order.to_dict()` `commission` and `linked_order_id` fields to lists of strings rather than comma separated strings
 - Changed `OrderMatchingEngine` to no longer process internally aggregated bars for execution (no tests failed, but still classifying as a behavior change), thanks for reporting @davidsblom
 
@@ -767,7 +768,7 @@ Released on 20th April 2024 (UTC).
 - Changed Arrow schema for `CryptoFuture`: added `is_inverse` boolean field
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
 - Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
-- Renamed `register_serializable_object` to `register_serializable_type` (also renames first param from `obj` to `cls`)
+- Renamed `register_serializable_object` to `register_serializable_type` (also renames first parameter from `obj` to `cls`)
 
 ### Fixes
 - Fixed `MessageBus` pattern resolving (fixes a performance regression where topics published with no subscribers would always re-resolve)
@@ -849,8 +850,8 @@ Released on 25th February 2024 (UTC).
 - Added `OptionsSpread` instrument type
 - Added `InstrumentClass.FUTURE_SPREAD`
 - Added `InstrumentClass.OPTION_SPREAD`
-- Added `managed` parameter to `subscribe_order_book_deltas`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
-- Added `managed` parameter to `subscribe_order_book_snapshots`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
+- Added `managed` parameter to `subscribe_order_book_deltas`, default `True` to retain current behavior (if false then the data engine will not automatically manage a book)
+- Added `managed` parameter to `subscribe_order_book_snapshots`, default `True` to retain current behavior (if false then the data engine will not automatically manage a book)
 - Added additional validations for `OrderMatchingEngine` (will now reject orders with incorrect price or quantity precisions)
 - Removed `interval_ms` 20 millisecond limitation for `subscribe_order_book_snapshots` (i.e. just needs to be positive), although we recommend you consider subscribing to deltas below 100 milliseconds
 - Ported `LiveClock` and `LiveTimer` implementations to Rust
@@ -890,7 +891,7 @@ Released on 9th February 2024 (UTC).
 
 ### Enhancements
 - Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
-- Improved Interactive Brokers adapter symbology and parsing with a `strict_symbology` option, thanks @rsmb7z and @fhill2
+- Improved Interactive Brokers adapter symbology and parsing with a `strict_symbology` config option, thanks @rsmb7z and @fhill2
 
 ### Breaking Changes
 - Reorganized configuration objects (separated into a `config` module per subpackage, with re-exports from `nautilus_trader.config`)
@@ -975,8 +976,8 @@ Released on 12th January 2024 (UTC).
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 - Added `InstrumentClass.BOND`
-- Added `MessageBusConfig` `use_trader_prefix` and `use_trader_id` options (provides more control over stream names)
-- Added `CacheConfig.drop_instruments_on_reset` (default true to retain current behavior)
+- Added `MessageBusConfig` `use_trader_prefix` and `use_trader_id` config options (provides more control over stream names)
+- Added `CacheConfig.drop_instruments_on_reset` (default `True` to retain current behavior)
 - Implemented core logging interface via the `log` crate, thanks @twitu
 - Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time), thanks @twitu
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
@@ -1000,7 +1001,7 @@ Released on 12th January 2024 (UTC).
 - Renamed `AssetClass.BOND` to `AssetClass.DEBT` (more conventional terminology)
 - Removed `AssetClass.METAL` (not strictly an asset class, more a futures category)
 - Removed `AssetClass.ENERGY` (not strictly an asset class, more a futures category)
-- Removed `multiplier` param from `Equity` constructor (not applicable)
+- Removed `multiplier` parameter from `Equity` constructor (not applicable)
 - Removed `size_precision`, `size_increment`, and `multiplier` fields from `Equity` dictionary representation (not applicable)
 - Removed `TracingConfig` (now redundant with new logging implementation)
 - Removed `Ticker` data type and associated methods (not a type which can be practically normalized and so becomes adapter specific generic data)
@@ -1068,7 +1069,7 @@ This release adds support for Python 3.12.
 - Added Interactive Brokers adapter support for crypto instruments with cash quantity, thanks @benjaminsingleton
 - Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
 - Added `DataEngineConfig.time_bars_interval_type` (determines the type of interval used for time aggregation `left-open` or `right-open`)
-- Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
+- Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default `True` to retain current behavior)
 - Added `QuoteTickDataWrangler.process_bar_data` options for `offset_interval_ms` and `timestamp_is_close`
 - Added identifier generators in Rust, thanks @filipmacek
 - Added `OrderFactory` in Rust, thanks @filipmacek
@@ -1103,8 +1104,8 @@ Released on 3rd November 2023 (UTC).
 - Improved internal latency for live engines by using `loop.call_soon_threadsafe(...)`
 - Improved `RedisCacheDatabase` client connection error handling with retries
 - Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
-- Added `support_contingent_orders` option for venues (to simulate venues which do not support contingent orders)
-- Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingent orders)
+- Added `support_contingent_orders` config option for venues (to simulate venues which do not support contingent orders)
+- Added `StrategyConfig.manage_contingent_orders` config option (to automatically manage **open** contingent orders)
 - Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
@@ -1153,7 +1154,7 @@ This will be the final release with support for Python 3.9.
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
 - Added Binance Futures support for GTD orders
 - Added Binance internal bar aggregation inference from aggregated trades or 1-MINUTE bars (depending on lookback window)
-- Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
+- Added `BinanceExecClientConfig.use_gtd` config option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
 - Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
@@ -1225,7 +1226,7 @@ this change.
 - Added `ActorExecutor` with `Actor` API for creating and running threaded tasks in live environments
 - Added `OrderEmulated` event and associated `OrderStatus.EMULATED` enum variant
 - Added `OrderReleased` event and associated `OrderStatus.RELEASED` enum variant
-- Added `BacktestVenueConfig.use_position_ids` option (default true to retain current behavior)
+- Added `BacktestVenueConfig.use_position_ids` config option (default `True` to retain current behavior)
 - Added `Cache.exec_spawn_total_quantity(...)` convenience method
 - Added `Cache.exec_spawn_total_filled_qty(...)` convenience method
 - Added `Cache.exec_spawn_total_leaves_qty(...)` convenience method
@@ -1260,12 +1261,12 @@ Released on 31st July 2023 (UTC).
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
 - Added Binance Futures support for modifying `LIMIT` orders
-- Added `BinanceExecClientConfig.max_retries` option (for retrying order submit and cancel requests)
-- Added `BinanceExecClientConfig.retry_delay` option (the delay between retry attempts)
-- Added `BinanceExecClientConfig.use_reduce_only` option (default true to retain current behavior)
-- Added `BinanceExecClientConfig.use_position_ids` option (default true to retain current behavior)
-- Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default false to retain current behavior)
-- Added `BacktestVenueConfig.use_reduce_only` option (default true to retain current behavior)
+- Added `BinanceExecClientConfig.max_retries` config option (for retrying order submit and cancel requests)
+- Added `BinanceExecClientConfig.retry_delay` config option (the delay between retry attempts)
+- Added `BinanceExecClientConfig.use_reduce_only` config option (default `True` to retain current behavior)
+- Added `BinanceExecClientConfig.use_position_ids` config option (default `True` to retain current behavior)
+- Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default `False` to retain current behavior)
+- Added `BacktestVenueConfig.use_reduce_only` config option (default `True` to retain current behavior)
 - Added `MessageBus.is_pending_request(...)` method
 - Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
 - Added `Actor.is_pending_request(...)` convenience method
@@ -1324,7 +1325,7 @@ We recommend you do not upgrade to this version if you're using the Betfair adap
 - Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
 - Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
 - Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behavior)
-- Added `ExecEngineConfig.filter_unclaimed_external_orders` options, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
+- Added `ExecEngineConfig.filter_unclaimed_external_orders` config option, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
 - Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)
@@ -1501,8 +1502,8 @@ Released on 18th February 2023 (UTC).
 
 ### Breaking Changes
 - `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
-- Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
-- Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
+- Renamed `OrderFactory.bracket` parameter `post_only_entry` -> `entry_post_only` (consistency with other params)
+- Renamed `OrderFactory.bracket` parameter `post_only_tp` -> `tp_post_only` (consistency with other params)
 - Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param)
 - Renamed `OrderFactory.set_order_count()` -> `set_client_order_id_count()` (clarity)
 - Renamed `TradingNode.start()` to `TradingNode.run()`
@@ -1510,7 +1511,7 @@ Released on 18th February 2023 (UTC).
 ### Enhancements
 - Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
-- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (`True` by default)
+- Added `time_bars_timestamp_on_close` config option for bar timestamping (`True` by default)
 - Added `OrderFactory.generate_client_order_id()` (calls internal generator)
 - Added `OrderFactory.generate_order_list_id()` (calls internal generator)
 - Added `OrderFactory.create_list(...)` as easier method for creating order lists
@@ -1618,7 +1619,7 @@ and also to avoid C naming collisions.
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
-- Added `DataEngineConfig.build_time_bars_with_no_updates` option
+- Added `DataEngineConfig.build_time_bars_with_no_updates` config option
 - Added `OrderFactory.bracket(post_only_tp)` param
 - Added `OrderListIdGenerator` and integrate with `OrderFactory`
 - Added `Cache.add_order_list(...)`
@@ -1631,7 +1632,7 @@ and also to avoid C naming collisions.
 - Added `.timedelta` property to `BarSpecification`, thanks @rsmb7z
 - Numerous improvements to the Betfair adapter, thanks @limx0
 - Improvements to Interactive Brokers data subscriptions, thanks @rsmb7z
-- Added `DataEngineConfig.validate_data_sequence` (False by default and currently only for `Bar` data), thanks @rsmb7z
+- Added `DataEngineConfig.validate_data_sequence` (default `False` and currently only for `Bar` data), thanks @rsmb7z
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions
@@ -1878,7 +1879,7 @@ Released on September 14th 2022 (UTC).
 
 ### Breaking Changes
 - Changed `ExecEngineConfig` `allow_cash_positions` default to `True` (more typical use case)
-- Removed `check` param from `Bar` (always checked for simplicity)
+- Removed `check` parameter from `Bar` (always checked for simplicity)
 
 ### Enhancements
 - Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
@@ -2125,7 +2126,7 @@ Released on 10th May 2022 (UTC).
 - Added `Actor.publish_signal` for generic dynamic signal data
 - Added `WEEK` and `MONTH` bar aggregation options
 - Added `Position.closing_order_id` property
-- Added `tags` param to `Strategy.submit_order`
+- Added `tags` parameter to `Strategy.submit_order`
 - Added optional `check_positon_exists` flag to `Strategy.submit_order`
 - Eliminated all use of `unsafe` Rust and C null-terminated byte strings
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
@@ -2158,7 +2159,7 @@ Released on 17th April 2022 (UTC).
 
 ### Breaking Changes
 - `BacktestNode` now requires configs at initialization
-- Removed `run_configs` param from `BacktestNode.run()` method
+- Removed `run_configs` parameter from `BacktestNode.run()` method
 - Removed `return_engine` flag
 - Renamed `TradingStrategy` to `Strategy`
 - Renamed `TradingStrategyConfig` to `StrategyConfig`
@@ -2269,7 +2270,7 @@ Released on 11th March 2022 (UTC).
 - Added `LimitIfTouchedOrder` order type
 - Added `Order.has_price` property (convenience)
 - Added `Order.has_trigger_price` property (convenience)
-- Added `msg` param to `LoggerAdapter.exception()`
+- Added `msg` parameter to `LoggerAdapter.exception()`
 - Added WebSocket `log_send` and `log_recv` config options
 - Added WebSocket `auto_ping_interval` (seconds) config option
 - Replaced `msgpack` with `msgspec` (faster drop in replacement https://github.com/jcrist/msgspec)
@@ -2311,12 +2312,12 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing
 - Improve handling of unleveraged cash asset positions including Crypto and Fiat spot currency instruments
-- Added `ExecEngineConfig` option `allow_cash_positions` (`False` by default)
+- Added `ExecEngineConfig` config option `allow_cash_positions` (`False` by default)
 - Added `TrailingOffsetType` enum
 - Added `TrailingStopMarketOrder`
 - Added `TrailingStopLimitOrder`
 - Added trailing order factory methods
-- Added `trigger_type` param to stop orders
+- Added `trigger_type` parameter to stop orders
 - Added `TriggerType` enum
 - Large refactoring of order base and impl classes
 - Overhaul of execution reports
@@ -2350,10 +2351,10 @@ This release upgrades to `pillow 9.0.0`.
 Released on 12th January 2022 (UTC).
 
 ### Breaking Changes
-- Removed redundant `currency` param from `AccountBalance`
+- Removed redundant `currency` parameter from `AccountBalance`
 - Renamed `local_symbol` to `native_symbol`
-- Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag
-- Removed `account_id` param from execution client factories and constructors
+- Removed the `VenueType` enum and `venue_type` parameter in favour of a `routing` bool flag
+- Removed `account_id` parameter from execution client factories and constructors
 - Changed venue generated IDs (order, execution, position) which now begin with the venue ID
 
 ### Enhancements
@@ -2380,8 +2381,8 @@ Released on 29th December 2021.
 - Changed `subscribe_data(...)` method (`client_id` now optional)
 - Changed `unsubscribe_data(...)` method (`client_id` now optional)
 - Changed `publish_data(...)` method (added `data_type`)
-- Renamed `MessageBus.subscriptions` method param to `pattern`
-- Renamed `MessageBus.has_subscribers` method param to `pattern`
+- Renamed `MessageBus.subscriptions` method parameter to `pattern`
+- Renamed `MessageBus.has_subscribers` method parameter to `pattern`
 - Removed `subscribe_strategy_data(...)` method
 - Removed `unsubscribe_strategy_data(...)` method
 - Removed `publish_strategy_data(...)` method
@@ -2462,7 +2463,7 @@ None
 - Added `LatencyModel` for simulated exchange
 - Added `last_update_id` to order books
 - Added `update_id` to order book data
-- Added `depth` param when subscribing to order book deltas
+- Added `depth` parameter when subscribing to order book deltas
 - Added `Clock.timestamp_ms()`
 - Added `TestDataProvider` and consolidate test data
 - Added orjson default serializer for arrow
@@ -2972,7 +2973,7 @@ result of inlining the function.
 - Improved `ExecutionEngine` client registration
 - Added order routing configuration
 - Added `VenueType` enum and parser
-- Improved param typing for identifier generators
+- Improved parameter typing for identifier generators
 - Improved log formatting of `Money` and `Quantity` thousands commas
 
 ### Fixes
