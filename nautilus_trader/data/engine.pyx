@@ -147,11 +147,11 @@ cdef class DataEngine(Component):
 
         # Settings
         self.debug = config.debug
-        self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
-        self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_interval_type = config.time_bars_interval_type
-        self._time_bars_origins = config.time_bars_origins or {}
+        self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_skip_first_non_full_bar = config.time_bars_skip_first_non_full_bar
+        self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
+        self._time_bars_origins = config.time_bars_origins or {}
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
 
@@ -2242,11 +2242,11 @@ cdef class DataEngine(Component):
                 bar_type=bar_type,
                 handler=self.process,
                 clock=self._clock,
-                build_with_no_updates=self._time_bars_build_with_no_updates,
-                timestamp_on_close=self._time_bars_timestamp_on_close,
                 interval_type=self._time_bars_interval_type,
-                time_bars_origin=self._time_bars_origins.get(bar_type.spec.aggregation),
+                timestamp_on_close=self._time_bars_timestamp_on_close,
                 skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
+                build_with_no_updates=self._time_bars_build_with_no_updates,
+                time_bars_origin=self._time_bars_origins.get(bar_type.spec.aggregation),
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

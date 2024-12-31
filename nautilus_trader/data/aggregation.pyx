@@ -676,15 +676,19 @@ cdef class TimeBarAggregator(BarAggregator):
         The bar handler for the aggregator.
     clock : Clock
         The clock for the aggregator.
-    build_with_no_updates : bool, default True
-        If build and emit bars with no new market updates.
-    timestamp_on_close : bool, default True
-        If True, then timestamp will be the bar close's time.
-        If False, then timestamp will be the bar open's time.
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
         - 'right-open': start time is included and end time is excluded.
+    timestamp_on_close : bool, default True
+        If True, then timestamp will be the bar close time.
+        If False, then timestamp will be the bar open time.
+    skip_first_non_full_bar : bool, default False
+        If will skip emitting a bar if the aggregation starts mid-interval.
+    build_with_no_updates : bool, default True
+        If build and emit bars with no new market updates.
+    composite_bar_build_delay : int, default 15
+        The time delay before building and emitting a composite bar type.
 
     Raises
     ------
@@ -697,12 +701,12 @@ cdef class TimeBarAggregator(BarAggregator):
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         Clock clock not None,
-        bint build_with_no_updates = True,
-        bint timestamp_on_close = True,
         str interval_type = "left-open",
-        object time_bars_origin=None, # pd.Timedelta or pd.DateOffset
-        int composite_bar_build_delay=15, # in microsecond
-        bint skip_first_non_full_bar=False,
+        bint timestamp_on_close = True,
+        bint skip_first_non_full_bar = False,
+        bint build_with_no_updates = True,
+        object time_bars_origin = None, # pd.Timedelta or pd.DateOffset
+        int composite_bar_build_delay = 15, # in microsecond
     ):
         super().__init__(
             instrument=instrument,

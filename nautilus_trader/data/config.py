@@ -25,15 +25,17 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    time_bars_build_with_no_updates : bool, default True
-        If time bar aggregators will build and emit bars with no new market updates.
-    time_bars_timestamp_on_close : bool, default True
-        If time bar aggregators will timestamp `ts_event` on bar close.
-        If False, then will timestamp on bar open.
     time_bars_interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
         - 'right-open': start time is included and end time is excluded.
+    time_bars_timestamp_on_close : bool, default True
+        If time bar aggregators will timestamp `ts_event` on bar close.
+        If False, then will timestamp on bar open.
+    time_bars_skip_first_non_full_bar : bool, default False
+        If time bar aggregators will skip emitting a bar if the aggregation starts mid-interval.
+    time_bars_build_with_no_updates : bool, default True
+        If time bar aggregators will build and emit bars with no new market updates.
     time_bars_origins : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
         A dictionary mapping time bar aggregations to their origin time offsets.
     validate_data_sequence : bool, default False
@@ -48,11 +50,11 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     """
 
-    time_bars_build_with_no_updates: bool = True
-    time_bars_timestamp_on_close: bool = True
     time_bars_interval_type: str = "left-open"
-    time_bars_origins: dict | None = None
+    time_bars_timestamp_on_close: bool = True
     time_bars_skip_first_non_full_bar: bool = False
+    time_bars_build_with_no_updates: bool = True
+    time_bars_origins: dict | None = None
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
     external_clients: list[ClientId] | None = None

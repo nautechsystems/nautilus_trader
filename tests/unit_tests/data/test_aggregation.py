@@ -2487,8 +2487,8 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            timestamp_on_close=timestamp_on_close,
             interval_type=interval_type,
+            timestamp_on_close=timestamp_on_close,
         )
         aggregator.handle_quote_tick(ticks[0])
 
