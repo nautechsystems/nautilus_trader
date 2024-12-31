@@ -1762,8 +1762,8 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(
                 "Market: "
-                f"bid={self._book.best_bid_price()} @ {self._book.best_bid_size()}, "
-                f"ask={self._book.best_ask_price()} @ {self._book.best_ask_size()}, "
+                f"bid={self._book.best_bid_size()} @ {self._book.best_bid_price()}, "
+                f"ask={self._book.best_ask_size()} @ {self._book.best_ask_price()}, "
                 f"last={self._core.last}",
             )
             self._log.debug(
