@@ -1961,6 +1961,76 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == 3 * 60 * NANOSECONDS_IN_SECOND
 
+    def test_update_timer_with_test_clock_sends_no_bar_to_handler_with_skip_first_non_full_bar(
+        self,
+    ):
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
+        bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType.new_composite(
+            instrument_id,
+            bar_spec3,
+            AggregationSource.INTERNAL,
+            bar_spec1.step,
+            bar_spec1.aggregation,
+            AggregationSource.EXTERNAL,
+        )
+
+        clock.advance_time(1)
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            skip_first_non_full_bar=True,
+        )
+        composite_bar_type = bar_type.composite()
+
+        bar1 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00007"),
+            volume=Quantity.from_int(1),
+            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
+        )
+
+        bar2 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00007"),
+            high=Price.from_str("1.00020"),
+            low=Price.from_str("1.00003"),
+            close=Price.from_str("1.00015"),
+            volume=Quantity.from_int(1),
+            ts_event=2 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=2 * 60 * NANOSECONDS_IN_SECOND,
+        )
+
+        bar3 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00015"),
+            high=Price.from_str("1.00015"),
+            low=Price.from_str("1.00007"),
+            close=Price.from_str("1.00008"),
+            volume=Quantity.from_int(1),
+            ts_event=3 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=3 * 60 * NANOSECONDS_IN_SECOND,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+        aggregator.handle_bar(bar3)
+        events = clock.advance_time(bar3.ts_event)
+
+        # Assert
+        assert len(events) == 0
+
     def test_update_timer_with_test_clock_sends_single_bar_to_handler_with_bars_and_time_origin(
         self,
     ):
