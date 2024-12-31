@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added proper `OrderBookDeltas` flags parsing for Betfair
 - Added `slip_and_fill_market_orders` config option for `BacktestVenueConfig` and `OrderMatchingEngine` (default `True` to retain current behavior)
 - Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
+- Added `DataEngineConfig.time_bars_skip_first_non_full_bar` config option (#2160), thanks @faysou
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 
@@ -35,6 +36,7 @@ Released on TBD (UTC).
 - Fixed processing of time events on backtest completion when they occur after the final data timestamp
 - Fixed missing enum member `CANCELED_MARKET_RESOLVED` for `PolymarketOrderStatus`
 - Fixed missing `init_id` field from some order `.to_dict()` representations
+- Fixed writing `DYDXOraclePrice` to catalog (#2158), thanks @davidsblom
 
 ---
 
