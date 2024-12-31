@@ -707,32 +707,54 @@ cdef extern from "../includes/model.h":
         char* _0;
 
     cdef struct OrderDenied_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The reason the order was denied.
         char* reason;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
     cdef struct OrderEmulated_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
     cdef struct OrderReleased_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
         Price_t released_price;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
     # Represents a valid account ID.
@@ -740,13 +762,21 @@ cdef extern from "../includes/model.h":
         char* _0;
 
     cdef struct OrderSubmitted_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The account ID associated with the event.
         AccountId_t account_id;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
     # Represents a valid venue order ID (assigned by a trading venue).
@@ -754,27 +784,47 @@ cdef extern from "../includes/model.h":
         char* _0;
 
     cdef struct OrderAccepted_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The venue order ID associated with the event.
         VenueOrderId_t venue_order_id;
+        # The account ID associated with the event.
         AccountId_t account_id;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
+        # If the event was generated during reconciliation.
         uint8_t reconciliation;
 
     cdef struct OrderRejected_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The account ID associated with the event.
         AccountId_t account_id;
+        # The reason the order was rejected.
         char* reason;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
+        # If the event was generated during reconciliation.
         uint8_t reconciliation;
 
     # Represents a system client ID.
