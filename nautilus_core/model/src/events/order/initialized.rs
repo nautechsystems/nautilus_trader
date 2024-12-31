@@ -44,9 +44,13 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderInitialized {
+    /// The trader ID associated with the event.
     pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
     pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
     pub order_side: OrderSide,
     pub order_type: OrderType,
@@ -56,8 +60,11 @@ pub struct OrderInitialized {
     pub reduce_only: bool,
     pub quote_quantity: bool,
     pub reconciliation: bool,
+    /// The unique identifier for the event.
     pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
     pub price: Option<Price>,
     pub trigger_price: Option<Price>,

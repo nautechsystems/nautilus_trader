@@ -1283,34 +1283,100 @@ typedef struct ClientOrderId_t {
 } ClientOrderId_t;
 
 typedef struct OrderDenied_t {
+    /**
+     * The trader ID associated with the event.
+     */
     struct TraderId_t trader_id;
+    /**
+     * The strategy ID associated with the event.
+     */
     struct StrategyId_t strategy_id;
+    /**
+     * The instrument ID associated with the event.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The client order ID associated with the event.
+     */
     struct ClientOrderId_t client_order_id;
+    /**
+     * The reason the order was denied.
+     */
     char* reason;
+    /**
+     * The unique identifier for the event.
+     */
     UUID4_t event_id;
+    /**
+     * UNIX timestamp (nanoseconds) when the event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the event was initialized.
+     */
     uint64_t ts_init;
 } OrderDenied_t;
 
 typedef struct OrderEmulated_t {
+    /**
+     * The trader ID associated with the event.
+     */
     struct TraderId_t trader_id;
+    /**
+     * The strategy ID associated with the event.
+     */
     struct StrategyId_t strategy_id;
+    /**
+     * The instrument ID associated with the event.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The client order ID associated with the event.
+     */
     struct ClientOrderId_t client_order_id;
+    /**
+     * The unique identifier for the event.
+     */
     UUID4_t event_id;
+    /**
+     * UNIX timestamp (nanoseconds) when the event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the event was initialized.
+     */
     uint64_t ts_init;
 } OrderEmulated_t;
 
 typedef struct OrderReleased_t {
+    /**
+     * The trader ID associated with the event.
+     */
     struct TraderId_t trader_id;
+    /**
+     * The strategy ID associated with the event.
+     */
     struct StrategyId_t strategy_id;
+    /**
+     * The instrument ID associated with the event.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The client order ID associated with the event.
+     */
     struct ClientOrderId_t client_order_id;
     struct Price_t released_price;
+    /**
+     * The unique identifier for the event.
+     */
     UUID4_t event_id;
+    /**
+     * UNIX timestamp (nanoseconds) when the event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the event was initialized.
+     */
     uint64_t ts_init;
 } OrderReleased_t;
 
@@ -1322,13 +1388,37 @@ typedef struct AccountId_t {
 } AccountId_t;
 
 typedef struct OrderSubmitted_t {
+    /**
+     * The trader ID associated with the event.
+     */
     struct TraderId_t trader_id;
+    /**
+     * The strategy ID associated with the event.
+     */
     struct StrategyId_t strategy_id;
+    /**
+     * The instrument ID associated with the event.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The client order ID associated with the event.
+     */
     struct ClientOrderId_t client_order_id;
+    /**
+     * The account ID associated with the event.
+     */
     struct AccountId_t account_id;
+    /**
+     * The unique identifier for the event.
+     */
     UUID4_t event_id;
+    /**
+     * UNIX timestamp (nanoseconds) when the event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the event was initialized.
+     */
     uint64_t ts_init;
 } OrderSubmitted_t;
 
@@ -1340,28 +1430,88 @@ typedef struct VenueOrderId_t {
 } VenueOrderId_t;
 
 typedef struct OrderAccepted_t {
+    /**
+     * The trader ID associated with the event.
+     */
     struct TraderId_t trader_id;
+    /**
+     * The strategy ID associated with the event.
+     */
     struct StrategyId_t strategy_id;
+    /**
+     * The instrument ID associated with the event.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The client order ID associated with the event.
+     */
     struct ClientOrderId_t client_order_id;
+    /**
+     * The venue order ID associated with the event.
+     */
     struct VenueOrderId_t venue_order_id;
+    /**
+     * The account ID associated with the event.
+     */
     struct AccountId_t account_id;
+    /**
+     * The unique identifier for the event.
+     */
     UUID4_t event_id;
+    /**
+     * UNIX timestamp (nanoseconds) when the event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the event was initialized.
+     */
     uint64_t ts_init;
+    /**
+     * If the event was generated during reconciliation.
+     */
     uint8_t reconciliation;
 } OrderAccepted_t;
 
 typedef struct OrderRejected_t {
+    /**
+     * The trader ID associated with the event.
+     */
     struct TraderId_t trader_id;
+    /**
+     * The strategy ID associated with the event.
+     */
     struct StrategyId_t strategy_id;
+    /**
+     * The instrument ID associated with the event.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The client order ID associated with the event.
+     */
     struct ClientOrderId_t client_order_id;
+    /**
+     * The account ID associated with the event.
+     */
     struct AccountId_t account_id;
+    /**
+     * The reason the order was rejected.
+     */
     char* reason;
+    /**
+     * The unique identifier for the event.
+     */
     UUID4_t event_id;
+    /**
+     * UNIX timestamp (nanoseconds) when the event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the event was initialized.
+     */
     uint64_t ts_init;
+    /**
+     * If the event was generated during reconciliation.
+     */
     uint8_t reconciliation;
 } OrderRejected_t;
 

@@ -26,28 +26,51 @@ use crate::{
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct PositionChanged {
+    /// The trader ID associated with the event.
     pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
     pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The position ID associated with the event.
     pub position_id: PositionId,
+    /// The account ID associated with the position.
     pub account_id: AccountId,
+    /// The client order ID for the order which opened the position.
     pub opening_order_id: ClientOrderId,
+    /// The position entry order side.
     pub entry: OrderSide,
+    /// The position side.
     pub side: PositionSide,
+    /// The current signed quantity (positive for position side `LONG`, negative for `SHORT`).
     pub signed_qty: f64,
+    /// The current open quantity.
     pub quantity: Quantity,
+    /// The peak directional quantity reached by the position.
     pub peak_quantity: Quantity,
+    /// The last fill quantity for the position.
     pub last_qty: Quantity,
+    /// The last fill price for the position.
     pub last_px: Price,
+    /// The position quote currency.
     pub currency: Currency,
+    /// The average open price.
     pub avg_px_open: f64,
+    /// The average close price.
     pub avg_px_close: Option<f64>,
+    /// The realized return for the position.
     pub realized_return: f64,
+    /// The realized PnL for the position (including commissions).
     pub realized_pnl: Option<Money>,
+    /// The unrealized PnL for the position (including commissions).
     pub unrealized_pnl: Money,
+    /// The unique identifier for the event.
     pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the position was opened.
     pub ts_opened: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
 }
 
