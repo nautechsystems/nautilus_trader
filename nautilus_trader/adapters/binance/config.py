@@ -110,7 +110,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If Binance Futures hedging position IDs should be used.
         If False, then order event `position_id`(s) from the execution client will be `None`, which
         allows *virtual* positions with `OmsType.HEDGING`.
-    use_tradelite: bool, default False
+    use_trade_lite: bool, default False
         If TRADE_LITE events should be used.
         If True, commissions will be calculated based on the instrument's details.
     treat_expired_as_canceled : bool, default False
@@ -142,7 +142,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     use_gtd: bool = True
     use_reduce_only: bool = True
     use_position_ids: bool = True
-    use_tradelite: bool = False
+    use_trade_lite: bool = False
     treat_expired_as_canceled: bool = False
     recv_window_ms: PositiveInt = 5_000
     max_retries: PositiveInt | None = None

@@ -137,7 +137,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             BinanceFuturesEventType.TRADE_LITE: self._handle_trade_lite,
         }
 
-        if config.use_tradelite:
+        if config.use_trade_lite:
             self._log.info("TRADE_LITE events will be used", LogColor.BLUE)
 
         # WebSocket futures schema decoders
@@ -306,7 +306,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     def _handle_trade_lite(self, raw: bytes) -> None:
         trade_lite = self._decoder_futures_trade_lite_wrapper.decode(raw)
-        if not self._config.use_tradelite:
+        if not self._config.use_trade_lite:
             self._log.debug(
                 "TradeLite event received but not enabled in config",
             )
