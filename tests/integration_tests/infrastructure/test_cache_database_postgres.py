@@ -500,6 +500,36 @@ class TestCachePostgresAdapter:
         assert order.to_dict() == result.to_dict()
 
     @pytest.mark.asyncio
+    async def test_add_order_snapshot(self):
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        order1 = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order2 = self.strategy.order_factory.limit(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        order3 = self.strategy.order_factory.stop_market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
+
+        self.database.add_order_snapshot(order1)
+        self.database.add_order_snapshot(order2)
+        self.database.add_order_snapshot(order3)
+
+    @pytest.mark.asyncio
     async def test_add_position_snapshot(self):
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
         order = self.strategy.order_factory.stop_market(

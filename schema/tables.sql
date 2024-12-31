@@ -127,8 +127,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     exec_spawn_id TEXT DEFAULT NULL,
     tags TEXT[] DEFAULT NULL,
     init_id UUID NOT NULL,
-    ts_init BIGINT NOT NULL,
-    ts_last BIGINT NOT NULL,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );

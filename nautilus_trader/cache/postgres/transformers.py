@@ -261,6 +261,21 @@ def transform_order_from_pyo3(order_pyo3):
     return order_cython
 
 
+def transform_order_to_snapshot_pyo3(order: Order):
+    values = order.to_dict()
+
+    values["order_type"] = values["type"]
+    values["order_side"] = values["side"]
+    values["expire_time"] = values.get("expire_time_ns")
+    commissions = values.get("commissions")
+    values["commissions"] = commissions if commissions is not None else []
+    values["is_post_only"] = values.get("is_post_only", False)
+    values["is_reduce_only"] = values.get("is_reduce_only", False)
+    values["is_quote_quantity"] = values.get("is_quote_quantity", False)
+
+    return nautilus_pyo3.OrderSnapshot.from_dict(values)
+
+
 def transform_position_to_snapshot_pyo3(position: Position):
     values = position.to_dict()
     return nautilus_pyo3.PositionSnapshot.from_dict(values)
