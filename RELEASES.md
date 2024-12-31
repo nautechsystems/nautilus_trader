@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `DYDXInternalError` and `DYDXOraclaPrice` data types for dYdX (#2155), thanks @davidsblom
 - Added proper `OrderBookDeltas` flags parsing for Betfair
 - Added `slip_and_fill_market_orders` config option for `BacktestVenueConfig` and `OrderMatchingEngine` (default `True` to retain current behavior)
+- Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 
