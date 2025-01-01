@@ -671,6 +671,11 @@ impl OrderCore {
     }
 
     #[must_use]
+    pub fn commissions_vec(&self) -> Vec<Money> {
+        self.commissions.values().cloned().collect()
+    }
+
+    #[must_use]
     pub fn init_event(&self) -> Option<OrderEventAny> {
         self.events.first().cloned()
     }
