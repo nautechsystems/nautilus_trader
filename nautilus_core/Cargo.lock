@@ -3238,6 +3238,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-serialization",
  "nautilus-test-kit",
+ "parquet",
  "pretty_assertions",
  "procfs",
  "pyo3",
