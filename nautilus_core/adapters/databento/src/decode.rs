@@ -31,10 +31,8 @@ use nautilus_model::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
     types::{
-        fixed::SCALAR,
-        price::{decode_raw_price_i64, PriceRaw},
-        quantity::decode_raw_quantity_u64,
-        Currency, Price, Quantity,
+        fixed::SCALAR, price::decode_raw_price_i64, quantity::decode_raw_quantity_u64, Currency,
+        Price, Quantity,
     },
 };
 use ustr::Ustr;
@@ -1061,7 +1059,7 @@ pub fn decode_options_contract(
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
     let strike_price = Price::from_raw(
-        msg.strike_price as PriceRaw,
+        decode_raw_price_i64(msg.strike_price),
         strike_price_currency.precision,
     );
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
@@ -1152,9 +1150,15 @@ pub fn decode_imbalance_msg(
 ) -> anyhow::Result<DatabentoImbalance> {
     DatabentoImbalance::new(
         instrument_id,
-        Price::from_raw(msg.ref_price as PriceRaw, price_precision),
-        Price::from_raw(msg.cont_book_clr_price as PriceRaw, price_precision),
-        Price::from_raw(msg.auct_interest_clr_price as PriceRaw, price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.ref_price), price_precision),
+        Price::from_raw(
+            decode_raw_price_i64(msg.cont_book_clr_price),
+            price_precision,
+        ),
+        Price::from_raw(
+            decode_raw_price_i64(msg.auct_interest_clr_price),
+            price_precision,
+        ),
         Quantity::new(f64::from(msg.paired_qty), 0),
         Quantity::new(f64::from(msg.total_imbalance_qty), 0),
         parse_order_side(msg.side),
@@ -1302,7 +1306,7 @@ mod tests {
     #[rstest]
     #[case(i64::MAX, 2, None)] // None for i64::MAX
     #[case(0, 2, Some(Price::from_raw(0, 2)))] // 0 is valid here
-    #[case(1000000, 2, Some(Price::from_raw(1000000, 2)))] // Arbitrary valid price
+    #[case(1000000, 2, Some(Price::from_raw(decode_raw_price_i64(1000000), 2)))] // Arbitrary valid price
     fn test_decode_optional_price(
         #[case] value: i64,
         #[case] precision: u8,

@@ -81,8 +81,13 @@ pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> 
 }
 
 #[cfg(feature = "high_precision")]
+/// The raw i64 price has already been scaled by FIXED_PRECISION. Further scale
+/// it by the difference to FIXED_HIGH_PRECISION to  make it high precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    value as PriceRaw * (10 as PriceRaw).pow(PRECISION as u32)
+    use super::fixed::FIXED_PRECISION;
+    use crate::types::fixed::FIXED_HIGH_PRECISION;
+
+    value as PriceRaw * (10 as PriceRaw).pow((FIXED_HIGH_PRECISION - FIXED_PRECISION) as u32)
 }
 
 #[cfg(not(feature = "high_precision"))]
