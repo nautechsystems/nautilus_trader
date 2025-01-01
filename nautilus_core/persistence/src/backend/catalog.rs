@@ -86,7 +86,12 @@ impl ParquetDataCatalog {
     }
 
     #[must_use]
-    pub fn write_to_json<T>(&self, data: Vec<T>, path: Option<PathBuf>) -> PathBuf
+    pub fn write_to_json<T>(
+        &self,
+        data: Vec<T>,
+        path: Option<PathBuf>,
+        write_metadata: bool,
+    ) -> PathBuf
     where
         T: GetTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
     {
@@ -97,7 +102,6 @@ impl ParquetDataCatalog {
             let path = self.make_path(T::path_prefix(), None);
             path.with_extension("json")
         });
-        let metadata = T::chunk_metadata(&data);
 
         info!(
             "Writing {} records of {} data to {:?}",
@@ -106,18 +110,20 @@ impl ParquetDataCatalog {
             json_path
         );
 
-        let mut json_data = serde_json::Map::new();
-        json_data.insert(
-            "metadata".to_string(),
-            serde_json::to_value(metadata).unwrap(),
-        );
-        json_data.insert("data".to_string(), serde_json::to_value(data).unwrap());
-        let json_value = serde_json::Value::Object(json_data);
+        if write_metadata {
+            let metadata = T::chunk_metadata(&data);
+            let metadata_path = json_path.with_extension("metadata.json");
+            info!("Writing metadata to {:?}", metadata_path);
+            let metadata_file = std::fs::File::create(&metadata_path)
+                .unwrap_or_else(|_| panic!("Failed to create metadata file at {metadata_path:?}"));
+            serde_json::to_writer(metadata_file, &metadata)
+                .unwrap_or_else(|_| panic!("Failed to write metadata to JSON"));
+        }
 
         let file = std::fs::File::create(&json_path)
             .unwrap_or_else(|_| panic!("Failed to create JSON file at {json_path:?}"));
 
-        serde_json::to_writer(file, &json_value)
+        serde_json::to_writer(file, &serde_json::to_value(data).unwrap())
             .unwrap_or_else(|_| panic!("Failed to write {type_name} to JSON"));
 
         json_path
@@ -167,9 +173,11 @@ impl ParquetDataCatalog {
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
-        let path = path.to_str().unwrap();
-        let query = build_query(path, start, end, where_clause);
-        self.session.add_file::<T>(path, path, Some(&query))?;
+        let path_str = path.to_str().unwrap();
+        let table_name = path.file_stem().unwrap().to_str().unwrap();
+        let query = build_query(table_name, start, end, where_clause);
+        self.session
+            .add_file::<T>(table_name, path_str, Some(&query))?;
         Ok(self.session.get_query_result())
     }
 
