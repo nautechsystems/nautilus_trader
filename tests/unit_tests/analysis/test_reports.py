@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import numpy as np
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
@@ -157,9 +158,9 @@ class TestReportProvider:
         assert report.iloc[0]["side"] == "BUY"
         assert report.iloc[0]["type"] == "LIMIT"
         assert report.iloc[0]["quantity"] == "1500000"
-        assert report.iloc[0]["avg_px"] == "0.80011"
-        assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
-        assert report.iloc[1]["avg_px"] is None
+        assert report.iloc[0]["avg_px"] == 0.80011
+        assert report.iloc[0]["slippage"] == 9.99999999995449e-06
+        assert np.isnan(report.iloc[1]["avg_px"])
 
     def test_generate_order_fills_report(self):
         # Arrange
@@ -227,15 +228,15 @@ class TestReportProvider:
         assert report.iloc[0]["side"] == "BUY"
         assert report.iloc[0]["type"] == "LIMIT"
         assert report.iloc[0]["quantity"] == "1500000"
-        assert report.iloc[0]["avg_px"] == "0.80011"
-        assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
+        assert report.iloc[0]["avg_px"] == 0.80011
+        assert report.iloc[0]["slippage"] == 9.99999999995449e-06
         assert report.index[1] == order3.client_order_id.value
         assert report.iloc[1]["instrument_id"] == "AUD/USD.SIM"
         assert report.iloc[1]["side"] == "SELL"
         assert report.iloc[1]["type"] == "LIMIT"
         assert report.iloc[1]["quantity"] == "1500000"
         assert report.iloc[1]["filled_qty"] == "500000"
-        assert report.iloc[1]["avg_px"] == "0.80011"
+        assert report.iloc[1]["avg_px"] == 0.80011
 
     def test_generate_fills_report(self):
         # Arrange
