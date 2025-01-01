@@ -49,7 +49,8 @@ mod serial_tests {
         let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto);
         let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto);
         let crypto_perpetual = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        // insert into database and wait
+
+        // Insert into database and wait
         database.add_currency(&eth).unwrap();
         database.add_currency(&usdt).unwrap();
         database.add_instrument(&crypto_perpetual).unwrap();
@@ -61,10 +62,11 @@ mod serial_tests {
             },
             Duration::from_secs(2),
         );
-        // load instruments and build indexes
+
+        // Load instruments and build indexes
         cache.cache_instruments().unwrap();
         cache.build_index();
-        // test
+
         let cached_instrument_ids = cache.instrument_ids(None);
         assert_eq!(cached_instrument_ids.len(), 1);
         assert_eq!(cached_instrument_ids, vec![&crypto_perpetual.id()]);
@@ -87,7 +89,8 @@ mod serial_tests {
             .quantity(Quantity::from("1.0"))
             .client_order_id(ClientOrderId::new("O-19700101-0000-001-001-1"))
             .build();
-        // add foreign key dependencies: instrument and currencies
+
+        // Add foreign key dependencies: instrument and currencies
         database
             .add_currency(&instrument.base_currency().unwrap())
             .unwrap();
@@ -95,7 +98,8 @@ mod serial_tests {
         database
             .add_instrument(&InstrumentAny::CurrencyPair(instrument))
             .unwrap();
-        // insert into database and wait
+
+        // Insert into database and wait
         database.add_order(&market_order, None).unwrap();
         wait_until(
             || {
@@ -106,10 +110,11 @@ mod serial_tests {
             },
             Duration::from_secs(2),
         );
-        // load orders and build indexes
+
+        // Load orders and build indexes
         cache.cache_orders().unwrap();
         cache.build_index();
-        // test
+
         let cached_order_ids = cache.client_order_ids(None, None, None);
         assert_eq!(cached_order_ids.len(), 1);
         let target_order = cache.order(&market_order.client_order_id());
@@ -131,7 +136,8 @@ mod serial_tests {
                 .add_currency(&last_event.base_currency.unwrap())
                 .unwrap();
         }
-        // insert into database and wait
+
+        // Insert into database and wait
         database.add_account(&account).unwrap();
         wait_until(
             || {
@@ -140,10 +146,11 @@ mod serial_tests {
             },
             Duration::from_secs(2),
         );
-        // load accounts and build indexes
+
+        // Load accounts and build indexes
         cache.cache_accounts().unwrap();
         cache.build_index();
-        // test
+
         let cached_accounts = cache.accounts(&account.id());
         assert_eq!(cached_accounts.len(), 1);
         let target_account_for_venue = cache.account_for_venue(&account.id().get_issuer());
