@@ -3115,6 +3115,7 @@ dependencies = [
  "serde",
  "strum",
  "thiserror 2.0.9",
+ "ustr",
 ]
 
 [[package]]

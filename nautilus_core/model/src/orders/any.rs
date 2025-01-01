@@ -637,6 +637,13 @@ impl OrderAny {
         }
     }
 
+    pub fn is_active_local(&self) -> bool {
+        matches!(
+            self.status(),
+            OrderStatus::Initialized | OrderStatus::Emulated | OrderStatus::Released
+        )
+    }
+
     #[must_use]
     pub fn parent_order_id(&self) -> Option<ClientOrderId> {
         match self {
