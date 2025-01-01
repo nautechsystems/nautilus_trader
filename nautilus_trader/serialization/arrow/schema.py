@@ -32,6 +32,7 @@ from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderEmulated
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
@@ -39,6 +40,7 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderPendingCancel
 from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
@@ -161,12 +163,12 @@ NAUTILUS_ARROW_SCHEMA = {
             "trigger_instrument_id": pa.string(),
             "contingency_type": pa.string(),
             "order_list_id": pa.string(),
-            "linked_order_ids": pa.string(),
+            "linked_order_ids": pa.binary(),
             "parent_order_id": pa.string(),
             "exec_algorithm_id": pa.string(),
             "exec_algorithm_params": pa.binary(),
             "exec_spawn_id": pa.string(),
-            "tags": pa.string(),
+            "tags": pa.binary(),
             "event_id": pa.string(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
@@ -194,6 +196,17 @@ NAUTILUS_ARROW_SCHEMA = {
             "client_order_id": pa.string(),
             "reason": pa.dictionary(pa.int16(), pa.string()),
             "event_id": pa.string(),
+            "ts_init": pa.uint64(),
+        },
+    ),
+    OrderEmulated: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int16(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int16(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
+            "client_order_id": pa.string(),
+            "event_id": pa.string(),
+            "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
     ),
@@ -320,6 +333,18 @@ NAUTILUS_ARROW_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
+        },
+    ),
+    OrderReleased: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int16(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int16(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
+            "client_order_id": pa.string(),
+            "released_price": pa.string(),
+            "event_id": pa.string(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
         },
     ),
     OrderModifyRejected: pa.schema(
