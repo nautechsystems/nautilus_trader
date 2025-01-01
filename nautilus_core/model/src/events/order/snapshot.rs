@@ -15,7 +15,6 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -28,6 +27,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
+    orders::OrderAny,
     types::{Money, Price, Quantity},
 };
 
@@ -67,9 +67,9 @@ pub struct OrderSnapshot {
     /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
-    pub limit_offset: Option<Decimal>,
+    pub limit_offset: Option<Price>,
     /// The trailing offset for the orders trigger price (STOP).
-    pub trailing_offset: Option<Decimal>,
+    pub trailing_offset: Option<Price>,
     /// The trailing offset type.
     pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order time in force.
@@ -122,4 +122,53 @@ pub struct OrderSnapshot {
     pub ts_init: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the last event occurred.
     pub ts_last: UnixNanos,
+}
+
+impl From<OrderAny> for OrderSnapshot {
+    fn from(order: OrderAny) -> Self {
+        Self {
+            trader_id: order.trader_id(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            venue_order_id: order.venue_order_id(),
+            position_id: order.position_id(),
+            account_id: order.account_id(),
+            last_trade_id: order.last_trade_id(),
+            order_type: order.order_type(),
+            order_side: order.order_side(),
+            quantity: order.quantity(),
+            price: order.price(),
+            trigger_price: order.trigger_price(),
+            trigger_type: order.trigger_type(),
+            limit_offset: order.limit_offset(),
+            trailing_offset: order.trailing_offset(),
+            trailing_offset_type: order.trailing_offset_type(),
+            time_in_force: order.time_in_force(),
+            expire_time: order.expire_time(),
+            filled_qty: order.filled_qty(),
+            liquidity_side: order.liquidity_side(),
+            avg_px: order.avg_px(),
+            slippage: order.slippage(),
+            commissions: order.commissions().values().cloned().collect(),
+            status: order.status(),
+            is_post_only: order.is_post_only(),
+            is_reduce_only: order.is_reduce_only(),
+            is_quote_quantity: order.is_quote_quantity(),
+            display_qty: order.display_qty(),
+            emulation_trigger: order.emulation_trigger(),
+            trigger_instrument_id: order.trigger_instrument_id(),
+            contingency_type: order.contingency_type(),
+            order_list_id: order.order_list_id(),
+            linked_order_ids: order.linked_order_ids(),
+            parent_order_id: order.parent_order_id(),
+            exec_algorithm_id: order.exec_algorithm_id(),
+            exec_algorithm_params: order.exec_algorithm_params(),
+            exec_spawn_id: order.exec_spawn_id(),
+            tags: order.tags(),
+            init_id: order.init_id(),
+            ts_init: order.ts_init(),
+            ts_last: order.ts_last(),
+        }
+    }
 }

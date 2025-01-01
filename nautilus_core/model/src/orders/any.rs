@@ -15,8 +15,10 @@
 
 use std::fmt::Display;
 
-use nautilus_core::nanos::UnixNanos;
+use indexmap::IndexMap;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::{
     base::{Order, OrderError},
@@ -33,14 +35,14 @@ use super::{
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
-        PositionSide, TriggerType,
+        PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
-        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
-        VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    types::{Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -267,17 +269,78 @@ impl OrderAny {
         }
     }
 
-    pub fn set_position_id(&mut self, position_id: Option<PositionId>) {
+    #[must_use]
+    pub fn order_list_id(&self) -> Option<OrderListId> {
         match self {
-            Self::Limit(order) => order.position_id = position_id,
-            Self::LimitIfTouched(order) => order.position_id = position_id,
-            Self::Market(order) => order.position_id = position_id,
-            Self::MarketIfTouched(order) => order.position_id = position_id,
-            Self::MarketToLimit(order) => order.position_id = position_id,
-            Self::StopLimit(order) => order.position_id = position_id,
-            Self::StopMarket(order) => order.position_id = position_id,
-            Self::TrailingStopLimit(order) => order.position_id = position_id,
-            Self::TrailingStopMarket(order) => order.position_id = position_id,
+            Self::Limit(order) => order.order_list_id(),
+            Self::LimitIfTouched(order) => order.order_list_id(),
+            Self::Market(order) => order.order_list_id(),
+            Self::MarketIfTouched(order) => order.order_list_id(),
+            Self::MarketToLimit(order) => order.order_list_id(),
+            Self::StopLimit(order) => order.order_list_id(),
+            Self::StopMarket(order) => order.order_list_id(),
+            Self::TrailingStopLimit(order) => order.order_list_id(),
+            Self::TrailingStopMarket(order) => order.order_list_id(),
+        }
+    }
+
+    #[must_use]
+    pub fn last_trade_id(&self) -> Option<TradeId> {
+        match self {
+            Self::Limit(order) => order.last_trade_id,
+            Self::LimitIfTouched(order) => order.last_trade_id,
+            Self::Market(order) => order.last_trade_id,
+            Self::MarketIfTouched(order) => order.last_trade_id,
+            Self::MarketToLimit(order) => order.last_trade_id,
+            Self::StopLimit(order) => order.last_trade_id,
+            Self::StopMarket(order) => order.last_trade_id,
+            Self::TrailingStopLimit(order) => order.last_trade_id,
+            Self::TrailingStopMarket(order) => order.last_trade_id,
+        }
+    }
+
+    #[must_use]
+    pub fn init_id(&self) -> UUID4 {
+        match self {
+            Self::Limit(order) => order.init_id,
+            Self::LimitIfTouched(order) => order.init_id,
+            Self::Market(order) => order.init_id,
+            Self::MarketIfTouched(order) => order.init_id,
+            Self::MarketToLimit(order) => order.init_id,
+            Self::StopLimit(order) => order.init_id,
+            Self::StopMarket(order) => order.init_id,
+            Self::TrailingStopLimit(order) => order.init_id,
+            Self::TrailingStopMarket(order) => order.init_id,
+        }
+    }
+
+    #[must_use]
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Limit(order) => order.ts_init,
+            Self::LimitIfTouched(order) => order.ts_init,
+            Self::Market(order) => order.ts_init,
+            Self::MarketIfTouched(order) => order.ts_init,
+            Self::MarketToLimit(order) => order.ts_init,
+            Self::StopLimit(order) => order.ts_init,
+            Self::StopMarket(order) => order.ts_init,
+            Self::TrailingStopLimit(order) => order.ts_init,
+            Self::TrailingStopMarket(order) => order.ts_init,
+        }
+    }
+
+    #[must_use]
+    pub fn ts_last(&self) -> UnixNanos {
+        match self {
+            Self::Limit(order) => order.ts_last,
+            Self::LimitIfTouched(order) => order.ts_last,
+            Self::Market(order) => order.ts_last,
+            Self::MarketIfTouched(order) => order.ts_last,
+            Self::MarketToLimit(order) => order.ts_last,
+            Self::StopLimit(order) => order.ts_last,
+            Self::StopMarket(order) => order.ts_last,
+            Self::TrailingStopLimit(order) => order.ts_last,
+            Self::TrailingStopMarket(order) => order.ts_last,
         }
     }
 
@@ -293,6 +356,21 @@ impl OrderAny {
             Self::StopMarket(order) => order.exec_algorithm_id,
             Self::TrailingStopLimit(order) => order.exec_algorithm_id,
             Self::TrailingStopMarket(order) => order.exec_algorithm_id,
+        }
+    }
+
+    #[must_use]
+    pub fn exec_algorithm_params(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        match self {
+            Self::Limit(order) => order.exec_algorithm_params.clone(),
+            Self::LimitIfTouched(order) => order.exec_algorithm_params.clone(),
+            Self::Market(order) => order.exec_algorithm_params.clone(),
+            Self::MarketIfTouched(order) => order.exec_algorithm_params.clone(),
+            Self::MarketToLimit(order) => order.exec_algorithm_params.clone(),
+            Self::StopLimit(order) => order.exec_algorithm_params.clone(),
+            Self::StopMarket(order) => order.exec_algorithm_params.clone(),
+            Self::TrailingStopLimit(order) => order.exec_algorithm_params.clone(),
+            Self::TrailingStopMarket(order) => order.exec_algorithm_params.clone(),
         }
     }
 
@@ -327,6 +405,21 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn order_side_specified(&self) -> OrderSideSpecified {
+        match self {
+            Self::Limit(order) => order.side.as_specified(),
+            Self::LimitIfTouched(order) => order.side.as_specified(),
+            Self::Market(order) => order.side.as_specified(),
+            Self::MarketIfTouched(order) => order.side.as_specified(),
+            Self::MarketToLimit(order) => order.side.as_specified(),
+            Self::StopLimit(order) => order.side.as_specified(),
+            Self::StopMarket(order) => order.side.as_specified(),
+            Self::TrailingStopLimit(order) => order.side.as_specified(),
+            Self::TrailingStopMarket(order) => order.side.as_specified(),
+        }
+    }
+
+    #[must_use]
     pub fn order_type(&self) -> OrderType {
         match self {
             Self::Limit(order) => order.order_type,
@@ -356,17 +449,48 @@ impl OrderAny {
         }
     }
 
-    pub fn set_quantity(&mut self, quantity: Quantity) {
+    #[must_use]
+    pub fn liquidity_side(&self) -> Option<LiquiditySide> {
         match self {
-            Self::Limit(order) => order.quantity = quantity,
-            Self::LimitIfTouched(order) => order.quantity = quantity,
-            Self::Market(order) => order.quantity = quantity,
-            Self::MarketIfTouched(order) => order.quantity = quantity,
-            Self::MarketToLimit(order) => order.quantity = quantity,
-            Self::StopLimit(order) => order.quantity = quantity,
-            Self::StopMarket(order) => order.quantity = quantity,
-            Self::TrailingStopLimit(order) => order.quantity = quantity,
-            Self::TrailingStopMarket(order) => order.quantity = quantity,
+            Self::Limit(order) => order.liquidity_side,
+            Self::LimitIfTouched(order) => order.liquidity_side,
+            Self::Market(order) => order.liquidity_side,
+            Self::MarketIfTouched(order) => order.liquidity_side,
+            Self::MarketToLimit(order) => order.liquidity_side,
+            Self::StopLimit(order) => order.liquidity_side,
+            Self::StopMarket(order) => order.liquidity_side,
+            Self::TrailingStopLimit(order) => order.liquidity_side,
+            Self::TrailingStopMarket(order) => order.liquidity_side,
+        }
+    }
+
+    #[must_use]
+    pub fn time_in_force(&self) -> TimeInForce {
+        match self {
+            Self::Limit(order) => order.time_in_force,
+            Self::LimitIfTouched(order) => order.time_in_force,
+            Self::Market(order) => order.time_in_force,
+            Self::MarketIfTouched(order) => order.time_in_force,
+            Self::MarketToLimit(order) => order.time_in_force,
+            Self::StopLimit(order) => order.time_in_force,
+            Self::StopMarket(order) => order.time_in_force,
+            Self::TrailingStopLimit(order) => order.time_in_force,
+            Self::TrailingStopMarket(order) => order.time_in_force,
+        }
+    }
+
+    #[must_use]
+    pub fn expire_time(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Limit(order) => order.expire_time,
+            Self::LimitIfTouched(order) => order.expire_time,
+            Self::Market(_) => None,
+            Self::MarketIfTouched(order) => order.expire_time,
+            Self::MarketToLimit(order) => order.expire_time,
+            Self::StopLimit(order) => order.expire_time,
+            Self::StopMarket(order) => order.expire_time,
+            Self::TrailingStopLimit(order) => order.expire_time,
+            Self::TrailingStopMarket(order) => order.expire_time,
         }
     }
 
@@ -415,47 +539,18 @@ impl OrderAny {
         }
     }
 
-    pub fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
-        match self {
-            Self::Limit(order) => order.leaves_qty = leaves_qty,
-            Self::LimitIfTouched(order) => order.leaves_qty = leaves_qty,
-            Self::Market(order) => order.leaves_qty = leaves_qty,
-            Self::MarketIfTouched(order) => order.leaves_qty = leaves_qty,
-            Self::MarketToLimit(order) => order.leaves_qty = leaves_qty,
-            Self::StopLimit(order) => order.leaves_qty = leaves_qty,
-            Self::StopMarket(order) => order.leaves_qty = leaves_qty,
-            Self::TrailingStopLimit(order) => order.leaves_qty = leaves_qty,
-            Self::TrailingStopMarket(order) => order.leaves_qty = leaves_qty,
-        }
-    }
-
     #[must_use]
-    pub fn order_side_specified(&self) -> OrderSideSpecified {
+    pub fn tags(&self) -> Option<Vec<Ustr>> {
         match self {
-            Self::Limit(order) => order.side.as_specified(),
-            Self::LimitIfTouched(order) => order.side.as_specified(),
-            Self::Market(order) => order.side.as_specified(),
-            Self::MarketIfTouched(order) => order.side.as_specified(),
-            Self::MarketToLimit(order) => order.side.as_specified(),
-            Self::StopLimit(order) => order.side.as_specified(),
-            Self::StopMarket(order) => order.side.as_specified(),
-            Self::TrailingStopLimit(order) => order.side.as_specified(),
-            Self::TrailingStopMarket(order) => order.side.as_specified(),
-        }
-    }
-
-    #[must_use]
-    pub fn liquidity_side(&self) -> Option<LiquiditySide> {
-        match self {
-            Self::Limit(order) => order.liquidity_side,
-            Self::LimitIfTouched(order) => order.liquidity_side,
-            Self::Market(order) => order.liquidity_side,
-            Self::MarketIfTouched(order) => order.liquidity_side,
-            Self::MarketToLimit(order) => order.liquidity_side,
-            Self::StopLimit(order) => order.liquidity_side,
-            Self::StopMarket(order) => order.liquidity_side,
-            Self::TrailingStopLimit(order) => order.liquidity_side,
-            Self::TrailingStopMarket(order) => order.liquidity_side,
+            Self::Limit(order) => order.tags.clone(),
+            Self::LimitIfTouched(order) => order.tags.clone(),
+            Self::Market(order) => order.tags.clone(),
+            Self::MarketIfTouched(order) => order.tags.clone(),
+            Self::MarketToLimit(order) => order.tags.clone(),
+            Self::StopLimit(order) => order.tags.clone(),
+            Self::StopMarket(order) => order.tags.clone(),
+            Self::TrailingStopLimit(order) => order.tags.clone(),
+            Self::TrailingStopMarket(order) => order.tags.clone(),
         }
     }
 
@@ -471,6 +566,111 @@ impl OrderAny {
             Self::StopMarket(order) => order.emulation_trigger,
             Self::TrailingStopLimit(order) => order.emulation_trigger,
             Self::TrailingStopMarket(order) => order.emulation_trigger,
+        }
+    }
+
+    #[must_use]
+    pub fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        match self {
+            Self::Limit(order) => order.trigger_instrument_id(),
+            Self::LimitIfTouched(order) => order.trigger_instrument_id(),
+            Self::Market(order) => order.trigger_instrument_id(),
+            Self::MarketIfTouched(order) => order.trigger_instrument_id(),
+            Self::MarketToLimit(order) => order.trigger_instrument_id(),
+            Self::StopLimit(order) => order.trigger_instrument_id(),
+            Self::StopMarket(order) => order.trigger_instrument_id(),
+            Self::TrailingStopLimit(order) => order.trigger_instrument_id(),
+            Self::TrailingStopMarket(order) => order.trigger_instrument_id(),
+        }
+    }
+
+    #[must_use]
+    pub fn avg_px(&self) -> Option<f64> {
+        match self {
+            Self::Limit(order) => order.avg_px,
+            Self::LimitIfTouched(order) => order.avg_px,
+            Self::Market(order) => order.avg_px,
+            Self::MarketIfTouched(order) => order.avg_px,
+            Self::MarketToLimit(order) => order.avg_px,
+            Self::StopLimit(order) => order.avg_px,
+            Self::StopMarket(order) => order.avg_px,
+            Self::TrailingStopLimit(order) => order.avg_px,
+            Self::TrailingStopMarket(order) => order.avg_px,
+        }
+    }
+
+    #[must_use]
+    pub fn slippage(&self) -> Option<f64> {
+        match self {
+            Self::Limit(order) => order.slippage,
+            Self::LimitIfTouched(order) => order.slippage,
+            Self::Market(order) => order.slippage,
+            Self::MarketIfTouched(order) => order.slippage,
+            Self::MarketToLimit(order) => order.slippage,
+            Self::StopLimit(order) => order.slippage,
+            Self::StopMarket(order) => order.slippage,
+            Self::TrailingStopLimit(order) => order.slippage,
+            Self::TrailingStopMarket(order) => order.slippage,
+        }
+    }
+
+    #[must_use]
+    pub fn commissions(&self) -> IndexMap<Currency, Money> {
+        match self {
+            Self::Limit(order) => order.commissions.clone(),
+            Self::LimitIfTouched(order) => order.commissions.clone(),
+            Self::Market(order) => order.commissions.clone(),
+            Self::MarketIfTouched(order) => order.commissions.clone(),
+            Self::MarketToLimit(order) => order.commissions.clone(),
+            Self::StopLimit(order) => order.commissions.clone(),
+            Self::StopMarket(order) => order.commissions.clone(),
+            Self::TrailingStopLimit(order) => order.commissions.clone(),
+            Self::TrailingStopMarket(order) => order.commissions.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn display_qty(&self) -> Option<Quantity> {
+        match self {
+            Self::Limit(order) => order.display_qty(),
+            Self::LimitIfTouched(order) => order.display_qty(),
+            Self::Market(order) => order.display_qty(),
+            Self::MarketIfTouched(order) => order.display_qty(),
+            Self::MarketToLimit(order) => order.display_qty(),
+            Self::StopLimit(order) => order.display_qty(),
+            Self::StopMarket(order) => order.display_qty(),
+            Self::TrailingStopLimit(order) => order.display_qty(),
+            Self::TrailingStopMarket(order) => order.display_qty(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_buy(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_buy(),
+            Self::LimitIfTouched(order) => order.is_buy(),
+            Self::Market(order) => order.is_buy(),
+            Self::MarketIfTouched(order) => order.is_buy(),
+            Self::MarketToLimit(order) => order.is_buy(),
+            Self::StopLimit(order) => order.is_buy(),
+            Self::StopMarket(order) => order.is_buy(),
+            Self::TrailingStopLimit(order) => order.is_buy(),
+            Self::TrailingStopMarket(order) => order.is_buy(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_sell(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_sell(),
+            Self::LimitIfTouched(order) => order.is_sell(),
+            Self::Market(order) => order.is_sell(),
+            Self::MarketIfTouched(order) => order.is_sell(),
+            Self::MarketToLimit(order) => order.is_sell(),
+            Self::StopLimit(order) => order.is_sell(),
+            Self::StopMarket(order) => order.is_sell(),
+            Self::TrailingStopLimit(order) => order.is_sell(),
+            Self::TrailingStopMarket(order) => order.is_sell(),
         }
     }
 
@@ -550,6 +750,66 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn trigger_type(&self) -> Option<TriggerType> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(order) => Some(order.trigger_type),
+            Self::Market(_) => None,
+            Self::MarketIfTouched(order) => Some(order.trigger_type),
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(order) => Some(order.trigger_type),
+            Self::StopMarket(order) => Some(order.trigger_type),
+            Self::TrailingStopLimit(order) => Some(order.trigger_type),
+            Self::TrailingStopMarket(order) => Some(order.trigger_type),
+        }
+    }
+
+    #[must_use]
+    pub fn limit_offset(&self) -> Option<Price> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(_) => None,
+            Self::Market(_) => None,
+            Self::MarketIfTouched(_) => None,
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(_) => None,
+            Self::StopMarket(_) => None,
+            Self::TrailingStopLimit(order) => Some(order.limit_offset),
+            Self::TrailingStopMarket(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn trailing_offset(&self) -> Option<Price> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(_) => None,
+            Self::Market(_) => None,
+            Self::MarketIfTouched(_) => None,
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(_) => None,
+            Self::StopMarket(_) => None,
+            Self::TrailingStopLimit(order) => Some(order.trailing_offset),
+            Self::TrailingStopMarket(order) => Some(order.trailing_offset),
+        }
+    }
+
+    #[must_use]
+    pub fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(_) => None,
+            Self::Market(_) => None,
+            Self::MarketIfTouched(_) => None,
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(_) => None,
+            Self::StopMarket(_) => None,
+            Self::TrailingStopLimit(order) => Some(order.trailing_offset_type),
+            Self::TrailingStopMarket(order) => Some(order.trailing_offset_type),
+        }
+    }
+
+    #[must_use]
     pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
         match self {
             Self::Limit(order) => order.would_reduce_only(side, position_qty),
@@ -565,47 +825,32 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn is_post_only(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_post_only,
+            Self::LimitIfTouched(order) => order.is_post_only,
+            Self::Market(_) => false,
+            Self::MarketIfTouched(_) => false,
+            Self::MarketToLimit(order) => order.is_post_only,
+            Self::StopLimit(order) => order.is_post_only,
+            Self::StopMarket(_) => false,
+            Self::TrailingStopLimit(order) => order.is_post_only,
+            Self::TrailingStopMarket(_) => false,
+        }
+    }
+
+    #[must_use]
     pub fn is_reduce_only(&self) -> bool {
         match self {
-            Self::Limit(order) => order.is_reduce_only(),
-            Self::Market(order) => order.is_reduce_only(),
-            Self::MarketToLimit(order) => order.is_reduce_only(),
-            Self::LimitIfTouched(order) => order.is_reduce_only(),
-            Self::MarketIfTouched(order) => order.is_reduce_only(),
-            Self::StopLimit(order) => order.is_reduce_only(),
-            Self::StopMarket(order) => order.is_reduce_only(),
-            Self::TrailingStopLimit(order) => order.is_reduce_only(),
-            Self::TrailingStopMarket(order) => order.is_reduce_only(),
-        }
-    }
-
-    #[must_use]
-    pub fn is_buy(&self) -> bool {
-        match self {
-            Self::Limit(order) => order.is_buy(),
-            Self::LimitIfTouched(order) => order.is_buy(),
-            Self::Market(order) => order.is_buy(),
-            Self::MarketIfTouched(order) => order.is_buy(),
-            Self::MarketToLimit(order) => order.is_buy(),
-            Self::StopLimit(order) => order.is_buy(),
-            Self::StopMarket(order) => order.is_buy(),
-            Self::TrailingStopLimit(order) => order.is_buy(),
-            Self::TrailingStopMarket(order) => order.is_buy(),
-        }
-    }
-
-    #[must_use]
-    pub fn is_sell(&self) -> bool {
-        match self {
-            Self::Limit(order) => order.is_sell(),
-            Self::LimitIfTouched(order) => order.is_sell(),
-            Self::Market(order) => order.is_sell(),
-            Self::MarketIfTouched(order) => order.is_sell(),
-            Self::MarketToLimit(order) => order.is_sell(),
-            Self::StopLimit(order) => order.is_sell(),
-            Self::StopMarket(order) => order.is_sell(),
-            Self::TrailingStopLimit(order) => order.is_sell(),
-            Self::TrailingStopMarket(order) => order.is_sell(),
+            Self::Limit(order) => order.is_reduce_only,
+            Self::Market(order) => order.is_reduce_only,
+            Self::MarketToLimit(order) => order.is_reduce_only,
+            Self::LimitIfTouched(order) => order.is_reduce_only,
+            Self::MarketIfTouched(order) => order.is_reduce_only,
+            Self::StopLimit(order) => order.is_reduce_only,
+            Self::StopMarket(order) => order.is_reduce_only,
+            Self::TrailingStopLimit(order) => order.is_reduce_only,
+            Self::TrailingStopMarket(order) => order.is_reduce_only,
         }
     }
 
@@ -620,20 +865,6 @@ impl OrderAny {
             Self::StopMarket(order) => order.is_quote_quantity(),
             Self::TrailingStopLimit(order) => order.is_quote_quantity(),
             Self::TrailingStopMarket(order) => order.is_quote_quantity(),
-        }
-    }
-
-    pub fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
-        match self {
-            Self::Limit(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::LimitIfTouched(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::Market(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::MarketIfTouched(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::MarketToLimit(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::StopLimit(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::StopMarket(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::TrailingStopLimit(order) => order.is_quote_quantity = is_quote_quantity,
-            Self::TrailingStopMarket(order) => order.is_quote_quantity = is_quote_quantity,
         }
     }
 
@@ -686,6 +917,62 @@ impl OrderAny {
             Self::StopMarket(order) => order.linked_order_ids.clone(),
             Self::TrailingStopLimit(order) => order.linked_order_ids.clone(),
             Self::TrailingStopMarket(order) => order.linked_order_ids.clone(),
+        }
+    }
+
+    pub fn set_position_id(&mut self, position_id: Option<PositionId>) {
+        match self {
+            Self::Limit(order) => order.position_id = position_id,
+            Self::LimitIfTouched(order) => order.position_id = position_id,
+            Self::Market(order) => order.position_id = position_id,
+            Self::MarketIfTouched(order) => order.position_id = position_id,
+            Self::MarketToLimit(order) => order.position_id = position_id,
+            Self::StopLimit(order) => order.position_id = position_id,
+            Self::StopMarket(order) => order.position_id = position_id,
+            Self::TrailingStopLimit(order) => order.position_id = position_id,
+            Self::TrailingStopMarket(order) => order.position_id = position_id,
+        }
+    }
+
+    pub fn set_quantity(&mut self, quantity: Quantity) {
+        match self {
+            Self::Limit(order) => order.quantity = quantity,
+            Self::LimitIfTouched(order) => order.quantity = quantity,
+            Self::Market(order) => order.quantity = quantity,
+            Self::MarketIfTouched(order) => order.quantity = quantity,
+            Self::MarketToLimit(order) => order.quantity = quantity,
+            Self::StopLimit(order) => order.quantity = quantity,
+            Self::StopMarket(order) => order.quantity = quantity,
+            Self::TrailingStopLimit(order) => order.quantity = quantity,
+            Self::TrailingStopMarket(order) => order.quantity = quantity,
+        }
+    }
+
+    pub fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
+        match self {
+            Self::Limit(order) => order.leaves_qty = leaves_qty,
+            Self::LimitIfTouched(order) => order.leaves_qty = leaves_qty,
+            Self::Market(order) => order.leaves_qty = leaves_qty,
+            Self::MarketIfTouched(order) => order.leaves_qty = leaves_qty,
+            Self::MarketToLimit(order) => order.leaves_qty = leaves_qty,
+            Self::StopLimit(order) => order.leaves_qty = leaves_qty,
+            Self::StopMarket(order) => order.leaves_qty = leaves_qty,
+            Self::TrailingStopLimit(order) => order.leaves_qty = leaves_qty,
+            Self::TrailingStopMarket(order) => order.leaves_qty = leaves_qty,
+        }
+    }
+
+    pub fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
+        match self {
+            Self::Limit(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::LimitIfTouched(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::Market(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::MarketIfTouched(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::MarketToLimit(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::StopLimit(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::StopMarket(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::TrailingStopLimit(order) => order.is_quote_quantity = is_quote_quantity,
+            Self::TrailingStopMarket(order) => order.is_quote_quantity = is_quote_quantity,
         }
     }
 }
