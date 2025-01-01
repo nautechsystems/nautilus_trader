@@ -271,7 +271,39 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_order_and_load_indexes() {
+    async fn test_truncate() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        // Add items in currency and instrument table
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        wait_until(
+            || {
+                pg_cache.load_currencies().unwrap().len() == 2
+                    && pg_cache.load_instruments().unwrap().len() == 1
+            },
+            Duration::from_secs(2),
+        );
+
+        // Call flush which will truncate all the tables
+        pg_cache.flush().unwrap();
+
+        // Check if all the tables are empty
+        let currencies = pg_cache.load_currencies().unwrap();
+        assert_eq!(currencies.len(), 0);
+        let instruments = pg_cache.load_instruments().unwrap();
+        assert_eq!(instruments.len(), 0);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_order_and_load_indexes() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1");
@@ -459,40 +491,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_trade() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
-
-        // Add target instrument and currencies
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        pg_cache
-            .add_currency(&instrument.base_currency().unwrap())
-            .unwrap();
-        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
-        pg_cache.add_instrument(&instrument).unwrap();
-
-        // Add trade
-        let trade = stub_trade_ethusdt_buyer();
-        pg_cache.add_trade(&trade).unwrap();
-        wait_until(
-            || {
-                pg_cache
-                    .load_instrument(&instrument.id())
-                    .unwrap()
-                    .is_some()
-                    && !pg_cache.load_trades(&instrument.id()).unwrap().is_empty()
-            },
-            Duration::from_secs(2),
-        );
-        let trades = pg_cache.load_trades(&instrument.id()).unwrap();
-        assert_eq!(trades.len(), 1);
-        assert_eq!(trades[0], trade);
-
-        pg_cache.flush().unwrap();
-        pg_cache.close().unwrap();
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_quote() {
+    async fn test_add_quote() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
@@ -525,7 +524,40 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_bar() {
+    async fn test_add_trade() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        // Add target instrument and currencies
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        // Add trade
+        let trade = stub_trade_ethusdt_buyer();
+        pg_cache.add_trade(&trade).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_trades(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let trades = pg_cache.load_trades(&instrument.id()).unwrap();
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0], trade);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_bar() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
@@ -558,39 +590,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_truncate() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
-
-        // Add items in currency and instrument table
-        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
-        pg_cache
-            .add_currency(&instrument.base_currency().unwrap())
-            .unwrap();
-        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
-        pg_cache.add_instrument(&instrument).unwrap();
-        wait_until(
-            || {
-                pg_cache.load_currencies().unwrap().len() == 2
-                    && pg_cache.load_instruments().unwrap().len() == 1
-            },
-            Duration::from_secs(2),
-        );
-
-        // Call flush which will truncate all the tables
-        pg_cache.flush().unwrap();
-
-        // Check if all the tables are empty
-        let currencies = pg_cache.load_currencies().unwrap();
-        assert_eq!(currencies.len(), 0);
-        let instruments = pg_cache.load_instruments().unwrap();
-        assert_eq!(instruments.len(), 0);
-
-        pg_cache.flush().unwrap();
-        pg_cache.close().unwrap();
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_signal() {
+    async fn test_add_signal() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         // Add signal
@@ -613,7 +613,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_custom_data() {
+    async fn test_add_custom_data() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         // Add custom data
