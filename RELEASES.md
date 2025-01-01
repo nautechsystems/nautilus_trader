@@ -27,6 +27,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed `TradingNode.is_built` from a property to a method `.is_built()`
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
+- Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
 
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
@@ -37,6 +38,7 @@ Released on TBD (UTC).
 - Fixed missing enum member `CANCELED_MARKET_RESOLVED` for `PolymarketOrderStatus`
 - Fixed missing `init_id` field from some order `.to_dict()` representations
 - Fixed writing `DYDXOraclePrice` to catalog (#2158), thanks @davidsblom
+- Fixed missing `OrderEmulated` and `OrderReleased` Arrow schemas
 
 ---
 
