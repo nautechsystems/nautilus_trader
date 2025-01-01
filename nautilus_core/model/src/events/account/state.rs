@@ -24,6 +24,7 @@ use crate::{
     types::{AccountBalance, Currency, MarginBalance},
 };
 
+/// Represents an event which includes information on the state of the account.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(

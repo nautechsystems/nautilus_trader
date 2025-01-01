@@ -54,8 +54,11 @@ pub struct OrderUpdated {
     pub venue_order_id: Option<VenueOrderId>,
     /// The account ID associated with the event.
     pub account_id: Option<AccountId>,
+    /// The order quantity.
     pub quantity: Quantity,
+    /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The unique identifier for the event.
     pub event_id: UUID4,

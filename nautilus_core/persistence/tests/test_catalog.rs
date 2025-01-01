@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::path::PathBuf;
+
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
     is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
@@ -31,7 +33,6 @@ use nautilus_test_kit::common::get_test_data_file_path;
 use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
 use rstest::rstest;
-use std::path::PathBuf;
 
 /// Memory leak test
 ///

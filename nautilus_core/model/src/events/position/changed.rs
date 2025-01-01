@@ -23,6 +23,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where a position has changed.
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct PositionChanged {

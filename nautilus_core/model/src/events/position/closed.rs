@@ -26,6 +26,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where a position has been closed.
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct PositionClosed {

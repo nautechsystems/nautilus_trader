@@ -23,6 +23,7 @@ use crate::{
     types::{Currency, Price, Quantity},
 };
 
+/// Represents an event where a position has been opened.
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct PositionOpened {

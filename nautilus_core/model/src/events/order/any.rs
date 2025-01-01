@@ -259,6 +259,7 @@ impl OrderEventAny {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> Option<Ustr> {
         match self {
             Self::Initialized(_) => None,

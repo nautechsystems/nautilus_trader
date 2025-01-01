@@ -25,6 +25,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// Represents an order status at a point in time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -32,34 +33,63 @@ use serde::{Deserialize, Serialize};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
 )]
 pub struct OrderStatusReport {
+    /// The account ID associated with the position.
     pub account_id: AccountId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The venue assigned order ID.
     pub venue_order_id: VenueOrderId,
+    /// The order side.
     pub order_side: OrderSide,
+    /// The order type.
     pub order_type: OrderType,
+    /// The order time in force.
     pub time_in_force: TimeInForce,
+    /// The order status.
     pub order_status: OrderStatus,
+    /// The order quantity.
     pub quantity: Quantity,
+    /// The order total filled quantity.
     pub filled_qty: Quantity,
+    /// The unique identifier for the event.
     pub report_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the order was accepted.
     pub ts_accepted: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the last event occurred.
     pub ts_last: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// The client order ID.
     pub client_order_id: Option<ClientOrderId>,
+    /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,
+    /// The orders contingency type.
     pub contingency_type: ContingencyType,
+    /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.
     pub expire_time: Option<UnixNanos>,
+    /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
+    /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
+    /// The trailing offset for the orders limit price.
     pub limit_offset: Option<Decimal>,
+    /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Decimal>,
+    /// The trailing offset type.
     pub trailing_offset_type: TrailingOffsetType,
+    /// The order average fill price.
     pub avg_px: Option<Decimal>,
+    /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
+    /// If the order will only provide liquidity (make a market).
     pub post_only: bool,
+    /// If the order carries the 'reduce-only' execution instruction.
     pub reduce_only: bool,
+    /// The reason for order cancellation.
     pub cancel_reason: Option<String>,
+    /// UNIX timestamp (nanoseconds) when the order was triggered.
     pub ts_triggered: Option<UnixNanos>,
 }
 

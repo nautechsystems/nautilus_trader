@@ -22,6 +22,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// Represents a position status at a point in time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -29,14 +30,23 @@ use serde::{Deserialize, Serialize};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
 )]
 pub struct PositionStatusReport {
+    /// The account ID associated with the position.
     pub account_id: AccountId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The position side.
     pub position_side: PositionSide,
+    /// The current open quantity.
     pub quantity: Quantity,
+    /// The current signed quantity as a decimal (positive for position side `LONG`, negative for `SHORT`).
     pub signed_decimal_qty: Decimal,
+    /// The unique identifier for the event.
     pub report_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the last event occurred.
     pub ts_last: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// The position ID (assigned by the venue).
     pub venue_position_id: Option<PositionId>,
 }
 

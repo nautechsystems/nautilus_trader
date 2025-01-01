@@ -33,6 +33,10 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where an order has been denied by the Nautilus system.
+///
+/// This could be due an unsupported feature, a risk limit exceedance, or for
+/// any other reason that an otherwise valid order is not able to be submitted.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
