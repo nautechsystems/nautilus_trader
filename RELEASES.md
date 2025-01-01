@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `slip_and_fill_market_orders` config option for `BacktestVenueConfig` and `OrderMatchingEngine` (default `True` to retain current behavior)
 - Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
 - Added `DataEngineConfig.time_bars_skip_first_non_full_bar` config option (#2160), thanks @faysou
+- Added docs for `Cache` and slippage and spread handling in backtesting (#2162), thanks @stefansimik
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 

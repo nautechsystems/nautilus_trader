@@ -2,27 +2,30 @@
 
 ## Introduction
 
-The Cache is a central in-memory database in NautilusTrader that automatically stores and manages all trading-related data. Think of it as your strategy’s memory – storing everything from market data to order history to custom calculations.
+The Cache is a central in-memory database in NautilusTrader that automatically stores and manages all trading-related data.
+Think of it as your strategy’s memory – storing everything from market data to order history to custom calculations.
 
 The Cache serves multiple key purposes:
 
 1. **Stores market data**
-   - Stores recent market history (bars, trade ticks, quotes, order books)
-   - Gives you access to both current and historical market data for your strategy
+   - Stores recent market history (e.g., order books, quotes, trades, bars).
+   - Gives you access to both current and historical market data for your strategy.
 
 2. **Tracks trading data**
-   - Maintains complete order history and current state of orders
-   - Tracks all `Position`s and `Account` information
-   - Stores `Instrument` definitions and `Currency` information
+   - Maintains complete order history and current state of orders.
+   - Tracks all `Position`s and `Account` information.
+   - Stores `Instrument` definitions and `Currency` information.
 
 3. **Store Custom data**
-   - Any user-defined objects or data can be stored in the Cache for later use
-   - Enables data sharing between different strategies
+   - Any user-defined objects or data can be stored in the Cache for later use.
+   - Enables data sharing between different strategies.
 
 ### How Cache works
 
-- Data is automatically added to the Cache as events occur in the system.
-- Updates happen asynchronously, which means there might be a small delay between an event occurring and it appearing in the Cache.
+**Built-in types**
+
+- Data is automatically added to the Cache as it flows through the system.
+- In live contexts, updates happen asynchronously -- which means there might be a small delay between an event occurring and it appearing in the Cache.
 - All data flows through the Cache before reaching your strategy’s callbacks – see the diagram below:
 
 ```
@@ -63,7 +66,8 @@ def on_bar(self, bar: Bar) -> None:
 
 ## Configuration
 
-The Cache’s behavior and capacity can be configured through the `CacheConfig` class. You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your trading context.
+The Cache’s behavior and capacity can be configured through the `CacheConfig` class.
+You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](/concepts/architecture.md#environment-contexts).
 
 Here's a basic example of configuring the Cache:
 
@@ -88,7 +92,8 @@ node_config = TradingNodeConfig(
 ```
 
 :::tip
-By default, the Cache keeps the last 10,000 bars for each bar type and 10,000 trade ticks per instrument. These limits provide a good balance between memory usage and data availability. Increase them if your strategy needs more historical data.
+By default, the Cache keeps the last 10,000 bars for each bar type and 10,000 trade ticks per instrument.
+These limits provide a good balance between memory usage and data availability. Increase them if your strategy needs more historical data.
 :::
 
 ### Configuration Options
@@ -113,7 +118,8 @@ cache_config = CacheConfig(
 ```
 
 :::note
-Each bar type maintains its own separate capacity. For example, if you're using both 1-minute and 5-minute bars, each will store up to `bar_capacity` bars. When `bar_capacity` is reached, the oldest data is automatically removed from the Cache.
+Each bar type maintains its own separate capacity. For example, if you're using both 1-minute and 5-minute bars, each will store up to `bar_capacity` bars.
+When `bar_capacity` is reached, the oldest data is automatically removed from the Cache.
 :::
 
 ### Database Configuration
@@ -121,6 +127,7 @@ Each bar type maintains its own separate capacity. For example, if you're using 
 For persistence between system restarts, you can configure a database backend.
 
 When is it useful to use persistence?
+
 - **Long-running systems**: If you want your data to survive system restarts, upgrading, or unexpected failures, having a database configuration helps to pick up exactly where you left off.
 - **Historical insights**: When you need to preserve past trading data for detailed post-analysis or audits.
 - **Multi-node or distributed setups**: If multiple services or nodes need to access the same state, a persistent store helps ensure shared and consistent data.
@@ -142,7 +149,8 @@ config = CacheConfig(
 
 ### Accessing Market data
 
-The Cache provides a comprehensive interface for accessing different types of market data, including bars, ticks, quotes, and order books. All market data in the cache are stored with reverse indexing — meaning the most recent data is at index 0.
+The Cache provides a comprehensive interface for accessing different types of market data, including order books, quotes, trades, bars.
+All market data in the cache are stored with reverse indexing — meaning the most recent data is at index 0.
 
 #### Bar(s) access
 
@@ -208,7 +216,7 @@ from nautilus_trader.core.rust.model import PriceType
 # Get current price by type; Returns Price or None.
 price = self.cache.price(
     instrument_id=instrument_id,
-    price_type=PriceType.MID,   # Options: BID, ASK, MID, LAST
+    price_type=PriceType.MID,  # Options: BID, ASK, MID, LAST
 )
 ```
 
@@ -218,7 +226,7 @@ price = self.cache.price(
 # Get all available bar types for an instrument; Returns List[BarType].
 bar_types = self.cache.bar_types(
     instrument_id=instrument_id,
-    price_type=PriceType.LAST,               # Options: BID, ASK, MID, LAST
+    price_type=PriceType.LAST,  # Options: BID, ASK, MID, LAST
     aggregation_source=AggregationSource.EXTERNAL,
 )
 ```
@@ -255,10 +263,10 @@ class MarketDataStrategy(Strategy):
 
 The Cache provides comprehensive access to all trading objects within the system, including:
 
-- orders
-- positions
-- accounts
-- instruments
+- Orders
+- Positions
+- Accounts
+- Instruments
 
 #### Orders
 
@@ -397,7 +405,8 @@ currency = self.cache.load_currency("USD")  # Loads currency data for USD
 
 ### Custom Data
 
-NautilusTrader’s Cache can also store and retrieve custom data types in addition to built-in market data and trading objects. You can keep any user-defined data you want to share between system components (mostly Actors / Strategies).
+NautilusTrader’s Cache can also store and retrieve custom data types in addition to built-in market data and trading objects.
+You can keep any user-defined data you want to share between system components (mostly Actors / Strategies).
 
 #### Basic Storage and Retrieval
 
@@ -424,18 +433,18 @@ The Cache is not designed to be a full database replacement. For large datasets 
 The Cache and Portfolio components serve different but complementary purposes in NautilusTrader:
 
 **Cache**
-- Maintains the historical knowledge and current state of the trading system
-- Updates asynchronously as events occur through the system
-- Provides complete history of trading activity and market data
-- All data a strategy has received (events/updates) is stored in Cache
-- May have slight delays in reflecting the absolute latest state
+- Maintains the historical knowledge and current state of the trading system.
+- Updates asynchronously as events occur through the system.
+- Provides complete history of trading activity and market data.
+- All data a strategy has received (events/updates) is stored in Cache.
+- May have slight delays in reflecting the absolute latest state.
 
 **Portfolio**
-- Provides real-time account state by connecting directly to the broker
-- Best used when you need the absolute latest account information
-- Shows only current state without history
-- Real broker may have new information (about balance/positions) not yet received by NautilusTrader
-- More accurate for immediate position/balance checks
+- Provides real-time account state.
+- Best used when you need the absolute latest account information.
+- Shows only current state without history.
+- Real venue/broker may have new information (about balance/positions) not yet received by NautilusTrader.
+- More accurate for immediate position/balance checks.
 
 **Example**
 
@@ -454,16 +463,16 @@ class MyStrategy(Strategy):
 Choosing between storing data in the Cache versus strategy variables depends on your specific needs:
 
 **Cache Storage**
-- Use for data that needs to be shared between strategies
-- Best for data that needs to persist between system restarts
-- Acts as a central database accessible to all components
-- Ideal for state that needs to survive strategy resets
+- Use for data that needs to be shared between strategies.
+- Best for data that needs to persist between system restarts.
+- Acts as a central database accessible to all components.
+- Ideal for state that needs to survive strategy resets.
 
 **Strategy Variables**
-- Use for strategy-specific calculations
-- Better for temporary values and intermediate results
-- Provides faster access and better encapsulation
-- Best for data that only your strategy needs
+- Use for strategy-specific calculations.
+- Better for temporary values and intermediate results.
+- Provides faster access and better encapsulation.
+- Best for data that only your strategy needs.
 
 **Example**:
 
