@@ -11,8 +11,7 @@ Released on TBD (UTC).
 - Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
 - Added `DataEngineConfig.time_bars_skip_first_non_full_bar` config option (#2160), thanks @faysou
 - Added docs for `Cache` and slippage and spread handling in backtesting (#2162), thanks @stefansimik
-- Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
-- Handle directory and live streams to catalog (#2153), thanks @limx0
+- Added catalog helper functions to export data (#2135), thanks @twitu
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)
@@ -23,8 +22,10 @@ Released on TBD (UTC).
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
-- Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
+- Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
+- Handle directory and live streams to catalog (#2153), thanks @limx0
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
+- Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 
 ### Breaking Changes
 - Changed `TradingNode.is_built` from a property to a method `.is_built()`
