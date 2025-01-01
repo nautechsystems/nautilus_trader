@@ -391,7 +391,7 @@ impl StopLimitOrder {
         )?;
         self.avg_px.map_or_else(
             || dict.set_item("avg_px", py.None()),
-            |x| dict.set_item("avg_px", x.to_string()),
+            |x| dict.set_item("avg_px", x),
         )?;
         self.position_id.map_or_else(
             || dict.set_item("position_id", py.None()),
@@ -403,7 +403,7 @@ impl StopLimitOrder {
         )?;
         self.slippage.map_or_else(
             || dict.set_item("slippage", py.None()),
-            |x| dict.set_item("slippage", x.to_string()),
+            |x| dict.set_item("slippage", x),
         )?;
         self.account_id.map_or_else(
             || dict.set_item("account_id", py.None()),

@@ -633,7 +633,7 @@ impl LimitOrder {
         )?;
         self.avg_px.map_or_else(
             || dict.set_item("avg_px", py.None()),
-            |x| dict.set_item("avg_px", x.to_string()),
+            |x| dict.set_item("avg_px", x),
         )?;
         Ok(dict.into())
     }

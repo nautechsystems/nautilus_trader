@@ -23,12 +23,14 @@ Released on TBD (UTC).
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
+- Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 
 ### Breaking Changes
 - Changed `TradingNode.is_built` from a property to a method `.is_built()`
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
 - Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
+- Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
 
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
