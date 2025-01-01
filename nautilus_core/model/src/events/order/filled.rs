@@ -53,12 +53,19 @@ pub struct OrderFilled {
     pub venue_order_id: VenueOrderId,
     /// The account ID associated with the event.
     pub account_id: AccountId,
+    /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
+    /// The order side.
     pub order_side: OrderSide,
+    /// The order type.
     pub order_type: OrderType,
+    /// The fill quantity for this execution.
     pub last_qty: Quantity,
+    /// The fill price for this execution.
     pub last_px: Price,
+    /// The currency of the `last_px`.
     pub currency: Currency,
+    /// The liquidity side of the execution.
     pub liquidity_side: LiquiditySide,
     /// The unique identifier for the event.
     pub event_id: UUID4,
@@ -68,7 +75,9 @@ pub struct OrderFilled {
     pub ts_init: UnixNanos,
     /// If the event was generated during reconciliation.
     pub reconciliation: bool,
+    /// The position ID (assigned by the venue).
     pub position_id: Option<PositionId>,
+    /// The commission generated from this execution.
     pub commission: Option<Money>,
 }
 

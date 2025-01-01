@@ -35,6 +35,12 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where an order has been initialized.
+///
+/// This is a seed event which can instantiate any order through a creation
+/// method. This event should contain enough information to be able to send it
+/// 'over the wire' and have a valid order created with exactly the same
+/// properties as if it had been instantiated locally.
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(default)]
@@ -52,13 +58,21 @@ pub struct OrderInitialized {
     pub instrument_id: InstrumentId,
     /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
+    /// The order side.
     pub order_side: OrderSide,
+    /// The order type.
     pub order_type: OrderType,
+    /// The order quantity.
     pub quantity: Quantity,
+    /// The order time in force.
     pub time_in_force: TimeInForce,
+    /// If the order will only provide liquidity (make a market).
     pub post_only: bool,
+    /// If the order carries the 'reduce-only' execution instruction.
     pub reduce_only: bool,
+    /// If the order quantity is denominated in the quote currency.
     pub quote_quantity: bool,
+    /// If the event was generated during reconciliation.
     pub reconciliation: bool,
     /// The unique identifier for the event.
     pub event_id: UUID4,
@@ -66,23 +80,41 @@ pub struct OrderInitialized {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
+    /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
+    /// The trailing offset for the orders limit price.
     pub limit_offset: Option<Price>,
+    /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Price>,
+    /// The trailing offset type.
     pub trailing_offset_type: Option<TrailingOffsetType>,
+    /// The order expiration, `None` for no expiration.
     pub expire_time: Option<UnixNanos>,
+    /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
+    /// The emulation trigger type for the order.
     pub emulation_trigger: Option<TriggerType>,
+    /// The emulation trigger instrument ID for the order (if `None` then will be the `instrument_id`).
     pub trigger_instrument_id: Option<InstrumentId>,
+    /// The order contingency type.
     pub contingency_type: Option<ContingencyType>,
+    /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,
+    ///  The order linked client order ID(s).
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
+    /// The orders parent client order ID.
     pub parent_order_id: Option<ClientOrderId>,
+    /// The execution algorithm ID for the order.
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
+    /// The execution algorithm parameters for the order.
     pub exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+    /// The execution algorithm spawning primary client order ID.
     pub exec_spawn_id: Option<ClientOrderId>,
+    /// The custom user tags for the order.
     pub tags: Option<Vec<Ustr>>,
 }
 

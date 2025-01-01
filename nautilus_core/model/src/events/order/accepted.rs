@@ -33,6 +33,9 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where an order has been accepted by the trading venue.
+///
+/// This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]

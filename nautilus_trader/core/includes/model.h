@@ -1282,6 +1282,12 @@ typedef struct ClientOrderId_t {
     char* _0;
 } ClientOrderId_t;
 
+/**
+ * Represents an event where an order has been denied by the Nautilus system.
+ *
+ * This could be due an unsupported feature, a risk limit exceedance, or for
+ * any other reason that an otherwise valid order is not able to be submitted.
+ */
 typedef struct OrderDenied_t {
     /**
      * The trader ID associated with the event.
@@ -1317,6 +1323,9 @@ typedef struct OrderDenied_t {
     uint64_t ts_init;
 } OrderDenied_t;
 
+/**
+ * Represents an event where an order has become emulated by the Nautilus system.
+ */
 typedef struct OrderEmulated_t {
     /**
      * The trader ID associated with the event.
@@ -1348,6 +1357,9 @@ typedef struct OrderEmulated_t {
     uint64_t ts_init;
 } OrderEmulated_t;
 
+/**
+ * Represents an event where an order was released from the `OrderEmulated` by the Nautilus system.
+ */
 typedef struct OrderReleased_t {
     /**
      * The trader ID associated with the event.
@@ -1387,6 +1399,10 @@ typedef struct AccountId_t {
     char* _0;
 } AccountId_t;
 
+/**
+ * Represents an event where an order has been submitted by the system to the
+ * trading venue.
+ */
 typedef struct OrderSubmitted_t {
     /**
      * The trader ID associated with the event.
@@ -1429,6 +1445,11 @@ typedef struct VenueOrderId_t {
     char* _0;
 } VenueOrderId_t;
 
+/**
+ * Represents an event where an order has been accepted by the trading venue.
+ *
+ * This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
+ */
 typedef struct OrderAccepted_t {
     /**
      * The trader ID associated with the event.
@@ -1472,6 +1493,9 @@ typedef struct OrderAccepted_t {
     uint8_t reconciliation;
 } OrderAccepted_t;
 
+/**
+ * Represents an event where an order has been rejected by the trading venue.
+ */
 typedef struct OrderRejected_t {
     /**
      * The trader ID associated with the event.

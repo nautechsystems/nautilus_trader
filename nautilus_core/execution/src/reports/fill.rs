@@ -21,6 +21,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Represents a fill report of a single order execution.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -28,19 +29,33 @@ use serde::{Deserialize, Serialize};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
 )]
 pub struct FillReport {
+    /// The account ID associated with the position.
     pub account_id: AccountId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The venue assigned order ID.
     pub venue_order_id: VenueOrderId,
+    /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
+    /// The order side.
     pub order_side: OrderSide,
+    /// The last fill quantity for the position.
     pub last_qty: Quantity,
+    /// The last fill price for the position.
     pub last_px: Price,
+    /// The commission generated from the fill.
     pub commission: Money,
+    /// The liquidity side of the execution.
     pub liquidity_side: LiquiditySide,
+    /// The unique identifier for the event.
     pub report_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// The client order ID.
     pub client_order_id: Option<ClientOrderId>,
+    /// The position ID (assigned by the venue).
     pub venue_position_id: Option<OrderListId>,
 }
 
