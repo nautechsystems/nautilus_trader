@@ -26,9 +26,19 @@
 #define MONEY_MAX 9223372036.0
 
 /**
+ * The maximum valid money amount which can be represented.
+ */
+#define MONEY_MAX 170141183460.0
+
+/**
  * The minimum valid money amount which can be represented.
  */
 #define MONEY_MIN -9223372036.0
+
+/**
+ * The minimum valid money amount which can be represented.
+ */
+#define MONEY_MIN -170141183460.0
 
 /**
  * The maximum valid price value which can be represented.
@@ -1468,6 +1478,10 @@ typedef struct Currency_t {
     enum CurrencyType currency_type;
 } Currency_t;
 
+typedef i128 MoneyRaw;
+
+typedef int64_t MoneyRaw;
+
 /**
  * Represents an amount of money in a specified currency denomination.
  *
@@ -1479,7 +1493,7 @@ typedef struct Money_t {
      * The raw monetary amount as a signed 64-bit integer.
      * Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
      */
-    int64_t raw;
+    MoneyRaw raw;
     /**
      * The currency denomination associated with the monetary amount.
      */
@@ -2520,7 +2534,7 @@ struct Currency_t currency_from_cstr(const char *code_ptr);
 
 struct Money_t money_new(double amount, struct Currency_t currency);
 
-struct Money_t money_from_raw(int64_t raw, struct Currency_t currency);
+struct Money_t money_from_raw(MoneyRaw raw, struct Currency_t currency);
 
 double money_as_f64(const struct Money_t *money);
 

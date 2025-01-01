@@ -28,14 +28,29 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64, PRECISION};
+use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION};
+#[cfg(not(feature = "high_precision"))]
+use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use crate::types::Currency;
 
 /// The maximum valid money amount which can be represented.
+#[cfg(not(feature = "high_precision"))]
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
+/// The maximum valid money amount which can be represented.
+#[cfg(feature = "high_precision")]
+pub const MONEY_MAX: f64 = 170_141_183_460.0;
 
 /// The minimum valid money amount which can be represented.
+#[cfg(not(feature = "high_precision"))]
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
+/// The minimum valid money amount which can be represented.
+#[cfg(feature = "high_precision")]
+pub const MONEY_MIN: f64 = -170_141_183_460.0;
+
+#[cfg(feature = "high_precision")]
+pub type MoneyRaw = i128;
+#[cfg(not(feature = "high_precision"))]
+pub type MoneyRaw = i64;
 
 /// Represents an amount of money in a specified currency denomination.
 ///
@@ -50,7 +65,7 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 pub struct Money {
     /// The raw monetary amount as a signed 64-bit integer.
     /// Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
-    pub raw: i64,
+    pub raw: MoneyRaw,
     /// The currency denomination associated with the monetary amount.
     pub currency: Currency,
 }
@@ -70,10 +85,12 @@ impl Money {
     pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
-        Ok(Self {
-            raw: f64_to_fixed_i64(amount, currency.precision),
-            currency,
-        })
+        #[cfg(not(feature = "high_precision"))]
+        let raw = f64_to_fixed_i64(amount, currency.precision);
+        #[cfg(feature = "high_precision")]
+        let raw = f64_to_fixed_i128(amount, currency.precision);
+
+        Ok(Self { raw, currency })
     }
 
     /// Creates a new [`Money`] instance.
@@ -88,7 +105,7 @@ impl Money {
 
     /// Creates a new [`Money`] instance from the given `raw` fixed-point value and the specified `currency`.
     #[must_use]
-    pub fn from_raw(raw: i64, currency: Currency) -> Self {
+    pub fn from_raw(raw: MoneyRaw, currency: Currency) -> Self {
         Self { raw, currency }
     }
 
@@ -100,8 +117,14 @@ impl Money {
 
     /// Returns the value of this instance as an `f64`.
     #[must_use]
+    #[cfg(not(feature = "high_precision"))]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
+    }
+
+    #[cfg(feature = "high_precision")]
+    pub fn as_f64(&self) -> f64 {
+        fixed_i128_to_f64(self.raw)
     }
 
     /// Returns the value of this instance as a `Decimal`.
@@ -109,7 +132,8 @@ impl Money {
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
         let precision = self.currency.precision;
-        let rescaled_raw = self.raw / i64::pow(10, u32::from(PRECISION - precision));
+        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(PRECISION - precision));
+        #[allow(clippy::useless_conversion)]
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
 
@@ -393,6 +417,22 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "high_precision")]
+    fn test_money_min_max_values() {
+        let min_money = Money::new(MONEY_MIN, Currency::USD());
+        let max_money = Money::new(MONEY_MAX, Currency::USD());
+        assert_eq!(
+            min_money.raw,
+            f64_to_fixed_i128(MONEY_MIN, Currency::USD().precision)
+        );
+        assert_eq!(
+            max_money.raw,
+            f64_to_fixed_i128(MONEY_MAX, Currency::USD().precision)
+        );
+    }
+
+    #[rstest]
+    #[cfg(not(feature = "high_precision"))]
     fn test_money_min_max_values() {
         let min_money = Money::new(MONEY_MIN, Currency::USD());
         let max_money = Money::new(MONEY_MAX, Currency::USD());

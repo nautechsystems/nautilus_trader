@@ -21,8 +21,14 @@ cdef extern from "../includes/model.h":
     # The maximum valid money amount which can be represented.
     const double MONEY_MAX # = 9223372036.0
 
+    # The maximum valid money amount which can be represented.
+    const double MONEY_MAX # = 170141183460.0
+
     # The minimum valid money amount which can be represented.
     const double MONEY_MIN # = -9223372036.0
+
+    # The minimum valid money amount which can be represented.
+    const double MONEY_MIN # = -170141183460.0
 
     # The maximum valid price value which can be represented.
     const double PRICE_MAX # = 9223372036.0
@@ -853,6 +859,10 @@ cdef extern from "../includes/model.h":
         # The currency type, indicating its category (e.g. Fiat, Crypto).
         CurrencyType currency_type;
 
+    ctypedef i128 MoneyRaw;
+
+    ctypedef int64_t MoneyRaw;
+
     # Represents an amount of money in a specified currency denomination.
     #
     # - `MONEY_MAX` = 9_223_372_036
@@ -860,7 +870,7 @@ cdef extern from "../includes/model.h":
     cdef struct Money_t:
         # The raw monetary amount as a signed 64-bit integer.
         # Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
-        int64_t raw;
+        MoneyRaw raw;
         # The currency denomination associated with the monetary amount.
         Currency_t currency;
 
@@ -1755,7 +1765,7 @@ cdef extern from "../includes/model.h":
 
     Money_t money_new(double amount, Currency_t currency);
 
-    Money_t money_from_raw(int64_t raw, Currency_t currency);
+    Money_t money_from_raw(MoneyRaw raw, Currency_t currency);
 
     double money_as_f64(const Money_t *money);
 

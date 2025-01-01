@@ -29,7 +29,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{Currency, Money};
+use crate::types::{money::MoneyRaw, Currency, Money};
 
 #[pymethods]
 impl Money {
@@ -43,7 +43,7 @@ impl Money {
         self.raw = py_tuple
             .get_item(0)?
             .downcast::<PyLong>()?
-            .extract::<i64>()?;
+            .extract::<MoneyRaw>()?;
         let currency_code: String = py_tuple
             .get_item(1)?
             .downcast::<PyString>()?
@@ -328,7 +328,7 @@ impl Money {
     }
 
     #[getter]
-    fn raw(&self) -> i64 {
+    fn raw(&self) -> MoneyRaw {
         self.raw
     }
 
@@ -345,7 +345,7 @@ impl Money {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: i64, currency: Currency) -> PyResult<Self> {
+    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> PyResult<Self> {
         Ok(Self::from_raw(raw, currency))
     }
 
