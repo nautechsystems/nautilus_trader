@@ -37,6 +37,10 @@ crucial to understand the possible flows of execution messages (commands and eve
 The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
 a trading domain
 
+## [Cache](cache.md)
+
+The Cache is a central in-memory database, that automatically stores and manages all trading-related data.
+
 ## [Backtesting](backtesting.md)
 
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
