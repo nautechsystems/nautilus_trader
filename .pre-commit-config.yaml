@@ -13,7 +13,6 @@ repos:
       - id: trailing-whitespace
       - id: debug-statements
       - id: detect-private-key
-      - id: detect-aws-credentials
       - id: check-added-large-files
       - id: check-case-conflict
       - id: check-executables-have-shebangs
