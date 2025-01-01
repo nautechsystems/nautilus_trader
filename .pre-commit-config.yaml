@@ -6,16 +6,18 @@ repos:
     rev: v5.0.0
     hooks:
       - id: forbid-new-submodules
-      - id: fix-encoding-pragma
-        args: [--remove]
+      - id: no-commit-to-branch  # protect master from direct commits
       - id: end-of-file-fixer
         types_or: [rust, cython, python, markdown]
+      - id: mixed-line-ending
       - id: trailing-whitespace
       - id: debug-statements
       - id: detect-private-key
-      - id: check-builtin-literals
+      - id: detect-aws-credentials
+      - id: check-added-large-files
       - id: check-case-conflict
       - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
       - id: check-json
       - id: check-merge-conflict
       - id: check-symlinks
