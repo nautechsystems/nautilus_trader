@@ -16,7 +16,7 @@
 use std::{error::Error, fs::File, path::Path};
 
 use arrow::record_batch::RecordBatch;
-use parquet::{arrow::ArrowWriter, basic::ZstdLevel, file::properties::WriterProperties};
+use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
 /// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
 pub fn write_batch_to_parquet(
@@ -42,7 +42,7 @@ pub fn write_batches_to_parquet(
     let file = File::create(filepath)?;
 
     // Configure writer properties, defaulting to Zstandard compression if not specified
-    let default_compression = parquet::basic::Compression::ZSTD(ZstdLevel::default());
+    let default_compression = parquet::basic::Compression::SNAPPY;
     let writer_props = WriterProperties::builder()
         .set_compression(compression.unwrap_or(default_compression))
         .set_max_row_group_size(max_row_group_size.unwrap_or(5000))
