@@ -505,14 +505,16 @@ impl OrderManager {
 
     // Message sending methods
     pub fn send_emulator_command(&self, command: TradingCommand) {
-        log::info!("{}{} {}", CMD, SENT, command);
+        log::info!("{CMD}{SENT} {command}");
+
         self.msgbus
             .borrow()
             .send(&Ustr::from("OrderEmulator.execute"), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
-        log::info!("{}{} {}", CMD, SENT, command);
+        log::info!("{CMD}{SENT} {command}");
+
         let endpoint = format!("{exec_algorithm_id}.execute");
         self.msgbus.borrow().send(
             &Ustr::from(&endpoint),
@@ -521,14 +523,16 @@ impl OrderManager {
     }
 
     pub fn send_risk_command(&self, command: TradingCommand) {
-        log::info!("{}{} {}", CMD, SENT, command);
+        log::info!("{CMD}{SENT} {command}");
+
         self.msgbus
             .borrow()
             .send(&Ustr::from("RiskEngine.execute"), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
-        log::info!("{}{} {}", CMD, SENT, command);
+        log::info!("{CMD}{SENT} {command}");
+
         self.msgbus
             .borrow()
             .send(&Ustr::from("ExecEngine.execute"), &command);
