@@ -62,7 +62,7 @@ cdef class BarBuilder:
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-    ):
+    ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self._bar_type = bar_type
@@ -286,7 +286,7 @@ cdef class BarAggregator:
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         bint await_partial = False,
-    ):
+    ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self.bar_type = bar_type
@@ -430,7 +430,7 @@ cdef class TickBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -477,7 +477,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -572,7 +572,7 @@ cdef class ValueBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -687,14 +687,17 @@ cdef class TimeBarAggregator(BarAggregator):
         If will skip emitting a bar if the aggregation starts mid-interval.
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
+    time_bars_origin : pd.Timedelta or pd.DateOffset, optional
+        The origin time offset.
     composite_bar_build_delay : int, default 15
-        The time delay before building and emitting a composite bar type.
+        The time delay (microseconds) before building and emitting a composite bar type.
 
     Raises
     ------
     ValueError
         If `instrument.id` != `bar_type.instrument_id`.
     """
+
     def __init__(
         self,
         Instrument instrument not None,
@@ -705,9 +708,9 @@ cdef class TimeBarAggregator(BarAggregator):
         bint timestamp_on_close = True,
         bint skip_first_non_full_bar = False,
         bint build_with_no_updates = True,
-        object time_bars_origin = None, # pd.Timedelta or pd.DateOffset
+        object time_bars_origin: pd.Timedelta | pd.DateOffset = None,
         int composite_bar_build_delay = 15, # in microsecond
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
