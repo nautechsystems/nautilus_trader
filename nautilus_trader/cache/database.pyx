@@ -159,7 +159,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing = nautilus_pyo3.RedisCacheDatabase(
             trader_id=nautilus_pyo3.TraderId(trader_id.value),
-            instance_id=nautilus_pyo3.UUID4(instance_id.value),
+            instance_id=nautilus_pyo3.UUID4.from_str(instance_id.value),
             config_json=msgspec.json.encode(config, enc_hook=msgspec_encoding_hook),
         )
 
