@@ -154,7 +154,7 @@ cdef class AccountState(Event):
             balances=[AccountBalance.from_dict(b) for b in values["balances"]],
             margins=[MarginBalance.from_dict(m) for m in values["margins"]],
             info=values["info"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )

@@ -46,8 +46,7 @@ pub struct UUID4 {
 impl UUID4 {
     /// Creates a new [`UUID4`] instance.
     ///
-    /// Generates a new UUID version 4, which is based on random or pseudo-random numbers.
-    /// The UUID is stored as a fixed-length C string byte array.
+    /// The UUID value is stored as a fixed-length C string byte array.
     #[must_use]
     pub fn new() -> Self {
         let mut rng = rand::thread_rng();
@@ -118,8 +117,8 @@ impl FromStr for UUID4 {
     ///
     /// This function panics:
     /// - If the `value` is not a valid UUID version 4 RFC 4122.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let uuid = Uuid::try_parse(s)?;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::try_parse(value)?;
         Self::validate_v4(&uuid);
         Ok(Self::from_validated_uuid(&uuid))
     }

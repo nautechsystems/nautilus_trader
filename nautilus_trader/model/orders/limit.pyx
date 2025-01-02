@@ -270,7 +270,7 @@ cdef class LimitOrder(Order):
             order_side=order_side_from_str(str(pyo3_order.side)),
             quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
             price=Price.from_raw_c(pyo3_order.price.raw, pyo3_order.price.precision),
-            init_id=UUID4(str(pyo3_order.init_id)),
+            init_id=UUID4.from_str_c(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             expire_time_ns=int(pyo3_order.expire_time_ns) if pyo3_order.expire_time_ns is not None else 0,

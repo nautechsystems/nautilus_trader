@@ -98,7 +98,7 @@ cdef class ShutdownSystem(Command):
             trader_id=TraderId(values["trader_id"]),
             component_id=ComponentId(values["component_id"]),
             reason=values["reason"],
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -263,7 +263,7 @@ cdef class ComponentStateChanged(Event):
             component_type=values["component_type"],
             state=component_state_from_str(values["state"]),
             config=values["config"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -482,7 +482,7 @@ cdef class TradingStateChanged(RiskEvent):
             trader_id=TraderId(values["trader_id"]),
             state=trading_state_from_str(values["state"]),
             config=values["config"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )

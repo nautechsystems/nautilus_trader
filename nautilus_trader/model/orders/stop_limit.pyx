@@ -303,7 +303,7 @@ cdef class StopLimitOrder(Order):
             price=Price.from_raw_c(pyo3_order.price.raw, pyo3_order.price.precision),
             trigger_price=Price.from_raw_c(pyo3_order.trigger_price.raw, pyo3_order.trigger_price.precision),
             trigger_type=trigger_type_from_str(str(pyo3_order.trigger_type)),
-            init_id=UUID4(str(pyo3_order.init_id)),
+            init_id=UUID4.from_str_c(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             expire_time_ns=pyo3_order.expire_time if pyo3_order.expire_time is not None else 0,

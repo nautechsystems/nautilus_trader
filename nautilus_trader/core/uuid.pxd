@@ -23,3 +23,6 @@ cdef class UUID4:
 
     @staticmethod
     cdef UUID4 from_mem_c(UUID4_t raw)
+
+    @staticmethod
+    cdef UUID4 from_str_c(str value)

@@ -201,7 +201,7 @@ async def test_place_orders(betfair_client):
                     customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             market_version=None,
             customer_strategy_ref="4827311aa8c4c74",
             async_=False,
@@ -246,7 +246,7 @@ async def test_place_orders_handicap(betfair_client):
                     customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             market_version=None,
             customer_strategy_ref="4827311aa8c4c74",
             async_=False,
@@ -269,7 +269,7 @@ async def test_place_orders_market_on_close(betfair_client):
         strategy_id=TestIdStubs.strategy_id(),
         position_id=PositionId("1"),
         order=market_on_close_order,
-        command_id=UUID4("be7dffa0-46f2-fce5-d820-c7634d022ca1"),
+        command_id=UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757"),
         ts_init=0,
     )
     place_orders = order_submit_to_place_order_params(
@@ -297,7 +297,7 @@ async def test_place_orders_market_on_close(betfair_client):
                     customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
-            customer_ref="be7dffa046f2fce5d820c7634d022ca1",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             market_version=None,
             customer_strategy_ref="4827311aa8c4c74",
             async_=False,
@@ -330,7 +330,7 @@ async def test_replace_orders_single(betfair_client):
         params=_ReplaceOrdersParams(
             market_id="1-179082386",
             instructions=[ReplaceInstruction(bet_id=240718603398, new_price=2.0)],
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             market_version=None,
             async_=False,
         ),
@@ -358,7 +358,7 @@ async def test_cancel_orders(betfair_client):
     expected = CancelOrders(
         params=_CancelOrdersParams(
             market_id="1-179082386",
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             instructions=[CancelInstruction(bet_id=228302937743)],
         ),
         id=request.id,
