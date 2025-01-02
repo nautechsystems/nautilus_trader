@@ -388,7 +388,7 @@ class TestBetfairParsing:
                     customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             market_version=None,
             customer_strategy_ref="4827311aa8c4c74",
             async_=False,
@@ -413,7 +413,7 @@ class TestBetfairParsing:
             request_id=result.id,
             market_id="1-179082386",
             instructions=[ReplaceInstruction(bet_id=1, new_price=1.35)],
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
             market_version=None,
             async_=False,
         )
@@ -432,7 +432,7 @@ class TestBetfairParsing:
             request_id=result.id,
             market_id="1-179082386",
             instructions=[CancelInstruction(bet_id=228302937743, size_reduction=None)],
-            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=CancelOrders) == expected

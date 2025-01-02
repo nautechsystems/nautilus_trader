@@ -230,7 +230,7 @@ def test_decoding_uuid4() -> None:
     result = msgspec_decoding_hook(obj_type, obj)
 
     # Assert
-    assert result == UUID4(obj)
+    assert result == UUID4.from_str(obj)
 
 
 def test_encoding_component_id() -> None:

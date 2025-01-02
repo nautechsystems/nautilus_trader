@@ -200,7 +200,7 @@ cdef class MarketOrder(Order):
             client_order_id=ClientOrderId(str(pyo3_order.client_order_id)),
             order_side=order_side_from_str(str(pyo3_order.side)),
             quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
-            init_id=UUID4(str(pyo3_order.init_id)),
+            init_id=UUID4.from_str_c(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             reduce_only=pyo3_order.is_reduce_only,

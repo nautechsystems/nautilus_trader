@@ -15,10 +15,28 @@
 
 import pickle
 
+import pytest
+
 from nautilus_trader.core.uuid import UUID4
 
 
 class TestUUID:
+
+    @pytest.mark.parametrize(
+        ("value"),
+        [
+            "6ba7b810-9dad-11d1-80b4-00c04fd430c8"  # v1 (time-based)
+            "000001f5-8fa9-21d1-9df3-00e098032b8c"  # v2 (DCE Security)
+            "3d813cbb-47fb-32ba-91df-831e1593ac29"  # v3 (MD5 hash)
+            "fb4f37c1-4ba3-5173-9812-2b90e76a06f7"  # v5 (SHA-1 hash)
+            "550e8400-e29b-41d4-0000-446655440000",  # v4 but not RFC 4122
+        ],
+    )
+    def test_invalid_uuid4_values(self, value: str):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            UUID4.from_str(value)
+
     def test_pickling_round_trip(self):
         # Arrange
         uuid = UUID4()
@@ -32,9 +50,9 @@ class TestUUID:
 
     def test_equality(self):
         # Arrange, Act
-        uuid1 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid2 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid3 = UUID4("a2988650-5beb-8af8-e714-377a3a1c26ed")
+        uuid1 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        uuid2 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        uuid3 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c753")
 
         # Assert
         assert uuid1 == uuid1
@@ -43,8 +61,8 @@ class TestUUID:
 
     def test_hash(self):
         # Arrange
-        uuid1 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid2 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
+        uuid1 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        uuid2 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
 
         # Act, Assert
         assert isinstance((hash(uuid1)), int)
@@ -52,12 +70,12 @@ class TestUUID:
 
     def test_str_and_repr(self):
         # Arrange
-        uuid = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
+        uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
 
         # Act, Assert
-        assert uuid.value == "c2988650-5beb-8af8-e714-377a3a1c26ed"
-        assert str(uuid) == "c2988650-5beb-8af8-e714-377a3a1c26ed"
-        assert repr(uuid) == "UUID4('c2988650-5beb-8af8-e714-377a3a1c26ed')"
+        assert uuid.value == "2d89666b-1a1e-4a75-b193-4eb3b454c757"
+        assert str(uuid) == "2d89666b-1a1e-4a75-b193-4eb3b454c757"
+        assert repr(uuid) == "UUID4('2d89666b-1a1e-4a75-b193-4eb3b454c757')"
 
     def test_uuid4_produces_valid_uuid4(self):
         # Arrange, Act
