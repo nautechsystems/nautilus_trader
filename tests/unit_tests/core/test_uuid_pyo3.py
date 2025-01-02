@@ -32,9 +32,9 @@ class TestUUID:
 
     def test_equality(self):
         # Arrange, Act
-        uuid1 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid2 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid3 = UUID4("a2988650-5beb-8af8-e714-377a3a1c26ed")
+        uuid1 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        uuid2 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        uuid3 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
 
         # Assert
         assert uuid1 == uuid1
@@ -43,8 +43,8 @@ class TestUUID:
 
     def test_hash(self):
         # Arrange
-        uuid1 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid2 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
+        uuid1 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
+        uuid2 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
 
         # Act, Assert
         assert isinstance((hash(uuid1)), int)
@@ -52,12 +52,12 @@ class TestUUID:
 
     def test_str_and_repr(self):
         # Arrange
-        uuid = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
+        uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
 
         # Act, Assert
-        assert uuid.value == "c2988650-5beb-8af8-e714-377a3a1c26ed"
-        assert str(uuid) == "c2988650-5beb-8af8-e714-377a3a1c26ed"
-        assert repr(uuid) == "UUID4('c2988650-5beb-8af8-e714-377a3a1c26ed')"
+        assert uuid.value == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
+        assert str(uuid) == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
+        assert repr(uuid) == "UUID4('2d89666b-1a1e-4a75-b193-4eb3b454c758')"
 
     def test_uuid4_produces_valid_uuid4(self):
         # Arrange, Act
