@@ -57,7 +57,7 @@ class SpotPriceFilter(msgspec.Struct):
     tickSize: str
 
 
-class LotSizeFilter(msgspec.Struct):
+class LotSizeFilter(msgspec.Struct, kw_only=True):
     # Maximum order quantity
     maxOrderQty: str
     # Minimum order quantity
@@ -66,6 +66,8 @@ class LotSizeFilter(msgspec.Struct):
     qtyStep: str
     # Maximum order qty for PostOnly order
     postOnlyMaxOrderQty: str | None = None
+    maxMktOrderQty: str
+    minNotionalValue: str
 
 
 class SpotLotSizeFilter(msgspec.Struct):
