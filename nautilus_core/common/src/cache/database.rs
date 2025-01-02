@@ -87,6 +87,16 @@ pub trait CacheDatabaseAdapter {
 
     fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>>;
 
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>>;
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>>;
+
     fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
 
     fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;

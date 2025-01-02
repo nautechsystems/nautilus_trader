@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
 - Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
 - Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
+- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
 
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`

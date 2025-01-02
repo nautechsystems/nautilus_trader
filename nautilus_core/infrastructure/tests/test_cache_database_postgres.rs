@@ -33,7 +33,7 @@ mod serial_tests {
             DataType,
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
-        events::account::stubs::cash_account_state_million_usd,
+        events::{account::stubs::cash_account_state_million_usd, PositionSnapshot},
         identifiers::{
             stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, TradeId,
             VenueOrderId,
@@ -46,12 +46,13 @@ mod serial_tests {
             Instrument, InstrumentAny,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        position::Position,
         types::{Currency, Price, Quantity},
     };
     use serde::Serialize;
     use ustr::Ustr;
 
-    pub fn entirely_equal<T: Serialize>(a: T, b: T) {
+    pub fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
         let a_serialized = serde_json::to_string(&a).unwrap();
         let b_serialized = serde_json::to_string(&b).unwrap();
 
@@ -311,17 +312,17 @@ mod serial_tests {
         let instrument = currency_pair_ethusdt();
 
         let market_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id_1)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
-            .client_order_id(client_order_id_1)
             .build();
         let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id_2)
             .instrument_id(instrument.id())
             .side(OrderSide::Sell)
             .price(Price::from("100.0"))
             .quantity(Quantity::from("1.0"))
-            .client_order_id(client_order_id_2)
             .build();
 
         // Add foreign key dependencies: instrument and currencies
@@ -357,8 +358,8 @@ mod serial_tests {
             .unwrap();
         let limit_order_result = pg_cache.load_order(&limit_order.client_order_id()).unwrap();
         let client_order_ids = pg_cache.load_index_order_client().unwrap();
-        entirely_equal(market_order_result.unwrap(), market_order);
-        entirely_equal(limit_order_result.unwrap(), limit_order);
+        assert_entirely_equal(market_order_result.unwrap(), market_order);
+        assert_entirely_equal(limit_order_result.unwrap(), limit_order);
 
         // Check event client order ids
         assert_eq!(client_order_ids.len(), 2);
@@ -446,7 +447,7 @@ mod serial_tests {
         let market_order_result = pg_cache
             .load_order(&market_order.client_order_id())
             .unwrap();
-        entirely_equal(market_order_result.unwrap(), market_order);
+        assert_entirely_equal(market_order_result.unwrap(), market_order);
 
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
@@ -472,7 +473,7 @@ mod serial_tests {
             Duration::from_secs(2),
         );
         let account_result = pg_cache.load_account(&account.id()).unwrap();
-        entirely_equal(account_result.unwrap(), account.clone());
+        assert_entirely_equal(account_result.unwrap(), account.clone());
 
         // Update account
         let new_account_state_event =
@@ -487,7 +488,7 @@ mod serial_tests {
             Duration::from_secs(2),
         );
         let account_result = pg_cache.load_account(&account.id()).unwrap();
-        entirely_equal(account_result.unwrap(), account);
+        assert_entirely_equal(account_result.unwrap(), account);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -642,6 +643,81 @@ mod serial_tests {
         assert_eq!(datas.len(), 1);
         assert_eq!(datas[0], data);
 
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_order_snapshot() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+
+        // Add foreign key dependencies: instrument and currencies
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        pg_cache.add_order_snapshot(&order.into()).unwrap();
+
+        let result = pg_cache.load_order_snapshot(&client_order_id);
+
+        assert!(result.is_ok());
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_position_snapshot() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+
+        // Add foreign key dependencies: instrument and currencies
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        let filled = TestOrderEventStubs::order_filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-19700101-000000-001-001-1")),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("1.0")),
+            None,
+            None,
+            None,
+            Some(AccountId::new("SIM-001")),
+        );
+        let position = Position::new(&instrument, filled.into());
+        let snapshot = PositionSnapshot::from(&position, None);
+
+        pg_cache.add_position_snapshot(&snapshot).unwrap();
+
+        let result = pg_cache.load_position_snapshot(&position.id);
+
+        assert!(result.is_ok());
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }

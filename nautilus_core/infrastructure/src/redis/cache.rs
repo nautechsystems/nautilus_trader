@@ -925,6 +925,20 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Loading custom data from Redis cache adapter not supported")
     }
 
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        anyhow::bail!("Loading order snapshots from Redis cache adapter not supported")
+    }
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        anyhow::bail!("Loading position snapshots from Redis cache adapter not supported")
+    }
+
     fn index_venue_order_id(
         &self,
         client_order_id: ClientOrderId,

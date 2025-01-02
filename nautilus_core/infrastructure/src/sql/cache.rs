@@ -701,6 +701,62 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        let pool = self.pool.clone();
+        let client_order_id = client_order_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_order_snapshot(&pool, &client_order_id).await;
+            match result {
+                Ok(snapshot) => {
+                    if let Err(e) = tx.send(snapshot) {
+                        log::error!("Failed to send order snapshot {client_order_id}: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load order snapshot {client_order_id}: {e:?}");
+                    if let Err(e) = tx.send(None) {
+                        log::error!(
+                            "Failed to send None for order snapshot {client_order_id}: {e:?}"
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
+    }
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        let pool = self.pool.clone();
+        let position_id = position_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_position_snapshot(&pool, &position_id).await;
+            match result {
+                Ok(snapshot) => {
+                    if let Err(e) = tx.send(snapshot) {
+                        log::error!("Failed to send position snapshot {position_id}: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load position snapshot {position_id}: {e:?}");
+                    if let Err(e) = tx.send(None) {
+                        log::error!(
+                            "Failed to send None for position snapshot {position_id}: {e:?}"
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
+    }
+
     fn index_venue_order_id(
         &self,
         client_order_id: ClientOrderId,
@@ -911,7 +967,7 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
         };
 
         if let Err(e) = result {
-            log::error!("Error processing database query: {e:?}");
+            tracing::error!("Error on query: {e:?}");
         }
     }
 }

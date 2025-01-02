@@ -23,6 +23,7 @@ from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.signal import generate_signal_class
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
@@ -529,6 +530,17 @@ class TestCachePostgresAdapter:
         self.database.add_order_snapshot(order2)
         self.database.add_order_snapshot(order3)
 
+        await eventually(lambda: self.database.load_order_snapshot(order1.client_order_id))
+        await eventually(lambda: self.database.load_order_snapshot(order2.client_order_id))
+        await eventually(lambda: self.database.load_order_snapshot(order3.client_order_id))
+        snapshot1 = self.database.load_order_snapshot(order1.client_order_id)
+        snapshot2 = self.database.load_order_snapshot(order2.client_order_id)
+        snapshot3 = self.database.load_order_snapshot(order3.client_order_id)
+
+        assert isinstance(snapshot1, nautilus_pyo3.OrderSnapshot)
+        assert isinstance(snapshot2, nautilus_pyo3.OrderSnapshot)
+        assert isinstance(snapshot3, nautilus_pyo3.OrderSnapshot)
+
     @pytest.mark.asyncio
     async def test_add_position_snapshot(self):
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
@@ -553,7 +565,12 @@ class TestCachePostgresAdapter:
 
         position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
-        self.database.add_position_snapshot(position)
+        self.database.add_position_snapshot(position, Money.from_str("2.00 USD"))
+
+        await eventually(lambda: self.database.load_position_snapshot(position.id))
+        snapshot = self.database.load_position_snapshot(position.id)
+
+        assert isinstance(snapshot, nautilus_pyo3.PositionSnapshot)
 
     ################################################################################
     # Accounts
