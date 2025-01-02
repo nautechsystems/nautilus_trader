@@ -25,8 +25,9 @@ from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResultWithCursor
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
+from nautilus_trader.adapters.bybit.schemas.common import LinearLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import LinearPriceFilter
-from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
+from nautilus_trader.adapters.bybit.schemas.common import OptionLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -112,7 +113,7 @@ class BybitInstrumentLinear(msgspec.Struct):
     priceScale: str
     leverageFilter: LeverageFilter
     priceFilter: LinearPriceFilter
-    lotSizeFilter: LotSizeFilter
+    lotSizeFilter: LinearLotSizeFilter
     unifiedMarginTrade: bool
     fundingInterval: int
     settleCoin: str
@@ -217,7 +218,7 @@ class BybitInstrumentInverse(msgspec.Struct):
     priceScale: str
     leverageFilter: LeverageFilter
     priceFilter: LinearPriceFilter
-    lotSizeFilter: LotSizeFilter
+    lotSizeFilter: LinearLotSizeFilter
     unifiedMarginTrade: bool
     fundingInterval: int
     settleCoin: str
@@ -320,7 +321,7 @@ class BybitInstrumentOption(msgspec.Struct):
     deliveryTime: str
     deliveryFeeRate: str
     priceFilter: LinearPriceFilter
-    lotSizeFilter: LotSizeFilter
+    lotSizeFilter: OptionLotSizeFilter
 
     def parse_to_instrument(
         self,
