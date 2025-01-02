@@ -20,13 +20,13 @@ pub fn from_dict_pyo3<T>(py: Python<'_>, values: Py<PyDict>) -> Result<T, PyErr>
 where
     T: DeserializeOwned,
 {
-    // Extract to JSON string
+    // Extract to JSON bytes
     use crate::python::to_pyvalue_err;
-    let json_str: String = PyModule::import_bound(py, "json")?
-        .call_method("dumps", (values,), None)?
+    let json_bytes: Vec<u8> = PyModule::import_bound(py, "msgspec.json")?
+        .call_method("encode", (values,), None)?
         .extract()?;
 
     // Deserialize to object
-    let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
+    let instance = serde_json::from_slice(&json_bytes).map_err(to_pyvalue_err)?;
     Ok(instance)
 }
