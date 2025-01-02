@@ -30,7 +30,7 @@ use uuid::Uuid;
 /// The maximum length of ASCII characters for a `UUID4` string value (includes null terminator).
 pub(crate) const UUID4_LEN: usize = 37;
 
-/// Represents a pseudo-random UUID (universally unique identifier)
+/// Represents a Universally Unique Identifier (UUID)
 /// version 4 based on a 128-bit label as specified in RFC 4122.
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
