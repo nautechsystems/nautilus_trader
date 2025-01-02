@@ -35,12 +35,8 @@ impl UUID4 {
     /// If a string value is provided, it attempts to parse it into a UUID.
     /// If no value is provided, a new random UUID is generated.
     #[new]
-    #[pyo3(signature = (value=None))]
-    fn py_new(value: Option<&str>) -> PyResult<Self> {
-        match value {
-            Some(val) => Self::from_str(val).map_err(to_pyvalue_err),
-            None => Ok(Self::new()),
-        }
+    fn py_new() -> Self {
+        Self::new()
     }
 
     /// Sets the state of the `UUID4` instance during unpickling.

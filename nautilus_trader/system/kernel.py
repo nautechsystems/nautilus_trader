@@ -200,7 +200,7 @@ class NautilusKernel:
                     # Initialize logging for sync Rust and Python
                     self._log_guard = nautilus_pyo3.init_logging(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
-                        instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                        instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
                         level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
                         directory=logging.log_directory,
@@ -213,7 +213,7 @@ class NautilusKernel:
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                         machine_id=self._machine_id,
-                        instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                        instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         component=name,
                     )
                 else:
@@ -273,7 +273,7 @@ class NautilusKernel:
         elif config.message_bus.database.type == "redis":
             self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
-                instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                 config_json=msgspec.json.encode(config.message_bus, enc_hook=msgspec_encoding_hook),
             )
         else:

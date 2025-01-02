@@ -60,7 +60,7 @@ from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 from nautilus_trader.test_kit.rust.types_pyo3 import TestTypesProviderPyo3
 
 
-_STUB_UUID4 = UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2")
+_STUB_UUID4 = UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2")
 
 
 class TestEventsProviderPyo3:
@@ -75,7 +75,7 @@ class TestEventsProviderPyo3:
             ],
             margins=[],
             is_reported=True,
-            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
             ts_init=0,
             ts_event=0,
         )
@@ -95,7 +95,7 @@ class TestEventsProviderPyo3:
             ],
             margins=[],
             is_reported=True,
-            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
             ts_init=0,
             ts_event=0,
         )
@@ -120,7 +120,7 @@ class TestEventsProviderPyo3:
             ],
             margins=[],
             is_reported=True,
-            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
             ts_init=0,
             ts_event=0,
         )
@@ -145,7 +145,7 @@ class TestEventsProviderPyo3:
             ],
             margins=[],
             is_reported=True,
-            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
             ts_init=0,
             ts_event=0,
         )
@@ -163,7 +163,7 @@ class TestEventsProviderPyo3:
                 TestTypesProviderPyo3.margin_balance(),
             ],
             is_reported=True,
-            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
             ts_init=0,
             ts_event=0,
         )
