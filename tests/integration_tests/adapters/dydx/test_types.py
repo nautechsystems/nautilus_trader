@@ -42,7 +42,7 @@ def test_dydx_internal_error() -> None:
 
 def test_dydx_oracle_price(instrument_id: InstrumentId) -> None:
     """
-    Test the DYDXInternalError type.
+    Test the DYDXOraclePrice type.
     """
     # Arrange
     data = DYDXOraclePrice(instrument_id=instrument_id, price=Decimal(5), ts_init=5, ts_event=6)
