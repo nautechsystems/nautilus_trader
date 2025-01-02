@@ -10,9 +10,19 @@ cdef extern from "../includes/model.h":
     # The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
     const uintptr_t TRADE_ID_LEN # = 37
 
+    # The maximum fixed-point precision.
+    const uint8_t FIXED_PRECISION # = 9
+
+    const uint8_t FIXED_HIGH_PRECISION # = 18
+
     const uint8_t PRECISION # = FIXED_HIGH_PRECISION
 
     const uint8_t PRECISION # = FIXED_PRECISION
+
+    # The scalar value corresponding to the maximum precision (10^9).
+    const double FIXED_SCALAR # = 1000000000.0
+
+    const double FIXED_HIGH_PRECISION_SCALAR # = 1000000000000000000.0
 
     const double SCALAR # = FIXED_HIGH_PRECISION_SCALAR
 
