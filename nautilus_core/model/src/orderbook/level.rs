@@ -123,10 +123,10 @@ impl BookLevel {
 
     /// Returns the total exposure (price * size) of all orders at this price level as raw integer units.
     #[must_use]
-    pub fn exposure_raw(&self) -> u64 {
+    pub fn exposure_raw(&self) -> QuantityRaw {
         self.orders
             .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as u64)
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as QuantityRaw) // TODO: Define general type alias names??
             .sum()
     }
 
@@ -240,7 +240,7 @@ mod tests {
         data::order::BookOrder,
         enums::OrderSide,
         orderbook::{BookLevel, BookPrice},
-        types::{Price, Quantity},
+        types::{fixed::SCALAR, quantity::QuantityRaw, Price, Quantity},
     };
 
     #[rstest]
@@ -545,7 +545,7 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.size_raw(), 30_000_000_000);
+        assert_eq!(level.size_raw(), (30.0 * SCALAR).round() as QuantityRaw);
     }
 
     #[rstest]
@@ -578,6 +578,6 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.exposure_raw(), 60_000_000_000);
+        assert_eq!(level.exposure_raw(), (60.0 * SCALAR).round() as QuantityRaw);
     }
 }

@@ -64,7 +64,7 @@ impl BookLevel {
     }
 
     #[pyo3(name = "exposure_raw")]
-    fn py_exposure_raw(&self) -> u64 {
+    fn py_exposure_raw(&self) -> QuantityRaw {
         self.exposure_raw()
     }
 
