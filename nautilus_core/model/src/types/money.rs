@@ -35,17 +35,25 @@ use crate::types::Currency;
 
 /// The maximum valid money amount which can be represented.
 #[cfg(not(feature = "high_precision"))]
+/// cbindgen:ignore
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
 /// The maximum valid money amount which can be represented.
 #[cfg(feature = "high_precision")]
+/// cbindgen:ignore
 pub const MONEY_MAX: f64 = 170_141_183_460.0;
 
 /// The minimum valid money amount which can be represented.
 #[cfg(not(feature = "high_precision"))]
+/// cbindgen:ignore
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 /// The minimum valid money amount which can be represented.
 #[cfg(feature = "high_precision")]
+/// cbindgen:ignore
 pub const MONEY_MIN: f64 = -170_141_183_460.0;
+
+/// Export a single constant to Cython
+pub const RUST_MONEY_MAX: f64 = MONEY_MAX;
+pub const RUST_MONEY_MIN: f64 = MONEY_MIN;
 
 #[cfg(feature = "high_precision")]
 pub type MoneyRaw = i128;

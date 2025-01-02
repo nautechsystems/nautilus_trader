@@ -16,7 +16,6 @@ header = '"../includes/model.h"'
     "uint64_t",
     "uintptr_t",
     "int64_t",
-    "int128_t",
 ]
 
 "nautilus_trader.core.rust.core" = [
@@ -34,6 +33,8 @@ exclude = [
 ]
 
 [export.rename]
+"u128" = "uint128_t"
+"i128" = "int128_t"
 "bool" = "bint"
 "Ustr" = "char*"
 "AccountId" = "AccountId_t"

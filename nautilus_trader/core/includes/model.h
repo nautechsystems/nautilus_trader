@@ -5,6 +5,13 @@
 #include <stdint.h>
 #include <Python.h>
 
+#ifdef __SIZEOF_INT128__
+    typedef __uint128_t uint128_t;
+    typedef __int128_t int128_t;
+#else
+#    error "128-bit integer not supported on this platform"
+#endif
+
 #define DEPTH10_LEN 10
 
 /**
@@ -19,9 +26,10 @@
 
 #define FIXED_HIGH_PRECISION 18
 
-#define PRECISION FIXED_HIGH_PRECISION
-
-#define PRECISION FIXED_PRECISION
+/**
+ * Export a single constant to Cython
+ */
+#define RUST_FIXED_PRECISION PRECISION
 
 /**
  * The scalar value corresponding to the maximum precision (10^9).
@@ -30,55 +38,39 @@
 
 #define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
 
-#define SCALAR FIXED_HIGH_PRECISION_SCALAR
-
-#define SCALAR FIXED_SCALAR
+/**
+ * Export a single constant to Cython
+ */
+#define RUST_FIXED_SCALAR SCALAR
 
 /**
- * The maximum valid money amount which can be represented.
+ * Export a single constant to Cython
  */
-#define MONEY_MAX 9223372036.0
+#define RUST_MONEY_MAX MONEY_MAX
+
+#define RUST_MONEY_MIN MONEY_MIN
 
 /**
- * The maximum valid money amount which can be represented.
+ * Export a single constant to Cython
  */
-#define MONEY_MAX 170141183460.0
+#define RUST_PRICE_MIN PRICE_MIN
+
+#define RUST_PRICE_MAX PRICE_MAX
 
 /**
- * The minimum valid money amount which can be represented.
+ * Export a single constant to Cython
  */
-#define MONEY_MIN -9223372036.0
-
-/**
- * The minimum valid money amount which can be represented.
- */
-#define MONEY_MIN -170141183460.0
-
-/**
- * The maximum valid price value which can be represented.
- */
-#define PRICE_MAX 9223372036.0
-
-#define PRICE_MAX 170141183460.0
-
-/**
- * The minimum valid price value which can be represented.
- */
-#define PRICE_MIN -9223372036.0
-
-#define PRICE_MIN -170141183460.0
-
-/**
- * The maximum valid quantity value which can be represented.
- */
-#define QUANTITY_MAX 18446744073.0
-
-#define QUANTITY_MAX 340282366920.0
+#define RUST_QUANTITY_MAX QUANTITY_MAX
 
 /**
  * The minimum valid quantity value which can be represented.
  */
 #define QUANTITY_MIN 0.0
+
+/**
+ * Export a single constant to Cython
+ */
+#define RUST_QUANTITY_MIN QUANTITY_MIN
 
 /**
  * An account type provided by a trading venue or broker.
@@ -868,7 +860,7 @@ typedef struct InstrumentId_t {
 
 typedef int64_t int128_t;
 
-typedef i128 int128_t;
+typedef int128_t int128_t;
 
 /**
  * Represents a price in a market.
@@ -896,7 +888,7 @@ typedef struct Price_t {
 
 typedef uint64_t QuantityRaw;
 
-typedef u128 QuantityRaw;
+typedef uint128_t QuantityRaw;
 
 /**
  * Represents a quantity with a non-negative value.
@@ -1492,7 +1484,7 @@ typedef struct Currency_t {
     enum CurrencyType currency_type;
 } Currency_t;
 
-typedef i128 MoneyRaw;
+typedef int128_t MoneyRaw;
 
 typedef int64_t MoneyRaw;
 

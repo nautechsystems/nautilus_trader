@@ -23,18 +23,28 @@ pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_HIGH_PRECISION: u8 = 18;
 
 #[cfg(feature = "high_precision")]
+/// cbindgen:ignore
 pub const PRECISION: u8 = FIXED_HIGH_PRECISION;
 #[cfg(not(feature = "high_precision"))]
+/// cbindgen:ignore
 pub const PRECISION: u8 = FIXED_PRECISION;
+
+/// Export a single constant to Cython
+pub const RUST_FIXED_PRECISION: u8 = PRECISION;
 
 /// The scalar value corresponding to the maximum precision (10^9).
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 1_000_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
 
 #[cfg(feature = "high_precision")]
+/// cbindgen:ignore
 pub const SCALAR: f64 = FIXED_HIGH_PRECISION_SCALAR;
 #[cfg(not(feature = "high_precision"))]
+/// cbindgen:ignore
 pub const SCALAR: f64 = FIXED_SCALAR;
+
+/// Export a single constant to Cython
+pub const RUST_FIXED_SCALAR: f64 = SCALAR;
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
 ///

@@ -40,13 +40,21 @@ use nautilus_core::correctness::check_positive_u128;
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
 /// The maximum valid quantity value which can be represented.
+/// cbindgen:ignore
 #[cfg(not(feature = "high_precision"))]
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 #[cfg(feature = "high_precision")]
+/// cbindgen:ignore
 pub const QUANTITY_MAX: f64 = 340_282_366_920.0;
+
+/// Export a single constant to Cython
+pub const RUST_QUANTITY_MAX: f64 = QUANTITY_MAX;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
+
+/// Export a single constant to Cython
+pub const RUST_QUANTITY_MIN: f64 = QUANTITY_MIN;
 
 #[cfg(not(feature = "high_precision"))]
 pub type QuantityRaw = u64;

@@ -56,9 +56,38 @@ fn main() {
         // Run the replace operation in memory
         let new_data = data.replace("cdef enum", "cpdef enum");
 
+        #[cfg(feature = "high_precision")]
+        {
+            let lines: Vec<&str> = new_data.lines().collect();
+
+            let mut output = String::new();
+            let mut found_extern = false;
+
+            for line in lines {
+                // Ignore 64-bit precision declarations
+                if line.contains("int64_t PriceRaw")
+                    || line.contains("uint64_t QuantityRaw")
+                    || line.contains("int64_t MoneyRaw")
+                {
+                    continue;
+                }
+
+                output.push_str(line);
+                output.push('\n');
+
+                if line.trim().starts_with("cdef extern from") && !found_extern {
+                    output.push_str("    ctypedef unsigned long long uint128_t\n");
+                    output.push_str("    ctypedef long long int128_t\n");
+                    found_extern = true;
+                }
+            }
+
+            data = output;
+        }
+
         // Recreate the file and dump the processed contents to it
         let mut dst = File::create(cython_path).expect("`File::create` failed");
-        dst.write_all(new_data.as_bytes())
+        dst.write_all(data.as_bytes())
             .expect("I/O error on `dist.write`");
     }
 }
