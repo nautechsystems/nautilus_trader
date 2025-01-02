@@ -31,7 +31,7 @@ cdef extern from "../includes/core.h":
         # Used when deallocating the memory
         uintptr_t cap;
 
-    # Represents a pseudo-random UUID (universally unique identifier)
+    # Represents a Universally Unique Identifier (UUID)
     # version 4 based on a 128-bit label as specified in RFC 4122.
     cdef struct UUID4_t:
         # The UUID v4 value as a fixed-length C string byte array (includes null terminator).

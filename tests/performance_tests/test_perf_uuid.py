@@ -29,7 +29,11 @@ def test_make_nautilus_uuid(benchmark):
 def test_nautilus_uuid_value(benchmark):
     uuid = UUID4()
 
-    def get_uuid_value():
-        uuid.value
+    benchmark(lambda: uuid.value)
 
-    benchmark(get_uuid_value)
+
+def test_nautilus_uuid_from_value(benchmark):
+    uuid = UUID4()
+    value = uuid.value
+
+    benchmark(lambda: UUID4.from_str(value))

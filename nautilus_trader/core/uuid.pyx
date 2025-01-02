@@ -28,7 +28,7 @@ from nautilus_trader.core.string cimport pystr_to_cstr
 
 cdef class UUID4:
     """
-    Represents a pseudo-random UUID (universally unique identifier)
+    Represents a Universally Unique Identifier (UUID)
     version 4 based on a 128-bit label as specified in RFC 4122.
 
     References
