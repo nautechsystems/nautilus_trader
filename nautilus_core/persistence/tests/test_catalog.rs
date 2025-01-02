@@ -372,44 +372,6 @@ fn test_catalog_serialization_json_round_trip() {
 }
 
 #[rstest]
-fn simple_test() {
-    use std::collections::HashMap;
-
-    use datafusion::parquet::{
-        arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties,
-    };
-    use nautilus_serialization::arrow::EncodeToRecordBatch;
-
-    // Read back from JSON
-    let json_path = "/home/twitu/Code/nautilus_trader/nautilus_core/persistence/data/nautilus_model_data_quote_quote_tick/quotes_perf_data.json";
-    let json_str = std::fs::read_to_string(json_path).unwrap();
-    let quote_ticks: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
-    let metadata = HashMap::from([
-        ("price_precision".to_string(), "0".to_string()),
-        ("size_precision".to_string(), "0".to_string()),
-        ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
-    ]);
-    let schema = QuoteTick::get_schema(Some(metadata.clone()));
-
-    let temp_file_path = PathBuf::from("quotes_perf_data.parquet");
-    let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
-    {
-        let writer_props = WriterProperties::builder()
-            .set_compression(Compression::SNAPPY)
-            .set_max_row_group_size(5000)
-            .build();
-
-        let mut writer =
-            ArrowWriter::try_new(&mut temp_file, schema.into(), Some(writer_props)).unwrap();
-        for chunk in quote_ticks.chunks(5000) {
-            let batch = QuoteTick::encode_batch(&metadata, chunk).unwrap();
-            writer.write(&batch).unwrap();
-        }
-        writer.close().unwrap();
-    }
-}
-
-#[rstest]
 fn test_datafusion_parquet_round_trip() {
     use std::collections::HashMap;
 
