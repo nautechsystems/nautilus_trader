@@ -375,7 +375,7 @@ class BybitWebSocketClient:
         subscription = "execution"
         await self._subscribe(subscription)
 
-    async def subscribe_executions_update_fast(self) -> None:
+    async def subscribe_executions_fast_update(self) -> None:
         subscription = "execution.fast"
         await self._subscribe(subscription)
 

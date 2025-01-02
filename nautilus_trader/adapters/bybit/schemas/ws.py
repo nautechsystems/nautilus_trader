@@ -721,6 +721,34 @@ class BybitWsAccountExecutionMsg(msgspec.Struct):
 
 
 ################################################################################
+# Private - Account Execution Fast
+################################################################################
+
+
+class BybitWsAccountExecutionFast(msgspec.Struct):
+    category: BybitProductType
+    symbol: str
+    orderId: str
+    isMaker: bool
+    orderLinkId: str
+    side: BybitOrderSide
+    execId: str
+    execPrice: str
+    execQty: str
+    execTime: str
+    seq: int
+
+    orderType: BybitOrderType = BybitOrderType.UNKNOWN
+    stopOrderType: BybitStopOrderType = BybitStopOrderType.NONE
+
+
+class BybitWsAccountExecutionFastMsg(msgspec.Struct):
+    topic: str
+    creationTime: int
+    data: list[BybitWsAccountExecutionFast]
+
+
+################################################################################
 # Private - Account Wallet
 ################################################################################
 
