@@ -46,7 +46,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
 
       - name: Cached pre-commit
         id: cached-pre-commit
@@ -163,7 +163,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
 
       - name: Cached cargo
         id: cached-cargo
@@ -350,7 +350,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
 
       - name: Cached cargo
         id: cached-cargo
@@ -520,7 +520,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
       - name: Cached cargo
         id: cached-cargo
