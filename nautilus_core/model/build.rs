@@ -60,6 +60,14 @@ fn main() {
                 output.push('\n');
             }
 
+            // Hack: cbindgen ignores feature flags and exports all public constants
+            // This causes duplicate entries because of different values for different
+            // feature flags
+            //
+            // https://github.com/mozilla/cbindgen/issues/900
+            //
+            // Moreover cbindgen:ignore doesn't work because it does not substitute
+            // the exported variable with value of the feature flag selected variable
             output.push('\n');
             output.push_str("#define RUST_FIXED_PRECISION 18\n");
             output.push_str("#define RUST_FIXED_SCALAR 1000000000000000000.0\n");
