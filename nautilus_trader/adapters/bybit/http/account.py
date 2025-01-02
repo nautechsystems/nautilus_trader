@@ -64,15 +64,6 @@ from nautilus_trader.adapters.bybit.endpoints.trade.set_trading_stop import Bybi
 from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
-from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
-from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
-from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
-from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
-from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
-from nautilus_trader.adapters.bybit.schemas.order import BybitSetTradingStopResponse
-from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
-from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
@@ -80,10 +71,19 @@ from nautilus_trader.core.correctness import PyCondition
 if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.common.enums import BybitMarginMode
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+    from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
+    from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
     from nautilus_trader.adapters.bybit.schemas.account.info import BybitAccountInfo
     from nautilus_trader.adapters.bybit.schemas.account.set_leverage import BybitSetLeverageResponse
     from nautilus_trader.adapters.bybit.schemas.account.set_margin_mode import BybitSetMarginModeResponse
     from nautilus_trader.adapters.bybit.schemas.account.switch_mode import BybitSwitchModeResponse
+    from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
+    from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
+    from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
+    from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
+    from nautilus_trader.adapters.bybit.schemas.order import BybitSetTradingStopResponse
+    from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
+    from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
     from nautilus_trader.common.component import LiveClock
 
 # fmt: on

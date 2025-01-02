@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import msgspec
@@ -39,6 +38,8 @@ from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.http.errors import should_retry
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionFast
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionFastMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
@@ -170,11 +171,13 @@ class BybitExecutionClient(LiveExecutionClient):
         self._product_types = product_types
         self._use_gtd = config.use_gtd
         self._use_ws_trade_api = config.use_ws_trade_api
+        self._use_ws_execution_fast = config.use_ws_execution_fast
         self._use_http_batch_api = config.use_http_batch_api
 
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
+        self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
@@ -248,6 +251,9 @@ class BybitExecutionClient(LiveExecutionClient):
 
         self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
         self._decoder_ws_account_execution_update = msgspec.json.Decoder(BybitWsAccountExecutionMsg)
+        self._decoder_ws_account_execution_fast_update = msgspec.json.Decoder(
+            BybitWsAccountExecutionFastMsg,
+        )
         # self._decoder_ws_account_position_update = msgspec.json.Decoder(BybitWsAccountPositionMsg)
         self._decoder_ws_account_wallet_update = msgspec.json.Decoder(BybitWsAccountWalletMsg)
 
@@ -269,9 +275,14 @@ class BybitExecutionClient(LiveExecutionClient):
         await self._update_account_state()
 
         await self._ws_client.connect()
-        await self._ws_client.subscribe_executions_update()
+
         await self._ws_client.subscribe_orders_update()
         await self._ws_client.subscribe_wallet_update()
+
+        if self._use_ws_execution_fast:
+            await self._ws_client.subscribe_executions_fast_update()
+        else:
+            await self._ws_client.subscribe_executions_update()
 
         if self._use_ws_trade_api:
             await self._ws_order_client.connect()
@@ -991,6 +1002,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._handle_account_order_update(raw)
             elif "execution" in ws_message.topic:
                 self._handle_account_execution_update(raw)
+            elif "execution.fast" in ws_message.topic:
+                self._handle_account_execution_fast_update(raw)
             elif "wallet" == ws_message.topic:
                 self._handle_account_wallet_update(raw)
             else:
@@ -1006,7 +1019,18 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
-    def _process_execution(self, execution: BybitWsAccountExecution) -> None:
+    def _handle_account_execution_fast_update(self, raw: bytes) -> None:
+        try:
+            msg = self._decoder_ws_account_execution_fast_update.decode(raw)
+            for trade in msg.data:
+                self._process_execution(trade)
+        except Exception as e:
+            self._log.exception(f"Failed to handle account execution update: {e}", e)
+
+    def _process_execution(
+        self,
+        execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
+    ) -> None:
         instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
         client_order_id = ClientOrderId(execution.orderLinkId) if execution.orderLinkId else None
         venue_order_id = VenueOrderId(execution.orderId)
@@ -1047,6 +1071,13 @@ class BybitExecutionClient(LiveExecutionClient):
         if instrument is None:
             raise ValueError(f"Cannot handle trade event: instrument {instrument_id} not found")
 
+        quote_currency = instrument.quote_currency
+        fee = instrument.maker_fee if execution.isMaker else instrument.taker_fee
+
+        last_qty = Quantity(float(execution.execQty), instrument.size_precision)
+        last_px = Price(float(execution.execPrice), instrument.price_precision)
+        commission_amount = last_qty * last_px * fee
+
         self.generate_order_filled(
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -1056,10 +1087,10 @@ class BybitExecutionClient(LiveExecutionClient):
             trade_id=TradeId(execution.execId),
             order_side=order_side,
             order_type=order_type,
-            last_qty=Quantity(float(execution.execQty), instrument.size_precision),
-            last_px=Price(float(execution.execPrice), instrument.price_precision),
-            quote_currency=instrument.quote_currency,
-            commission=Money(Decimal(execution.execFee), instrument.quote_currency),
+            last_qty=last_qty,
+            last_px=last_px,
+            quote_currency=quote_currency,
+            commission=Money(commission_amount, quote_currency),
             liquidity_side=LiquiditySide.MAKER if execution.isMaker else LiquiditySide.TAKER,
             ts_event=millis_to_nanos(float(execution.execTime)),
         )
