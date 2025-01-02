@@ -494,10 +494,10 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .and_then(|x| x.map(TradeId::from));
         let order_type = row
             .try_get::<&str, _>("order_type")
-            .map(|x| OrderType::from_str(x).unwrap())?;
+            .map(|x| OrderType::from_str(x).expect("Invalid `OrderType`"))?;
         let order_side = row
             .try_get::<&str, _>("order_side")
-            .map(|x| OrderSide::from_str(x).unwrap())?;
+            .map(|x| OrderSide::from_str(x).expect("Invalid `OrderSide`"))?;
         let quantity = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
         let price = row
             .try_get::<Option<&str>, _>("price")
@@ -510,7 +510,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let trigger_type = row
             .try_get::<Option<&str>, _>("trigger_type")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(|x| x.map(|x| TriggerType::from_str(x).expect("Invalid `TriggerType`")));
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
@@ -525,7 +525,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .and_then(|x| x.map(|x| x.0));
         let time_in_force = row
             .try_get::<&str, _>("time_in_force")
-            .map(|x| TimeInForce::from_str(x).unwrap())?;
+            .map(|x| TimeInForce::from_str(x).expect("Invalid `TimeInForce`"))?;
         let expire_time = row
             .try_get::<Option<&str>, _>("expire_time")
             .ok()
@@ -534,29 +534,17 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let liquidity_side = row
             .try_get::<Option<&str>, _>("liquidity_side")
             .ok()
-            .and_then(|x| x.map(|x| LiquiditySide::from_str(x).unwrap()));
+            .and_then(|x| x.map(|x| LiquiditySide::from_str(x).expect("Invalid `LiquiditySide`")));
         let avg_px = row.try_get::<Option<f64>, _>("avg_px").ok().flatten();
         let slippage = row.try_get::<Option<f64>, _>("slippage").ok().flatten();
-        let commissions: Vec<Money> = row
-            .try_get::<serde_json::Value, _>("commissions")?
-            .as_array()
-            .ok_or_else(|| sqlx::Error::Decode("Expected a JSON array for commissions".into()))?
-            .iter()
-            .map(|val| {
-                val.as_str()
-                    .ok_or_else(|| {
-                        sqlx::Error::Decode("Expected string values in commissions array".into())
-                    })
-                    .and_then(|s| {
-                        Money::from_str(s).map_err(|e| {
-                            sqlx::Error::Decode(format!("Invalid money format: {e}").into())
-                        })
-                    })
-            })
-            .collect::<Result<Vec<Money>, sqlx::Error>>()?;
+        let commissions = row
+            .try_get::<Option<Vec<String>>, _>("commissions")?
+            .map_or_else(Vec::new, |c| {
+                c.into_iter().map(|s| Money::from(&s)).collect()
+            });
         let status = row
             .try_get::<&str, _>("status")
-            .map(|x| OrderStatus::from_str(x).unwrap())?;
+            .map(|x| OrderStatus::from_str(x).expect("Invalid `OrderStatus`"))?;
         let is_post_only = row.try_get::<bool, _>("is_post_only")?;
         let is_reduce_only = row.try_get::<bool, _>("is_reduce_only")?;
         let is_quote_quantity = row.try_get::<bool, _>("is_quote_quantity")?;
@@ -567,7 +555,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let emulation_trigger = row
             .try_get::<Option<&str>, _>("emulation_trigger")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(|x| x.map(|x| TriggerType::from_str(x).expect("Invalid `TriggerType`")));
         let trigger_instrument_id = row
             .try_get::<Option<&str>, _>("trigger_instrument_id")
             .ok()
@@ -575,7 +563,9 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let contingency_type = row
             .try_get::<Option<&str>, _>("contingency_type")
             .ok()
-            .and_then(|x| x.map(|x| ContingencyType::from_str(x).unwrap()));
+            .and_then(|x| {
+                x.map(|x| ContingencyType::from_str(x).expect("Invalid `ContingencyType`"))
+            });
         let order_list_id = row
             .try_get::<Option<&str>, _>("order_list_id")
             .ok()
@@ -595,7 +585,12 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let exec_algorithm_params: Option<IndexMap<Ustr, Ustr>> = row
             .try_get::<Option<serde_json::Value>, _>("exec_algorithm_params")
             .ok()
-            .and_then(|x| x.map(|x| serde_json::from_value::<IndexMap<String, String>>(x).unwrap()))
+            .and_then(|x| {
+                x.map(|x| {
+                    serde_json::from_value::<IndexMap<String, String>>(x)
+                        .expect("Invalid exec algorithm params")
+                })
+            })
             .map(|x| {
                 x.into_iter()
                     .map(|(k, v)| (Ustr::from(k.as_str()), Ustr::from(v.as_str())))
@@ -608,8 +603,9 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let tags = row
             .try_get::<Option<serde_json::Value>, _>("tags")
             .ok()
-            .and_then(|tags| {
-                serde_json::from_value::<Vec<String>>(tags.unwrap())
+            .flatten()
+            .and_then(|tags_value| {
+                serde_json::from_value::<Vec<String>>(tags_value)
                     .ok()
                     .map(|vec| {
                         vec.into_iter()
@@ -617,7 +613,6 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
                             .collect::<Vec<Ustr>>()
                     })
             });
-
         let init_id = row.try_get::<&str, _>("init_id").map(UUID4::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
         let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;

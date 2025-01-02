@@ -23,7 +23,7 @@ use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{Bar, DataType, QuoteTick, TradeTick},
     events::{OrderSnapshot, PositionSnapshot},
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
         events::order::pyobject_to_order_event,
@@ -212,6 +212,30 @@ impl PostgresCacheDatabase {
     fn py_load_custom_data(&self, data_type: DataType) -> PyResult<Vec<CustomData>> {
         get_runtime().block_on(async {
             DatabaseQueries::load_custom_data(&self.pool, &data_type)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "load_order_snapshot")]
+    fn py_load_order_snapshot(
+        &self,
+        client_order_id: ClientOrderId,
+    ) -> PyResult<Option<OrderSnapshot>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_order_snapshot(&self.pool, &client_order_id)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "load_position_snapshot")]
+    fn py_load_position_snapshot(
+        &self,
+        position_id: PositionId,
+    ) -> PyResult<Option<PositionSnapshot>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_position_snapshot(&self.pool, &position_id)
                 .await
                 .map_err(to_pyruntime_err)
         })

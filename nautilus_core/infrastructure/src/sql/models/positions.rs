@@ -47,15 +47,14 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
         let entry = row
             .try_get::<&str, _>("entry")
             .map(OrderSide::from_str)?
-            .unwrap();
+            .expect("Invalid `OrderSide`");
         let side = row
             .try_get::<&str, _>("side")
             .map(PositionSide::from_str)?
-            .unwrap();
+            .expect("Invalid `PositionSide`");
         let signed_qty = row.try_get::<f64, _>("signed_qty")?;
         let quantity = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
         let peak_qty = row.try_get::<&str, _>("peak_qty").map(Quantity::from)?;
-
         let quote_currency = row
             .try_get::<&str, _>("quote_currency")
             .map(Currency::from)?;
@@ -66,7 +65,6 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
         let settlement_currency = row
             .try_get::<&str, _>("settlement_currency")
             .map(Currency::from)?;
-
         let avg_px_open = row.try_get::<f64, _>("avg_px_open")?;
         let avg_px_close = row.try_get::<Option<f64>, _>("avg_px_close")?;
         let realized_return = row.try_get::<Option<f64>, _>("realized_return")?;
@@ -75,37 +73,20 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             .try_get::<Option<&str>, _>("unrealized_pnl")
             .ok()
             .and_then(|x| x.map(Money::from));
-        let commissions: Vec<Money> = row
-            .try_get::<&str, _>("commissions")?
-            .parse::<serde_json::Value>()
-            .unwrap()
-            .as_array()
-            .ok_or(sqlx::Error::Decode(
-                "Expected a JSON array for commissions".into(),
-            ))?
-            .iter()
-            .map(|x| {
-                x.as_str()
-                    .ok_or(sqlx::Error::Decode(
-                        "Expected string values in the commissions array".into(),
-                    ))
-                    .and_then(|s| {
-                        Money::from_str(s).map_err(|e| {
-                            sqlx::Error::Decode(format!("Money parsing error: {}", e).into())
-                        })
-                    })
-            })
-            .collect::<Result<Vec<Money>, sqlx::Error>>()?;
+        let commissions = row
+            .try_get::<Option<Vec<String>>, _>("commissions")?
+            .map_or_else(Vec::new, |c| {
+                c.into_iter().map(|s| Money::from(&s)).collect()
+            });
         let duration_ns: Option<u64> = row
             .try_get::<Option<i64>, _>("duration_ns")?
             .map(|value| value as u64);
-
         let ts_opened = row.try_get::<String, _>("ts_opened").map(UnixNanos::from)?;
         let ts_closed: Option<UnixNanos> = row
             .try_get::<Option<String>, _>("ts_closed")?
             .map(UnixNanos::from);
-        let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+        let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;
 
         let snapshot = PositionSnapshot {
             trader_id,
@@ -126,7 +107,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             avg_px_open,
             avg_px_close,
             realized_return,
-            realized_pnl,
+            realized_pnl: Some(realized_pnl), // TODO: Standardize
             unrealized_pnl,
             commissions,
             duration_ns,
