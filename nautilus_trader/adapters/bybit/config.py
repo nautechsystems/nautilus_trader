@@ -96,6 +96,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_gtd : bool, default False
         If False, then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
+    use_ws_execution_fast : bool, default False
+        If use fast execution stream.
     use_ws_trade_api : bool, default False
         If the client is using websocket to send order requests.
     use_http_batch_api : bool, default False
@@ -126,6 +128,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     demo: bool = False
     testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit
+    use_ws_execution_fast: bool = False
     use_ws_trade_api: bool = False
     use_http_batch_api: bool = False
     max_retries: PositiveInt | None = None
