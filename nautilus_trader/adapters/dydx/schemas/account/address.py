@@ -32,7 +32,6 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -143,19 +142,6 @@ class DYDXAssetPosition(msgspec.Struct, forbid_unknown_fields=True):
     size: str
     assetId: str
     subaccountNumber: int
-
-    def parse_to_account_balance(self, locked: Decimal) -> AccountBalance:
-        """
-        Create an account balance report.
-        """
-        currency = Currency.from_str(self.symbol)
-        total = Decimal(self.size)
-        free = total - locked
-        return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
-        )
 
 
 class DYDXSubaccount(msgspec.Struct, forbid_unknown_fields=True):

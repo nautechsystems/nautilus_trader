@@ -23,6 +23,7 @@ from decimal import Decimal
 
 import msgspec
 
+from nautilus_trader.adapters.dydx.common.constants import DEFAULT_CURRENCY
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXFillType
 from nautilus_trader.adapters.dydx.common.enums import DYDXLiquidity
@@ -61,6 +62,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -541,14 +544,21 @@ class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=
         """
         Create an account balance report.
         """
-        account_balances = []
+        account_balances: list[AccountBalance] = []
 
         if self.subaccount is not None:
-            for asset_position in self.subaccount.assetPositions.values():
-                # Only valid for a margin account
-                locked = Decimal(0)
-                account_balance = asset_position.parse_to_account_balance(locked=locked)
-                account_balances.append(account_balance)
+            currency = Currency.from_str(DEFAULT_CURRENCY)
+            free = Decimal(self.subaccount.freeCollateral)
+            total = Decimal(self.subaccount.equity)
+            locked = total - free
+
+            return [
+                AccountBalance(
+                    total=Money(total, currency),
+                    locked=Money(locked, currency),
+                    free=Money(free, currency),
+                ),
+            ]
 
         return account_balances
 

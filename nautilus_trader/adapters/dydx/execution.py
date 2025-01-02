@@ -315,6 +315,16 @@ class DYDXExecutionClient(LiveExecutionClient):
             sequence=account.sequence,
         )
 
+        while self.get_account() is None:
+            await asyncio.sleep(0.1)
+
+        account = self.get_account()
+        instruments = self._instrument_provider.get_all()
+
+        for instrument_id, instrument in instruments.items():
+            leverage = Decimal(1) / instrument.margin_init
+            account.set_leverage(instrument_id, leverage)
+
     async def _disconnect(self) -> None:
         await self._ws_client.unsubscribe_markets()
         await self._ws_client.unsubscribe_block_height()

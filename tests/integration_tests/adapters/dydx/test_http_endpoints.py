@@ -55,7 +55,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CryptoPerpetual
-from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -616,30 +615,3 @@ def test_parse_to_instrument(
     assert result.ts_event == expected_result.ts_event
     assert result.ts_init == expected_result.ts_init
     assert result.info == expected_result.info
-
-
-def test_asset_positions_to_account_balance(
-    asset_positions_response: DYDXAssetPositionsResponse,
-) -> None:
-    """
-    Test parsing the subaccount message into an account balance.
-    """
-    # Prepare
-
-    expected_result = AccountBalance(
-        total=Money(Decimal("90.461932"), Currency.from_str("USDC")),
-        locked=Money(Decimal("0.005"), Currency.from_str("USDC")),
-        free=Money(Decimal("90.461932") - Decimal("0.005"), Currency.from_str("USDC")),
-    )
-    # Act
-    result = asset_positions_response.positions[0].parse_to_account_balance(locked=Decimal(0.005))
-
-    # Assert
-    assert result == expected_result
-    assert result.total == expected_result.total
-    assert result.locked == expected_result.locked
-    assert result.free == expected_result.free
-    assert result.total.currency == expected_result.total.currency
-    assert result.locked.currency == expected_result.locked.currency
-    assert result.free.currency == expected_result.free.currency
-    assert result.free.currency.name == expected_result.free.currency.name
