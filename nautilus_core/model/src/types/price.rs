@@ -63,10 +63,6 @@ pub const PRICE_MIN: f64 = -9_223_372_036.0;
 /// cbindgen:ignore
 pub const PRICE_MIN: f64 = -170_141_183_460.0;
 
-/// Export a single constant to Cython
-pub const RUST_PRICE_MIN: f64 = PRICE_MIN;
-pub const RUST_PRICE_MAX: f64 = PRICE_MAX;
-
 /// The sentinel `Price` representing errors (this will be removed when Cython is gone).
 pub const ERROR_PRICE: Price = Price {
     raw: PRICE_ERROR,

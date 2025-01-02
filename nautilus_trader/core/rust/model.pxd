@@ -17,35 +17,10 @@ cdef extern from "../includes/model.h":
 
     const uint8_t FIXED_HIGH_PRECISION # = 18
 
-    # Export a single constant to Cython
-    const uint8_t RUST_FIXED_PRECISION # = PRECISION
-
     # The scalar value corresponding to the maximum precision (10^9).
     const double FIXED_SCALAR # = 1000000000.0
 
     const double FIXED_HIGH_PRECISION_SCALAR # = 1000000000000000000.0
-
-    # Export a single constant to Cython
-    const double RUST_FIXED_SCALAR # = SCALAR
-
-    # Export a single constant to Cython
-    const double RUST_MONEY_MAX # = MONEY_MAX
-
-    const double RUST_MONEY_MIN # = MONEY_MIN
-
-    # Export a single constant to Cython
-    const double RUST_PRICE_MIN # = PRICE_MIN
-
-    const double RUST_PRICE_MAX # = PRICE_MAX
-
-    # Export a single constant to Cython
-    const double RUST_QUANTITY_MAX # = QUANTITY_MAX
-
-    # The minimum valid quantity value which can be represented.
-    const double QUANTITY_MIN # = 0.0
-
-    # Export a single constant to Cython
-    const double RUST_QUANTITY_MIN # = QUANTITY_MIN
 
     # An account type provided by a trading venue or broker.
     cpdef enum AccountType:
@@ -1792,3 +1767,12 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
+
+    const uint8_t RUST_FIXED_PRECISION # = 18
+    const double RUST_FIXED_SCALAR # = 1000000000000000000.0
+    const double RUST_MONEY_MAX # = 170141183460.0
+    const double RUST_MONEY_MIN # = -170141183460.0
+    const double RUST_PRICE_MAX # = 170141183460.0
+    const double RUST_PRICE_MIN # = -170141183460.0
+    const double RUST_QUANTITY_MAX # = 340282366920.0
+    const double RUST_QUANTITY_MIN # = 0.0

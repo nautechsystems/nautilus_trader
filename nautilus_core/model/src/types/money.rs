@@ -51,10 +51,6 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 /// cbindgen:ignore
 pub const MONEY_MIN: f64 = -170_141_183_460.0;
 
-/// Export a single constant to Cython
-pub const RUST_MONEY_MAX: f64 = MONEY_MAX;
-pub const RUST_MONEY_MIN: f64 = MONEY_MIN;
-
 #[cfg(feature = "high_precision")]
 pub type MoneyRaw = i128;
 #[cfg(not(feature = "high_precision"))]

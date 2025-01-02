@@ -47,14 +47,9 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 /// cbindgen:ignore
 pub const QUANTITY_MAX: f64 = 340_282_366_920.0;
 
-/// Export a single constant to Cython
-pub const RUST_QUANTITY_MAX: f64 = QUANTITY_MAX;
-
 /// The minimum valid quantity value which can be represented.
+/// cbindgen:ignore
 pub const QUANTITY_MIN: f64 = 0.0;
-
-/// Export a single constant to Cython
-pub const RUST_QUANTITY_MIN: f64 = QUANTITY_MIN;
 
 #[cfg(not(feature = "high_precision"))]
 pub type QuantityRaw = u64;

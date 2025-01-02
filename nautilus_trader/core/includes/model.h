@@ -27,50 +27,11 @@
 #define FIXED_HIGH_PRECISION 18
 
 /**
- * Export a single constant to Cython
- */
-#define RUST_FIXED_PRECISION PRECISION
-
-/**
  * The scalar value corresponding to the maximum precision (10^9).
  */
 #define FIXED_SCALAR 1000000000.0
 
 #define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
-
-/**
- * Export a single constant to Cython
- */
-#define RUST_FIXED_SCALAR SCALAR
-
-/**
- * Export a single constant to Cython
- */
-#define RUST_MONEY_MAX MONEY_MAX
-
-#define RUST_MONEY_MIN MONEY_MIN
-
-/**
- * Export a single constant to Cython
- */
-#define RUST_PRICE_MIN PRICE_MIN
-
-#define RUST_PRICE_MAX PRICE_MAX
-
-/**
- * Export a single constant to Cython
- */
-#define RUST_QUANTITY_MAX QUANTITY_MAX
-
-/**
- * The minimum valid quantity value which can be represented.
- */
-#define QUANTITY_MIN 0.0
-
-/**
- * Export a single constant to Cython
- */
-#define RUST_QUANTITY_MIN QUANTITY_MIN
 
 /**
  * An account type provided by a trading venue or broker.
@@ -858,9 +819,8 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
-typedef int64_t int128_t;
 
-typedef int128_t int128_t;
+typedef int128_t PriceRaw;
 
 /**
  * Represents a price in a market.
@@ -879,14 +839,13 @@ typedef struct Price_t {
      * The raw price as a signed 64-bit integer.
      * Represents the unscaled value, with `precision` defining the number of decimal places.
      */
-    int128_t raw;
+    PriceRaw raw;
     /**
      * The number of decimal places, with a maximum precision of 9.
      */
     uint8_t precision;
 } Price_t;
 
-typedef uint64_t QuantityRaw;
 
 typedef uint128_t QuantityRaw;
 
@@ -1486,7 +1445,6 @@ typedef struct Currency_t {
 
 typedef int128_t MoneyRaw;
 
-typedef int64_t MoneyRaw;
 
 /**
  * Represents an amount of money in a specified currency denomination.
@@ -1622,10 +1580,10 @@ struct Bar_t bar_new(struct BarType_t bar_type,
                      uint64_t ts_init);
 
 struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
-                              int128_t open,
-                              int128_t high,
-                              int128_t low,
-                              int128_t close,
+                              PriceRaw open,
+                              PriceRaw high,
+                              PriceRaw low,
+                              PriceRaw close,
                               uint8_t price_prec,
                               QuantityRaw volume,
                               uint8_t size_prec,
@@ -1714,7 +1672,7 @@ const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10
 const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
-                                       int128_t price_raw,
+                                       PriceRaw price_raw,
                                        uint8_t price_prec,
                                        QuantityRaw size_raw,
                                        uint8_t size_prec,
@@ -1739,8 +1697,8 @@ const char *book_order_display_to_cstr(const struct BookOrder_t *order);
 const char *book_order_debug_to_cstr(const struct BookOrder_t *order);
 
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
-                                  int128_t bid_price_raw,
-                                  int128_t ask_price_raw,
+                                  PriceRaw bid_price_raw,
+                                  PriceRaw ask_price_raw,
                                   uint8_t bid_price_prec,
                                   uint8_t ask_price_prec,
                                   QuantityRaw bid_size_raw,
@@ -1760,7 +1718,7 @@ uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
 const char *quote_tick_to_cstr(const struct QuoteTick_t *quote);
 
 struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
-                                  int128_t price_raw,
+                                  PriceRaw price_raw,
                                   uint8_t price_prec,
                                   QuantityRaw size_raw,
                                   uint8_t size_prec,
@@ -2550,7 +2508,7 @@ void money_sub_assign(struct Money_t a, struct Money_t b);
 
 struct Price_t price_new(double value, uint8_t precision);
 
-struct Price_t price_from_raw(int128_t raw, uint8_t precision);
+struct Price_t price_from_raw(PriceRaw raw, uint8_t precision);
 
 double price_as_f64(const struct Price_t *price);
 
@@ -2571,3 +2529,13 @@ void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
 void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
 
 void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
+
+#define RUST_FIXED_PRECISION 18
+#define RUST_FIXED_SCALAR 1000000000000000000.0
+#define RUST_MONEY_MAX 170141183460.0
+#define RUST_MONEY_MIN -170141183460.0
+#define RUST_PRICE_MAX 170141183460.0
+#define RUST_PRICE_MIN -170141183460.0
+#define PRICE_ERROR -170141183460.0
+#define RUST_QUANTITY_MAX 340282366920.0
+#define RUST_QUANTITY_MIN 0.0

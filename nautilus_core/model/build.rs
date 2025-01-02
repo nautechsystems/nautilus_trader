@@ -36,7 +36,46 @@ fn main() {
         let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/model.h");
         cbindgen::generate_with_config(&crate_dir, config_c)
             .expect("unable to generate bindings")
-            .write_to_file(c_header_path);
+            .write_to_file(&c_header_path);
+
+        #[cfg(feature = "high_precision")]
+        {
+            let mut src = File::open(&c_header_path).expect("`File::open` failed");
+            let mut data = String::new();
+            src.read_to_string(&mut data)
+                .expect("invalid UTF-8 in stream");
+            let lines: Vec<&str> = data.lines().collect();
+
+            let mut output = String::new();
+            for line in lines {
+                // Ignore 64-bit precision declarations
+                if line.contains("int64_t PriceRaw")
+                    || line.contains("uint64_t QuantityRaw")
+                    || line.contains("int64_t MoneyRaw")
+                {
+                    continue;
+                }
+
+                output.push_str(line);
+                output.push('\n');
+            }
+
+            output.push('\n');
+            output.push_str("#define RUST_FIXED_PRECISION 18\n");
+            output.push_str("#define RUST_FIXED_SCALAR 1000000000000000000.0\n");
+            output.push_str("#define RUST_MONEY_MAX 170141183460.0\n");
+            output.push_str("#define RUST_MONEY_MIN -170141183460.0\n");
+            output.push_str("#define RUST_PRICE_MAX 170141183460.0\n");
+            output.push_str("#define RUST_PRICE_MIN -170141183460.0\n");
+            output.push_str("#define PRICE_ERROR -170141183460.0\n");
+            output.push_str("#define RUST_QUANTITY_MAX 340282366920.0\n");
+            output.push_str("#define RUST_QUANTITY_MIN 0.0\n");
+
+            // Recreate the file and dump the processed contents to it
+            let mut dst = File::create(&c_header_path).expect("`File::create` failed");
+            dst.write_all(output.as_bytes())
+                .expect("I/O error on `dist.write`");
+        }
 
         // Generate Cython definitions
         let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
@@ -81,6 +120,16 @@ fn main() {
                     found_extern = true;
                 }
             }
+
+            output.push('\n');
+            output.push_str("    const uint8_t RUST_FIXED_PRECISION # = 18\n");
+            output.push_str("    const double RUST_FIXED_SCALAR # = 1000000000000000000.0\n");
+            output.push_str("    const double RUST_MONEY_MAX # = 170141183460.0\n");
+            output.push_str("    const double RUST_MONEY_MIN # = -170141183460.0\n");
+            output.push_str("    const double RUST_PRICE_MAX # = 170141183460.0\n");
+            output.push_str("    const double RUST_PRICE_MIN # = -170141183460.0\n");
+            output.push_str("    const double RUST_QUANTITY_MAX # = 340282366920.0\n");
+            output.push_str("    const double RUST_QUANTITY_MIN # = 0.0\n");
 
             data = output;
         }
