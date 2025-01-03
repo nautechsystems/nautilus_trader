@@ -73,6 +73,12 @@ impl PositionStatusReport {
     }
 
     #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
     #[pyo3(name = "strategy_id")]
     fn py_strategy_id(&self) -> InstrumentId {
         self.instrument_id
@@ -88,6 +94,18 @@ impl PositionStatusReport {
     #[pyo3(name = "position_side")]
     fn py_position_side(&self) -> PositionSide {
         self.position_side
+    }
+
+    #[getter]
+    #[pyo3(name = "quantity")]
+    fn py_quantity(&self) -> Quantity {
+        self.quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "report_id")]
+    fn py_report_id(&self) -> UUID4 {
+        self.report_id
     }
 
     #[getter]
