@@ -209,20 +209,6 @@ impl OrderAny {
         }
     }
 
-    pub fn trigger_instrument_id(&self) -> Option<InstrumentId> {
-        match self {
-            Self::Limit(order) => order.trigger_instrument_id(),
-            Self::LimitIfTouched(order) => order.trigger_instrument_id,
-            Self::Market(order) => order.trigger_instrument_id(),
-            Self::MarketIfTouched(order) => order.trigger_instrument_id(),
-            Self::MarketToLimit(order) => order.trigger_instrument_id(),
-            Self::StopLimit(order) => order.trigger_instrument_id(),
-            Self::StopMarket(order) => order.trigger_instrument_id(),
-            Self::TrailingStopLimit(order) => order.trigger_instrument_id(),
-            Self::TrailingStopMarket(order) => order.trigger_instrument_id(),
-        }
-    }
-
     #[must_use]
     pub fn client_order_id(&self) -> ClientOrderId {
         match self {
@@ -1003,8 +989,8 @@ impl OrderAny {
             Self::TrailingStopMarket(order) => order.leaves_qty = leaves_qty,
         }
     }
-      
-          pub fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
+
+    pub fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
         match self {
             Self::Limit(order) => order.emulation_trigger = emulation_trigger,
             Self::LimitIfTouched(order) => order.emulation_trigger = emulation_trigger,
@@ -1016,7 +1002,7 @@ impl OrderAny {
             Self::TrailingStopLimit(order) => order.emulation_trigger = emulation_trigger,
             Self::TrailingStopMarket(order) => order.emulation_trigger = emulation_trigger,
         };
-
+    }
 
     pub fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
         match self {
