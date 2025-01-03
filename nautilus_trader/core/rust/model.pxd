@@ -3,6 +3,8 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t, int64_t
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
+DEF HIGH_PRECISION = True  # or False
+
 cdef extern from "../includes/model.h":
     ctypedef unsigned long long uint128_t
     ctypedef long long int128_t
@@ -17,10 +19,62 @@ cdef extern from "../includes/model.h":
 
     const uint8_t FIXED_HIGH_PRECISION # = 18
 
+    IF HIGH_PRECISION:
+        const uint8_t PRECISION # = FIXED_HIGH_PRECISION
+
+    IF not HIGH_PRECISION:
+        const uint8_t PRECISION # = FIXED_PRECISION
+
     # The scalar value corresponding to the maximum precision (10^9).
     const double FIXED_SCALAR # = 1000000000.0
 
     const double FIXED_HIGH_PRECISION_SCALAR # = 1000000000000000000.0
+
+    IF HIGH_PRECISION:
+        const double SCALAR # = FIXED_HIGH_PRECISION_SCALAR
+
+    IF not HIGH_PRECISION:
+        const double SCALAR # = FIXED_SCALAR
+
+    IF not HIGH_PRECISION:
+        # The maximum valid money amount which can be represented.
+        const double MONEY_MAX # = 9223372036.0
+
+    IF HIGH_PRECISION:
+        # The maximum valid money amount which can be represented.
+        const double MONEY_MAX # = 170141183460.0
+
+    IF not HIGH_PRECISION:
+        # The minimum valid money amount which can be represented.
+        const double MONEY_MIN # = -9223372036.0
+
+    IF HIGH_PRECISION:
+        # The minimum valid money amount which can be represented.
+        const double MONEY_MIN # = -170141183460.0
+
+    IF not HIGH_PRECISION:
+        # The maximum valid price value which can be represented.
+        const double PRICE_MAX # = 9223372036.0
+
+    IF HIGH_PRECISION:
+        const double PRICE_MAX # = 170141183460.0
+
+    IF not HIGH_PRECISION:
+        # The minimum valid price value which can be represented.
+        const double PRICE_MIN # = -9223372036.0
+
+    IF HIGH_PRECISION:
+        const double PRICE_MIN # = -170141183460.0
+
+    IF not HIGH_PRECISION:
+        # The maximum valid quantity value which can be represented.
+        const double QUANTITY_MAX # = 18446744073.0
+
+    IF HIGH_PRECISION:
+        const double QUANTITY_MAX # = 340282366920.0
+
+    # The minimum valid quantity value which can be represented.
+    const double QUANTITY_MIN # = 0.0
 
     # An account type provided by a trading venue or broker.
     cpdef enum AccountType:
@@ -442,8 +496,11 @@ cdef extern from "../includes/model.h":
         # The instruments trading venue.
         Venue_t venue;
 
+    IF not HIGH_PRECISION:
+        ctypedef int64_t PriceRaw;
 
-    ctypedef int128_t PriceRaw;
+    IF HIGH_PRECISION:
+        ctypedef int128_t PriceRaw;
 
     # Represents a price in a market.
     #
@@ -462,8 +519,11 @@ cdef extern from "../includes/model.h":
         # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
+    IF not HIGH_PRECISION:
+        ctypedef uint64_t QuantityRaw;
 
-    ctypedef uint128_t QuantityRaw;
+    IF HIGH_PRECISION:
+        ctypedef uint128_t QuantityRaw;
 
     # Represents a quantity with a non-negative value.
     #
@@ -831,8 +891,11 @@ cdef extern from "../includes/model.h":
         # The currency type, indicating its category (e.g. Fiat, Crypto).
         CurrencyType currency_type;
 
-    ctypedef int128_t MoneyRaw;
+    IF HIGH_PRECISION:
+        ctypedef int128_t MoneyRaw;
 
+    IF not HIGH_PRECISION:
+        ctypedef int64_t MoneyRaw;
 
     # Represents an amount of money in a specified currency denomination.
     #
@@ -1767,12 +1830,3 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
-
-    const uint8_t RUST_FIXED_PRECISION # = 18
-    const double RUST_FIXED_SCALAR # = 1000000000000000000.0
-    const double RUST_MONEY_MAX # = 170141183460.0
-    const double RUST_MONEY_MIN # = -170141183460.0
-    const double RUST_PRICE_MAX # = 170141183460.0
-    const double RUST_PRICE_MIN # = -170141183460.0
-    const double RUST_QUANTITY_MAX # = 340282366920.0
-    const double RUST_QUANTITY_MIN # = 0.0

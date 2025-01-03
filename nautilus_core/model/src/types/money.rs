@@ -35,20 +35,16 @@ use crate::types::Currency;
 
 /// The maximum valid money amount which can be represented.
 #[cfg(not(feature = "high_precision"))]
-/// cbindgen:ignore
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
 /// The maximum valid money amount which can be represented.
 #[cfg(feature = "high_precision")]
-/// cbindgen:ignore
 pub const MONEY_MAX: f64 = 170_141_183_460.0;
 
 /// The minimum valid money amount which can be represented.
 #[cfg(not(feature = "high_precision"))]
-/// cbindgen:ignore
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 /// The minimum valid money amount which can be represented.
 #[cfg(feature = "high_precision")]
-/// cbindgen:ignore
 pub const MONEY_MIN: f64 = -170_141_183_460.0;
 
 #[cfg(feature = "high_precision")]

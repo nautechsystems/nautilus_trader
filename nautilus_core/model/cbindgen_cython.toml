@@ -5,6 +5,9 @@ sys_includes = ["stdint.h", "Python.h"]
 no_includes = true
 tab_width = 4
 
+[defines]
+"feature = high_precision" = "HIGH_PRECISION"
+
 [cython]
 header = '"../includes/model.h"'
 

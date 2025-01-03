@@ -33,14 +33,14 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport precision_from_cstr
-from nautilus_trader.core.rust.model cimport RUST_FIXED_PRECISION
-from nautilus_trader.core.rust.model cimport RUST_FIXED_SCALAR
-from nautilus_trader.core.rust.model cimport RUST_MONEY_MAX
-from nautilus_trader.core.rust.model cimport RUST_MONEY_MIN
-from nautilus_trader.core.rust.model cimport RUST_PRICE_MAX
-from nautilus_trader.core.rust.model cimport RUST_PRICE_MIN
-from nautilus_trader.core.rust.model cimport RUST_QUANTITY_MAX
-from nautilus_trader.core.rust.model cimport RUST_QUANTITY_MIN
+from nautilus_trader.core.rust.model cimport FIXED_PRECISION as RUST_FIXED_PRECISION
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR as RUST_FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
+from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
+from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
+from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
+from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
+from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport currency_code_to_cstr
 from nautilus_trader.core.rust.model cimport currency_exists
 from nautilus_trader.core.rust.model cimport currency_from_cstr

@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define HIGH_PRECISION
+
 #ifdef __SIZEOF_INT128__
     typedef __uint128_t uint128_t;
     typedef __int128_t int128_t;
@@ -26,12 +28,94 @@
 
 #define FIXED_HIGH_PRECISION 18
 
+#if defined(HIGH_PRECISION)
+#define PRECISION FIXED_HIGH_PRECISION
+#endif
+
+#if !defined(HIGH_PRECISION)
+#define PRECISION FIXED_PRECISION
+#endif
+
 /**
  * The scalar value corresponding to the maximum precision (10^9).
  */
 #define FIXED_SCALAR 1000000000.0
 
 #define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
+
+#if defined(HIGH_PRECISION)
+#define SCALAR FIXED_HIGH_PRECISION_SCALAR
+#endif
+
+#if !defined(HIGH_PRECISION)
+#define SCALAR FIXED_SCALAR
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid money amount which can be represented.
+ */
+#define MONEY_MAX 9223372036.0
+#endif
+
+#if defined(HIGH_PRECISION)
+/**
+ * The maximum valid money amount which can be represented.
+ */
+#define MONEY_MAX 170141183460.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The minimum valid money amount which can be represented.
+ */
+#define MONEY_MIN -9223372036.0
+#endif
+
+#if defined(HIGH_PRECISION)
+/**
+ * The minimum valid money amount which can be represented.
+ */
+#define MONEY_MIN -170141183460.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid price value which can be represented.
+ */
+#define PRICE_MAX 9223372036.0
+#endif
+
+#if defined(HIGH_PRECISION)
+#define PRICE_MAX 170141183460.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The minimum valid price value which can be represented.
+ */
+#define PRICE_MIN -9223372036.0
+#endif
+
+#if defined(HIGH_PRECISION)
+#define PRICE_MIN -170141183460.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid quantity value which can be represented.
+ */
+#define QUANTITY_MAX 18446744073.0
+#endif
+
+#if defined(HIGH_PRECISION)
+#define QUANTITY_MAX 340282366920.0
+#endif
+
+/**
+ * The minimum valid quantity value which can be represented.
+ */
+#define QUANTITY_MIN 0.0
 
 /**
  * An account type provided by a trading venue or broker.
@@ -819,8 +903,13 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
+#if !defined(HIGH_PRECISION)
+typedef int64_t PriceRaw;
+#endif
 
+#if defined(HIGH_PRECISION)
 typedef int128_t PriceRaw;
+#endif
 
 /**
  * Represents a price in a market.
@@ -846,8 +935,13 @@ typedef struct Price_t {
     uint8_t precision;
 } Price_t;
 
+#if !defined(HIGH_PRECISION)
+typedef uint64_t QuantityRaw;
+#endif
 
+#if defined(HIGH_PRECISION)
 typedef uint128_t QuantityRaw;
+#endif
 
 /**
  * Represents a quantity with a non-negative value.
@@ -1443,8 +1537,13 @@ typedef struct Currency_t {
     enum CurrencyType currency_type;
 } Currency_t;
 
+#if defined(HIGH_PRECISION)
 typedef int128_t MoneyRaw;
+#endif
 
+#if !defined(HIGH_PRECISION)
+typedef int64_t MoneyRaw;
+#endif
 
 /**
  * Represents an amount of money in a specified currency denomination.
@@ -2529,13 +2628,3 @@ void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
 void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
 
 void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
-
-#define RUST_FIXED_PRECISION 18
-#define RUST_FIXED_SCALAR 1000000000000000000.0
-#define RUST_MONEY_MAX 170141183460.0
-#define RUST_MONEY_MIN -170141183460.0
-#define RUST_PRICE_MAX 170141183460.0
-#define RUST_PRICE_MIN -170141183460.0
-#define PRICE_ERROR -170141183460.0
-#define RUST_QUANTITY_MAX 340282366920.0
-#define RUST_QUANTITY_MIN 0.0
