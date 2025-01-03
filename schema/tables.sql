@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS "order" (
     client_order_id TEXT NOT NULL,
     venue_order_id TEXT,
     position_id TEXT,
-    account_id TEXT REFERENCES account(id) ON DELETE CASCADE,
+    account_id TEXT,  -- REFERENCES account(id) ON DELETE CASCADE,
     last_trade_id TEXT,
     order_type TEXT NOT NULL,
     order_side TEXT NOT NULL,
