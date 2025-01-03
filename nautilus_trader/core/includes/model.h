@@ -5,6 +5,15 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define HIGH_PRECISION
+
+#ifdef __SIZEOF_INT128__
+    typedef __uint128_t uint128_t;
+    typedef __int128_t int128_t;
+#else
+#    error "128-bit integer not supported on this platform"
+#endif
+
 #define DEPTH10_LEN 10
 
 /**
@@ -19,9 +28,13 @@
 
 #define FIXED_HIGH_PRECISION 18
 
+#if defined(HIGH_PRECISION)
 #define PRECISION FIXED_HIGH_PRECISION
+#endif
 
+#if !defined(HIGH_PRECISION)
 #define PRECISION FIXED_PRECISION
+#endif
 
 /**
  * The scalar value corresponding to the maximum precision (10^9).
@@ -30,50 +43,74 @@
 
 #define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
 
+#if defined(HIGH_PRECISION)
 #define SCALAR FIXED_HIGH_PRECISION_SCALAR
+#endif
 
+#if !defined(HIGH_PRECISION)
 #define SCALAR FIXED_SCALAR
+#endif
 
+#if !defined(HIGH_PRECISION)
 /**
  * The maximum valid money amount which can be represented.
  */
 #define MONEY_MAX 9223372036.0
+#endif
 
+#if defined(HIGH_PRECISION)
 /**
  * The maximum valid money amount which can be represented.
  */
 #define MONEY_MAX 170141183460.0
+#endif
 
+#if !defined(HIGH_PRECISION)
 /**
  * The minimum valid money amount which can be represented.
  */
 #define MONEY_MIN -9223372036.0
+#endif
 
+#if defined(HIGH_PRECISION)
 /**
  * The minimum valid money amount which can be represented.
  */
 #define MONEY_MIN -170141183460.0
+#endif
 
+#if !defined(HIGH_PRECISION)
 /**
  * The maximum valid price value which can be represented.
  */
 #define PRICE_MAX 9223372036.0
+#endif
 
+#if defined(HIGH_PRECISION)
 #define PRICE_MAX 170141183460.0
+#endif
 
+#if !defined(HIGH_PRECISION)
 /**
  * The minimum valid price value which can be represented.
  */
 #define PRICE_MIN -9223372036.0
+#endif
 
+#if defined(HIGH_PRECISION)
 #define PRICE_MIN -170141183460.0
+#endif
 
+#if !defined(HIGH_PRECISION)
 /**
  * The maximum valid quantity value which can be represented.
  */
 #define QUANTITY_MAX 18446744073.0
+#endif
 
+#if defined(HIGH_PRECISION)
 #define QUANTITY_MAX 340282366920.0
+#endif
 
 /**
  * The minimum valid quantity value which can be represented.
@@ -866,9 +903,13 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
-typedef int64_t int128_t;
+#if !defined(HIGH_PRECISION)
+typedef int64_t PriceRaw;
+#endif
 
-typedef i128 int128_t;
+#if defined(HIGH_PRECISION)
+typedef int128_t PriceRaw;
+#endif
 
 /**
  * Represents a price in a market.
@@ -887,16 +928,20 @@ typedef struct Price_t {
      * The raw price as a signed 64-bit integer.
      * Represents the unscaled value, with `precision` defining the number of decimal places.
      */
-    int128_t raw;
+    PriceRaw raw;
     /**
      * The number of decimal places, with a maximum precision of 9.
      */
     uint8_t precision;
 } Price_t;
 
+#if !defined(HIGH_PRECISION)
 typedef uint64_t QuantityRaw;
+#endif
 
-typedef u128 QuantityRaw;
+#if defined(HIGH_PRECISION)
+typedef uint128_t QuantityRaw;
+#endif
 
 /**
  * Represents a quantity with a non-negative value.
@@ -1492,9 +1537,13 @@ typedef struct Currency_t {
     enum CurrencyType currency_type;
 } Currency_t;
 
-typedef i128 MoneyRaw;
+#if defined(HIGH_PRECISION)
+typedef int128_t MoneyRaw;
+#endif
 
+#if !defined(HIGH_PRECISION)
 typedef int64_t MoneyRaw;
+#endif
 
 /**
  * Represents an amount of money in a specified currency denomination.
@@ -1526,7 +1575,7 @@ typedef struct Money_t {
 /**
  * The sentinel `Price` representing errors (this will be removed when Cython is gone).
  */
-#define ERROR_PRICE (Price_t){ .raw = PRICE_ERROR, .precision = 0 }
+#define ERROR_PRICE (Price_t){ .raw = 0, .precision = 255 }
 
 
 
@@ -1630,10 +1679,10 @@ struct Bar_t bar_new(struct BarType_t bar_type,
                      uint64_t ts_init);
 
 struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
-                              int128_t open,
-                              int128_t high,
-                              int128_t low,
-                              int128_t close,
+                              PriceRaw open,
+                              PriceRaw high,
+                              PriceRaw low,
+                              PriceRaw close,
                               uint8_t price_prec,
                               QuantityRaw volume,
                               uint8_t size_prec,
@@ -1722,7 +1771,7 @@ const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10
 const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
-                                       int128_t price_raw,
+                                       PriceRaw price_raw,
                                        uint8_t price_prec,
                                        QuantityRaw size_raw,
                                        uint8_t size_prec,
@@ -1747,8 +1796,8 @@ const char *book_order_display_to_cstr(const struct BookOrder_t *order);
 const char *book_order_debug_to_cstr(const struct BookOrder_t *order);
 
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
-                                  int128_t bid_price_raw,
-                                  int128_t ask_price_raw,
+                                  PriceRaw bid_price_raw,
+                                  PriceRaw ask_price_raw,
                                   uint8_t bid_price_prec,
                                   uint8_t ask_price_prec,
                                   QuantityRaw bid_size_raw,
@@ -1768,7 +1817,7 @@ uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
 const char *quote_tick_to_cstr(const struct QuoteTick_t *quote);
 
 struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
-                                  int128_t price_raw,
+                                  PriceRaw price_raw,
                                   uint8_t price_prec,
                                   QuantityRaw size_raw,
                                   uint8_t size_prec,
@@ -2558,7 +2607,7 @@ void money_sub_assign(struct Money_t a, struct Money_t b);
 
 struct Price_t price_new(double value, uint8_t precision);
 
-struct Price_t price_from_raw(int128_t raw, uint8_t precision);
+struct Price_t price_from_raw(PriceRaw raw, uint8_t precision);
 
 double price_as_f64(const struct Price_t *price);
 

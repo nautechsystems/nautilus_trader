@@ -61,8 +61,8 @@ pub const PRICE_MIN: f64 = -170_141_183_460.0;
 
 /// The sentinel `Price` representing errors (this will be removed when Cython is gone).
 pub const ERROR_PRICE: Price = Price {
-    raw: PRICE_ERROR,
-    precision: 0,
+    raw: 0,
+    precision: 255,
 };
 
 #[cfg(not(feature = "high_precision"))]
