@@ -39,9 +39,11 @@ from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import is_backtest_force_stop
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.component import log_header
 from nautilus_trader.common.component import register_component_clock
+from nautilus_trader.common.component import set_backtest_force_stop
 from nautilus_trader.common.component import set_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.config import msgspec_encoding_hook
@@ -580,6 +582,9 @@ class NautilusKernel:
             self._log.warning(f"Received {command!r} not for this trader {self.trader_id}")
             return
 
+        if self._environment == Environment.BACKTEST and is_backtest_force_stop():
+            return  # Backtest has already been force stopped
+
         if not self._is_running:
             self._log.warning(f"Received {command!r} when not running")
             return
@@ -590,6 +595,10 @@ class NautilusKernel:
             self._loop.create_task(self.stop_async())
         else:
             self.stop()
+
+        if self._environment == Environment.BACKTEST:
+            set_backtest_force_stop(True)
+            self._log.debug("Set backtest FORCE_STOP")
 
     @property
     def environment(self) -> Environment:
