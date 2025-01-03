@@ -49,6 +49,7 @@ from nautilus_trader.backtest.models cimport MakerTakerFeeModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.component cimport FORCE_STOP
 from nautilus_trader.common.component cimport LOGGING_PYO3
 from nautilus_trader.common.component cimport LiveClock
 from nautilus_trader.common.component cimport Logger
@@ -59,6 +60,7 @@ from nautilus_trader.common.component cimport TimeEventHandler
 from nautilus_trader.common.component cimport get_component_clocks
 from nautilus_trader.common.component cimport log_level_from_str
 from nautilus_trader.common.component cimport log_sysinfo
+from nautilus_trader.common.component cimport set_backtest_force_stop
 from nautilus_trader.common.component cimport set_logging_clock_realtime_mode
 from nautilus_trader.common.component cimport set_logging_clock_static_mode
 from nautilus_trader.common.component cimport set_logging_clock_static_time
@@ -1105,6 +1107,9 @@ cdef class BacktestEngine:
                     matching_engine.process_order(order, order.account_id)
                 ###################################################################################
 
+            # Reset any previously set FORCE_STOP
+            set_backtest_force_stop(False)
+
             # Common kernel start-up sequence
             self._kernel.start()
 
@@ -1130,7 +1135,6 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef bint force_stop = False
         cdef uint64_t last_ns = 0
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
@@ -1190,11 +1194,11 @@ cdef class BacktestEngine:
 
                 self._iteration += 1
         except AccountError as e:
-            force_stop = True
+            set_backtest_force_stop(True)
             self._log.error(f"Stopping backtest from {e}")
         # ---------------------------------------------------------------------#
 
-        if force_stop:
+        if FORCE_STOP:
             return
 
         # Process remaining messages
@@ -1268,6 +1272,11 @@ cdef class BacktestEngine:
             object callback
             SimulatedExchange exchange
         for i in range(raw_handler_vec.len):
+            if FORCE_STOP:
+                # The FORCE_STOP flag has already been set,
+                # no further time events should be processed.
+                return
+
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
             if should_skip_time_event(ts_event_init, ts_now, only_now, asof_now):
