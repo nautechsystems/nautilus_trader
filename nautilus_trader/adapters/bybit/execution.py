@@ -995,19 +995,24 @@ class BybitExecutionClient(LiveExecutionClient):
             if ws_message.success is False:
                 self._log.error(f"WebSocket error: {ws_message}")
                 return
-            if not ws_message.topic:
+
+            topic = ws_message.topic
+            if not topic:
                 return
 
-            if "order" in ws_message.topic:
+            # Sort by message frequency, from high to low for better performance
+            if "order" in topic:
                 self._handle_account_order_update(raw)
-            elif "execution" in ws_message.topic:
-                self._handle_account_execution_update(raw)
-            elif "execution.fast" in ws_message.topic:
-                self._handle_account_execution_fast_update(raw)
-            elif "wallet" == ws_message.topic:
+            # wallet has no `Categorised Topic`, `order` event should trigger `wallet` event
+            elif "wallet" == topic:
                 self._handle_account_wallet_update(raw)
+            elif "execution" in topic:
+                if "execution.fast" in topic:
+                    self._handle_account_execution_fast_update(raw)
+                else:
+                    self._handle_account_execution_update(raw)
             else:
-                self._log.error(f"Unknown websocket message topic: {ws_message.topic}")
+                self._log.error(f"Unknown websocket message topic: {topic}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
@@ -1032,7 +1037,8 @@ class BybitExecutionClient(LiveExecutionClient):
         execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
     ) -> None:
         instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
-        client_order_id = ClientOrderId(execution.orderLinkId) if execution.orderLinkId else None
+        order_link_id = execution.orderLinkId
+        client_order_id = ClientOrderId(order_link_id) if order_link_id else None
         venue_order_id = VenueOrderId(execution.orderId)
         order_side: OrderSide = self._enum_parser.parse_bybit_order_side(execution.side)
 
@@ -1072,11 +1078,13 @@ class BybitExecutionClient(LiveExecutionClient):
             raise ValueError(f"Cannot handle trade event: instrument {instrument_id} not found")
 
         quote_currency = instrument.quote_currency
-        fee = instrument.maker_fee if execution.isMaker else instrument.taker_fee
+        is_maker = execution.isMaker
+        fee = instrument.maker_fee if is_maker else instrument.taker_fee
 
-        last_qty = Quantity(float(execution.execQty), instrument.size_precision)
-        last_px = Price(float(execution.execPrice), instrument.price_precision)
-        commission_amount = last_qty * last_px * fee
+        last_qty: Quantity = instrument.make_qty(execution.execQty)
+        last_px: Price = instrument.make_price(execution.execPrice)
+        notional_value: Money = instrument.notional_value(last_qty, last_px)
+        commission: Money = Money(notional_value * fee, quote_currency)
 
         self.generate_order_filled(
             strategy_id=strategy_id,
@@ -1090,8 +1098,8 @@ class BybitExecutionClient(LiveExecutionClient):
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=quote_currency,
-            commission=Money(commission_amount, quote_currency),
-            liquidity_side=LiquiditySide.MAKER if execution.isMaker else LiquiditySide.TAKER,
+            commission=commission,
+            liquidity_side=LiquiditySide.MAKER if is_maker else LiquiditySide.TAKER,
             ts_event=millis_to_nanos(float(execution.execTime)),
         )
 
