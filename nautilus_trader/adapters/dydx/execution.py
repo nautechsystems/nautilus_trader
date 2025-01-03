@@ -236,6 +236,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             f"{name or DYDX_VENUE.value}-{self._wallet_address}-{self._subaccount}",
         )
         self._set_account_id(account_id)
+        self._connect_account_timeout_secs = 10
 
         # WebSocket API
         self._ws_client = DYDXWebsocketClient(
@@ -315,10 +316,20 @@ class DYDXExecutionClient(LiveExecutionClient):
             sequence=account.sequence,
         )
 
-        while self.get_account() is None:
-            await asyncio.sleep(0.1)
+        await self._set_leverage()
 
+    async def _set_leverage(self) -> None:
+        timeout = self._clock.utc_now() + pd.Timedelta(seconds=self._connect_account_timeout_secs)
         account = self.get_account()
+
+        while account is None and self._clock.utc_now() < timeout:
+            await asyncio.sleep(0.1)
+            account = self.get_account()
+
+        if account is None:
+            self._log.error("Account is not initialized")
+            return
+
         instruments = self._instrument_provider.get_all()
 
         for instrument_id, instrument in instruments.items():
