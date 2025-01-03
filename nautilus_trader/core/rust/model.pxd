@@ -916,7 +916,7 @@ cdef extern from "../includes/model.h":
 
 
     # The sentinel `Price` representing errors (this will be removed when Cython is gone).
-    const Price_t ERROR_PRICE # = <Price_t>{ PRICE_ERROR, 0 }
+    const Price_t ERROR_PRICE # = <Price_t>{ 0, 255 }
 
 
 
