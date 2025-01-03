@@ -18,7 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_core::{ffi::uuid::uuid4_new, nanos::UnixNanos};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
@@ -661,7 +661,7 @@ impl AccountsManager {
                 cash_account.balances.clone().into_values().collect(),
                 vec![],
                 false,
-                uuid4_new(),
+                UUID4::new(),
                 ts_event,
                 self.clock.borrow().timestamp_ns(),
                 cash_account.base_currency(),
@@ -672,7 +672,7 @@ impl AccountsManager {
                 vec![],
                 margin_account.margins.clone().into_values().collect(),
                 false,
-                uuid4_new(),
+                UUID4::new(),
                 ts_event,
                 self.clock.borrow().timestamp_ns(),
                 margin_account.base_currency(),

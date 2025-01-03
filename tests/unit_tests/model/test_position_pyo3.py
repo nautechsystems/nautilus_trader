@@ -118,7 +118,7 @@ def test_position_to_from_dict():
                 "client_order_id": "O-20210410-022422-001-001-1",
                 "commission": "2.00 USD",
                 "currency": "USD",
-                "event_id": "038990c6-19d2-b5c8-37a6-fe91f9b7b9ed",
+                "event_id": "2d89666b-1a1e-4a75-b193-4eb3b454c758",
                 "info": {},
                 "instrument_id": "AUD/USD.SIM",
                 "last_px": "1.00001",

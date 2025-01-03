@@ -54,6 +54,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
@@ -263,7 +264,6 @@ def transform_order_from_pyo3(order_pyo3):
 
 def transform_order_to_snapshot_pyo3(order: Order):
     values = order.to_dict()
-
     values["order_type"] = values["type"]
     values["order_side"] = values["side"]
     values["expire_time"] = values.get("expire_time_ns")
@@ -276,8 +276,10 @@ def transform_order_to_snapshot_pyo3(order: Order):
     return nautilus_pyo3.OrderSnapshot.from_dict(values)
 
 
-def transform_position_to_snapshot_pyo3(position: Position):
+def transform_position_to_snapshot_pyo3(position: Position, unrealized_pnl: Money | None = None):
     values = position.to_dict()
+    values["unrealized_pnl"] = str(unrealized_pnl) if unrealized_pnl is not None else None
+
     return nautilus_pyo3.PositionSnapshot.from_dict(values)
 
 

@@ -23,14 +23,18 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny,
         OrderSnapshot,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{AccountBalance, Currency, MarginBalance},
 };
 use sqlx::{PgPool, Row};
 
-use super::models::types::{CustomDataModel, SignalModel};
+use super::models::{
+    orders::OrderSnapshotModel,
+    positions::PositionSnapshotModel,
+    types::{CustomDataModel, SignalModel},
+};
 use crate::sql::models::{
     accounts::AccountEventModel,
     data::{BarModel, QuoteTickModel, TradeTickModel},
@@ -365,9 +369,9 @@ impl DatabaseQueries {
             .bind(snapshot.expire_time.map(|x| x.to_string()))
             .bind(snapshot.filled_qty.to_string())
             .bind(snapshot.liquidity_side.map(|x| x.to_string()))
-            .bind(snapshot.avg_px.map(|x| x.to_string()))
-            .bind(snapshot.slippage.map(|x| x.to_string()))
-            .bind(serde_json::to_string(&snapshot.commissions.iter().map(|x| x.to_string()).collect::<Vec<String>>()).unwrap())
+            .bind(snapshot.avg_px)
+            .bind(snapshot.slippage)
+            .bind(snapshot.commissions.iter().map(|x| x.to_string()).collect::<Vec<String>>())
             .bind(snapshot.status.to_string())
             .bind(snapshot.is_post_only)
             .bind(snapshot.is_reduce_only)
@@ -397,6 +401,20 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
+    pub async fn load_order_snapshot(
+        pool: &PgPool,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        sqlx::query_as::<_, OrderSnapshotModel>(
+            r#"SELECT * FROM "order" WHERE client_order_id = $1"#,
+        )
+        .bind(client_order_id.to_string())
+        .fetch_optional(pool)
+        .await
+        .map(|model| model.map(|m| m.0))
+        .map_err(|e| anyhow::anyhow!("Failed to load order snapshot: {e}"))
+    }
+
     pub async fn add_position_snapshot(
         pool: &PgPool,
         snapshot: PositionSnapshot,
@@ -420,7 +438,7 @@ impl DatabaseQueries {
             INSERT INTO "position" (
                 id, trader_id, strategy_id, instrument_id, account_id, opening_order_id, closing_order_id, entry, side, signed_qty, quantity, peak_qty,
                 quote_currency, base_currency, settlement_currency, avg_px_open, avg_px_close, realized_return, realized_pnl, unrealized_pnl, commissions,
-                duration_ns, ts_opened, ts_closed, ts_last, ts_init
+                duration_ns, ts_opened, ts_closed, ts_init, ts_last, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -430,7 +448,7 @@ impl DatabaseQueries {
             SET
                 trader_id = $2, strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
                 peak_qty = $12, quote_currency = $13, base_currency = $14, settlement_currency = $15, avg_px_open = $16, avg_px_close = $17, realized_return = $18, realized_pnl = $19, unrealized_pnl = $20,
-                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_last = $25, ts_init = $26, updated_at = CURRENT_TIMESTAMP
+                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_init = $25, ts_last = $26, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(snapshot.position_id.to_string())
             .bind(snapshot.trader_id.to_string())
@@ -441,30 +459,23 @@ impl DatabaseQueries {
             .bind(snapshot.closing_order_id.map(|x| x.to_string()))
             .bind(snapshot.entry.to_string())
             .bind(snapshot.side.to_string())
-            .bind(snapshot.signed_qty.to_string())
+            .bind(snapshot.signed_qty)
             .bind(snapshot.quantity.to_string())
             .bind(snapshot.peak_qty.to_string())
             .bind(snapshot.quote_currency.to_string())
             .bind(snapshot.base_currency.map(|x| x.to_string()))
             .bind(snapshot.settlement_currency.to_string())
-            .bind(snapshot.avg_px_open.to_string())
-            .bind(snapshot.avg_px_close.map(|x| x.to_string()))
-            .bind(snapshot.realized_return.map(|x| x.to_string()))
-            .bind(snapshot.realized_pnl.to_string())
+            .bind(snapshot.avg_px_open)
+            .bind(snapshot.avg_px_close)
+            .bind(snapshot.realized_return)
+            .bind(snapshot.realized_pnl.map(|x| x.to_string()))
             .bind(snapshot.unrealized_pnl.map(|x| x.to_string()))
-            .bind(
-                serde_json::to_string(
-                    &snapshot.commissions
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                ).unwrap()
-            )
+            .bind(snapshot.commissions.iter().map(|x| x.to_string()).collect::<Vec<String>>())
             .bind(snapshot.duration_ns.map(|x| x.to_string()))
             .bind(snapshot.ts_opened.to_string())
             .bind(snapshot.ts_closed.map(|x| x.to_string()))
-            .bind(snapshot.ts_last.to_string())
             .bind(snapshot.ts_init.to_string())
+            .bind(snapshot.ts_last.to_string())
             .execute(&mut *transaction)
             .await
             .map(|_| ())
@@ -473,6 +484,18 @@ impl DatabaseQueries {
             .commit()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
+
+    pub async fn load_position_snapshot(
+        pool: &PgPool,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        sqlx::query_as::<_, PositionSnapshotModel>(r#"SELECT * FROM "position" WHERE id = $1"#)
+            .bind(position_id.to_string())
+            .fetch_optional(pool)
+            .await
+            .map(|model| model.map(|m| m.0))
+            .map_err(|e| anyhow::anyhow!("Failed to load position snapshot: {e}"))
     }
 
     pub async fn check_if_order_initialized_exists(

@@ -89,6 +89,12 @@ cpdef void register_component_clock(UUID4 instance_id, Clock clock)
 cpdef void deregister_component_clock(UUID4 instance_id, Clock clock)
 
 
+cdef bint FORCE_STOP
+
+cpdef void set_backtest_force_stop(bint value)
+cpdef bint is_backtest_force_stop()
+
+
 cdef class TestClock(Clock):
     cdef TestClock_API _mem
 

@@ -48,9 +48,8 @@ impl ParquetDataCatalog {
         }
     }
 
-    // TODO: fix path creation
-    fn make_path(&self, type_name: &str, instrument_id: Option<&String>) -> PathBuf {
-        let mut path = self.base_path.join("data").join(type_name.to_lowercase());
+    fn make_path(&self, type_name: PathBuf, instrument_id: Option<&String>) -> PathBuf {
+        let mut path = self.base_path.join("data").join(type_name);
 
         if let Some(id) = instrument_id {
             path = path.join(id);
@@ -69,7 +68,6 @@ impl ParquetDataCatalog {
         );
     }
 
-    #[must_use]
     pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Vec<RecordBatch>
     where
         T: GetTsInit + EncodeToRecordBatch,
@@ -88,15 +86,22 @@ impl ParquetDataCatalog {
     }
 
     #[must_use]
-    pub fn write_to_json<T>(&self, data: Vec<T>) -> PathBuf
+    pub fn write_to_json<T>(
+        &self,
+        data: Vec<T>,
+        path: Option<PathBuf>,
+        write_metadata: bool,
+    ) -> PathBuf
     where
-        T: GetTsInit + Serialize,
+        T: GetTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
         Self::check_ascending_timestamps(&data, &type_name);
 
-        let path = self.make_path(&type_name, None);
-        let json_path = path.with_extension("json");
+        let json_path = path.unwrap_or_else(|| {
+            let path = self.make_path(T::path_prefix(), None);
+            path.with_extension("json")
+        });
 
         info!(
             "Writing {} records of {} data to {:?}",
@@ -105,43 +110,79 @@ impl ParquetDataCatalog {
             json_path
         );
 
+        if write_metadata {
+            let metadata = T::chunk_metadata(&data);
+            let metadata_path = json_path.with_extension("metadata.json");
+            info!("Writing metadata to {:?}", metadata_path);
+            let metadata_file = std::fs::File::create(&metadata_path)
+                .unwrap_or_else(|_| panic!("Failed to create metadata file at {metadata_path:?}"));
+            serde_json::to_writer(metadata_file, &metadata)
+                .unwrap_or_else(|_| panic!("Failed to write metadata to JSON"));
+        }
+
         let file = std::fs::File::create(&json_path)
             .unwrap_or_else(|_| panic!("Failed to create JSON file at {json_path:?}"));
 
-        serde_json::to_writer(file, &data)
+        serde_json::to_writer(file, &serde_json::to_value(data).unwrap())
             .unwrap_or_else(|_| panic!("Failed to write {type_name} to JSON"));
 
         json_path
     }
 
-    pub fn write_to_parquet<T>(&self, data: Vec<T>)
+    pub fn write_to_parquet<T>(
+        &self,
+        data: Vec<T>,
+        path: Option<PathBuf>,
+        compression: Option<parquet::basic::Compression>,
+        max_row_group_size: Option<usize>,
+    ) -> PathBuf
     where
-        T: GetTsInit + EncodeToRecordBatch,
+        T: GetTsInit + EncodeToRecordBatch + CatalogPathPrefix,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
         Self::check_ascending_timestamps(&data, &type_name);
 
         let batches = self.data_to_record_batches(data);
-        if let Some(batch) = batches.first() {
-            let schema = batch.schema();
-            let instrument_id = schema.metadata.get("instrument_id");
-            let path = self.make_path(&type_name, instrument_id);
+        let batch = batches.first().expect("Expected at least one batch");
+        let schema = batch.schema();
+        let instrument_id = schema.metadata.get("instrument_id");
+        let path = path.unwrap_or_else(|| self.make_path(T::path_prefix(), instrument_id));
 
-            // Write all batches to parquet file
-            info!(
-                "Writing {} batches of {} data to {:?}",
-                batches.len(),
-                type_name,
-                path
-            );
-            // TODO: Set writer to property to limit max row group size
-            write_batches_to_parquet(&batches, &path, None, Some(5000))
-                .unwrap_or_else(|_| panic!("Failed to write {type_name} to parquet"));
-        }
+        // Write all batches to parquet file
+        info!(
+            "Writing {} batches of {} data to {:?}",
+            batches.len(),
+            type_name,
+            path
+        );
+
+        write_batches_to_parquet(&batches, &path, compression, max_row_group_size)
+            .unwrap_or_else(|_| panic!("Failed to write {type_name} to parquet"));
+
+        path
     }
 
     /// Query data loaded in the catalog
-    pub fn query<T>(
+    pub fn query_file<T>(
+        &mut self,
+        path: PathBuf,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+    ) -> Result<QueryResult>
+    where
+        T: DecodeDataFromRecordBatch + CatalogPathPrefix,
+    {
+        let path_str = path.to_str().unwrap();
+        let table_name = path.file_stem().unwrap().to_str().unwrap();
+        let query = build_query(table_name, start, end, where_clause);
+        self.session
+            .add_file::<T>(table_name, path_str, Some(&query))?;
+        Ok(self.session.get_query_result())
+    }
+
+    /// Query data loaded in the catalog
+    pub fn query_directory<T>(
         &mut self,
         // use instrument_ids or bar_types to query specific subset of the data
         instrument_ids: Vec<String>,
@@ -150,16 +191,16 @@ impl ParquetDataCatalog {
         where_clause: Option<&str>,
     ) -> Result<QueryResult>
     where
-        T: DecodeDataFromRecordBatch,
+        T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
         let mut paths = Vec::new();
         for instrument_id in &instrument_ids {
-            paths.push(self.make_path("TODO", Some(instrument_id)));
+            paths.push(self.make_path(T::path_prefix(), Some(instrument_id)));
         }
 
         // If no specific instrument_id is selected query all files for the data type
         if paths.is_empty() {
-            paths.push(self.make_path("TODO", None));
+            paths.push(self.make_path(T::path_prefix(), None));
         }
 
         for path in &paths {
@@ -199,10 +240,30 @@ impl ParquetDataCatalog {
             }
         }
 
-        self.write_to_parquet(delta);
-        self.write_to_parquet(depth10);
-        self.write_to_parquet(quote);
-        self.write_to_parquet(trade);
-        self.write_to_parquet(bar);
+        self.write_to_parquet(delta, None, None, None);
+        self.write_to_parquet(depth10, None, None, None);
+        self.write_to_parquet(quote, None, None, None);
+        self.write_to_parquet(trade, None, None, None);
+        self.write_to_parquet(bar, None, None, None);
     }
 }
+
+pub trait CatalogPathPrefix {
+    fn path_prefix() -> PathBuf;
+}
+
+macro_rules! impl_catalog_path_prefix {
+    ($type:ty, $path:expr) => {
+        impl CatalogPathPrefix for $type {
+            fn path_prefix() -> PathBuf {
+                PathBuf::from($path)
+            }
+        }
+    };
+}
+
+impl_catalog_path_prefix!(QuoteTick, "quotes");
+impl_catalog_path_prefix!(TradeTick, "trades");
+impl_catalog_path_prefix!(OrderBookDelta, "order_book_deltas");
+impl_catalog_path_prefix!(OrderBookDepth10, "order_book_depths");
+impl_catalog_path_prefix!(Bar, "bars");

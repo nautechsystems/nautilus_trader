@@ -50,7 +50,7 @@ typedef struct CVec {
 } CVec;
 
 /**
- * Represents a pseudo-random UUID (universally unique identifier)
+ * Represents a Universally Unique Identifier (UUID)
  * version 4 based on a 128-bit label as specified in RFC 4122.
  */
 typedef struct UUID4_t {

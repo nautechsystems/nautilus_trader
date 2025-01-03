@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::{OrderSide, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+    position::Position,
     types::{Currency, Money, Quantity},
 };
 
@@ -53,10 +54,6 @@ pub struct PositionSnapshot {
     pub quantity: Quantity,
     /// The peak directional quantity reached by the position.
     pub peak_qty: Quantity,
-    /// The last fill quantity for the position.
-    // pub last_qty: Quantity,  TODO: Implement
-    // /// The last fill price for the position.
-    // pub last_px: Price,  TODO: Implement
     /// The position quote currency.
     pub quote_currency: Currency,
     /// The position base currency.
@@ -70,7 +67,7 @@ pub struct PositionSnapshot {
     /// The realized return for the position.
     pub realized_return: Option<f64>,
     /// The realized PnL for the position (including commissions).
-    pub realized_pnl: Money,
+    pub realized_pnl: Option<Money>,
     /// The unrealized PnL for the position (including commissions).
     pub unrealized_pnl: Option<Money>,
     /// The commissions for the position.
@@ -81,8 +78,41 @@ pub struct PositionSnapshot {
     pub ts_opened: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the position closed.
     pub ts_closed: Option<UnixNanos>,
-    /// UNIX timestamp (nanoseconds) when the last position event occurred.
-    pub ts_last: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the snapshot was initialized.
     pub ts_init: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the last position event occurred.
+    pub ts_last: UnixNanos,
+}
+
+impl PositionSnapshot {
+    pub fn from(position: &Position, unrealized_pnl: Option<Money>) -> Self {
+        Self {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            closing_order_id: position.closing_order_id,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            peak_qty: position.peak_qty,
+            quote_currency: position.quote_currency,
+            base_currency: position.base_currency,
+            settlement_currency: position.settlement_currency,
+            avg_px_open: position.avg_px_open,
+            avg_px_close: position.avg_px_close,
+            realized_return: Some(position.realized_return), // TODO: Standardize
+            realized_pnl: position.realized_pnl,
+            unrealized_pnl,
+            commissions: position.commissions.values().cloned().collect(), // TODO: Optimize
+            duration_ns: Some(position.duration_ns),                       // TODO: Standardize
+            ts_opened: position.ts_opened,
+            ts_closed: position.ts_closed,
+            ts_init: position.ts_init,
+            ts_last: position.ts_last,
+        }
+    }
 }

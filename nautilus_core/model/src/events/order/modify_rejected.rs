@@ -33,6 +33,8 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where a `ModifyOrder` command has been rejected by the
+/// trading venue.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]

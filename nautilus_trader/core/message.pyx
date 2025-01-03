@@ -52,7 +52,7 @@ cdef class Command:
         )
 
     def __setstate__(self, state):
-        self.id = UUID4(state[0])
+        self.id = UUID4.from_str_c(state[0])
         self.ts_init = state[1]
 
     def __eq__(self, Command other) -> bool:
@@ -96,7 +96,7 @@ cdef class Document:
         )
 
     def __setstate__(self, state):
-        self.id = UUID4(state[0])
+        self.id = UUID4.from_str_c(state[0])
         self.ts_init = state[1]
 
     def __eq__(self, Document other) -> bool:
@@ -193,7 +193,7 @@ cdef class Request:
 
     def __setstate__(self, state):
         self.callback = state[0]
-        self.id = UUID4(state[1])
+        self.id = UUID4.from_str_c(state[1])
         self.ts_init = state[2]
 
     def __eq__(self, Request other) -> bool:
@@ -242,8 +242,8 @@ cdef class Response:
         )
 
     def __setstate__(self, state):
-        self.correlation_id = UUID4(state[0])
-        self.id = UUID4(state[1])
+        self.correlation_id = UUID4.from_str_c(state[0])
+        self.id = UUID4.from_str_c(state[1])
         self.ts_init = state[2]
 
     def __eq__(self, Response other) -> bool:

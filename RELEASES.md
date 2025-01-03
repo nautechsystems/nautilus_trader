@@ -11,8 +11,9 @@ Released on TBD (UTC).
 - Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
 - Added `DataEngineConfig.time_bars_skip_first_non_full_bar` config option (#2160), thanks @faysou
 - Added docs for `Cache` and slippage and spread handling in backtesting (#2162), thanks @stefansimik
-- Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
-- Handle directory and live streams to catalog (#2153), thanks @limx0
+- Added catalog helper functions to export data (#2135), thanks @twitu
+- Added `execution.fast` support for Bybit (#2165), thanks @sunlei
+- Enhance the `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)
@@ -23,14 +24,19 @@ Released on TBD (UTC).
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
-- Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
+- Added unit tests for custom dYdX types (#2163), thanks @davidsblom
+- Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
+- Handle directory and live streams to catalog (#2153), thanks @limx0
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
+- Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
+- Upgraded `datafusion` crate to v44.0.0
 
 ### Breaking Changes
 - Changed `TradingNode.is_built` from a property to a method `.is_built()`
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
 - Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
 - Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
+- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
 
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
@@ -41,6 +47,7 @@ Released on TBD (UTC).
 - Fixed missing enum member `CANCELED_MARKET_RESOLVED` for `PolymarketOrderStatus`
 - Fixed missing `init_id` field from some order `.to_dict()` representations
 - Fixed writing `DYDXOraclePrice` to catalog (#2158), thanks @davidsblom
+- Fixed account balance for dYdX (#2167), thanks @davidsblom
 - Fixed missing `OrderEmulated` and `OrderReleased` Arrow schemas
 
 ---

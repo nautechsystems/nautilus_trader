@@ -557,6 +557,18 @@ cpdef void remove_instance_component_clocks(UUID4 instance_id):
     _COMPONENT_CLOCKS.pop(instance_id, None)
 
 
+# Global backtest force stop flag
+_FORCE_STOP = False
+
+cpdef void set_backtest_force_stop(bint value):
+    global FORCE_STOP
+    FORCE_STOP = value
+
+
+cpdef bint is_backtest_force_stop():
+    return FORCE_STOP
+
+
 cdef class TestClock(Clock):
     """
     Provides a monotonic clock for backtesting and unit testing.

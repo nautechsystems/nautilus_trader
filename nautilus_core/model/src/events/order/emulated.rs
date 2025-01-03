@@ -33,6 +33,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where an order has become emulated by the Nautilus system.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]

@@ -15,9 +15,14 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use nautilus_core::uuid::UUID4;
+use uuid::Uuid;
 
-fn bench_uuid4_creation(c: &mut Criterion) {
+fn bench_uuid4_new(c: &mut Criterion) {
     c.bench_function("UUID4::new", |b| b.iter(UUID4::new));
+}
+
+fn bench_uuid_crate_new_v4(c: &mut Criterion) {
+    c.bench_function("Uuid::new", |b| b.iter(Uuid::new_v4));
 }
 
 fn bench_uuid4_to_string(c: &mut Criterion) {
@@ -26,7 +31,7 @@ fn bench_uuid4_to_string(c: &mut Criterion) {
 }
 
 fn bench_uuid4_from_str(c: &mut Criterion) {
-    let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+    let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
     c.bench_function("UUID4::from_str", |b| b.iter(|| UUID4::from(uuid_string)));
 }
 
@@ -59,7 +64,8 @@ fn bench_uuid4_round_trip(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_uuid4_creation,
+    bench_uuid4_new,
+    bench_uuid_crate_new_v4,
     bench_uuid4_to_string,
     bench_uuid4_from_str,
     bench_uuid4_serialize,

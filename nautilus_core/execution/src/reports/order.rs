@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::{
@@ -22,44 +24,73 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Represents an order status at a point in time.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
 )]
 pub struct OrderStatusReport {
+    /// The account ID associated with the position.
     pub account_id: AccountId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
-    pub venue_order_id: VenueOrderId,
-    pub order_side: OrderSide,
-    pub order_type: OrderType,
-    pub time_in_force: TimeInForce,
-    pub order_status: OrderStatus,
-    pub quantity: Quantity,
-    pub filled_qty: Quantity,
-    pub report_id: UUID4,
-    pub ts_accepted: UnixNanos,
-    pub ts_last: UnixNanos,
-    pub ts_init: UnixNanos,
+    /// The client order ID.
     pub client_order_id: Option<ClientOrderId>,
+    /// The venue assigned order ID.
+    pub venue_order_id: VenueOrderId,
+    /// The order side.
+    pub order_side: OrderSide,
+    /// The order type.
+    pub order_type: OrderType,
+    /// The order time in force.
+    pub time_in_force: TimeInForce,
+    /// The order status.
+    pub order_status: OrderStatus,
+    /// The order quantity.
+    pub quantity: Quantity,
+    /// The order total filled quantity.
+    pub filled_qty: Quantity,
+    /// The unique identifier for the event.
+    pub report_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the order was accepted.
+    pub ts_accepted: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the last event occurred.
+    pub ts_last: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
+    pub ts_init: UnixNanos,
+    /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,
+    /// The orders contingency type.
     pub contingency_type: ContingencyType,
+    /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.
     pub expire_time: Option<UnixNanos>,
+    /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
+    /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
-    pub limit_offset: Option<Decimal>,
-    pub trailing_offset: Option<Decimal>,
+    /// The trailing offset for the orders limit price.
+    pub limit_offset: Option<Price>,
+    /// The trailing offset for the orders trigger price (STOP).
+    pub trailing_offset: Option<Price>,
+    /// The trailing offset type.
     pub trailing_offset_type: TrailingOffsetType,
-    pub avg_px: Option<Decimal>,
+    /// The order average fill price.
+    pub avg_px: Option<f64>,
+    /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
+    /// If the order will only provide liquidity (make a market).
     pub post_only: bool,
+    /// If the order carries the 'reduce-only' execution instruction.
     pub reduce_only: bool,
+    /// The reason for order cancellation.
     pub cancel_reason: Option<String>,
+    /// UNIX timestamp (nanoseconds) when the order was triggered.
     pub ts_triggered: Option<UnixNanos>,
 }
 
@@ -70,6 +101,7 @@ impl OrderStatusReport {
     pub fn new(
         account_id: AccountId,
         instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
         venue_order_id: VenueOrderId,
         order_side: OrderSide,
         order_type: OrderType,
@@ -77,14 +109,15 @@ impl OrderStatusReport {
         order_status: OrderStatus,
         quantity: Quantity,
         filled_qty: Quantity,
-        report_id: UUID4,
         ts_accepted: UnixNanos,
         ts_last: UnixNanos,
         ts_init: UnixNanos,
+        report_id: Option<UUID4>,
     ) -> Self {
         Self {
             account_id,
             instrument_id,
+            client_order_id,
             venue_order_id,
             order_side,
             order_type,
@@ -92,11 +125,10 @@ impl OrderStatusReport {
             order_status,
             quantity,
             filled_qty,
-            report_id,
+            report_id: report_id.unwrap_or_default(),
             ts_accepted,
             ts_last,
             ts_init,
-            client_order_id: None,
             order_list_id: None,
             contingency_type: ContingencyType::default(),
             expire_time: None,
@@ -138,7 +170,7 @@ impl OrderStatusReport {
 
     /// Sets the average price.
     #[must_use]
-    pub const fn with_avg_px(mut self, avg_px: Decimal) -> Self {
+    pub const fn with_avg_px(mut self, avg_px: f64) -> Self {
         self.avg_px = Some(avg_px);
         self
     }
@@ -147,6 +179,37 @@ impl OrderStatusReport {
     #[must_use]
     pub const fn with_trigger_price(mut self, trigger_price: Price) -> Self {
         self.trigger_price = Some(trigger_price);
+        self
+    }
+
+    /// Sets the trigger type.
+    #[must_use]
+    pub const fn with_trigger_type(mut self, trigger_type: TriggerType) -> Self {
+        self.trigger_type = Some(trigger_type);
+        self
+    }
+
+    /// Sets the limit offset.
+    #[must_use]
+    pub const fn with_limit_offset(mut self, limit_offset: Price) -> Self {
+        self.limit_offset = Some(limit_offset);
+        self
+    }
+
+    /// Sets the trailing offset.
+    #[must_use]
+    pub const fn with_trailing_offset(mut self, trailing_offset: Price) -> Self {
+        self.trailing_offset = Some(trailing_offset);
+        self
+    }
+
+    /// Sets the trailing offset type.
+    #[must_use]
+    pub const fn with_trailing_offset_type(
+        mut self,
+        trailing_offset_type: TrailingOffsetType,
+    ) -> Self {
+        self.trailing_offset_type = trailing_offset_type;
         self
     }
 
@@ -197,5 +260,73 @@ impl OrderStatusReport {
     pub const fn with_contingency_type(mut self, contingency_type: ContingencyType) -> Self {
         self.contingency_type = contingency_type;
         self
+    }
+}
+
+impl Display for OrderStatusReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OrderStatusReport(\
+                account_id={}, \
+                instrument_id={}, \
+                venue_order_id={}, \
+                order_side={}, \
+                order_type={}, \
+                time_in_force={}, \
+                order_status={}, \
+                quantity={}, \
+                filled_qty={}, \
+                report_id={}, \
+                ts_accepted={}, \
+                ts_last={}, \
+                ts_init={}, \
+                client_order_id={:?}, \
+                order_list_id={:?}, \
+                contingency_type={}, \
+                expire_time={:?}, \
+                price={:?}, \
+                trigger_price={:?}, \
+                trigger_type={:?}, \
+                limit_offset={:?}, \
+                trailing_offset={:?}, \
+                trailing_offset_type={}, \
+                avg_px={:?}, \
+                display_qty={:?}, \
+                post_only={}, \
+                reduce_only={}, \
+                cancel_reason={:?}, \
+                ts_triggered={:?}\
+            )",
+            self.account_id,
+            self.instrument_id,
+            self.venue_order_id,
+            self.order_side,
+            self.order_type,
+            self.time_in_force,
+            self.order_status,
+            self.quantity,
+            self.filled_qty,
+            self.report_id,
+            self.ts_accepted,
+            self.ts_last,
+            self.ts_init,
+            self.client_order_id,
+            self.order_list_id,
+            self.contingency_type,
+            self.expire_time,
+            self.price,
+            self.trigger_price,
+            self.trigger_type,
+            self.limit_offset,
+            self.trailing_offset,
+            self.trailing_offset_type,
+            self.avg_px,
+            self.display_qty,
+            self.post_only,
+            self.reduce_only,
+            self.cancel_reason,
+            self.ts_triggered,
+        )
     }
 }
