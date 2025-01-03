@@ -23,10 +23,12 @@ Released on TBD (UTC).
 - Standardized flags for `OrderBookDeltas` parsing across adapters
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
+- Refine private WebSocket message processing for Bybit (#2170), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
+- Use timeout when initializing account for dYdX (#2169), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Upgraded `datafusion` crate to v44.0.0
