@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     types::{Money, Price, Quantity},
 };
 use serde::{Deserialize, Serialize};
@@ -56,7 +58,7 @@ pub struct FillReport {
     /// The client order ID.
     pub client_order_id: Option<ClientOrderId>,
     /// The position ID (assigned by the venue).
-    pub venue_position_id: Option<OrderListId>,
+    pub venue_position_id: Option<PositionId>,
 }
 
 impl FillReport {
@@ -74,9 +76,10 @@ impl FillReport {
         commission: Money,
         liquidity_side: LiquiditySide,
         client_order_id: Option<ClientOrderId>,
-        venue_position_id: Option<OrderListId>,
+        venue_position_id: Option<PositionId>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        report_id: Option<UUID4>,
     ) -> Self {
         Self {
             account_id,
@@ -88,7 +91,7 @@ impl FillReport {
             last_px,
             commission,
             liquidity_side,
-            report_id: UUID4::new(),
+            report_id: report_id.unwrap_or_default(),
             ts_event,
             ts_init,
             client_order_id,
@@ -106,5 +109,22 @@ impl FillReport {
     #[must_use]
     pub const fn has_venue_position_id(&self) -> bool {
         self.venue_position_id.is_some()
+    }
+}
+
+impl Display for FillReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "FillReport(instrument={}, side={}, qty={}, last_px={}, trade_id={}, venue_order_id={}, commission={}, liquidity={})",
+            self.instrument_id,
+            self.order_side,
+            self.last_qty,
+            self.last_px,
+            self.trade_id,
+            self.venue_order_id,
+            self.commission,
+            self.liquidity_side,
+        )
     }
 }

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Debug, Display};
+
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::PositionSide,
@@ -52,6 +54,7 @@ pub struct PositionStatusReport {
 
 impl PositionStatusReport {
     /// Creates a new [`PositionStatusReport`] instance with required fields.
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         account_id: AccountId,
@@ -61,6 +64,7 @@ impl PositionStatusReport {
         venue_position_id: Option<PositionId>,
         ts_last: UnixNanos,
         ts_init: UnixNanos,
+        report_id: Option<UUID4>,
     ) -> Self {
         // Calculate signed decimal quantity based on position side
         let signed_decimal_qty = match position_side {
@@ -76,7 +80,7 @@ impl PositionStatusReport {
             position_side,
             quantity,
             signed_decimal_qty,
-            report_id: UUID4::new(),
+            report_id: report_id.unwrap_or_default(),
             ts_last,
             ts_init,
             venue_position_id,
@@ -108,5 +112,21 @@ impl PositionStatusReport {
     #[must_use]
     pub fn is_short(&self) -> bool {
         self.position_side == PositionSide::Short
+    }
+}
+
+impl Display for PositionStatusReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, ts_last={}, ts_init={})",
+            self.account_id,
+            self.instrument_id,
+            self.position_side,
+            self.signed_decimal_qty,
+            self.venue_position_id,
+            self.ts_last,
+            self.ts_init
+        )
     }
 }
