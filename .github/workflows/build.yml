@@ -538,7 +538,7 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ${{ github.workspace }}\.cache\sccache
+      SCCACHE_DIR: ${{ github.workspace }}\_cache\sccache
       # Incrementally compiled crates cannot be cached by sccache
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
