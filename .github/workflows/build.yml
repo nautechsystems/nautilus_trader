@@ -17,8 +17,9 @@ jobs:
     name: pre-commit - python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     env:
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "false"
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
@@ -27,6 +28,7 @@ jobs:
       # Incrementally compiled crates cannot be cached by sccache
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     steps:
       - name: Checkout repository
@@ -69,8 +71,6 @@ jobs:
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
-        # with:
-        #   disable_annotations: true
 
       - name: Cached pre-commit
         id: cached-pre-commit
@@ -115,8 +115,9 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "false"
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
@@ -125,9 +126,7 @@ jobs:
       # Incrementally compiled crates cannot be cached by sccache
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
-      # sccache debug
-      # SCCACHE_ERROR_LOG: /tmp/sccache_log.txt
-      # SCCACHE_LOG: debug
+      # > --------------------------------------------------
 
     services:
       redis:
@@ -204,8 +203,6 @@ jobs:
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
-        # with:
-        #   disable_annotations: true
 
       - name: Cached cargo
         id: cached-cargo
@@ -336,10 +333,6 @@ jobs:
           name: ${{ env.ASSET_NAME }}
           path: ${{ env.ASSET_PATH }}
 
-      # - name: Cat sccache log
-      #   run: |
-      #     cat /tmp/sccache_log.txt
-
   build-macos:
     strategy:
       fail-fast: false
@@ -355,19 +348,22 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
 
       # - name: Free disk space  # Continue to monitor
       #   run: |
@@ -401,6 +397,17 @@ jobs:
 
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
+
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Cached cargo
         id: cached-cargo
@@ -523,22 +530,19 @@ jobs:
     env:
       BUILD_MODE: debug # Not building wheels, so debug is fine
       RUST_BACKTRACE: 1
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Set sccache-cache env vars
-        run: |
-          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
 
       # - name: Free disk space  # Continue to monitor
       #   run: |
@@ -571,6 +575,23 @@ jobs:
 
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+
+      - name: Set sccache-cache env vars
+        run: |
+          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Cached cargo
         id: cached-cargo

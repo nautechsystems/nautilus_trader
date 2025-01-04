@@ -15,12 +15,18 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
-      CXX: "sccache clang"
+      CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
     services:
       redis:
         image: redis
@@ -59,9 +65,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
       - name: Set up Rust toolchain
         run: |
           rustup toolchain add --profile minimal stable --component clippy,rustfmt
@@ -88,6 +91,17 @@ jobs:
 
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Cached pre-commit
         id: cached-pre-commit
