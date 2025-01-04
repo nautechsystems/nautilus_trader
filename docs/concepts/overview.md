@@ -100,7 +100,43 @@ The platform features a comprehensive trading domain model that includes various
 `Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects,
 which are used to aggregate multiple events to determine state.
 
-### Data types
+## Timestamps
+
+All timestamps within the platform are recorded at nanosecond precision in UTC.
+
+Timestamp strings follow ISO 8601 (RFC 3339) format with either 9 digits (nanoseconds) or 3 digits (milliseconds) of decimal precision,
+(but mostly nanoseconds) always maintaining all digits including trailing zeros.
+These can be seen in log messages, and debug/display outputs for objects.
+
+A timestamp string consists of:
+
+- Full date component always present: `YYYY-MM-DD`.
+- `T` separator between date and time components.
+- Always nanosecond precision (9 decimal places) or millisecond precision (3 decimal places) for certain cases such as GTD expiry times.
+- Always UTC timezone designated by `Z` suffix.
+
+Example: `2024-01-05T15:30:45.123456789Z`
+
+For the complete specification, refer to [RFC 3339: Date and Time on the Internet](https://datatracker.ietf.org/doc/html/rfc3339).
+
+## UUIDs
+
+The platform uses Universally Unique Identifiers (UUID) version 4 (RFC 4122) for unique identifiers.
+Our high-performance implementation leverages the `uuid` crate for correctness validation when parsing from strings,
+ensuring input UUIDs comply with the specification.
+
+A valid UUID v4 consists of:
+
+- 32 hexadecimal digits displayed in 5 groups.
+- Groups separated by hyphens: `8-4-4-4-12` format.
+- Version 4 designation (indicated by the third group starting with "4").
+- RFC 4122 variant designation (indicated by the fourth group starting with "8", "9", "a", or "b").
+
+Example: `2d89666b-1a1e-4a75-b193-4eb3b454c757`
+
+For the complete specification, refer to [RFC 4122: A Universally Unique IDentifier (UUID) URN Namespace](https://datatracker.ietf.org/doc/html/rfc4122).
+
+## Data types
 
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
 
@@ -121,7 +157,7 @@ The following `PriceType` options can be used for bar aggregations:
 - `MID`
 - `LAST`
 
-### Bar aggregations
+## Bar aggregations
 
 The following `BarAggregation` methods are available:
 
@@ -145,7 +181,7 @@ The following `BarAggregation` methods are available:
 The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`.
 This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
 
-### Account Types
+## Account Types
 
 The following account types are available for both live and backtest environments:
 
@@ -155,7 +191,7 @@ The following account types are available for both live and backtest environment
 - `Margin` multi-currency
 - `Betting` single-currency
 
-### Order Types
+## Order Types
 
 The following order types are available (when possible on a venue):
 
