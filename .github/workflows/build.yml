@@ -200,8 +200,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: ${{ matrix.os }}-sccache-
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
@@ -406,8 +406,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: ${{ matrix.os }}-sccache-
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
@@ -591,8 +591,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: ${{ matrix.os }}-sccache-
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
