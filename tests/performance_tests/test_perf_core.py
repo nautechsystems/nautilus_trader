@@ -25,16 +25,16 @@ def test_nautilus_convert_to_snake_case(benchmark) -> None:
 
 
 def test_unix_nanos_to_iso8601(benchmark) -> None:
-    benchmark.pedantic(lambda: unix_nanos_to_iso8601(0), warmup_rounds=100_000)
+    benchmark(lambda: unix_nanos_to_iso8601(0))
 
 
 def test_format_iso8601(benchmark) -> None:
     dt = pd.Timestamp(0)
 
-    benchmark.pedantic(lambda: format_iso8601(dt), warmup_rounds=100_000)
+    benchmark(lambda: format_iso8601(dt))
 
 
 def test_format_iso8601_millis(benchmark) -> None:
     dt = pd.Timestamp(0)
 
-    benchmark.pedantic(lambda: format_iso8601(dt, nanos_precision=False), warmup_rounds=100_000)
+    benchmark(lambda: format_iso8601(dt, nanos_precision=False))
