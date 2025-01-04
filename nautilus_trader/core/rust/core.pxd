@@ -62,8 +62,12 @@ cdef extern from "../includes/core.h":
 
     CVec cvec_new();
 
-    # Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
+    # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer.
     const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
+
+    # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer
+    # with millisecond precision.
+    const char *unix_nanos_to_iso8601_millis_cstr(uint64_t timestamp_ns);
 
     # Return the decimal precision inferred from the given C string.
     #

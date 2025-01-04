@@ -20,7 +20,7 @@ use crate::{
     datetime::{
         is_within_last_24_hours, last_weekday_nanos, micros_to_nanos, millis_to_nanos,
         nanos_to_micros, nanos_to_millis, nanos_to_secs, secs_to_millis, secs_to_nanos,
-        unix_nanos_to_iso8601,
+        unix_nanos_to_iso8601, unix_nanos_to_iso8601_millis,
     },
     nanos::UnixNanos,
 };
@@ -137,29 +137,31 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
     nanos_to_micros(nanos)
 }
 
-/// Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).
+/// Return UNIX nanoseconds as an ISO 8601 (RFC 3339) format string.
 ///
 /// Parameters
 /// ----------
-/// year : int
-///     The year from the datum date.
-/// month : int
-///     The month from the datum date.
-/// day : int
-///     The day from the datum date.
+/// timestamp_ns : int
+///     The UNIX timestamp (nanoseconds).
+/// nanos_precision : bool, default True
+///     If True, use nanosecond precision. If False, use millisecond precision.
 ///
 /// Returns
 /// -------
-/// int
+/// str
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If given an invalid date.
+///     If `timestamp_ns` is invalid.
 #[must_use]
-#[pyfunction(name = "unix_nanos_to_iso8601")]
-pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
-    unix_nanos_to_iso8601(timestamp_ns.into())
+#[pyfunction(name = "unix_nanos_to_iso8601", signature = (timestamp_ns, nanos_precision=true))]
+pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64, nanos_precision: Option<bool>) -> String {
+    let unix_nanos = timestamp_ns.into();
+    match nanos_precision.unwrap_or(true) {
+        true => unix_nanos_to_iso8601(unix_nanos),
+        false => unix_nanos_to_iso8601_millis(unix_nanos),
+    }
 }
 
 /// Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).

@@ -91,12 +91,21 @@ pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }
 
-/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted string.
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string.
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
+}
+
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
+/// with millisecond precision.
+#[inline]
+#[must_use]
+pub fn unix_nanos_to_iso8601_millis(unix_nanos: UnixNanos) -> String {
+    let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 /// Floor the given UNIX nanoseconds to the nearest microsecond.
@@ -333,6 +342,28 @@ mod tests {
     #[case(42_897_123, 42_897)]
     fn test_nanos_to_micros(#[case] value: u64, #[case] expected: u64) {
         let result = nanos_to_micros(value);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(0, "1970-01-01T00:00:00.000000000Z")] // Unix epoch
+    #[case(1, "1970-01-01T00:00:00.000000001Z")] // 1 nanosecond
+    #[case(1_000, "1970-01-01T00:00:00.000001000Z")] // 1 microsecond
+    #[case(1_000_000, "1970-01-01T00:00:00.001000000Z")] // 1 millisecond
+    #[case(1_000_000_000, "1970-01-01T00:00:01.000000000Z")] // 1 second
+    #[case(1_702_857_600_000_000_000, "2023-12-18T00:00:00.000000000Z")] // Specific date
+    fn test_unix_nanos_to_iso8601(#[case] nanos: u64, #[case] expected: &str) {
+        let result = unix_nanos_to_iso8601(UnixNanos::from(nanos));
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(0, "1970-01-01T00:00:00.000Z")] // Unix epoch
+    #[case(1_000_000, "1970-01-01T00:00:00.001Z")] // 1 millisecond
+    #[case(1_000_000_000, "1970-01-01T00:00:01.000Z")] // 1 second
+    #[case(1_702_857_600_123_456_789, "2023-12-18T00:00:00.123Z")] // With millisecond precision
+    fn test_unix_nanos_to_iso8601_millis(#[case] nanos: u64, #[case] expected: &str) {
+        let result = unix_nanos_to_iso8601_millis(UnixNanos::from(nanos));
         assert_eq!(result, expected);
     }
 

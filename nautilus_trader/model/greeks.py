@@ -19,7 +19,7 @@ import numpy as np
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.core.datetime import unix_nanos_to_str
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.core.math import quadratic_interpolation
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.identifiers import InstrumentId
@@ -53,7 +53,7 @@ class GreeksData(Data):
             f"expiry={self.expiry}, itm_prob={self.itm_prob * 100:.2f}%, "
             f"vol={self.vol * 100:.2f}%, price={self.price:.2f}, delta={self.delta:.2f}, "
             f"gamma={self.gamma:.2f}, vega={self.vega:.2f}, theta={self.theta:.2f}, quantity={self.quantity}, "
-            f"ts_event={unix_nanos_to_str(self.ts_event)}, ts_init={unix_nanos_to_str(self.ts_init)})"
+            f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     @classmethod
@@ -92,7 +92,7 @@ class PortfolioGreeks(Data):
     def __repr__(self):
         return (
             f"PortfolioGreeks(delta={self.delta:.2f}, gamma={self.gamma:.2f}, vega={self.vega:.2f}, theta={self.theta:.2f}, "
-            f"ts_event={unix_nanos_to_str(self.ts_event)}, ts_init={unix_nanos_to_str(self.ts_init)})"
+            f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     def __add__(self, other):
@@ -127,7 +127,7 @@ class InterestRateData(Data):
     def __repr__(self):
         return (
             f"InterestRateData(curve_name={self.curve_name}, interest_rate={self.interest_rate * 100:.2f}%, "
-            f"ts_event={unix_nanos_to_str(self.ts_event)}, ts_init={unix_nanos_to_str(self.ts_init)})"
+            f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     def __call__(self, expiry_in_years: float):
@@ -162,7 +162,7 @@ class InterestRateCurveData(Data):
     def __repr__(self):
         return (
             f"InterestRateCurve(curve_name={self.curve_name}, "
-            f"ts_event={unix_nanos_to_str(self.ts_event)}, ts_init={unix_nanos_to_str(self.ts_init)})"
+            f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     def __call__(self, expiry_in_years: float):

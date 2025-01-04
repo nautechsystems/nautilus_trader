@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from datetime import datetime
 from os import PathLike
 from typing import Any
 
@@ -58,7 +57,9 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+# UNIX epoch is the UTC time at midnight on 1970-01-01
+# https://en.wikipedia.org/wiki/Unix_time
+UNIX_EPOCH = pd.Timestamp("1970-01-01", tzinfo=pytz.utc)
 
 
 class TestDataStubs:

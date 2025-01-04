@@ -34,7 +34,6 @@ from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
-from cpython.datetime cimport datetime
 from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
@@ -66,6 +65,7 @@ from nautilus_trader.common.component cimport set_logging_clock_static_mode
 from nautilus_trader.common.component cimport set_logging_clock_static_time
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
@@ -144,10 +144,10 @@ cdef class BacktestEngine:
         self._iteration: uint64_t = 0
 
         # Timing
-        self._run_started: datetime | None = None
-        self._run_finished: datetime | None = None
-        self._backtest_start: datetime | None = None
-        self._backtest_end: datetime | None = None
+        self._run_started: pd.Timestamp | None = None
+        self._run_finished: pd.Timestamp | None = None
+        self._backtest_start: pd.Timestamp | None = None
+        self._backtest_end: pd.Timestamp | None = None
 
         # Build core system kernel
         self._kernel = NautilusKernel(name=type(self).__name__, config=config)
@@ -259,49 +259,49 @@ cdef class BacktestEngine:
         return self._iteration
 
     @property
-    def run_started(self) -> datetime | None:
+    def run_started(self) -> pd.Timestamp | None:
         """
         Return when the last backtest run started (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._run_started
 
     @property
-    def run_finished(self) -> datetime | None:
+    def run_finished(self) -> pd.Timestamp | None:
         """
         Return when the last backtest run finished (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._run_finished
 
     @property
-    def backtest_start(self) -> datetime | None:
+    def backtest_start(self) -> pd.Timestamp | None:
         """
         Return the last backtest run time range start (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._backtest_start
 
     @property
-    def backtest_end(self) -> datetime | None:
+    def backtest_end(self) -> pd.Timestamp | None:
         """
         Return the last backtest run time range end (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._backtest_end
@@ -1336,10 +1336,10 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {self._run_started}")
-        self._log.info(f"Backtest start: {self._backtest_start}")
-        self._log.info(f"Batch start:    {start}")
-        self._log.info(f"Batch end:      {end}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        self._log.info(f"Batch start:    {format_iso8601(start)}")
+        self._log.info(f"Batch end:      {format_iso8601(end)}")
         self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
@@ -1360,11 +1360,11 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {self._run_started}")
-        self._log.info(f"Run finished:   {self._run_finished}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
+        self._log.info(f"Run finished:   {format_iso8601(self._run_finished)}")
         self._log.info(f"Elapsed time:   {elapsed_time}")
-        self._log.info(f"Backtest start: {self._backtest_start}")
-        self._log.info(f"Backtest end:   {self._backtest_end}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
         self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:_}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:_}")

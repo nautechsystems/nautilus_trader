@@ -16,7 +16,7 @@
 """
 This module provides efficient functions for performing standard datetime related operations.
 
-Functions include awareness/tz checks and conversions, as well as ISO 8601 conversion.
+Functions include awareness/tz checks and conversions, as well as ISO 8601 (RFC 3339) conversion.
 """
 
 import pandas as pd
@@ -38,6 +38,9 @@ from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport unix_nanos_to_iso8601_cstr
+from nautilus_trader.core.rust.core cimport unix_nanos_to_iso8601_millis_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -88,21 +91,51 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
 
     return <uint64_t>dt.value
 
-cpdef str unix_nanos_to_str(uint64_t unix_nanos):
+
+cpdef str unix_nanos_to_iso8601(uint64_t unix_nanos, bint nanos_precision = True):
     """
-    Convert the given `unix_nanos` to an ISO 8601 formatted string.
+    Convert the given `unix_nanos` to an ISO 8601 (RFC 3339) format string.
 
     Parameters
     ----------
     unix_nanos : int
         The UNIX timestamp (nanoseconds) to be converted.
+    nanos_precision : bool, default True
+        If True, use nanosecond precision. If False, use millisecond precision.
 
     Returns
     -------
     str
 
     """
-    return format_iso8601(unix_nanos_to_dt(unix_nanos))
+    if nanos_precision:
+        return cstr_to_pystr(unix_nanos_to_iso8601_cstr(unix_nanos))
+    else:
+        return cstr_to_pystr(unix_nanos_to_iso8601_millis_cstr(unix_nanos))
+
+
+cpdef str format_iso8601(datetime dt, bint nanos_precision = True):
+    """
+    Format the given datetime as an ISO 8601 (RFC 3339) specification string.
+
+    Parameters
+    ----------
+    dt : pd.Timestamp
+        The datetime to format.
+    nanos_precision : bool, default True
+        If True, use nanosecond precision. If False, use millisecond precision.
+
+    Returns
+    -------
+    str
+
+    """
+    Condition.type(dt, pd.Timestamp, "dt")
+
+    if nanos_precision:
+        return cstr_to_pystr(unix_nanos_to_iso8601_cstr(dt.value))
+    else:
+        return cstr_to_pystr(unix_nanos_to_iso8601_millis_cstr(dt.value))
 
 
 cpdef maybe_unix_nanos_to_dt(nanos):
@@ -279,7 +312,6 @@ cpdef object as_utc_index(data: pd.DataFrame):
 cpdef datetime time_object_to_dt(time_object):
     """
     Return the datetime (UTC) from the given UNIX timestamp as integer (nanoseconds), string or pd.Timestamp.
-    Returns None if the input is None.
 
     Parameters
     ----------
@@ -288,7 +320,8 @@ cpdef datetime time_object_to_dt(time_object):
 
     Returns
     -------
-    pd.Timestamp
+    pd.Timestamp or ``None``
+        Returns None if the input is None.
 
     """
     if time_object is None:
@@ -301,32 +334,6 @@ cpdef datetime time_object_to_dt(time_object):
 
     return as_utc_timestamp(used_date)
 
-
-cpdef str format_iso8601(datetime dt):
-    """
-    Format the given datetime to a millisecond accurate ISO 8601 specification string.
-
-    Parameters
-    ----------
-    dt : datetime
-        The datetime to format.
-
-    Returns
-    -------
-    str
-
-    """
-    Condition.not_none(datetime, "datetime")
-
-    # Note the below is faster than `.isoformat()` or string formatting by 25%
-    # Have not tried char* manipulation
-    cdef str tz_stripped = str(dt).replace(' ', 'T', 1).rpartition('+')[0]
-
-    if not PyUnicode_Contains(tz_stripped, '.'):
-        return f"{tz_stripped}.000Z"
-
-    cdef tuple dt_partitioned = tz_stripped.rpartition('.')
-    return f"{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z"
 
 
 def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
@@ -343,7 +350,7 @@ def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
     Returns
     -------
     pd.Timestamp | None
-        The maximum date as an ISO 8601 formatted string, or None if both input dates are None.
+        The maximum date, or None if both input dates are None.
 
     """
     if date1 is None and date2 is None:
@@ -372,7 +379,7 @@ def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
     Returns
     -------
     pd.Timestamp | None
-        The minimum date as an ISO 8601 formatted string, or None if both input dates are None.
+        The minimum date, or None if both input dates are None.
 
     """
     if date1 is None and date2 is None:

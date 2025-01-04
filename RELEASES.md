@@ -20,10 +20,11 @@ Released on TBD (UTC).
 - Improved validation for `TradeTick` by ensuring `size` is always positive
 - Improved validation for `OrderBookDelta` by ensuring `order.size` is positive when `action` is either `ADD` or `UPDATE`
 - Improved validation for `BarSpecification` by ensuring `step` is always positive
+- Standardized ISO 8601 timestamps to RFC 3339 spec with nanosecond precision
 - Standardized flags for `OrderBookDeltas` parsing across adapters
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
-- Refine private WebSocket message processing for Bybit (#2170), thanks @sunlei
+- Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
@@ -34,6 +35,9 @@ Released on TBD (UTC).
 - Upgraded `datafusion` crate to v44.0.0
 
 ### Breaking Changes
+- Changed `unix_nanos_to_iso8601` to output an ISO 8601 (RFC 3339) format string with nanosecond precision
+- Changed `format_iso8601` to output ISO 8601 (RFC 3339) format string with nanosecond precision
+- Changed `format_iso8601` `dt` parameter to enforce `pd.Timestamp` (which has nanosecond precision)
 - Changed `TradingNode.is_built` from a property to a method `.is_built()`
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
 - Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
