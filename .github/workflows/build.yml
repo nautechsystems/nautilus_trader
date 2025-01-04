@@ -16,6 +16,17 @@ jobs:
         python-version: ["3.11", "3.12"]
     name: pre-commit - python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    env:
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_DIRECT: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
 
     steps:
       - name: Checkout repository
@@ -48,6 +59,19 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
 
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sccache
+          key: ${{ runner.os }}-sccache-pre-commit-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-sccache-pre-commit-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+        # with:
+        #   disable_annotations: true
+
       - name: Cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
@@ -59,6 +83,7 @@ jobs:
         run: |
           # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
+          sccache --show-stats
 
   pre-commit-feedback:
     needs: [pre-commit]
