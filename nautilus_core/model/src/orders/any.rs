@@ -719,6 +719,20 @@ impl OrderAny {
         }
     }
 
+    pub fn is_pending_cancel(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_pending_cancel(),
+            Self::LimitIfTouched(order) => order.is_pending_cancel(),
+            Self::Market(order) => order.is_pending_cancel(),
+            Self::MarketIfTouched(order) => order.is_pending_cancel(),
+            Self::MarketToLimit(order) => order.is_pending_cancel(),
+            Self::StopLimit(order) => order.is_pending_cancel(),
+            Self::StopMarket(order) => order.is_pending_cancel(),
+            Self::TrailingStopLimit(order) => order.is_pending_cancel(),
+            Self::TrailingStopMarket(order) => order.is_pending_cancel(),
+        }
+    }
+
     #[must_use]
     pub fn price(&self) -> Option<Price> {
         match self {
@@ -731,6 +745,20 @@ impl OrderAny {
             Self::StopMarket(_) => None,
             Self::TrailingStopLimit(order) => Some(order.price),
             Self::TrailingStopMarket(_) => None,
+        }
+    }
+
+    pub fn has_price(&self) -> bool {
+        match self {
+            Self::Limit(_) => true,
+            Self::LimitIfTouched(_) => true,
+            Self::Market(_) => false,
+            Self::MarketIfTouched(_) => false,
+            Self::MarketToLimit(order) => order.price.is_some(),
+            Self::StopLimit(_) => true,
+            Self::StopMarket(_) => false,
+            Self::TrailingStopLimit(_) => true,
+            Self::TrailingStopMarket(_) => false,
         }
     }
 
@@ -960,6 +988,20 @@ impl OrderAny {
             Self::TrailingStopLimit(order) => order.leaves_qty = leaves_qty,
             Self::TrailingStopMarket(order) => order.leaves_qty = leaves_qty,
         }
+    }
+
+    pub fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
+        match self {
+            Self::Limit(order) => order.emulation_trigger = emulation_trigger,
+            Self::LimitIfTouched(order) => order.emulation_trigger = emulation_trigger,
+            Self::Market(order) => order.emulation_trigger = emulation_trigger,
+            Self::MarketIfTouched(order) => order.emulation_trigger = emulation_trigger,
+            Self::MarketToLimit(order) => order.emulation_trigger = emulation_trigger,
+            Self::StopLimit(order) => order.emulation_trigger = emulation_trigger,
+            Self::StopMarket(order) => order.emulation_trigger = emulation_trigger,
+            Self::TrailingStopLimit(order) => order.emulation_trigger = emulation_trigger,
+            Self::TrailingStopMarket(order) => order.emulation_trigger = emulation_trigger,
+        };
     }
 
     pub fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {

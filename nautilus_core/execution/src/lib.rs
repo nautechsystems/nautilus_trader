@@ -28,6 +28,7 @@
 //! - `python`: Enables Python bindings from `pyo3`.
 
 pub mod client;
+pub mod emulator;
 pub mod engine;
 pub mod manager;
 pub mod matching_core;
