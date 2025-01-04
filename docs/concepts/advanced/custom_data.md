@@ -124,6 +124,7 @@ them in the `Cache` or `ParquetDataCatalog` for efficient retrieval.
 ```python
 import msgspec
 from nautilus_trader.core import Data
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model import DataType
 from nautilus_trader.serialization.base import register_serializable_type
 from nautilus_trader.serialization.arrow.serializer import register_arrow
@@ -131,10 +132,6 @@ import pyarrow as pa
 
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt, format_iso8601
-
-
-def unix_nanos_to_str(unix_nanos):
-    return format_iso8601(unix_nanos_to_dt(unix_nanos))
 
 
 class GreeksData(Data):
@@ -150,7 +147,7 @@ class GreeksData(Data):
         self.delta = delta
 
     def __repr__(self):
-        return (f"GreeksData(ts_init={unix_nanos_to_str(self._ts_init)}, instrument_id={self.instrument_id}, delta={self.delta:.2f})")
+        return (f"GreeksData(ts_init={unix_nanos_to_iso8601(self._ts_init)}, instrument_id={self.instrument_id}, delta={self.delta:.2f})")
 
     @property
     def ts_event(self):

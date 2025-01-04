@@ -34,7 +34,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.core.datetime import unix_nanos_to_str
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarType
@@ -202,7 +202,7 @@ class TestHistoricalAggStrategy(Strategy):
     def on_historical_data(self, data):
         if type(data) is Bar:
             self.user_log(
-                f"historical bar ts_init = {unix_nanos_to_str(data.ts_init)}, {data.ts_init}",
+                f"historical bar ts_init = {unix_nanos_to_iso8601(data.ts_init)}, {data.ts_init}",
             )
             self.user_log(data)
 
@@ -210,7 +210,7 @@ class TestHistoricalAggStrategy(Strategy):
             # self.user_log(f"{self.composite_sma.value=}, {self.composite_sma.initialized=}")
 
     def on_bar(self, bar):
-        self.user_log(f"bar ts_init = {unix_nanos_to_str(bar.ts_init)}, {bar.ts_init}")
+        self.user_log(f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, {bar.ts_init}")
         self.user_log(bar)
 
         # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")

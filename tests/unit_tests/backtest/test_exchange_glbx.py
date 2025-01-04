@@ -194,7 +194,7 @@ class TestSimulatedExchangeGlbx:
         assert order.status == OrderStatus.REJECTED
         assert (
             order.last_event.reason
-            == "Contract ESH4.GLBX not yet active, activation 2021-09-03T21:30:00.000Z"
+            == "Contract ESH4.GLBX not yet active, activation 2021-09-03T21:30:00.000000000Z"
         )
 
     def test_process_order_after_expiration_rejects(self) -> None:
@@ -226,7 +226,7 @@ class TestSimulatedExchangeGlbx:
         assert order.status == OrderStatus.REJECTED
         assert (
             order.last_event.reason
-            == "Contract ESH4.GLBX has expired, expiration 2024-03-15T14:30:00.000Z"
+            == "Contract ESH4.GLBX has expired, expiration 2024-03-15T14:30:00.000000000Z"
         )
 
     def test_process_exchange_past_instrument_expiration_cancels_open_order(self) -> None:

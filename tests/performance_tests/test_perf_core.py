@@ -13,8 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import format_iso8601
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 
 
 def test_nautilus_convert_to_snake_case(benchmark) -> None:
     benchmark(nautilus_pyo3.convert_to_snake_case, "PascalCase")
+
+
+def test_unix_nanos_to_iso8601(benchmark) -> None:
+    benchmark.pedantic(lambda: unix_nanos_to_iso8601(0), warmup_rounds=100_000)
+
+
+def test_format_iso8601(benchmark) -> None:
+    dt = pd.Timestamp(0)
+
+    benchmark.pedantic(lambda: format_iso8601(dt), warmup_rounds=100_000)
+
+
+def test_format_iso8601_millis(benchmark) -> None:
+    dt = pd.Timestamp(0)
+
+    benchmark.pedantic(lambda: format_iso8601(dt, nanos_precision=False), warmup_rounds=100_000)
