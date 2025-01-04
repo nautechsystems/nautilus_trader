@@ -598,7 +598,7 @@ jobs:
         id: cached-sccache
         uses: actions/cache@v4
         with:
-          path: ${{ env.SCCACHE_DIR }}
+          path: D:\.cache\sccache
           key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: ${{ matrix.os }}-sccache-build-
 
