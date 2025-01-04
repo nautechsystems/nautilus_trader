@@ -3,7 +3,7 @@
 ## Introduction
 
 The Cache is a central in-memory database in NautilusTrader that automatically stores and manages all trading-related data.
-Think of it as your strategy’s memory – storing everything from market data to order history to custom calculations.
+Think of it as your trading systems memory – storing everything from market data to order history to custom calculations.
 
 The Cache serves multiple key purposes:
 
@@ -12,7 +12,7 @@ The Cache serves multiple key purposes:
    - Gives you access to both current and historical market data for your strategy.
 
 2. **Tracks trading data**
-   - Maintains complete order history and current state of orders.
+   - Maintains complete `Order` history and current execution state.
    - Tracks all `Position`s and `Account` information.
    - Stores `Instrument` definitions and `Currency` information.
 
@@ -29,11 +29,13 @@ The Cache serves multiple key purposes:
 - All data flows through the Cache before reaching your strategy’s callbacks – see the diagram below:
 
 ```
-┌─────────┐     ┌──────────-─┐     ┌───────┐     ┌──────────────────────┐
-│         │     │            │     │       │     │                      │
-│ New Bar ├────►│ DataEngine ├────►│ Cache ├────►│ Strategy callback:   │
-│         │     │            │     │       │     │ on_bar(...)          │
-└─────────┘     └───────────-┘     └───────┘     └──────────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌───────────────────────┐
+│                 │     │                 │     │                 │     │                       │
+│                 │     │                 │     │                 │     │   Strategy callback:  │
+│      Data       ├─────►   DataEngine    ├─────►     Cache       ├─────►                       │
+│                 │     │                 │     │                 │     │   on_data(...)        │
+│                 │     │                 │     │                 │     │                       │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └───────────────────────┘
 ```
 
 ### Basic example
@@ -291,28 +293,28 @@ orders_for_instrument = self.cache.orders(instrument_id=instrument_id)  # All or
 
 ```python
 # Get orders by their current state
-open_orders = self.cache.orders_open()           # Orders currently active at the venue
-closed_orders = self.cache.orders_closed()       # Orders that have completed their lifecycle
-emulated_orders = self.cache.orders_emulated()   # Orders being simulated locally by the system
-inflight_orders = self.cache.orders_inflight()   # Orders sent to venue but not yet confirmed
+open_orders = self.cache.orders_open()          # Orders currently active at the venue
+closed_orders = self.cache.orders_closed()      # Orders that have completed their lifecycle
+emulated_orders = self.cache.orders_emulated()  # Orders being simulated locally by the system
+inflight_orders = self.cache.orders_inflight()  # Orders submitted (or modified) to venue, but not yet confirmed
 
 # Check specific order states
-exists = self.cache.order_exists(client_order_id)  # Checks if an order with the given ID exists in the cache
-is_open = self.cache.is_order_open(client_order_id)  # Checks if an order is currently open
-is_closed = self.cache.is_order_closed(client_order_id)  # Checks if an order is closed
+exists = self.cache.order_exists(client_order_id)            # Checks if an order with the given ID exists in the cache
+is_open = self.cache.is_order_open(client_order_id)          # Checks if an order is currently open
+is_closed = self.cache.is_order_closed(client_order_id)      # Checks if an order is closed
 is_emulated = self.cache.is_order_emulated(client_order_id)  # Checks if an order is being simulated locally
-is_inflight = self.cache.is_order_inflight(client_order_id)  # Checks if an order is sent but not confirmed yet
+is_inflight = self.cache.is_order_inflight(client_order_id)  # Checks if an order is submitted or modified, but not yet confirmed
 ```
 
 ##### Order Statistics
 
 ```python
 # Get counts of orders in different states
-open_count = self.cache.orders_open_count()       # Number of open orders
-closed_count = self.cache.orders_closed_count()   # Number of closed orders
+open_count = self.cache.orders_open_count()          # Number of open orders
+closed_count = self.cache.orders_closed_count()      # Number of closed orders
 emulated_count = self.cache.orders_emulated_count()  # Number of emulated orders
 inflight_count = self.cache.orders_inflight_count()  # Number of inflight orders
-total_count = self.cache.orders_total_count()     # Total number of orders in the system
+total_count = self.cache.orders_total_count()        # Total number of orders in the system
 
 # Get filtered order counts
 buy_orders_count = self.cache.orders_open_count(side=OrderSide.BUY)  # Number of currently open BUY orders
@@ -330,40 +332,40 @@ The Cache maintains a record of all positions and offers several ways to query t
 position = self.cache.position(PositionId("P-123"))
 
 # Get positions by their state
-all_positions = self.cache.positions()          # All positions in the system
-open_positions = self.cache.positions_open()    # All currently open positions
+all_positions = self.cache.positions()            # All positions in the system
+open_positions = self.cache.positions_open()      # All currently open positions
 closed_positions = self.cache.positions_closed()  # All closed positions
 
 # Get positions filtered by various criteria
-venue_positions = self.cache.positions(venue=venue)                         # Positions for a specific venue
-instrument_positions = self.cache.positions(instrument_id=instrument_id)    # Positions for a specific instrument
-strategy_positions = self.cache.positions(strategy_id=strategy_id)          # Positions for a specific strategy
-long_positions = self.cache.positions(side=PositionSide.LONG)               # All long positions
+venue_positions = self.cache.positions(venue=venue)                       # Positions for a specific venue
+instrument_positions = self.cache.positions(instrument_id=instrument_id)  # Positions for a specific instrument
+strategy_positions = self.cache.positions(strategy_id=strategy_id)        # Positions for a specific strategy
+long_positions = self.cache.positions(side=PositionSide.LONG)             # All long positions
 ```
 
 ##### Position State Queries
 
 ```python
 # Check position states
-exists = self.cache.position_exists(position_id)    # Checks if a position with the given ID exists
-is_open = self.cache.is_position_open(position_id)  # Checks if a position is open
+exists = self.cache.position_exists(position_id)        # Checks if a position with the given ID exists
+is_open = self.cache.is_position_open(position_id)      # Checks if a position is open
 is_closed = self.cache.is_position_closed(position_id)  # Checks if a position is closed
 
 # Get position and order relationships
-orders = self.cache.orders_for_position(position_id)         # All orders related to a specific position
-position = self.cache.position_for_order(client_order_id)     # Find the position associated with a specific order
+orders = self.cache.orders_for_position(position_id)       # All orders related to a specific position
+position = self.cache.position_for_order(client_order_id)  # Find the position associated with a specific order
 ```
 
 ##### Position Statistics
 
 ```python
 # Get position counts in different states
-open_count = self.cache.positions_open_count()     # Number of currently open positions
-closed_count = self.cache.positions_closed_count() # Number of closed positions
-total_count = self.cache.positions_total_count()   # Total number of positions in the system
+open_count = self.cache.positions_open_count()      # Number of currently open positions
+closed_count = self.cache.positions_closed_count()  # Number of closed positions
+total_count = self.cache.positions_total_count()    # Total number of positions in the system
 
 # Get filtered position counts
-long_positions_count = self.cache.positions_open_count(side=PositionSide.LONG)  # Number of open long positions
+long_positions_count = self.cache.positions_open_count(side=PositionSide.LONG)              # Number of open long positions
 instrument_positions_count = self.cache.positions_total_count(instrument_id=instrument_id)  # Number of positions for a given instrument
 ```
 
@@ -371,10 +373,10 @@ instrument_positions_count = self.cache.positions_total_count(instrument_id=inst
 
 ```python
 # Access account information
-account = self.cache.account(account_id)             # Retrieve account by ID
-account = self.cache.account_for_venue(venue)        # Retrieve account for a specific venue
-account_id = self.cache.account_id(venue)            # Retrieve account ID for a venue
-accounts = self.cache.accounts()                     # Retrieve all accounts in the cache
+account = self.cache.account(account_id)       # Retrieve account by ID
+account = self.cache.account_for_venue(venue)  # Retrieve account for a specific venue
+account_id = self.cache.account_id(venue)      # Retrieve account ID for a venue
+accounts = self.cache.accounts()               # Retrieve all accounts in the cache
 ```
 
 #### Instruments and Currencies
@@ -383,15 +385,15 @@ accounts = self.cache.accounts()                     # Retrieve all accounts in 
 
 ```python
 # Get instrument information
-instrument = self.cache.instrument(instrument_id)       # Retrieve a specific instrument by its ID
-all_instruments = self.cache.instruments()              # Retrieve all instruments in the cache
+instrument = self.cache.instrument(instrument_id) # Retrieve a specific instrument by its ID
+all_instruments = self.cache.instruments()        # Retrieve all instruments in the cache
 
 # Get filtered instruments
-venue_instruments = self.cache.instruments(venue=venue)           # Instruments for a specific venue
+venue_instruments = self.cache.instruments(venue=venue)              # Instruments for a specific venue
 instruments_by_underlying = self.cache.instruments(underlying="ES")  # Instruments by underlying
 
 # Get instrument identifiers
-instrument_ids = self.cache.instrument_ids()              # Get all instrument IDs
+instrument_ids = self.cache.instrument_ids()                   # Get all instrument IDs
 venue_instrument_ids = self.cache.instrument_ids(venue=venue)  # Get instrument IDs for a specific venue
 ```
 
@@ -434,17 +436,14 @@ The Cache and Portfolio components serve different but complementary purposes in
 
 **Cache**
 - Maintains the historical knowledge and current state of the trading system.
-- Updates asynchronously as events occur through the system.
+- Updates immediately for local state changes (initializing an order to be submitted)
+- Updates asynchronously as external events occur (order is filled).
 - Provides complete history of trading activity and market data.
 - All data a strategy has received (events/updates) is stored in Cache.
-- May have slight delays in reflecting the absolute latest state.
 
 **Portfolio**
-- Provides real-time account state.
-- Best used when you need the absolute latest account information.
-- Shows only current state without history.
-- Real venue/broker may have new information (about balance/positions) not yet received by NautilusTrader.
-- More accurate for immediate position/balance checks.
+- Aggregated position/exposure and account information.
+- Provides current state without history.
 
 **Example**
 
