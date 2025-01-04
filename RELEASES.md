@@ -4,16 +4,24 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `PerContractFeeModel`, thanks @stefansimik
-- Added additional timestamp properties for `NautilusKernel`
 - Added `DYDXInternalError` and `DYDXOraclaPrice` data types for dYdX (#2155), thanks @davidsblom
 - Added proper `OrderBookDeltas` flags parsing for Betfair
 - Added `slip_and_fill_market_orders` config option for `BacktestVenueConfig` and `OrderMatchingEngine` (default `True` to retain current behavior)
 - Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
 - Added `DataEngineConfig.time_bars_skip_first_non_full_bar` config option (#2160), thanks @faysou
-- Added docs for `Cache` and slippage and spread handling in backtesting (#2162), thanks @stefansimik
-- Added catalog helper functions to export data (#2135), thanks @twitu
 - Added `execution.fast` support for Bybit (#2165), thanks @sunlei
-- Enhance the `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
+- Added catalog helper functions to export data (#2135), thanks @twitu
+- Added additional timestamp properties for `NautilusKernel`
+
+### Breaking Changes
+- Changed `unix_nanos_to_iso8601` to output an ISO 8601 (RFC 3339) format string with nanosecond precision
+- Changed `format_iso8601` to output ISO 8601 (RFC 3339) format string with nanosecond precision
+- Changed `format_iso8601` `dt` parameter to enforce `pd.Timestamp` (which has nanosecond precision)
+- Changed `TradingNode.is_built` from a property to a method `.is_built()`
+- Changed `TradingNode.is_running` from a property to a method `.is_running()`
+- Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
+- Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
+- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)
@@ -26,6 +34,7 @@ Released on TBD (UTC).
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
+- Enhance the `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
@@ -34,16 +43,6 @@ Released on TBD (UTC).
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Upgraded Cython to v3.1.0a1
 - Upgraded `datafusion` crate to v44.0.0
-
-### Breaking Changes
-- Changed `unix_nanos_to_iso8601` to output an ISO 8601 (RFC 3339) format string with nanosecond precision
-- Changed `format_iso8601` to output ISO 8601 (RFC 3339) format string with nanosecond precision
-- Changed `format_iso8601` `dt` parameter to enforce `pd.Timestamp` (which has nanosecond precision)
-- Changed `TradingNode.is_built` from a property to a method `.is_built()`
-- Changed `TradingNode.is_running` from a property to a method `.is_running()`
-- Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
-- Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
-- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
 
 ### Fixes
 - Fixed type check for `DataClient` on requests to support clients other than `MarketDataClient`
@@ -56,6 +55,10 @@ Released on TBD (UTC).
 - Fixed writing `DYDXOraclePrice` to catalog (#2158), thanks @davidsblom
 - Fixed account balance for dYdX (#2167), thanks @davidsblom
 - Fixed missing `OrderEmulated` and `OrderReleased` Arrow schemas
+
+### Documentation updates
+- Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
+- Added docs for timestamp and UUID specs
 
 ---
 
