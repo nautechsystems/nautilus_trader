@@ -171,7 +171,7 @@ jobs:
           key: ${{ runner.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: ${{ runner.os }}-sccache-
 
-      - name: Run sccache-cache
+      - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Cached cargo
@@ -325,7 +325,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run sccache-cache
+      - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
 
       # - name: Free disk space  # Continue to monitor
@@ -490,7 +490,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run sccache-cache
+      - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set sccache-cache env vars
