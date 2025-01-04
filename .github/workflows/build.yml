@@ -102,7 +102,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       # sccache debug
       SCCACHE_ERROR_LOG: /tmp/sccache_log.txt
-      SCCACHE_LOG: debug
+      # SCCACHE_LOG: debug
 
     services:
       redis:
@@ -179,6 +179,8 @@ jobs:
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
+        # with:
+        #   disable_annotations: true
 
       - name: Cached cargo
         id: cached-cargo
