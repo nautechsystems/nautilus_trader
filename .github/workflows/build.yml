@@ -126,7 +126,7 @@ jobs:
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
       # sccache debug
-      SCCACHE_ERROR_LOG: /tmp/sccache_log.txt
+      # SCCACHE_ERROR_LOG: /tmp/sccache_log.txt
       # SCCACHE_LOG: debug
 
     services:
@@ -336,9 +336,9 @@ jobs:
           name: ${{ env.ASSET_NAME }}
           path: ${{ env.ASSET_PATH }}
 
-      - name: Cat sccache log
-        run: |
-          cat /tmp/sccache_log.txt
+      # - name: Cat sccache log
+      #   run: |
+      #     cat /tmp/sccache_log.txt
 
   build-macos:
     strategy:
