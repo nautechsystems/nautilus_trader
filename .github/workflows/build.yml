@@ -580,7 +580,7 @@ jobs:
       #   run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
       - name: Set sccache env vars
-        shell: pwsh
+        # shell: pwsh
         run: |
           echo SCCACHE_DIR="~/.cache/sccache" >> $GITHUB_ENV
 
