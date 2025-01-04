@@ -306,11 +306,10 @@ jobs:
       - name: Set sccache env vars (Windows)
         if: runner.os == 'Windows'
         run: |
-          # echo SCCACHE_DIR="$env:LOCALAPPDATA\Mozilla\sccache" >> $GITHUB_ENV
-          echo SCCACHE_DIR="%LOCALAPPDATA%\\Mozilla\\sccache" >> $GITHUB_ENV
-          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo SCCACHE_DIR="D:\.cache\sccache" >> $GITHUB_ENV
+          echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
 
       - name: Cached sccache
         id: cached-sccache
