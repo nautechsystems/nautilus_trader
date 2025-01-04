@@ -1,26 +1,22 @@
-name: coverage
+name: performance
 
 on:
   push:
     branches: [nightly]
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
-        os: [ubuntu-latest]
-        python-version: ["3.11"]
-    name: build - python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  performance-benchmarks:
+    runs-on: ubuntu-latest
     env:
+      BUILD_MODE: release
+      RUST_BACKTRACE: 1
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang"
+
     services:
       redis:
         image: redis
@@ -42,17 +38,6 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Install runner dependencies
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
@@ -69,7 +54,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
       - name: Get Python version
         run: |
@@ -87,17 +72,40 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
 
-      - name: Set poetry cache-dir
-        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Cached poetry
-        id: cached-poetry
+      - name: Cached pre-commit
+        id: cached-pre-commit
         uses: actions/cache@v4
         with:
-          path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit  # Runs again here to check on Python 3.12
+        run: |
+          pre-commit run --all-files
+
+      - name: Cached cargo
+        id: cached-cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Cache Python site-packages
+        id: cached-site-packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-site-packages
+          restore-keys: |
+            ${{ runner.os }}-site-packages-
 
       - name: Cached test data
         id: cached-testdata-large
@@ -118,12 +126,28 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Run tests with coverage
-        run: make pytest-coverage
-
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v4
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
         with:
-          # fail_ci_if_error: true  # leave commented until flakiness improves
-          token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
+          tool: nextest
+
+      - name: Run nautilus_core tests
+        run: make cargo-test
+
+      - name: Build Python wheel
+        run: |
+          poetry build --format wheel
+          ls -lh dist/
+
+      - name: Install Python wheel
+        run: |
+          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+          python -m pip install -r requirements-test.txt
+          pip install "$(ls dist/*.whl)"
+
+      # Run codspeed once only
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@v3.2
+        with:
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
