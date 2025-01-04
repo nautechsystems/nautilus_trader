@@ -20,6 +20,7 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang++"
@@ -96,7 +97,7 @@ jobs:
         id: cached-sccache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/sccache
+          path: ${{ env.SCCACHE_DIR }}
           key: ${{ matrix.os }}-sccache-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: ${{ matrix.os }}-sccache-
 
