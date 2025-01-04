@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -87,6 +87,7 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _trade_execution
     cdef bint _reject_stop_orders
+    cdef bint _slip_and_fill_market_orders
     cdef bint _support_gtd_orders
     cdef bint _support_contingent_orders
     cdef bint _use_position_ids

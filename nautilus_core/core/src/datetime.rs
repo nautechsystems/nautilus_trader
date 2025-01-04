@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,7 @@
 
 use std::time::{Duration, UNIX_EPOCH};
 
-use chrono::{
-    prelude::{DateTime, Utc},
-    Datelike, NaiveDate, SecondsFormat, TimeDelta, Weekday,
-};
+use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Timelike, Utc, Weekday};
 
 use crate::nanos::UnixNanos;
 
@@ -94,12 +91,21 @@ pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }
 
-/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted string.
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string.
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
+}
+
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
+/// with millisecond precision.
+#[inline]
+#[must_use]
+pub fn unix_nanos_to_iso8601_millis(unix_nanos: UnixNanos) -> String {
+    let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 /// Floor the given UNIX nanoseconds to the nearest microsecond.
@@ -148,11 +154,109 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
     Ok(now.signed_duration_since(timestamp) <= TimeDelta::days(1))
 }
 
+/// Subtract `n` months from a chrono `DateTime<Utc>`.
+#[must_use]
+pub fn subtract_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
+    // A naive approach:
+    //   1) Convert dt to y/m/d
+    //   2) Subtract n from the month
+    //   3) Adjust year if month < 1
+    //   4) Rebuild and keep day-of-month within valid range
+    //   5) Return new DateTime
+    let year = dt.year();
+    let month = dt.month() as isize; // 1..12
+    let day = dt.day(); // 1..31
+
+    let mut new_month = month - n;
+    let mut new_year = year;
+
+    // If subtracting months dips below 1, wrap around
+    while new_month <= 0 {
+        new_month += 12;
+        new_year -= 1;
+    }
+    // clamp day to something valid for new_year/new_month
+    let last_day_of_new_month = last_day_of_month(new_year, new_month as u32);
+    let new_day = day.min(last_day_of_new_month);
+
+    // Build a new Chrono NaiveDateTime
+    let new_date = chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, new_day)?;
+    let new_naive_datetime =
+        new_date.and_hms_micro_opt(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() / 1000)?;
+
+    // Convert back to UTC
+    let new_dt = DateTime::<Utc>::from_naive_utc_and_offset(new_naive_datetime, chrono::Utc);
+    Some(new_dt)
+}
+
+/// Add `n` months to a chrono `DateTime<Utc>`.
+#[must_use]
+pub fn add_n_months(dt: DateTime<Utc>, n: isize) -> Option<DateTime<Utc>> {
+    // Same approach but adding months
+    let year = dt.year();
+    let month = dt.month() as isize;
+    let day = dt.day();
+
+    let mut new_month = month + n;
+    let mut new_year = year;
+
+    // If months goes above 12, wrap around
+    while new_month > 12 {
+        new_month -= 12;
+        new_year += 1;
+    }
+    let last_day_of_new_month = last_day_of_month(new_year, new_month as u32);
+    let new_day = day.min(last_day_of_new_month);
+
+    let new_date = chrono::NaiveDate::from_ymd_opt(new_year, new_month as u32, new_day)?;
+    let new_naive_datetime =
+        new_date.and_hms_micro_opt(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() / 1000)?;
+
+    Some(DateTime::<Utc>::from_naive_utc_and_offset(
+        new_naive_datetime,
+        chrono::Utc,
+    ))
+}
+
+/// Returns the last valid day of `(year, month)`.
+#[must_use]
+pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
+    // E.g., for February, check leap year logic
+    match month {
+        1 => 31,
+        2 => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
+        3 => 31,
+        4 => 30,
+        5 => 31,
+        6 => 30,
+        7 => 31,
+        8 => 31,
+        9 => 30,
+        10 => 31,
+        11 => 30,
+        12 => 31,
+        _ => 31, // fallback
+    }
+}
+
+/// Basic leap-year check
+#[must_use]
+pub const fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, TimeDelta, TimeZone, Utc};
     use rstest::rstest;
 
     use super::*;
@@ -242,6 +346,28 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, "1970-01-01T00:00:00.000000000Z")] // Unix epoch
+    #[case(1, "1970-01-01T00:00:00.000000001Z")] // 1 nanosecond
+    #[case(1_000, "1970-01-01T00:00:00.000001000Z")] // 1 microsecond
+    #[case(1_000_000, "1970-01-01T00:00:00.001000000Z")] // 1 millisecond
+    #[case(1_000_000_000, "1970-01-01T00:00:01.000000000Z")] // 1 second
+    #[case(1_702_857_600_000_000_000, "2023-12-18T00:00:00.000000000Z")] // Specific date
+    fn test_unix_nanos_to_iso8601(#[case] nanos: u64, #[case] expected: &str) {
+        let result = unix_nanos_to_iso8601(UnixNanos::from(nanos));
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(0, "1970-01-01T00:00:00.000Z")] // Unix epoch
+    #[case(1_000_000, "1970-01-01T00:00:00.001Z")] // 1 millisecond
+    #[case(1_000_000_000, "1970-01-01T00:00:01.000Z")] // 1 second
+    #[case(1_702_857_600_123_456_789, "2023-12-18T00:00:00.123Z")] // With millisecond precision
+    fn test_unix_nanos_to_iso8601_millis(#[case] nanos: u64, #[case] expected: &str) {
+        let result = unix_nanos_to_iso8601_millis(UnixNanos::from(nanos));
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
     #[case(2023, 12, 15, 1_702_598_400_000_000_000)] // Fri
     #[case(2023, 12, 16, 1_702_598_400_000_000_000)] // Sat
     #[case(2023, 12, 17, 1_702_598_400_000_000_000)] // Sun
@@ -286,5 +412,53 @@ mod tests {
             .timestamp_nanos_opt()
             .unwrap();
         assert!(!is_within_last_24_hours(UnixNanos::from(past_ns as u64)).unwrap());
+    }
+
+    #[rstest]
+    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
+    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 12, Utc.with_ymd_and_hms(2023, 3, 31, 12, 0, 0).unwrap())] // One year earlier
+    #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap())] // Wrapping to previous year
+    #[case(Utc.with_ymd_and_hms(2024, 3, 31, 12, 0, 0).unwrap(), 2, Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap())] // Multiple months back
+    fn test_subtract_n_months(
+        #[case] input: DateTime<Utc>,
+        #[case] months: isize,
+        #[case] expected: DateTime<Utc>,
+    ) {
+        let result = subtract_n_months(input, months);
+        assert_eq!(result, Some(expected));
+    }
+
+    #[rstest]
+    #[case(Utc.with_ymd_and_hms(2023, 2, 28, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2023, 3, 28, 12, 0, 0).unwrap())] // Simple month addition
+    #[case(Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Leap year February
+    #[case(Utc.with_ymd_and_hms(2023, 12, 31, 12, 0, 0).unwrap(), 1, Utc.with_ymd_and_hms(2024, 1, 31, 12, 0, 0).unwrap())] // Wrapping to next year
+    #[case(Utc.with_ymd_and_hms(2023, 1, 31, 12, 0, 0).unwrap(), 13, Utc.with_ymd_and_hms(2024, 2, 29, 12, 0, 0).unwrap())] // Crossing year boundary with multiple months
+    fn test_add_n_months(
+        #[case] input: DateTime<Utc>,
+        #[case] months: isize,
+        #[case] expected: DateTime<Utc>,
+    ) {
+        let result = add_n_months(input, months);
+        assert_eq!(result, Some(expected));
+    }
+
+    #[rstest]
+    #[case(2024, 2, 29)] // Leap year February
+    #[case(2023, 2, 28)] // Non-leap year February
+    #[case(2024, 12, 31)] // December
+    #[case(2023, 11, 30)] // November
+    fn test_last_day_of_month(#[case] year: i32, #[case] month: u32, #[case] expected: u32) {
+        let result = last_day_of_month(year, month);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(2024, true)] // Leap year divisible by 4
+    #[case(1900, false)] // Not leap year, divisible by 100 but not 400
+    #[case(2000, true)] // Leap year, divisible by 400
+    #[case(2023, false)] // Non-leap year
+    fn test_is_leap_year(#[case] year: i32, #[case] expected: bool) {
+        let result = is_leap_year(year);
+        assert_eq!(result, expected);
     }
 }

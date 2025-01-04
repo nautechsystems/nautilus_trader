@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -87,6 +87,16 @@ pub trait CacheDatabaseAdapter {
 
     fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>>;
 
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>>;
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>>;
+
     fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
 
     fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
@@ -104,6 +114,8 @@ pub trait CacheDatabaseAdapter {
     fn add_account(&self, account: &AccountAny) -> anyhow::Result<()>;
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()>;
+
+    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()>;
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()>;
 

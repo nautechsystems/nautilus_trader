@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,13 +42,9 @@ pub extern "C" fn bar_specification_new(
     price_type: u8,
 ) -> BarSpecification {
     let aggregation =
-        BarAggregation::from_repr(aggregation as usize).expect("cannot parse enum value");
-    let price_type = PriceType::from_repr(price_type as usize).expect("cannot parse enum value");
-    BarSpecification {
-        step,
-        aggregation,
-        price_type,
-    }
+        BarAggregation::from_repr(aggregation as usize).expect("Error converting enum");
+    let price_type = PriceType::from_repr(price_type as usize).expect("Error converting enum");
+    BarSpecification::new(step, aggregation, price_type)
 }
 
 /// Returns a [`BarSpecification`] as a C string pointer.
@@ -95,8 +91,8 @@ pub extern "C" fn bar_type_new(
     spec: BarSpecification,
     aggregation_source: u8,
 ) -> BarType {
-    let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
-        .expect("Error converting enum from integer");
+    let aggregation_source =
+        AggregationSource::from_repr(aggregation_source as usize).expect("Error converting enum");
 
     BarType::Standard {
         instrument_id,

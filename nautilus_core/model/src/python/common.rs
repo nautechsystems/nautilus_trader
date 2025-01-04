@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -125,9 +124,9 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
     }
 }
 
-pub fn commissions_from_hashmap(
+pub fn commissions_from_indexmap(
     py: Python<'_>,
-    commissions: HashMap<Currency, Money>,
+    commissions: IndexMap<Currency, Money>,
 ) -> PyResult<Bound<'_, PyAny>> {
     commissions_from_vec(py, commissions.values().cloned().collect())
 }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -147,9 +147,10 @@ cdef class DataEngine(Component):
 
         # Settings
         self.debug = config.debug
-        self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
-        self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_interval_type = config.time_bars_interval_type
+        self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
+        self._time_bars_skip_first_non_full_bar = config.time_bars_skip_first_non_full_bar
+        self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
         self._time_bars_origins = config.time_bars_origins or {}
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
@@ -1387,7 +1388,7 @@ cdef class DataEngine(Component):
             )
 
         if client is not None:
-            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
         cdef dict[str, object] metadata = request.data_type.metadata
         cdef dict[str, object] params = request.params
@@ -2135,6 +2136,7 @@ cdef class DataEngine(Component):
                         f"Cannot start bar aggregation: "
                         f"no instrument found for {bar_type.instrument_id}",
                     )
+                    continue
 
                 # Create aggregator
                 aggregator = self._create_bar_aggregator(instrument, bar_type)
@@ -2240,9 +2242,10 @@ cdef class DataEngine(Component):
                 bar_type=bar_type,
                 handler=self.process,
                 clock=self._clock,
-                build_with_no_updates=self._time_bars_build_with_no_updates,
-                timestamp_on_close=self._time_bars_timestamp_on_close,
                 interval_type=self._time_bars_interval_type,
+                timestamp_on_close=self._time_bars_timestamp_on_close,
+                skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
+                build_with_no_updates=self._time_bars_build_with_no_updates,
                 time_bars_origin=self._time_bars_origins.get(bar_type.spec.aggregation),
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
@@ -2285,6 +2288,7 @@ cdef class DataEngine(Component):
                 f"Cannot start bar aggregation: "
                 f"no instrument found for {bar_type.instrument_id}",
             )
+            return
 
         # An aggregator may already have been created with actor.request_aggregated_bars and _handle_aggregated_bars
         aggregator = self._bar_aggregators.get(bar_type.standard())

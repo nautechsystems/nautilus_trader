@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,11 @@ use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyBytes, PyDict},
+};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -43,12 +47,8 @@ use crate::{
 #[pymethods]
 impl BarSpecification {
     #[new]
-    fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
-        Self {
-            step,
-            aggregation,
-            price_type,
-        }
+    fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> PyResult<Self> {
+        Self::new_checked(step, aggregation, price_type).map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -226,7 +226,7 @@ impl Bar {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
-        Ok(Self::new(
+        Self::new_checked(
             bar_type,
             open,
             high,
@@ -235,7 +235,8 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -381,12 +382,14 @@ impl Bar {
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        let json_bytes: Vec<u8> = serde_json::to_vec(self).map_err(to_pyvalue_err)?;
+
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
-            .call_method("loads", (json_str,), None)?
+        let py_bytes = PyBytes::new_bound(py, &json_bytes);
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "msgspec.json")?
+            .call_method("decode", (py_bytes,), None)?
             .extract()?;
+
         Ok(py_dict)
     }
 
@@ -413,7 +416,54 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::Bar;
+    use crate::{
+        data::{Bar, BarType},
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    #[case("10.0000", "10.0010", "10.0020", "10.0005")] // low > high
+    #[case("10.0000", "10.0010", "10.0005", "10.0030")] // close > high
+    #[case("10.0000", "9.9990", "9.9980", "9.9995")] // high < open
+    #[case("10.0000", "10.0010", "10.0015", "10.0020")] // low > close
+    #[case("10.0000", "10.0000", "10.0001", "10.0002")] // low > high (equal high/open edge case)
+    fn test_bar_py_new_invalid(
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] close: &str,
+    ) {
+        pyo3::prepare_freethreaded_python();
+
+        let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from(open);
+        let high = Price::from(high);
+        let low = Price::from(low);
+        let close = Price::from(close);
+        let volume = Quantity::from(100_000);
+        let ts_event = 0;
+        let ts_init = 1;
+
+        let result = Bar::py_new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_bar_py_new() {
+        pyo3::prepare_freethreaded_python();
+
+        let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from("1.00005");
+        let high = Price::from("1.00010");
+        let low = Price::from("1.00000");
+        let close = Price::from("1.00007");
+        let volume = Quantity::from(100_000);
+        let ts_event = 0;
+        let ts_init = 1;
+
+        let result = Bar::py_new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+        assert!(result.is_ok());
+    }
 
     #[rstest]
     fn test_as_dict() {

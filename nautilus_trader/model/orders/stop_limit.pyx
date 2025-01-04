@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,8 +16,8 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.datetime cimport unix_nanos_to_iso8601
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
@@ -281,7 +281,7 @@ cdef class StopLimitOrder(Order):
         str
 
         """
-        cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
+        cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {unix_nanos_to_iso8601(self.expire_time_ns, nanos_precision=False)}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
@@ -303,7 +303,7 @@ cdef class StopLimitOrder(Order):
             price=Price.from_raw_c(pyo3_order.price.raw, pyo3_order.price.precision),
             trigger_price=Price.from_raw_c(pyo3_order.trigger_price.raw, pyo3_order.trigger_price.precision),
             trigger_type=trigger_type_from_str(str(pyo3_order.trigger_type)),
-            init_id=UUID4(str(pyo3_order.init_id)),
+            init_id=UUID4.from_str_c(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             expire_time_ns=pyo3_order.expire_time if pyo3_order.expire_time is not None else 0,
@@ -357,8 +357,8 @@ cdef class StopLimitOrder(Order):
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "avg_px": self.avg_px if self.filled_qty.as_f64_c() > 0.0 else None,
+            "slippage": self.slippage if self.filled_qty.as_f64_c() > 0.0 else None,
             "commissions": [str(c) for c in self.commissions()] if self._commissions else None,
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
@@ -375,6 +375,7 @@ cdef class StopLimitOrder(Order):
             "exec_algorithm_params": self.exec_algorithm_params,
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
+            "init_id": str(self.init_id),
             "ts_init": self.ts_init,
             "ts_last": self.ts_last,
         }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -303,6 +303,38 @@ pub enum BarAggregation {
     Week = 15,
     /// Based on time intervals with month granularity.
     Month = 16,
+}
+
+/// The interval type for bar aggregation.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum BarIntervalType {
+    /// Left-open interval `(start, end]`: start is exclusive, end is inclusive (default).
+    #[default]
+    LeftOpen = 1,
+    /// Right-open interval `[start, end)`: start is inclusive, end is exclusive.
+    RightOpen = 2,
 }
 
 /// The type of order book action for an order book event.
@@ -1190,6 +1222,7 @@ enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
 enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(BarAggregation);
+enum_strum_serde!(BarIntervalType);
 enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);
 enum_strum_serde!(ContingencyType);

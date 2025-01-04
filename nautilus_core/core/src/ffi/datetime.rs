@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,11 +15,22 @@
 
 use std::ffi::c_char;
 
-use crate::{datetime::unix_nanos_to_iso8601, ffi::string::str_to_cstr};
+use crate::{
+    datetime::{unix_nanos_to_iso8601, unix_nanos_to_iso8601_millis},
+    ffi::string::str_to_cstr,
+};
 
-/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer.
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char {
     str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns.into()))
+}
+
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer
+/// with millisecond precision.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn unix_nanos_to_iso8601_millis_cstr(timestamp_ns: u64) -> *const c_char {
+    str_to_cstr(&unix_nanos_to_iso8601_millis(timestamp_ns.into()))
 }

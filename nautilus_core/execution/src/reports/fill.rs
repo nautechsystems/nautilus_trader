@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,14 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     types::{Money, Price, Quantity},
 };
 use serde::{Deserialize, Serialize};
 
+/// Represents a fill report of a single order execution.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -28,20 +31,34 @@ use serde::{Deserialize, Serialize};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
 )]
 pub struct FillReport {
+    /// The account ID associated with the position.
     pub account_id: AccountId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The venue assigned order ID.
     pub venue_order_id: VenueOrderId,
+    /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
+    /// The order side.
     pub order_side: OrderSide,
+    /// The last fill quantity for the position.
     pub last_qty: Quantity,
+    /// The last fill price for the position.
     pub last_px: Price,
+    /// The commission generated from the fill.
     pub commission: Money,
+    /// The liquidity side of the execution.
     pub liquidity_side: LiquiditySide,
+    /// The unique identifier for the event.
     pub report_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// The client order ID.
     pub client_order_id: Option<ClientOrderId>,
-    pub venue_position_id: Option<OrderListId>,
+    /// The position ID (assigned by the venue).
+    pub venue_position_id: Option<PositionId>,
 }
 
 impl FillReport {
@@ -59,9 +76,10 @@ impl FillReport {
         commission: Money,
         liquidity_side: LiquiditySide,
         client_order_id: Option<ClientOrderId>,
-        venue_position_id: Option<OrderListId>,
+        venue_position_id: Option<PositionId>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        report_id: Option<UUID4>,
     ) -> Self {
         Self {
             account_id,
@@ -73,7 +91,7 @@ impl FillReport {
             last_px,
             commission,
             liquidity_side,
-            report_id: UUID4::new(),
+            report_id: report_id.unwrap_or_default(),
             ts_event,
             ts_init,
             client_order_id,
@@ -91,5 +109,22 @@ impl FillReport {
     #[must_use]
     pub const fn has_venue_position_id(&self) -> bool {
         self.venue_position_id.is_some()
+    }
+}
+
+impl Display for FillReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "FillReport(instrument={}, side={}, qty={}, last_px={}, trade_id={}, venue_order_id={}, commission={}, liquidity={})",
+            self.instrument_id,
+            self.order_side,
+            self.last_qty,
+            self.last_px,
+            self.trade_id,
+            self.venue_order_id,
+            self.commission,
+            self.liquidity_side,
+        )
     }
 }

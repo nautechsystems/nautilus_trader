@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -259,7 +259,7 @@ cdef class BarSpecification:
         BarAggregation aggregation,
         PriceType price_type,
     ) -> None:
-        Condition.positive_int(step, 'step')
+        Condition.positive_int(step, "step")
 
         self._mem = bar_specification_new(
             step,
@@ -1845,6 +1845,11 @@ cdef class OrderBookDelta(Data):
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
 
+    Raises
+    ------
+    ValueError
+        If `action` is `ADD` or `UPDATE` and `order.size` is not positive (> 0).
+
     """
 
     def __init__(
@@ -1866,6 +1871,11 @@ cdef class OrderBookDelta(Data):
             0,
             0,
         )
+
+        cdef uint64_t size_raw = book_order.size.raw
+        if action == BookAction.ADD or action == BookAction.UPDATE:
+            Condition.positive_int(size_raw, "size_raw")
+
         self._mem = orderbook_delta_new(
             instrument_id._mem,
             action,
@@ -1883,7 +1893,7 @@ cdef class OrderBookDelta(Data):
             self._mem.order.side,
             self._mem.order.price.raw,
             self._mem.order.price.precision,
-            self._mem.order.size.raw ,
+            self._mem.order.size.raw,
             self._mem.order.size.precision,
             self._mem.order.order_id,
             self._mem.flags,
@@ -1893,18 +1903,23 @@ cdef class OrderBookDelta(Data):
         )
 
     def __setstate__(self, state):
+        cdef BookAction action = state[1]
+        cdef uint64_t size_raw = state[5]
+        if action == BookAction.ADD or action == BookAction.UPDATE:
+            Condition.positive_int(size_raw, "size_raw")
+
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         cdef BookOrder_t book_order = book_order_from_raw(
             state[2],
             state[3],
             state[4],
-            state[5],
+            size_raw,
             state[6],
             state[7],
         )
         self._mem = orderbook_delta_new(
             instrument_id._mem,
-            state[1],
+            action,
             book_order,
             state[8],
             state[9],
@@ -2088,6 +2103,10 @@ cdef class OrderBookDelta(Data):
             size_prec,
             order_id,
         )
+
+        if action == BookAction.ADD or action == BookAction.UPDATE:
+            Condition.positive_int(size_raw, "size_raw")
+
         cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
         delta._mem = orderbook_delta_new(
             instrument_id._mem,
@@ -4195,6 +4214,8 @@ cdef class TradeTick(Data):
     ------
     ValueError
         If `trade_id` is not a valid string.
+    ValueError
+        If `size` is not positive (> 0).
 
     """
 
@@ -4208,6 +4229,8 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ) -> None:
+        Condition.positive_int(size._mem.raw, "size")
+
         self._mem = trade_tick_new(
             instrument_id._mem,
             price._mem.raw,
@@ -4234,12 +4257,15 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
+        cdef uint64_t size_raw = state[3]
+        Condition.positive_int(size_raw, "state[3] (size_raw)")
+
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = trade_tick_new(
             instrument_id._mem,
             state[1],
             state[2],
-            state[3],
+            size_raw,
             state[4],
             state[5],
             TradeId(state[6])._mem,
@@ -4370,6 +4396,7 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        Condition.positive_int(size_raw, "size_raw")
         cdef TradeTick trade = TradeTick.__new__(TradeTick)
         trade._mem = trade_tick_new(
             instrument_id._mem,
@@ -4404,10 +4431,13 @@ cdef class TradeTick(Data):
 
         cdef:
             int i
+            uint64_t size_raw
             AggressorSide aggressor_side
             TradeId trade_id
             TradeTick trade
         for i in range(count):
+            size_raw = sizes_raw[i]
+            Condition.positive_int(size_raw, "size_raw")
             aggressor_side = <AggressorSide>aggressor_sides[i]
             trade_id = TradeId(trade_ids[i])
             trade = TradeTick.__new__(TradeTick)
@@ -4415,7 +4445,7 @@ cdef class TradeTick(Data):
                 instrument_id._mem,
                 prices_raw[i],
                 price_prec,
-                sizes_raw[i],
+                size_raw,
                 size_prec,
                 aggressor_side,
                 trade_id._mem,

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -413,10 +413,10 @@ impl Logger {
         let mut stderr_writer = StderrWriter::new(is_colored);
 
         // Conditionally create file writer based on fileout_level
-        let mut file_writer_opt = if fileout_level != LevelFilter::Off {
-            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
-        } else {
+        let mut file_writer_opt = if fileout_level == LevelFilter::Off {
             None
+        } else {
+            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
         };
 
         // Continue to receive and handle log events until channel is hung up

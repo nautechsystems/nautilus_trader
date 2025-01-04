@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
@@ -29,23 +33,26 @@ from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickers
 from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersGetParams
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParams
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentInverse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentLinear
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOption
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentSpot
-from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
-from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
-from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
-from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTrade
-from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.identifiers import InstrumentId
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+    from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
+    from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
+    from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
+    from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTrade
+    from nautilus_trader.common.component import LiveClock
+    from nautilus_trader.model.data import Bar
+    from nautilus_trader.model.data import BarType
+    from nautilus_trader.model.data import TradeTick
+    from nautilus_trader.model.identifiers import InstrumentId
 
 
 class BybitMarketHttpAPI:

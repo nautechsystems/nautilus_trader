@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,7 @@ use nautilus_core::{
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
-    types::{PyDict, PyLong, PyString, PyTuple},
+    types::{PyBytes, PyDict, PyLong, PyString, PyTuple},
 };
 
 use super::data_to_pycapsule;
@@ -349,12 +349,14 @@ impl QuoteTick {
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        let json_bytes: Vec<u8> = serde_json::to_vec(self).map_err(to_pyvalue_err)?;
+
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
-            .call_method("loads", (json_str,), None)?
+        let py_bytes = PyBytes::new_bound(py, &json_bytes);
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "msgspec.json")?
+            .call_method("decode", (py_bytes,), None)?
             .extract()?;
+
         Ok(py_dict)
     }
 
@@ -381,7 +383,49 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{stubs::quote_ethusdt_binance, QuoteTick};
+    use crate::{
+        data::{stubs::quote_ethusdt_binance, QuoteTick},
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    #[case(
+    Price::from_raw(10_000_000, 6),
+    Price::from_raw(10_001_000, 7), // Mismatched precision
+    Quantity::from_raw(1_000_000, 6),
+    Quantity::from_raw(1_000_000, 6),
+)]
+    #[case(
+    Price::from_raw(10_000_000, 6),
+    Price::from_raw(10_001_000, 6),
+    Quantity::from_raw(1_000_000, 6),
+    Quantity::from_raw(1_000_000, 7), // Mismatched precision
+)]
+    fn test_quote_tick_py_new_invalid_precisions(
+        #[case] bid_price: Price,
+        #[case] ask_price: Price,
+        #[case] bid_size: Quantity,
+        #[case] ask_size: Quantity,
+    ) {
+        pyo3::prepare_freethreaded_python();
+
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let ts_event = 0;
+        let ts_init = 1;
+
+        let result = QuoteTick::py_new(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        );
+
+        assert!(result.is_err());
+    }
 
     #[rstest]
     fn test_as_dict(quote_ethusdt_binance: QuoteTick) {

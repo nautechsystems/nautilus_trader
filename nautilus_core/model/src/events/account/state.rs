@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ use crate::{
     types::{AccountBalance, Currency, MarginBalance},
 };
 
+/// Represents an event which includes information on the state of the account.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -31,14 +32,24 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct AccountState {
+    /// The account ID associated with the event.
     pub account_id: AccountId,
+    /// The type of the account (e.g., margin, spot, etc.).
     pub account_type: AccountType,
+    /// The base currency for the account, if applicable.
     pub base_currency: Option<Currency>,
+    /// The balances in the account.
     pub balances: Vec<AccountBalance>,
+    /// The margin balances in the account.
     pub margins: Vec<MarginBalance>,
+    /// Indicates if the account state is reported by the exchange
+    /// (as opposed to system-calculated).
     pub is_reported: bool,
+    /// The unique identifier for the event.
     pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
 }
 

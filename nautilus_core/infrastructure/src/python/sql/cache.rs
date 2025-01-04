@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,8 +22,8 @@ use nautilus_common::{
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::PositionSnapshot,
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
+    events::{OrderSnapshot, PositionSnapshot},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
         events::order::pyobject_to_order_event,
@@ -217,6 +217,30 @@ impl PostgresCacheDatabase {
         })
     }
 
+    #[pyo3(name = "load_order_snapshot")]
+    fn py_load_order_snapshot(
+        &self,
+        client_order_id: ClientOrderId,
+    ) -> PyResult<Option<OrderSnapshot>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_order_snapshot(&self.pool, &client_order_id)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "load_position_snapshot")]
+    fn py_load_position_snapshot(
+        &self,
+        position_id: PositionId,
+    ) -> PyResult<Option<PositionSnapshot>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_position_snapshot(&self.pool, &position_id)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
     #[pyo3(name = "add")]
     fn py_add(&self, key: String, value: Vec<u8>) -> PyResult<()> {
         self.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
@@ -245,6 +269,11 @@ impl PostgresCacheDatabase {
         let order_any = convert_pyobject_to_order_any(py, order)?;
         self.add_order(&order_any, client_id)
             .map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_order_snapshot")]
+    fn py_add_order_snapshot(&self, snapshot: OrderSnapshot) -> PyResult<()> {
+        self.add_order_snapshot(&snapshot).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_position_snapshot")]

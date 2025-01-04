@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -95,7 +95,9 @@ impl TardisMachineClient {
         callback: PyObject,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let map = if !instruments.is_empty() {
+        let map = if instruments.is_empty() {
+            self.instruments.clone()
+        } else {
             let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
                 HashMap::new();
             for inst in instruments {
@@ -103,8 +105,6 @@ impl TardisMachineClient {
                 instrument_map.insert(key, Arc::new(inst.clone()));
             }
             instrument_map
-        } else {
-            self.instruments.clone()
         };
 
         let base_url = self.base_url.clone();
@@ -129,13 +129,13 @@ impl TardisMachineClient {
         options: Vec<ReplayNormalizedRequestOptions>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let map = if !instruments.is_empty() {
+        let map = if instruments.is_empty() {
+            self.instruments.clone()
+        } else {
             instruments
                 .into_iter()
                 .map(|inst| (inst.as_tardis_instrument_key(), Arc::new(inst)))
                 .collect()
-        } else {
-            self.instruments.clone()
         };
 
         let base_url = self.base_url.clone();

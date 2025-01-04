@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -213,6 +213,8 @@ cdef class BinaryOption(Instrument):
             "type": "BinaryOption",
             "id": obj.id.to_str(),
             "raw_symbol": obj.raw_symbol.to_str(),
+            "outcome": obj.outcome,
+            "description": obj.description,
             "asset_class": asset_class_to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
@@ -221,12 +223,12 @@ cdef class BinaryOption(Instrument):
             "size_increment": str(obj.size_increment),
             "activation_ns": obj.activation_ns,
             "expiration_ns": obj.expiration_ns,
-            "maker_fee": str(obj.maker_fee),
-            "taker_fee": str(obj.taker_fee),
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
-            "outcome": obj.outcome,
-            "description": obj.description,
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": obj.info,

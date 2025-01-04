@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -339,9 +339,7 @@ fn test_catalog_serialization_json_round_trip() {
 
     // Read original data from parquet
     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    let file_path = "/home/twitu/Code/nautilus_trader/bench_data/quotes_0005.parquet";
-    // let file_path = "test.parquet";
-    let mut session = DataBackendSession::new(5000);
+    let mut session = DataBackendSession::new(1000);
     session
         .add_file::<QuoteTick>("test_data", file_path, None)
         .unwrap();
@@ -358,7 +356,7 @@ fn test_catalog_serialization_json_round_trip() {
     }
 
     // Write to JSON using catalog
-    let json_path = catalog.write_to_json(quote_ticks.clone());
+    let json_path = catalog.write_to_json(quote_ticks.clone(), None, false);
 
     // // Read back from JSON
     // let json_str = std::fs::read_to_string(json_path).unwrap();
@@ -376,9 +374,7 @@ fn test_datafusion_parquet_round_trip() {
     use std::collections::HashMap;
 
     use datafusion::parquet::{
-        arrow::ArrowWriter,
-        basic::{Compression, ZstdLevel},
-        file::properties::WriterProperties,
+        arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties,
     };
     use nautilus_serialization::arrow::EncodeToRecordBatch;
     use pretty_assertions::assert_eq;
@@ -406,7 +402,7 @@ fn test_datafusion_parquet_round_trip() {
     let mut temp_file = std::fs::File::create(&temp_file_path).unwrap();
     {
         let writer_props = WriterProperties::builder()
-            .set_compression(Compression::ZSTD(ZstdLevel::default()))
+            .set_compression(Compression::SNAPPY)
             .set_max_row_group_size(1000)
             .build();
 
@@ -431,5 +427,64 @@ fn test_datafusion_parquet_round_trip() {
     assert_eq!(quote_ticks.len(), ticks_variants.len());
     for (orig, loaded) in quote_ticks.iter().zip(ticks_variants.iter()) {
         assert_eq!(orig, loaded);
+    }
+}
+
+#[test]
+fn test_catalog_export_functionality() {
+    // Create a temporary directory for test files
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None);
+
+    // Read input file path and determine data type
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+    let result = catalog
+        .query_file::<QuoteTick>(PathBuf::from(file_path), None, None, None)
+        .expect("Failed to query file");
+
+    // Extract only the QuoteTick variant from the result stream
+    let quotes: Vec<QuoteTick> = result
+        .filter_map(|data| {
+            if let Data::Quote(quote) = data {
+                Some(quote)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Export to temporary JSON
+    let json_file = temp_dir.path().join("temp.json");
+    let json_path = catalog.write_to_json(quotes.clone(), Some(json_file), false);
+
+    // Read JSON file and parse back to Vec<QuoteTick>
+    let json_content = std::fs::read_to_string(&json_path).expect("Failed to read JSON file");
+    let quotes_from_json: Vec<QuoteTick> =
+        serde_json::from_str(&json_content).expect("Failed to parse quotes from JSON");
+
+    // Write back to parquet
+    let parquet_path = temp_dir.path().join("temp.parquet");
+    let parquet_path = catalog.write_to_parquet(quotes_from_json, Some(parquet_path), None, None);
+
+    // Read parquet and verify data
+    let final_result = catalog
+        .query_file::<QuoteTick>(parquet_path, None, None, None)
+        .expect("Failed to query final file");
+
+    // Extract only the QuoteTick variant from the result stream
+    let final_quotes: Vec<QuoteTick> = final_result
+        .filter_map(|data| {
+            if let Data::Quote(quote) = data {
+                Some(quote)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Compare original and final data
+    assert_eq!(quotes.len(), final_quotes.len(), "Quote counts don't match");
+    for (original, final_quote) in quotes.iter().zip(final_quotes.iter()) {
+        assert_eq!(original, final_quote, "Quotes don't match");
     }
 }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
+
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport UUID4_t
 from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_from_cstr
@@ -25,28 +28,16 @@ from nautilus_trader.core.string cimport pystr_to_cstr
 
 cdef class UUID4:
     """
-    Represents a pseudo-random UUID (universally unique identifier)
+    Represents a Universally Unique Identifier (UUID)
     version 4 based on a 128-bit label as specified in RFC 4122.
-
-    Parameters
-    ----------
-    value : str, optional
-        The UUID value. If ``None`` then a value will be generated.
-
-    Warnings
-    --------
-    - Panics at runtime if `value` is not ``None`` and not a valid UUID.
 
     References
     ----------
     https://en.wikipedia.org/wiki/Universally_unique_identifier
     """
 
-    def __init__(self, str value = None):
-        if value is None:
-            self._mem = uuid4_new()
-        else:
-            self._mem = uuid4_from_cstr(pystr_to_cstr(value))
+    def __init__(self):
+        self._mem = uuid4_new()
 
     def __getstate__(self):
         return self.to_str()
@@ -78,3 +69,36 @@ cdef class UUID4:
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
         uuid4._mem = mem
         return uuid4
+
+    @staticmethod
+    cdef UUID4 from_str_c(str value):
+        Condition.valid_string(value, "value")
+        uuid_obj = uuid.UUID(value)
+        Condition.is_true(uuid_obj.version == 4, "UUID value is not version 4")
+        Condition.is_true(uuid_obj.variant == uuid.RFC_4122, "UUID value is not RFC 4122")
+
+        cdef UUID4 uuid4 = UUID4.__new__(UUID4)
+        uuid4._mem = uuid4_from_cstr(pystr_to_cstr(value))
+        return uuid4
+
+    @staticmethod
+    def from_str(str value) -> UUID4:
+        """
+        Create a new UUID4 from the given string value.
+
+        Parameters
+        ----------
+        value : str
+            The UUID value.
+
+        Returns
+        -------
+        UUID4
+
+        Raises
+        ------
+        ValueError
+            If `value` is not a valid UUID version 4 RFC 4122 string.
+
+        """
+        return UUID4.from_str_c(value)

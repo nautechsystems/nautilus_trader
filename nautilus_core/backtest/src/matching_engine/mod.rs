@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -877,10 +877,10 @@ impl OrderMatchingEngine {
             let cache = self.cache.as_ref().borrow();
             let positions_open =
                 cache.positions_open(None, Some(&order.instrument_id()), None, None);
-            if !positions_open.is_empty() {
-                Some(positions_open[0].id)
-            } else {
+            if positions_open.is_empty() {
                 None
+            } else {
+                Some(positions_open[0].id)
             }
         }
     }

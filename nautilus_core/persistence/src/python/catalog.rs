@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,22 +42,22 @@ impl PyParquetDataCatalogV2 {
     // pub fn write_data(mut slf: PyRefMut<'_, Self>, data_type: NautilusDataType, data: Vec<Data>) {}
 
     pub fn write_quote_ticks(&self, data: Vec<QuoteTick>) {
-        self.inner.write_to_parquet(data);
+        self.inner.write_to_parquet(data, None, None, None);
     }
 
     pub fn write_trade_ticks(&self, data: Vec<TradeTick>) {
-        self.inner.write_to_parquet(data);
+        self.inner.write_to_parquet(data, None, None, None);
     }
 
     pub fn write_order_book_deltas(&self, data: Vec<OrderBookDelta>) {
-        self.inner.write_to_parquet(data);
+        self.inner.write_to_parquet(data, None, None, None);
     }
 
     pub fn write_bars(&self, data: Vec<Bar>) {
-        self.inner.write_to_parquet(data);
+        self.inner.write_to_parquet(data, None, None, None);
     }
 
     pub fn write_order_book_depths(&self, data: Vec<OrderBookDepth10>) {
-        self.inner.write_to_parquet(data);
+        self.inner.write_to_parquet(data, None, None, None);
     }
 }

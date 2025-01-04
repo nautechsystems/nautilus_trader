@@ -71,6 +71,31 @@ can also be run on bar data; however, users should note that this results in a l
 reducing execution precision and realism.
 :::
 
+### Slippage and Spread Handling
+
+When backtesting with different types of data, NautilusTrader implements specific handling for slippage and spread simulation:
+
+For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated with high accuracy by:
+- Filling orders against actual order book levels.
+- Matching available size at each price level sequentially.
+- Maintaining realistic order book depth impact (per order fill).
+
+For L1 data types (e.g., trades, quotes, bars), the default slippage behavior is:
+- One tick slippage when exhausting top-level size.
+- Remainder fills at the next price level.
+- This behavior applies by default for market type orders (`MARKET`, `MARKET_TO_LIMIT`, `STOP_MARKET`).
+
+:::info
+The default slippage behavior for top-of-book data can be modified by setting `slip_and_fill_market_orders` to `False`
+in your venue configuration. However, this may result in less realistic execution simulation, as market orders
+typically impact multiple price levels unless specifically configured with IOC (Immediate-or-Cancel) time in force.
+:::
+
+:::warning
+When backtesting with bar data, be aware that the reduced granularity of price information can impact the accuracy
+of slippage simulation. For the most realistic backtesting results, consider using higher granularity data sources
+such as L2 or L3 order book data when available.
+:::
 
 ## Venues
 

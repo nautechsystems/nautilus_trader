@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,11 @@ use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{
+    basic::CompareOp,
+    prelude::*,
+    types::{PyBytes, PyDict},
+};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -105,8 +109,8 @@ impl OrderBookDelta {
         sequence: u64,
         ts_event: u64,
         ts_init: u64,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             instrument_id,
             action,
             order,
@@ -115,6 +119,7 @@ impl OrderBookDelta {
             ts_event.into(),
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -254,12 +259,14 @@ impl OrderBookDelta {
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        let json_bytes: Vec<u8> = serde_json::to_vec(self).map_err(to_pyvalue_err)?;
+
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
-            .call_method("loads", (json_str,), None)?
+        let py_bytes = PyBytes::new_bound(py, &json_bytes);
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "msgspec.json")?
+            .call_method("decode", (py_bytes,), None)?
             .extract()?;
+
         Ok(py_dict)
     }
 
@@ -287,6 +294,37 @@ mod tests {
 
     use super::*;
     use crate::data::stubs::*;
+
+    #[rstest]
+    fn test_order_book_delta_py_new_with_zero_size_returns_error() {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|_py| {
+            let instrument_id = InstrumentId::from("AAPL.XNAS");
+            let action = BookAction::Add;
+            let zero_size = Quantity::from(0);
+            let price = Price::from("100.00");
+            let side = OrderSide::Buy;
+            let order_id = 123_456;
+            let flags = 0;
+            let sequence = 1;
+            let ts_event = 1;
+            let ts_init = 2;
+
+            let order = BookOrder::new(side, price, zero_size, order_id);
+
+            let result = OrderBookDelta::py_new(
+                instrument_id,
+                action,
+                order,
+                flags,
+                sequence,
+                ts_event,
+                ts_init,
+            );
+            assert!(result.is_err());
+        });
+    }
 
     #[rstest]
     fn test_as_dict(stub_delta: OrderBookDelta) {

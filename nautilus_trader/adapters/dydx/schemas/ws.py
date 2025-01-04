@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ from decimal import Decimal
 
 import msgspec
 
+from nautilus_trader.adapters.dydx.common.constants import DEFAULT_CURRENCY
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXFillType
 from nautilus_trader.adapters.dydx.common.enums import DYDXLiquidity
@@ -61,6 +62,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -98,15 +101,14 @@ class DYDXCandle(msgspec.Struct, forbid_unknown_fields=True):
         high_price = Price(Decimal(self.high), price_precision)
         low_price = Price(Decimal(self.low), price_precision)
         close_price = Price(Decimal(self.close), price_precision)
-        avg_price = Decimal("0.25") * (open_price + high_price + low_price + close_price)
-        volume = Decimal(self.usdVolume) / avg_price
+        volume = Quantity(Decimal(self.baseTokenVolume), size_precision)
         return Bar(
             bar_type=bar_type,
             open=open_price,
             high=high_price,
             low=low_price,
             close=close_price,
-            volume=Quantity(volume, size_precision),
+            volume=volume,
             ts_event=dt_to_unix_nanos(self.startedAt),
             ts_init=ts_init,
         )
@@ -262,16 +264,16 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
         if self.contents.asks is None:
             self.contents.asks = []
 
-        num_bids_raw = len(self.contents.bids)
-        num_asks_raw = len(self.contents.asks)
         deltas: list[OrderBookDelta] = []
 
-        for bid_id, bid in enumerate(self.contents.bids):
-            flags = 0
+        bids_len = len(self.contents.bids)
+        asks_len = len(self.contents.asks)
 
-            if bid_id == num_bids_raw - 1 and num_asks_raw == 0:
+        for idx, bid in enumerate(self.contents.bids):
+            flags = 0
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             size = Quantity(Decimal(bid[1]), size_precision)
@@ -292,10 +294,9 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
             )
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(self.contents.asks):
+        for idx, ask in enumerate(self.contents.asks):
             flags = 0
-
-            if ask_id == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
@@ -380,15 +381,14 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
         if self.contents.asks is None:
             self.contents.asks = []
 
-        num_bids_raw = len(self.contents.bids)
-        num_asks_raw = len(self.contents.asks)
+        bids_len = len(self.contents.bids)
+        asks_len = len(self.contents.asks)
 
-        for bid_id, bid in enumerate(self.contents.bids):
+        for idx, bid in enumerate(self.contents.bids):
             flags = 0
-
-            if bid_id == num_bids_raw - 1 and num_asks_raw == 0:
+            if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             order = BookOrder(
@@ -410,12 +410,11 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
 
             deltas.append(delta)
 
-        for ask_id, ask in enumerate(self.contents.asks):
+        for idx, ask in enumerate(self.contents.asks):
             flags = 0
-
-            if ask_id == num_asks_raw - 1:
+            if idx == asks_len - 1:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             delta = OrderBookDelta(
@@ -472,19 +471,18 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
             if deltas_message.asks is None:
                 deltas_message.asks = []
 
-            num_bids = len(deltas_message.bids)
-            num_asks = len(deltas_message.asks)
+            bids_len = len(deltas_message.bids)
+            asks_len = len(deltas_message.asks)
 
-            for bid_id, bid in enumerate(deltas_message.bids):
+            for idx, bid in enumerate(deltas_message.bids):
                 flags = 0
-
                 if (
                     delta_message_id == num_delta_messages - 1
-                    and bid_id == num_bids - 1
-                    and num_asks == 0
+                    and idx == bids_len - 1
+                    and asks_len == 0
                 ):
                     # F_LAST, 1 << 7
-                    # Last message in the packet from the venue for a given `instrument_id`
+                    # Last message in the book event or packet from the venue for a given `instrument_id`
                     flags = RecordFlag.F_LAST
 
                 size = Quantity(Decimal(bid[1]), size_precision)
@@ -505,12 +503,11 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
                 )
                 deltas.append(delta)
 
-            for ask_id, ask in enumerate(deltas_message.asks):
+            for idx, ask in enumerate(deltas_message.asks):
                 flags = 0
-
-                if delta_message_id == num_delta_messages - 1 and ask_id == num_asks - 1:
+                if delta_message_id == num_delta_messages - 1 and idx == asks_len - 1:
                     # F_LAST, 1 << 7
-                    # Last message in the packet from the venue for a given `instrument_id`
+                    # Last message in the book event or packet from the venue for a given `instrument_id`
                     flags = RecordFlag.F_LAST
 
                 size = Quantity(Decimal(ask[1]), size_precision)
@@ -547,14 +544,21 @@ class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=
         """
         Create an account balance report.
         """
-        account_balances = []
+        account_balances: list[AccountBalance] = []
 
         if self.subaccount is not None:
-            for asset_position in self.subaccount.assetPositions.values():
-                # Only valid for a margin account
-                locked = Decimal(0)
-                account_balance = asset_position.parse_to_account_balance(locked=locked)
-                account_balances.append(account_balance)
+            currency = Currency.from_str(DEFAULT_CURRENCY)
+            free = Decimal(self.subaccount.freeCollateral)
+            total = Decimal(self.subaccount.equity)
+            locked = total - free
+
+            return [
+                AccountBalance(
+                    total=Money(total, currency),
+                    locked=Money(locked, currency),
+                    free=Money(free, currency),
+                ),
+            ]
 
         return account_balances
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -375,7 +375,7 @@ class BybitWebSocketClient:
         subscription = "execution"
         await self._subscribe(subscription)
 
-    async def subscribe_executions_update_fast(self) -> None:
+    async def subscribe_executions_fast_update(self) -> None:
         subscription = "execution.fast"
         await self._subscribe(subscription)
 

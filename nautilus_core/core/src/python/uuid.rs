@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,12 +35,8 @@ impl UUID4 {
     /// If a string value is provided, it attempts to parse it into a UUID.
     /// If no value is provided, a new random UUID is generated.
     #[new]
-    #[pyo3(signature = (value=None))]
-    fn py_new(value: Option<&str>) -> PyResult<Self> {
-        match value {
-            Some(val) => Self::from_str(val).map_err(to_pyvalue_err),
-            None => Ok(Self::new()),
-        }
+    fn py_new() -> Self {
+        Self::new()
     }
 
     /// Sets the state of the `UUID4` instance during unpickling.

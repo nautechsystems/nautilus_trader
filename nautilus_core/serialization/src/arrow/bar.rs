@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -277,7 +277,7 @@ mod tests {
         let bar2 = Bar::new(
             bar_type,
             Price::from("100.00"),
-            Price::from("100.00"),
+            Price::from("100.10"),
             Price::from("100.00"),
             Price::from("100.10"),
             Quantity::from(1110),
@@ -329,7 +329,7 @@ mod tests {
         );
         assert_eq!(
             get_raw_price(high_values.value(1)),
-            (100.00 * SCALAR) as PriceRaw
+            (100.10 * SCALAR) as PriceRaw
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(

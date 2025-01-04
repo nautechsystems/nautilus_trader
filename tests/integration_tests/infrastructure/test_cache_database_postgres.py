@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.signal import generate_signal_class
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
@@ -500,6 +501,47 @@ class TestCachePostgresAdapter:
         assert order.to_dict() == result.to_dict()
 
     @pytest.mark.asyncio
+    async def test_add_order_snapshot(self):
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        order1 = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order2 = self.strategy.order_factory.limit(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        order3 = self.strategy.order_factory.stop_market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
+
+        self.database.add_order_snapshot(order1)
+        self.database.add_order_snapshot(order2)
+        self.database.add_order_snapshot(order3)
+
+        await eventually(lambda: self.database.load_order_snapshot(order1.client_order_id))
+        await eventually(lambda: self.database.load_order_snapshot(order2.client_order_id))
+        await eventually(lambda: self.database.load_order_snapshot(order3.client_order_id))
+        snapshot1 = self.database.load_order_snapshot(order1.client_order_id)
+        snapshot2 = self.database.load_order_snapshot(order2.client_order_id)
+        snapshot3 = self.database.load_order_snapshot(order3.client_order_id)
+
+        assert isinstance(snapshot1, nautilus_pyo3.OrderSnapshot)
+        assert isinstance(snapshot2, nautilus_pyo3.OrderSnapshot)
+        assert isinstance(snapshot3, nautilus_pyo3.OrderSnapshot)
+
+    @pytest.mark.asyncio
     async def test_add_position_snapshot(self):
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
         order = self.strategy.order_factory.stop_market(
@@ -523,7 +565,12 @@ class TestCachePostgresAdapter:
 
         position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
-        self.database.add_position_snapshot(position)
+        self.database.add_position_snapshot(position, Money.from_str("2.00 USD"))
+
+        await eventually(lambda: self.database.load_position_snapshot(position.id))
+        snapshot = self.database.load_position_snapshot(position.id)
+
+        assert isinstance(snapshot, nautilus_pyo3.PositionSnapshot)
 
     ################################################################################
     # Accounts

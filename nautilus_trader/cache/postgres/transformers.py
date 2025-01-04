@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,6 +54,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
@@ -247,7 +248,7 @@ def transform_order_to_pyo3(order: Order):
     return order_py3
 
 
-def transform_order_from_pyo3(order_pyo3):
+def transform_order_from_pyo3(order_pyo3) -> Order:
     events_pyo3 = order_pyo3.events
     if len(events_pyo3) == 0:
         raise ValueError("Missing events in order")
@@ -261,8 +262,27 @@ def transform_order_from_pyo3(order_pyo3):
     return order_cython
 
 
-def transform_position_to_snapshot_pyo3(position: Position):
+def transform_order_to_snapshot_pyo3(order: Order) -> nautilus_pyo3.OrderSnapshot:
+    values = order.to_dict()
+    values["order_type"] = values["type"]
+    values["order_side"] = values["side"]
+    values["expire_time"] = values.get("expire_time_ns")
+    commissions = values.get("commissions")
+    values["commissions"] = commissions if commissions is not None else []
+    values["is_post_only"] = values.get("is_post_only", False)
+    values["is_reduce_only"] = values.get("is_reduce_only", False)
+    values["is_quote_quantity"] = values.get("is_quote_quantity", False)
+
+    return nautilus_pyo3.OrderSnapshot.from_dict(values)
+
+
+def transform_position_to_snapshot_pyo3(
+    position: Position,
+    unrealized_pnl: Money | None = None,
+) -> nautilus_pyo3.PositionSnapshot:
     values = position.to_dict()
+    values["unrealized_pnl"] = str(unrealized_pnl) if unrealized_pnl is not None else None
+
     return nautilus_pyo3.PositionSnapshot.from_dict(values)
 
 
@@ -284,16 +304,16 @@ def transform_account_state_pyo3_to_cython(
 
 
 def from_account_state_pyo3_to_account_cython(
-    account_state: nautilus_pyo3.AccountState,
+    account_state_pyo3: nautilus_pyo3.AccountState,
     calculate_account_state: bool,
-):
-    account_state_cython = transform_account_state_pyo3_to_cython(account_state)
-    if account_state.account_type == nautilus_pyo3.AccountType.CASH:
+) -> Account:
+    account_state_cython = transform_account_state_pyo3_to_cython(account_state_pyo3)
+    if account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
         return CashAccount(account_state_cython, calculate_account_state)
-    elif account_state.account_type == nautilus_pyo3.AccountType.MARGIN:
+    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
         return MarginAccount(account_state_cython, calculate_account_state)
     else:
-        raise ValueError("Unsupported account type")
+        raise ValueError(f"Unsupported account type: {account_state_pyo3.account_type}")
 
 
 def from_account_state_cython_to_account_pyo3(
@@ -306,7 +326,7 @@ def from_account_state_cython_to_account_pyo3(
     elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
         return nautilus_pyo3.MarginAccount(account_state_pyo3, calculate_account_state)
     else:
-        raise ValueError("Unsupported account type")
+        raise ValueError(f"Unsupported account type: {account_state_pyo3.account_type}")
 
 
 def transform_account_to_pyo3(account: Account):
@@ -322,7 +342,7 @@ def transform_account_to_pyo3(account: Account):
     return account_pyo3
 
 
-def transform_account_from_pyo3(account_pyo3):
+def transform_account_from_pyo3(account_pyo3) -> Account:
     events_pyo3 = account_pyo3.events
     if len(events_pyo3) == 0:
         raise ValueError("Missing events in account")
@@ -338,21 +358,21 @@ def transform_account_from_pyo3(account_pyo3):
 ################################################################################
 # Market data
 ################################################################################
-def transform_trade_tick_to_pyo3(trade: TradeTick):
+def transform_trade_tick_to_pyo3(trade: TradeTick) -> nautilus_pyo3.TradeTick:
     trade_dict = TradeTick.to_dict(trade)
     return nautilus_pyo3.TradeTick.from_dict(trade_dict)
 
 
-def transform_trade_tick_from_pyo3(trade_pyo3):
+def transform_trade_tick_from_pyo3(trade_pyo3: nautilus_pyo3.TradeTick) -> TradeTick:
     return TradeTick.from_pyo3(trade_pyo3)
 
 
-def transform_quote_tick_to_pyo3(quote: QuoteTick):
+def transform_quote_tick_to_pyo3(quote: QuoteTick) -> nautilus_pyo3.QuoteTick:
     quote_tick_dict = QuoteTick.to_dict(quote)
     return nautilus_pyo3.QuoteTick.from_dict(quote_tick_dict)
 
 
-def transform_bar_to_pyo3(bar: Bar):
+def transform_bar_to_pyo3(bar: Bar) -> nautilus_pyo3.Bar:
     bar_dict = Bar.to_dict(bar)
     return nautilus_pyo3.Bar.from_dict(bar_dict)
 

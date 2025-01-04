@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -869,6 +869,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
+    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        todo!()
+    }
+
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
@@ -919,6 +923,20 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
         anyhow::bail!("Loading custom data from Redis cache adapter not supported")
+    }
+
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        anyhow::bail!("Loading order snapshots from Redis cache adapter not supported")
+    }
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        anyhow::bail!("Loading position snapshots from Redis cache adapter not supported")
     }
 
     fn index_venue_order_id(

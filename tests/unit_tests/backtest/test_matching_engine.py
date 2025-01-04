@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -145,8 +145,8 @@ class TestOrderMatchingEngine:
         )
         self.cache.add_order(client_order)
         self.matching_engine.process_order(client_order, self.account_id)
-        self.matching_engine.process_status(MarketStatusAction.OPEN)
         self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)
+
         messages: list[Any] = []
         self.msgbus.register("ExecEngine.process", messages.append)
 

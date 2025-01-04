@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -230,7 +230,7 @@ def test_decoding_uuid4() -> None:
     result = msgspec_decoding_hook(obj_type, obj)
 
     # Assert
-    assert result == UUID4(obj)
+    assert result == UUID4.from_str(obj)
 
 
 def test_encoding_component_id() -> None:

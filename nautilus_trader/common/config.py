@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -103,8 +103,10 @@ def msgspec_encoding_hook(obj: Any) -> Any:
 
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
-    if obj_type in (Decimal, UUID4, pd.Timestamp, pd.Timedelta):
+    if obj_type in (Decimal, pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
+    if obj_type == UUID4:
+        return UUID4.from_str(obj)
     if obj_type == InstrumentId:
         return InstrumentId.from_str(obj)
     if issubclass(obj_type, Identifier):

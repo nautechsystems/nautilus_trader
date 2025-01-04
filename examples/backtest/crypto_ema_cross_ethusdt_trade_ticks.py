@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -60,6 +60,7 @@ if __name__ == "__main__":
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
+        trade_execution=True,  # Only use with L1_MBP book type or throttled book data
     )
 
     # Add instruments

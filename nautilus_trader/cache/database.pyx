@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -159,7 +159,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing = nautilus_pyo3.RedisCacheDatabase(
             trader_id=nautilus_pyo3.TraderId(trader_id.value),
-            instance_id=nautilus_pyo3.UUID4(instance_id.value),
+            instance_id=nautilus_pyo3.UUID4.from_str(instance_id.value),
             config_json=msgspec.json.encode(config, enc_hook=msgspec_encoding_hook),
         )
 

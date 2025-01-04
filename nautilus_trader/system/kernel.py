@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,9 +39,11 @@ from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import is_backtest_force_stop
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.component import log_header
 from nautilus_trader.common.component import register_component_clock
+from nautilus_trader.common.component import set_backtest_force_stop
 from nautilus_trader.common.component import set_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.config import msgspec_encoding_hook
@@ -153,7 +155,6 @@ class NautilusKernel:
         self._trader_id: TraderId = trader_id
         self._machine_id: str = socket.gethostname()
         self._instance_id: UUID4 = config.instance_id or UUID4()
-        self._ts_created: int = time.time_ns()
 
         # Components
         if self._environment == Environment.BACKTEST:
@@ -164,6 +165,11 @@ class NautilusKernel:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        self._ts_created: int = self._clock.timestamp_ns()
+        self._ts_started: int | None = None
+        self._ts_shutdown: int | None = None
+        ts_build = time.time_ns()
 
         register_component_clock(self._instance_id, self._clock)
 
@@ -196,7 +202,7 @@ class NautilusKernel:
                     # Initialize logging for sync Rust and Python
                     self._log_guard = nautilus_pyo3.init_logging(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
-                        instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                        instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
                         level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
                         directory=logging.log_directory,
@@ -209,7 +215,7 @@ class NautilusKernel:
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                         machine_id=self._machine_id,
-                        instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                        instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         component=name,
                     )
                 else:
@@ -269,7 +275,7 @@ class NautilusKernel:
         elif config.message_bus.database.type == "redis":
             self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
-                instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                 config_json=msgspec.json.encode(config.message_bus, enc_hook=msgspec_encoding_hook),
             )
         else:
@@ -511,9 +517,10 @@ class NautilusKernel:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
             self._trader.add_exec_algorithm(exec_algorithm)
 
+        # State flags
         self._is_running = False
 
-        build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
+        build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
         self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:
@@ -575,6 +582,9 @@ class NautilusKernel:
             self._log.warning(f"Received {command!r} not for this trader {self.trader_id}")
             return
 
+        if self._environment == Environment.BACKTEST and is_backtest_force_stop():
+            return  # Backtest has already been force stopped
+
         if not self._is_running:
             self._log.warning(f"Received {command!r} when not running")
             return
@@ -585,6 +595,10 @@ class NautilusKernel:
             self._loop.create_task(self.stop_async())
         else:
             self.stop()
+
+        if self._environment == Environment.BACKTEST:
+            set_backtest_force_stop(True)
+            self._log.debug("Set backtest FORCE_STOP")
 
     @property
     def environment(self) -> Environment:
@@ -689,10 +703,34 @@ class NautilusKernel:
 
         Returns
         -------
-        uint64_t
+        int
 
         """
         return self._ts_created
+
+    @property
+    def ts_started(self) -> int | None:
+        """
+        Return the UNIX timestamp (nanoseconds) when the kernel was last started.
+
+        Returns
+        -------
+        int or ``None``
+
+        """
+        return self._ts_started
+
+    @property
+    def ts_shutdown(self) -> int | None:
+        """
+        Return the UNIX timestamp (nanoseconds) when the kernel was last shutdown.
+
+        Returns
+        -------
+        int or ``None``
+
+        """
+        return self._ts_shutdown
 
     @property
     def load_state(self) -> bool:
@@ -899,11 +937,23 @@ class NautilusKernel:
         """
         return self._log_guard
 
+    def is_running(self) -> bool:
+        """
+        Return whether the kernel is running.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._is_running
+
     def start(self) -> None:
         """
         Start the Nautilus system kernel.
         """
         self._log.info("STARTING")
+        self._ts_started = self._clock.timestamp_ns()
         self._is_running = True
 
         self._start_engines()
@@ -929,6 +979,7 @@ class NautilusKernel:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
         self._log.info("STARTING")
+        self._ts_started = self._clock.timestamp_ns()
         self._is_running = True
 
         self._register_executor()
@@ -977,6 +1028,7 @@ class NautilusKernel:
 
         self._log.info("STOPPED")
         self._is_running = False
+        self._ts_shutdown = self._clock.timestamp_ns()
 
     async def stop_async(self) -> None:
         """
@@ -1015,6 +1067,7 @@ class NautilusKernel:
 
         self._log.info("STOPPED")
         self._is_running = False
+        self._ts_shutdown = self._clock.timestamp_ns()
 
     def dispose(self) -> None:
         """
