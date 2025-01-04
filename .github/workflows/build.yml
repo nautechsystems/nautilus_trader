@@ -529,7 +529,7 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # needs: [pre-commit]
+    needs: [pre-commit]
     env:
       BUILD_MODE: debug # Not building wheels, so debug is fine
       RUST_BACKTRACE: 1
