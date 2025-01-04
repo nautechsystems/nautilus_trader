@@ -100,6 +100,9 @@ jobs:
       # Incrementally compiled crates cannot be cached by sccache
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
+      # sccache debug
+      SCCACHE_ERROR_LOG: /tmp/sccache_log.txt
+      SCCACHE_LOG: debug
 
     services:
       redis:
@@ -211,6 +214,7 @@ jobs:
         run: |
           make install-cli
           nautilus database init --schema ${{ github.workspace }}/schema
+          sccache --show-stats
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -224,7 +228,9 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: make cargo-test
+        run: |
+          make cargo-test
+          sccache --show-stats
 
       - name: Update version in pyproject.toml
         run: |
@@ -267,6 +273,7 @@ jobs:
         run: |
           poetry build --format wheel
           ls -lh dist/
+          sccache --show-stats
 
       - name: Install Python wheel
         run: |
@@ -301,6 +308,10 @@ jobs:
         with:
           name: ${{ env.ASSET_NAME }}
           path: ${{ env.ASSET_PATH }}
+
+      - name: Cat sccache log
+        run: |
+          cat /tmp/sccache_log.txt
 
   build-macos:
     strategy:
