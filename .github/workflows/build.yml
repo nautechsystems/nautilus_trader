@@ -547,10 +547,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free disk space # Continue to monitor
-        run: |
-          rm -rf "/c/Program Files/dotnet"
-          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+      # - name: Free disk space # Continue to monitor
+      #   run: |
+      #     rm -rf "/c/Program Files/dotnet"
+      #     rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
 
       - name: Set up Rust toolchain
         run: |
