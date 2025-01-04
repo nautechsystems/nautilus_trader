@@ -295,7 +295,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set sccache-cache env vars (non-Windows)
+      - name: Set sccache env vars (non-Windows)
         if: runner.os != 'Windows'
         run: |
           echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
@@ -303,7 +303,7 @@ jobs:
           echo "CC=sccache clang" >> $GITHUB_ENV
           echo "CXX=sccache clang++" >> $GITHUB_ENV
 
-      - name: Set sccache-cache env vars (Windows)
+      - name: Set sccache env vars (Windows)
         if: runner.os == 'Windows'
         run: |
           # echo SCCACHE_DIR="$env:LOCALAPPDATA\Mozilla\sccache" >> $GITHUB_ENV
