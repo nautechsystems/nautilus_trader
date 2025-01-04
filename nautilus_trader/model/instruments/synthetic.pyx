@@ -315,7 +315,7 @@ cdef class SyntheticInstrument(Data):
         cvec.cap = len_
 
         cdef Price_t mem = synthetic_instrument_calculate(&self._mem, cvec)
-        if mem.raw == ERROR_PRICE.raw:
+        if mem.precision == ERROR_PRICE.precision:
             raise RuntimeError(
                 f"error calculating {self.id} `SyntheticInstrument` price from {inputs}",
             )
