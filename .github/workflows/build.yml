@@ -582,7 +582,7 @@ jobs:
       - name: Set sccache env vars
         # shell: pwsh
         run: |
-          echo SCCACHE_DIR="~/.cache/sccache" >> $GITHUB_ENV
+          echo SCCACHE_DIR="/c/.cache/sccache" >> $GITHUB_ENV
 
           # echo SCCACHE_DIR="$env:LOCALAPPDATA\Mozilla\sccache" >> $GITHUB_ENV
           # echo RUSTC_WRAPPER="$env:SCCACHE_PATH" >> $GITHUB_ENV
