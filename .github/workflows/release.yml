@@ -264,7 +264,6 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       # Incrementally compiled crates cannot be cached by sccache
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
@@ -299,6 +298,7 @@ jobs:
       - name: Set sccache-cache env vars (non-Windows)
         if: runner.os != 'Windows'
         run: |
+          echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
           echo "CC=sccache clang" >> $GITHUB_ENV
           echo "CXX=sccache clang++" >> $GITHUB_ENV
@@ -306,6 +306,7 @@ jobs:
       - name: Set sccache-cache env vars (Windows)
         if: runner.os == 'Windows'
         run: |
+          echo "SCCACHE_DIR=${{ github.workspace }}\.cache\sccache" >> $GITHUB_ENV
           echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
           echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
