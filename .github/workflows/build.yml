@@ -97,6 +97,9 @@ jobs:
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
 
     services:
       redis:
