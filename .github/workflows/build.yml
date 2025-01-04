@@ -541,7 +541,6 @@ jobs:
       # Incrementally compiled crates cannot be cached by sccache
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
-      SCCACHE_PATH_WINDOWS: "${{ env.SCCACHE_PATH }}"
       # > --------------------------------------------------
 
     steps:
@@ -586,9 +585,9 @@ jobs:
           echo SCCACHE_DIR="D:\.cache\sccache" >> $GITHUB_ENV
 
           # echo SCCACHE_DIR="$env:LOCALAPPDATA\Mozilla\sccache" >> $GITHUB_ENV
-          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH_WINDOWS }}" >> $GITHUB_ENV
-          # echo CMAKE_C_COMPILER_LAUNCHER="$env:SCCACHE_PATH" >> $GITHUB_ENV
-          # echo CMAKE_CXX_COMPILER_LAUNCHER="$env:SCCACHE_PATH" >> $GITHUB_ENV
+          echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
 
           # "SCCACHE_DIR=${env:LOCALAPPDATA}\Mozilla\sccache" | Out-File -FilePath $env:GITHUB_ENV -Append
           # "RUSTC_WRAPPER=${env:SCCACHE_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Append
