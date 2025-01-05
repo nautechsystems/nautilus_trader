@@ -239,15 +239,12 @@ impl DecodeDataFromRecordBatch for QuoteTick {
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
-    use arrow::array::Array;
-    use arrow::record_batch::RecordBatch;
-    use nautilus_model::types::fixed::SCALAR;
-    use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
+    use arrow::{array::Array, record_batch::RecordBatch};
+    use nautilus_model::types::{fixed::SCALAR, price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
-    use crate::arrow::get_raw_price;
-
     use super::*;
+    use crate::arrow::get_raw_price;
 
     #[rstest]
     fn test_get_schema() {

@@ -30,8 +30,9 @@ use super::{
     extract_column, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, PRECISION_BYTES,
 };
-use crate::arrow::get_raw_price;
-use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{
+    get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,
+};
 
 impl ArrowSchemaProvider for Bar {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -218,13 +219,12 @@ impl DecodeDataFromRecordBatch for Bar {
 mod tests {
     use std::sync::Arc;
 
-    use crate::arrow::get_raw_price;
-    use arrow::array::Array;
-    use arrow::record_batch::RecordBatch;
+    use arrow::{array::Array, record_batch::RecordBatch};
     use nautilus_model::types::{fixed::SCALAR, price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
     use super::*;
+    use crate::arrow::get_raw_price;
 
     #[rstest]
     fn test_get_schema() {

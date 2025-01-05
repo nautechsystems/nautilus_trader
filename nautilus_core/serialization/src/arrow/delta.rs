@@ -15,7 +15,6 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::arrow::{get_raw_quantity, PRECISION_BYTES};
 use arrow::{
     array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
@@ -34,7 +33,8 @@ use super::{
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{
-    get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,
+    get_raw_price, get_raw_quantity, ArrowSchemaProvider, Data, DecodeFromRecordBatch,
+    EncodeToRecordBatch, PRECISION_BYTES,
 };
 
 impl ArrowSchemaProvider for OrderBookDelta {
@@ -262,16 +262,13 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::Array;
-    use arrow::record_batch::RecordBatch;
-    use nautilus_model::types::fixed::SCALAR;
-    use nautilus_model::types::price::PriceRaw;
+    use arrow::{array::Array, record_batch::RecordBatch};
+    use nautilus_model::types::{fixed::SCALAR, price::PriceRaw};
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
-    use crate::arrow::get_raw_price;
-
     use super::*;
+    use crate::arrow::get_raw_price;
 
     #[rstest]
     fn test_get_schema() {

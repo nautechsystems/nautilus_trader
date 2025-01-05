@@ -384,10 +384,9 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field};
-    use nautilus_model::types::fixed::SCALAR;
     use nautilus_model::{
         data::stubs::stub_depth10,
-        types::{price::PriceRaw, quantity::QuantityRaw},
+        types::{fixed::SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use pretty_assertions::assert_eq;
     use rstest::rstest;

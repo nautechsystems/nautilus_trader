@@ -26,7 +26,7 @@
  */
 #define FIXED_PRECISION 9
 
-#define FIXED_HIGH_PRECISION 18
+#define FIXED_HIGH_PRECISION 16
 
 #if defined(HIGH_PRECISION)
 #define PRECISION FIXED_HIGH_PRECISION
@@ -37,11 +37,11 @@
 #endif
 
 /**
- * The scalar value corresponding to the maximum precision (10^9).
+ * The scalar value corresponding to the maximum precision (10^PRECISION).
  */
 #define FIXED_SCALAR 1000000000.0
 
-#define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
+#define FIXED_HIGH_PRECISION_SCALAR 10000000000000000.0
 
 #if defined(HIGH_PRECISION)
 #define SCALAR FIXED_HIGH_PRECISION_SCALAR
@@ -87,7 +87,7 @@
 #endif
 
 #if defined(HIGH_PRECISION)
-#define PRICE_MAX 170141183460.0
+#define PRICE_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
@@ -98,7 +98,7 @@
 #endif
 
 #if defined(HIGH_PRECISION)
-#define PRICE_MIN -170141183460.0
+#define PRICE_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
@@ -109,7 +109,7 @@
 #endif
 
 #if defined(HIGH_PRECISION)
-#define QUANTITY_MAX 340282366920.0
+#define QUANTITY_MAX 34028236692093.0
 #endif
 
 /**

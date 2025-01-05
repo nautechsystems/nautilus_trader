@@ -17,7 +17,7 @@ cdef extern from "../includes/model.h":
     # The maximum fixed-point precision.
     const uint8_t FIXED_PRECISION # = 9
 
-    const uint8_t FIXED_HIGH_PRECISION # = 18
+    const uint8_t FIXED_HIGH_PRECISION # = 16
 
     IF HIGH_PRECISION:
         const uint8_t PRECISION # = FIXED_HIGH_PRECISION
@@ -25,10 +25,10 @@ cdef extern from "../includes/model.h":
     IF not HIGH_PRECISION:
         const uint8_t PRECISION # = FIXED_PRECISION
 
-    # The scalar value corresponding to the maximum precision (10^9).
+    # The scalar value corresponding to the maximum precision (10^PRECISION).
     const double FIXED_SCALAR # = 1000000000.0
 
-    const double FIXED_HIGH_PRECISION_SCALAR # = 1000000000000000000.0
+    const double FIXED_HIGH_PRECISION_SCALAR # = 10000000000000000.0
 
     IF HIGH_PRECISION:
         const double SCALAR # = FIXED_HIGH_PRECISION_SCALAR
@@ -57,21 +57,21 @@ cdef extern from "../includes/model.h":
         const double PRICE_MAX # = 9223372036.0
 
     IF HIGH_PRECISION:
-        const double PRICE_MAX # = 170141183460.0
+        const double PRICE_MAX # = 17014118346046.0
 
     IF not HIGH_PRECISION:
         # The minimum valid price value which can be represented.
         const double PRICE_MIN # = -9223372036.0
 
     IF HIGH_PRECISION:
-        const double PRICE_MIN # = -170141183460.0
+        const double PRICE_MIN # = -17014118346046.0
 
     IF not HIGH_PRECISION:
         # The maximum valid quantity value which can be represented.
         const double QUANTITY_MAX # = 18446744073.0
 
     IF HIGH_PRECISION:
-        const double QUANTITY_MAX # = 340282366920.0
+        const double QUANTITY_MAX # = 34028236692093.0
 
     # The minimum valid quantity value which can be represented.
     const double QUANTITY_MIN # = 0.0

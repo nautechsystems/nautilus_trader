@@ -24,7 +24,7 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{check_in_range_inclusive_f64, FAILED},
+    correctness::{check_in_range_inclusive_f64, check_positive_u128, FAILED},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
@@ -34,7 +34,6 @@ use thousands::Separable;
 use super::fixed::{
     check_fixed_precision, f64_to_fixed_u128, fixed_u128_to_f64, PRECISION, SCALAR,
 };
-use nautilus_core::correctness::check_positive_u128;
 
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
@@ -43,7 +42,7 @@ pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 #[cfg(not(feature = "high_precision"))]
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 #[cfg(feature = "high_precision")]
-pub const QUANTITY_MAX: f64 = 340_282_366_920.0;
+pub const QUANTITY_MAX: f64 = 34_028_236_692_093.0;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;

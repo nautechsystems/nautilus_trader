@@ -20,16 +20,16 @@
 
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
-pub const FIXED_HIGH_PRECISION: u8 = 18;
+pub const FIXED_HIGH_PRECISION: u8 = 16;
 
 #[cfg(feature = "high_precision")]
 pub const PRECISION: u8 = FIXED_HIGH_PRECISION;
 #[cfg(not(feature = "high_precision"))]
 pub const PRECISION: u8 = FIXED_PRECISION;
 
-/// The scalar value corresponding to the maximum precision (10^9).
+/// The scalar value corresponding to the maximum precision (10^PRECISION).
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
-pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 1_000_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
+pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
 
 #[cfg(feature = "high_precision")]
 pub const SCALAR: f64 = FIXED_HIGH_PRECISION_SCALAR;

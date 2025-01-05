@@ -235,14 +235,11 @@ mod tests {
         array::{Array, FixedSizeBinaryArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
-    use nautilus_model::types::fixed::SCALAR;
-    use nautilus_model::types::price::PriceRaw;
-    use nautilus_model::types::quantity::QuantityRaw;
+    use nautilus_model::types::{fixed::SCALAR, price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
-    use crate::arrow::{get_raw_price, get_raw_quantity};
-
     use super::*;
+    use crate::arrow::{get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {

@@ -32,14 +32,13 @@ use nautilus_core::{
     datetime::{add_n_months, subtract_n_months},
     nanos::UnixNanos,
 };
-use nautilus_model::types::fixed::SCALAR;
 use nautilus_model::{
     data::{
         bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
         QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BarAggregation, BarIntervalType},
-    types::{quantity::QuantityRaw, Price, Quantity},
+    types::{fixed::SCALAR, quantity::QuantityRaw, Price, Quantity},
 };
 
 pub trait BarAggregator {
