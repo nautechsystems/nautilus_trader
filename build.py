@@ -48,14 +48,12 @@ else:
 #  RUST BUILD
 ################################################################################
 
-TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
-
-use_sccache = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
+USE_SCCACHE = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
 
 if platform.system() == "Linux":
     # Use clang as the default compiler
-    os.environ["CC"] = "sccache clang" if use_sccache else "clang"
-    os.environ["CXX"] = "sccache clang++" if use_sccache else "clang++"
+    os.environ["CC"] = "sccache clang" if USE_SCCACHE else "clang"
+    os.environ["CXX"] = "sccache clang++" if USE_SCCACHE else "clang++"
     os.environ["LDSHARED"] = "clang -shared"
 
 if platform.system() == "Darwin" and platform.machine() == "arm64":
@@ -76,6 +74,8 @@ else:  # Linux
     RUST_LIB_PFX = "lib"
     RUST_STATIC_LIB_EXT = "a"
     RUST_DYLIB_EXT = "so"
+
+TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
@@ -372,6 +372,7 @@ if __name__ == "__main__":
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
     print(f"CC={os.environ['CC']}") if "CC" in os.environ else None
+    print(f"CXX={os.environ['CXX']}") if "CXX" in os.environ else None
     print(f"LDSHARED={os.environ['LDSHARED']}") if "LDSHARED" in os.environ else None
     print(f"CFLAGS={os.environ['CFLAGS']}") if "CFLAGS" in os.environ else None
     print(f"LDFLAGS={os.environ['LDFLAGS']}") if "LDFLAGS" in os.environ else None
