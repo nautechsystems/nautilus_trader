@@ -34,7 +34,7 @@ Released on TBD (UTC).
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
-- Enhance the `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
+- Enhance `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
@@ -55,6 +55,7 @@ Released on TBD (UTC).
 - Fixed writing `DYDXOraclePrice` to catalog (#2158), thanks @davidsblom
 - Fixed account balance for dYdX (#2167), thanks @davidsblom
 - Fixed missing `OrderEmulated` and `OrderReleased` Arrow schemas
+- Fixed websocket public channel reconnect for Bybit (#2176), thanks @sunlei
 
 ### Documentation updates
 - Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
