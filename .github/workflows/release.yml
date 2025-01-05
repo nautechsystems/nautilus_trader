@@ -21,7 +21,7 @@ jobs:
       # > --------------------------------------------------
       # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_DIR: ~/.cache/sccache
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
@@ -140,7 +140,7 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ~/.cache/sccache
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang++"
@@ -298,7 +298,7 @@ jobs:
       - name: Set sccache env vars (non-Windows)
         if: runner.os != 'Windows'
         run: |
-          echo "SCCACHE_DIR=~/.cache/sccache" >> $GITHUB_ENV
+          echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
           echo "CC=sccache clang" >> $GITHUB_ENV
           echo "CXX=sccache clang++" >> $GITHUB_ENV

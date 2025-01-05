@@ -20,7 +20,7 @@ jobs:
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ~/.cache/sccache
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
       CXX: "sccache clang++"
