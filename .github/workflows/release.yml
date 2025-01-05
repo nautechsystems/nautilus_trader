@@ -22,6 +22,7 @@ jobs:
       # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
       SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
+      SCCACHE_IDLE_TIMEOUT: 0
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
@@ -138,6 +139,7 @@ jobs:
       # > --------------------------------------------------
       # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_IDLE_TIMEOUT: 0
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
@@ -262,6 +264,7 @@ jobs:
       # > --------------------------------------------------
       # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_IDLE_TIMEOUT: 0
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       # Incrementally compiled crates cannot be cached by sccache

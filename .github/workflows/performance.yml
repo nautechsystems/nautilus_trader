@@ -13,6 +13,7 @@ jobs:
       # > --------------------------------------------------
       # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_IDLE_TIMEOUT: 0
       SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
