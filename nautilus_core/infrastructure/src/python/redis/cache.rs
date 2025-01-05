@@ -16,7 +16,7 @@
 use bytes::Bytes;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
-    uuid::UUID4,
+    UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 use pyo3::{prelude::*, types::PyBytes};

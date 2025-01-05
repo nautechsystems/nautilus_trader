@@ -16,7 +16,7 @@
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{data::DataType, types::Currency};
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;

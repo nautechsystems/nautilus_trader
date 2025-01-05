@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    uuid::UUID4,
+    UUID4,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;

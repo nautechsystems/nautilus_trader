@@ -18,7 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},

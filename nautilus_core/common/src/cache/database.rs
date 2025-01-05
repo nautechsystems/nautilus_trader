@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},

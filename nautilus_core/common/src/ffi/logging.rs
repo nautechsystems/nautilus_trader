@@ -23,7 +23,7 @@ use nautilus_core::{
         parsing::{optional_bytes_to_json, u8_as_bool},
         string::{cstr_as_str, cstr_to_ustr, optional_cstr_to_str},
     },
-    uuid::UUID4,
+    UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 

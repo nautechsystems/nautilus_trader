@@ -18,7 +18,7 @@ use std::ops::{Deref, DerefMut};
 use nautilus_common::ffi::{clock::TestClock_API, timer::TimeEventHandler};
 use nautilus_core::{
     ffi::{cvec::CVec, parsing::u8_as_bool},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 
 use crate::engine::TimeEventAccumulator;

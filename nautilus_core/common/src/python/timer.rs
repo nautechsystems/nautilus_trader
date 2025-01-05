@@ -15,7 +15,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
+use nautilus_core::{python::to_pyvalue_err, UnixNanos, UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -179,7 +179,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use nautilus_core::{
-        datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
+        datetime::NANOSECONDS_IN_MILLISECOND, time::get_atomic_clock_realtime, UnixNanos,
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;

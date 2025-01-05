@@ -36,7 +36,7 @@ use nautilus_core::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
         FAILED,
     },
-    uuid::UUID4,
+    UUID4,
 };
 use nautilus_model::{
     accounts::AccountAny,

@@ -16,7 +16,7 @@
 use std::{cmp, ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn::{self};
-use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos};
+use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, InstrumentStatus, OrderBookDelta,

@@ -40,6 +40,6 @@ pub mod python;
 
 use std::collections::BTreeMap;
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 pub type Returns = BTreeMap<UnixNanos, f64>;

@@ -31,7 +31,7 @@ pub mod synthetic;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;

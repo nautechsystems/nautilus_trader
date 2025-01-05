@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core constants.
+
 use std::env;
 
 /// The `NautilusTrader` string constant.

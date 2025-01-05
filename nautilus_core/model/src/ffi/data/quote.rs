@@ -19,7 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{ffi::string::str_to_cstr, nanos::UnixNanos};
+use nautilus_core::{ffi::string::str_to_cstr, UnixNanos};
 
 use crate::{
     data::QuoteTick,

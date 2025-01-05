@@ -16,7 +16,7 @@
 use std::{env, time::Duration};
 
 use chrono::Utc;
-use nautilus_core::{nanos::UnixNanos, version::USER_AGENT};
+use nautilus_core::{consts::USER_AGENT, UnixNanos};
 use nautilus_model::instruments::InstrumentAny;
 
 use super::{

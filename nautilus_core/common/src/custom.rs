@@ -16,7 +16,7 @@
 //! A user custom data type.
 
 use bytes::Bytes;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::data::DataType;
 use serde::{Deserialize, Serialize};
 

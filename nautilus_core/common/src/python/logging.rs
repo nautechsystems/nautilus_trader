@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use log::LevelFilter;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;
 use ustr::Ustr;

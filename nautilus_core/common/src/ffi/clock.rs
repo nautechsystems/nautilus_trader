@@ -21,7 +21,7 @@ use std::{
 use nautilus_core::{
     correctness::FAILED,
     ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_as_str},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 use pyo3::{
     ffi,

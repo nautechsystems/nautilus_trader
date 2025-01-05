@@ -26,7 +26,7 @@ use nautilus_common::{
     messages::data::{DataRequest, Payload},
     msgbus::MessageBus,
 };
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{Bar, BarType, DataType, QuoteTick, TradeTick},

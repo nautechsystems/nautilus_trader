@@ -19,7 +19,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::OptionKind,
     identifiers::{InstrumentId, Symbol},

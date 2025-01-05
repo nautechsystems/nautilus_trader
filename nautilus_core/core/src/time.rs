@@ -29,7 +29,7 @@ use std::{
 
 use crate::{
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 
 /// Global atomic time in real-time mode for use across the system.

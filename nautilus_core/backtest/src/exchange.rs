@@ -24,8 +24,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{
     correctness::{check_equal, FAILED},
-    nanos::UnixNanos,
-    time::AtomicTime,
+    AtomicTime, UnixNanos,
 };
 use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
@@ -512,7 +511,7 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::LazyLock};
 
     use nautilus_common::{cache::Cache, msgbus::MessageBus};
-    use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+    use nautilus_core::{AtomicTime, UnixNanos};
     use nautilus_model::{
         data::{
             Bar, BarType, BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, QuoteTick,

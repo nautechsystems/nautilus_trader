@@ -15,7 +15,7 @@
 
 use nautilus_core::{
     nanos::{DurationNanos, UnixNanos},
-    uuid::UUID4,
+    UUID4,
 };
 
 use crate::{

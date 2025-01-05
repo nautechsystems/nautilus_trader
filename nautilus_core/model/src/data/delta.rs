@@ -24,8 +24,8 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_positive_u64, FAILED},
-    nanos::UnixNanos,
     serialization::Serializable,
+    UnixNanos,
 };
 use serde::{Deserialize, Serialize};
 
@@ -206,7 +206,7 @@ impl GetTsInit for OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+    use nautilus_core::{serialization::Serializable, UnixNanos};
     use rstest::rstest;
 
     use crate::{

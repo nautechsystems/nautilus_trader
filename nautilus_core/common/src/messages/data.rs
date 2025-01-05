@@ -15,7 +15,7 @@
 
 use std::{any::Any, collections::HashMap, sync::Arc};
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     data::{Data, DataType},
     identifiers::{ClientId, Venue},
