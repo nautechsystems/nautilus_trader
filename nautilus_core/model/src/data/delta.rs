@@ -22,7 +22,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{correctness::FAILED, nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{correctness::FAILED, serialization::Serializable, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use super::{

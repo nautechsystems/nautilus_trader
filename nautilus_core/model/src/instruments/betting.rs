@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{check_equal_u8, FAILED},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
