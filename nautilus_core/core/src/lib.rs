@@ -27,6 +27,7 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
+pub mod consts;
 pub mod correctness;
 pub mod datetime;
 pub mod message;
@@ -36,7 +37,6 @@ pub mod paths;
 pub mod serialization;
 pub mod time;
 pub mod uuid;
-pub mod version;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
@@ -46,3 +46,6 @@ pub mod python;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and Windows");
+
+// Re-exports
+pub use crate::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};

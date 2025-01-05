@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{TimeZone, Utc};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rstest::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;

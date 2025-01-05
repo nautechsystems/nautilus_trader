@@ -19,7 +19,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Timelike, Utc, Weekday};
 
-use crate::nanos::UnixNanos;
+use crate::UnixNanos;
 
 /// Number of milliseconds in one second.
 pub const MILLISECONDS_IN_SECOND: u64 = 1_000;

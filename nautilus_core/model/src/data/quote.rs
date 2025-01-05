@@ -26,8 +26,8 @@ use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_equal_u8, FAILED},
-    nanos::UnixNanos,
     serialization::Serializable,
+    UnixNanos,
 };
 use serde::{Deserialize, Serialize};
 
@@ -220,7 +220,7 @@ impl GetTsInit for QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+    use nautilus_core::{serialization::Serializable, UnixNanos};
     use rstest::rstest;
 
     use crate::{

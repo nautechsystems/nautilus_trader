@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use rstest::fixture;
 
 use crate::{

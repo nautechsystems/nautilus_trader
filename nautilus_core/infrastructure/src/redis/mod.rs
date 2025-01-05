@@ -21,7 +21,7 @@ pub mod msgbus;
 use std::time::Duration;
 
 use nautilus_common::msgbus::database::{DatabaseConfig, MessageBusConfig};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use semver::Version;

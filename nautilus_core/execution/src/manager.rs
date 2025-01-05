@@ -21,7 +21,7 @@ use nautilus_common::{
     logging::{CMD, EVT, SENT},
     msgbus::MessageBus,
 };
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::{
     enums::{ContingencyType, TriggerType},
     events::{

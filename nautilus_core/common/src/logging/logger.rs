@@ -28,9 +28,8 @@ use log::{
 };
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
-    nanos::UnixNanos,
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
-    uuid::UUID4,
+    UnixNanos, UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
@@ -538,7 +537,7 @@ mod tests {
     use std::{collections::HashMap, time::Duration};
 
     use log::LevelFilter;
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use nautilus_model::identifiers::TraderId;
     use rstest::*;
     use serde_json::Value;

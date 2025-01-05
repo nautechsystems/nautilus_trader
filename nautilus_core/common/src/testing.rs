@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 
 use crate::logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig};

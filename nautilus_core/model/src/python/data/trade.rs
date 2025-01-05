@@ -20,9 +20,9 @@ use std::{
 };
 
 use nautilus_core::{
-    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
+    UnixNanos,
 };
 use pyo3::{
     prelude::*,

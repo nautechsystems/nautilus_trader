@@ -34,7 +34,7 @@ use nautilus_common::{
     },
     testing::init_logger_for_testing,
 };
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     data::{
         stubs::{stub_delta, stub_deltas, stub_depth10},

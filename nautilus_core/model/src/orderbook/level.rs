@@ -17,7 +17,7 @@
 
 use std::{cmp::Ordering, collections::BTreeMap};
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
 use crate::{

@@ -16,7 +16,7 @@
 //! Common functions to support Databento adapter operations.
 
 use databento::historical::DateTimeRange;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use time::OffsetDateTime;
 
 pub const DATABENTO: &str = "DATABENTO";

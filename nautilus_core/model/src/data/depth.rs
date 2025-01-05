@@ -21,7 +21,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{serialization::Serializable, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use super::{order::BookOrder, GetTsInit};

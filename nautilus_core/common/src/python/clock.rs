@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err};
+use nautilus_core::{python::to_pyvalue_err, UnixNanos};
 use pyo3::prelude::*;
 
 use super::timer::TimeEventHandler_Py;
@@ -191,7 +191,7 @@ impl LiveClock_Py {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
 

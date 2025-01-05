@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use uuid::Uuid;
 
 fn bench_uuid4_new(c: &mut Criterion) {

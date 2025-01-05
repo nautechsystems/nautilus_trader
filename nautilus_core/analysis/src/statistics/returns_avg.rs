@@ -52,7 +52,7 @@ impl PortfolioStatistic for ReturnsAverage {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
 
     use super::*;
 

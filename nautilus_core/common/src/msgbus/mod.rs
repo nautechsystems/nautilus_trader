@@ -29,7 +29,7 @@ use std::{
 
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::{data::Data, identifiers::TraderId};
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
@@ -483,7 +483,7 @@ impl Default for MessageBus {
 #[cfg(test)]
 mod tests {
 
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use rstest::*;
     use stubs::check_handler_was_called;
 

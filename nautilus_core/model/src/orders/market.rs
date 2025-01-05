@@ -21,8 +21,7 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_predicate_false, FAILED},
-    nanos::UnixNanos,
-    uuid::UUID4,
+    UnixNanos, UUID4,
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;

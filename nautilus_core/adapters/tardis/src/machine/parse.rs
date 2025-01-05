@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,

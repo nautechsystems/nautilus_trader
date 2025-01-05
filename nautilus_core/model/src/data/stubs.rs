@@ -15,7 +15,7 @@
 
 //! Type stubs to facilitate testing.
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rstest::fixture;
 
 use super::{

@@ -25,8 +25,8 @@ use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_positive_u64, FAILED},
-    nanos::UnixNanos,
     serialization::Serializable,
+    UnixNanos,
 };
 use serde::{Deserialize, Serialize};
 
@@ -180,7 +180,7 @@ impl GetTsInit for TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+    use nautilus_core::{serialization::Serializable, UnixNanos};
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 

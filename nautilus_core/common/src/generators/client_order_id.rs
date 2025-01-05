@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::AtomicTime;
+use nautilus_core::AtomicTime;
 use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
 
 use super::get_datetime_tag;

@@ -15,9 +15,8 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    nanos::UnixNanos,
     python::{to_pyruntime_err, to_pyvalue_err},
-    uuid::UUID4,
+    UnixNanos, UUID4,
 };
 use pyo3::{
     basic::CompareOp,

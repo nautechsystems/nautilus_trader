@@ -24,7 +24,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 use crate::{
     data::order::{BookOrder, OrderId},

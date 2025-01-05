@@ -25,7 +25,7 @@ use nautilus_common::{
     msgbus::MessageBus,
     throttler::Throttler,
 };
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
 use nautilus_model::{
     accounts::{Account, AccountAny},
@@ -1078,7 +1078,7 @@ mod tests {
         },
         throttler::RateLimit,
     };
-    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+    use nautilus_core::{UnixNanos, UUID4};
     use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
     use nautilus_model::{
         accounts::{

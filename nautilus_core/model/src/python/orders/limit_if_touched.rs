@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, uuid::UUID4};
+use nautilus_core::{python::to_pyruntime_err, UUID4};
 use pyo3::prelude::*;
 use ustr::Ustr;
 

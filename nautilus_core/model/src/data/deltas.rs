@@ -23,7 +23,7 @@ use std::{
 
 use nautilus_core::{
     correctness::{check_predicate_true, FAILED},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 use serde::{Deserialize, Serialize};
 

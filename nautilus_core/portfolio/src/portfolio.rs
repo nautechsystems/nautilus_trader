@@ -1489,7 +1489,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
-    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+    use nautilus_core::{UnixNanos, UUID4};
     use nautilus_model::{
         data::QuoteTick,
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},

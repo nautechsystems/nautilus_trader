@@ -30,7 +30,7 @@ use nautilus_common::{
 use nautilus_core::{
     correctness::{self, FAILED},
     datetime::{add_n_months, subtract_n_months},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 use nautilus_model::{
     data::{
@@ -1087,7 +1087,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use nautilus_common::clock::TestClock;
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},

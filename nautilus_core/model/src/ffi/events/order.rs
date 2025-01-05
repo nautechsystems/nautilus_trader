@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{ffi::string::cstr_to_ustr, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{ffi::string::cstr_to_ustr, UnixNanos, UUID4};
 
 use crate::{
     events::{

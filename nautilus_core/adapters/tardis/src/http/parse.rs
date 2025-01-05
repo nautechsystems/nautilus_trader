@@ -16,7 +16,7 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use nautilus_core::{nanos::UnixNanos, parsing::precision_from_str};
+use nautilus_core::{parsing::precision_from_str, UnixNanos};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     enums::{AssetClass, CurrencyType},
