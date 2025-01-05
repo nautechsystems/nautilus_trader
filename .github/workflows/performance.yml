@@ -10,12 +10,20 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_IDLE_TIMEOUT: 0
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
-      CXX: "sccache clang"
+      CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     services:
       redis:
@@ -44,8 +52,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set up Rust toolchain
         run: |
@@ -81,7 +97,7 @@ jobs:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Run pre-commit  # Runs again here to check on Python 3.12
+      - name: Run pre-commit # Runs again here to check on Python 3.12
         run: |
           pre-commit run --all-files
 
