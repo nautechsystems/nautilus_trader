@@ -318,7 +318,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode.
-- `make clean`: **CAUTION** Cleans all non-source artifacts from the repository.
+- `make clean`: **CAUTION** removes all non-source artifacts from the repository.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
 - `make ruff`: Runs ruff over all files using the `pyproject.toml` config.
@@ -375,9 +375,15 @@ Then open your browser at the following address:
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/index.html) for helpful information.
 
+### Testing with Rust
+
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 
     cargo install cargo-nextest
+
+> [!NOTE]
+>
+> Rust tests will fail unless run via cargo-nextest.
 
 ## Contributing
 
