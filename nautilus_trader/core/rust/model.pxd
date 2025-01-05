@@ -42,7 +42,7 @@ cdef extern from "../includes/model.h":
 
     IF HIGH_PRECISION:
         # The maximum valid money amount which can be represented.
-        const double MONEY_MAX # = 170141183460.0
+        const double MONEY_MAX # = 17014118346046.0
 
     IF not HIGH_PRECISION:
         # The minimum valid money amount which can be represented.
@@ -50,7 +50,7 @@ cdef extern from "../includes/model.h":
 
     IF HIGH_PRECISION:
         # The minimum valid money amount which can be represented.
-        const double MONEY_MIN # = -170141183460.0
+        const double MONEY_MIN # = -17014118346046.0
 
     IF not HIGH_PRECISION:
         # The maximum valid price value which can be represented.

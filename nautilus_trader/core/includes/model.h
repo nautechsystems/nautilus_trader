@@ -62,7 +62,7 @@
 /**
  * The maximum valid money amount which can be represented.
  */
-#define MONEY_MAX 170141183460.0
+#define MONEY_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
@@ -76,7 +76,7 @@
 /**
  * The minimum valid money amount which can be represented.
  */
-#define MONEY_MIN -170141183460.0
+#define MONEY_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
