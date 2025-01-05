@@ -2,10 +2,9 @@ name: build
 
 on:
   push:
-    # branches: [master, nightly, develop]  # TODO: Pause CI for now
-    branches: [master, nightly]
-  pull_request:
-    branches: [develop]
+    branches: [master, nightly, develop]
+  # pull_request:  # TODO: Pause CI for now
+  #   branches: [develop]
 
 jobs:
   pre-commit:
