@@ -68,55 +68,55 @@ impl PositionStatusReport {
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_account_id(&self) -> AccountId {
+    const fn py_account_id(&self) -> AccountId {
         self.account_id
     }
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
+    const fn py_instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
     #[getter]
     #[pyo3(name = "strategy_id")]
-    fn py_strategy_id(&self) -> InstrumentId {
+    const fn py_strategy_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
     #[getter]
     #[pyo3(name = "venue_position_id")]
-    fn py_venue_position_id(&self) -> Option<PositionId> {
+    const fn py_venue_position_id(&self) -> Option<PositionId> {
         self.venue_position_id
     }
 
     #[getter]
     #[pyo3(name = "position_side")]
-    fn py_position_side(&self) -> PositionSide {
+    const fn py_position_side(&self) -> PositionSide {
         self.position_side
     }
 
     #[getter]
     #[pyo3(name = "quantity")]
-    fn py_quantity(&self) -> Quantity {
+    const fn py_quantity(&self) -> Quantity {
         self.quantity
     }
 
     #[getter]
     #[pyo3(name = "report_id")]
-    fn py_report_id(&self) -> UUID4 {
+    const fn py_report_id(&self) -> UUID4 {
         self.report_id
     }
 
     #[getter]
     #[pyo3(name = "ts_last")]
-    fn py_ts_last(&self) -> u64 {
+    const fn py_ts_last(&self) -> u64 {
         self.ts_last.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 

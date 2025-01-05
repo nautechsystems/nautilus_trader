@@ -49,6 +49,7 @@ pub struct ExecutionMassStatus {
 
 impl ExecutionMassStatus {
     /// Creates a new execution mass status report.
+    #[must_use]
     pub fn new(
         client_id: ClientId,
         account_id: AccountId,
@@ -69,16 +70,19 @@ impl ExecutionMassStatus {
     }
 
     /// Get a copy of the order reports map.
+    #[must_use]
     pub fn order_reports(&self) -> IndexMap<VenueOrderId, OrderStatusReport> {
         self.order_reports.clone()
     }
 
     /// Get a copy of the fill reports map.
+    #[must_use]
     pub fn fill_reports(&self) -> IndexMap<VenueOrderId, Vec<FillReport>> {
         self.fill_reports.clone()
     }
 
     /// Get a copy of the position reports map.
+    #[must_use]
     pub fn position_reports(&self) -> IndexMap<InstrumentId, Vec<PositionStatusReport>> {
         self.position_reports.clone()
     }

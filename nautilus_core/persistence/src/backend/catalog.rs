@@ -68,6 +68,7 @@ impl ParquetDataCatalog {
         );
     }
 
+    #[must_use]
     pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Vec<RecordBatch>
     where
         T: GetTsInit + EncodeToRecordBatch,
@@ -129,6 +130,7 @@ impl ParquetDataCatalog {
         json_path
     }
 
+    #[must_use]
     pub fn write_to_parquet<T>(
         &self,
         data: Vec<T>,
@@ -240,11 +242,11 @@ impl ParquetDataCatalog {
             }
         }
 
-        self.write_to_parquet(delta, None, None, None);
-        self.write_to_parquet(depth10, None, None, None);
-        self.write_to_parquet(quote, None, None, None);
-        self.write_to_parquet(trade, None, None, None);
-        self.write_to_parquet(bar, None, None, None);
+        let _ = self.write_to_parquet(delta, None, None, None);
+        let _ = self.write_to_parquet(depth10, None, None, None);
+        let _ = self.write_to_parquet(quote, None, None, None);
+        let _ = self.write_to_parquet(trade, None, None, None);
+        let _ = self.write_to_parquet(bar, None, None, None);
     }
 }
 

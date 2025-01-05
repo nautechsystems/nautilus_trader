@@ -95,85 +95,85 @@ impl FillReport {
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_account_id(&self) -> AccountId {
+    const fn py_account_id(&self) -> AccountId {
         self.account_id
     }
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
+    const fn py_instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
     #[getter]
     #[pyo3(name = "venue_order_id")]
-    fn py_venue_order_id(&self) -> VenueOrderId {
+    const fn py_venue_order_id(&self) -> VenueOrderId {
         self.venue_order_id
     }
 
     #[getter]
     #[pyo3(name = "trade_id")]
-    fn py_trade_id(&self) -> TradeId {
+    const fn py_trade_id(&self) -> TradeId {
         self.trade_id
     }
 
     #[getter]
     #[pyo3(name = "order_side")]
-    fn py_order_side(&self) -> OrderSide {
+    const fn py_order_side(&self) -> OrderSide {
         self.order_side
     }
 
     #[getter]
     #[pyo3(name = "last_qty")]
-    fn py_last_qty(&self) -> Quantity {
+    const fn py_last_qty(&self) -> Quantity {
         self.last_qty
     }
 
     #[getter]
     #[pyo3(name = "last_px")]
-    fn py_last_px(&self) -> Price {
+    const fn py_last_px(&self) -> Price {
         self.last_px
     }
 
     #[getter]
     #[pyo3(name = "commission")]
-    fn py_commission(&self) -> Money {
+    const fn py_commission(&self) -> Money {
         self.commission
     }
 
     #[getter]
     #[pyo3(name = "liquidity_side")]
-    fn py_liquidity_side(&self) -> LiquiditySide {
+    const fn py_liquidity_side(&self) -> LiquiditySide {
         self.liquidity_side
     }
 
     #[getter]
     #[pyo3(name = "report_id")]
-    fn py_report_id(&self) -> UUID4 {
+    const fn py_report_id(&self) -> UUID4 {
         self.report_id
     }
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "client_order_id")]
-    fn py_client_order_id(&self) -> Option<ClientOrderId> {
+    const fn py_client_order_id(&self) -> Option<ClientOrderId> {
         self.client_order_id
     }
 
     #[getter]
     #[pyo3(name = "venue_position_id")]
-    fn py_venue_position_id(&self) -> Option<PositionId> {
+    const fn py_venue_position_id(&self) -> Option<PositionId> {
         self.venue_position_id
     }
 
