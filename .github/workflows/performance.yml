@@ -163,7 +163,7 @@ jobs:
 
       # Run codspeed once only
       - name: Run benchmarks
-        uses: CodSpeedHQ/action@v3.2
+        uses: CodSpeedHQ/action@v3.2.0
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
           run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
