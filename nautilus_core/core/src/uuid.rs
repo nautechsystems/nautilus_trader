@@ -87,14 +87,16 @@ impl UUID4 {
 
     fn validate_v4(uuid: &Uuid) {
         // Validate this is a v4 UUID
-        if uuid.get_version() != Some(uuid::Version::Random) {
-            panic!("UUID is not version 4");
-        }
+        assert!(
+            !(uuid.get_version() != Some(uuid::Version::Random)),
+            "UUID is not version 4"
+        );
 
         // Validate RFC4122 variant
-        if uuid.get_variant() != uuid::Variant::RFC4122 {
-            panic!("UUID is not RFC 4122 variant");
-        }
+        assert!(
+            !(uuid.get_variant() != uuid::Variant::RFC4122),
+            "UUID is not RFC 4122 variant"
+        );
     }
 
     fn from_validated_uuid(uuid: &Uuid) -> Self {
