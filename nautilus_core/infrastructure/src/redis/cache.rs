@@ -27,7 +27,7 @@ use nautilus_common::{
     runtime::get_runtime,
     signal::Signal,
 };
-use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{correctness::check_slice_not_empty, UnixNanos, UUID4};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,

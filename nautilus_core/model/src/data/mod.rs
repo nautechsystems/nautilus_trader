@@ -36,7 +36,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 

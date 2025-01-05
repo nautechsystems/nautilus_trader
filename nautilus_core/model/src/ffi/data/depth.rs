@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 use crate::{
     data::{

@@ -29,12 +29,12 @@ use pyo3::{
 };
 
 use crate::{
+    consts::{NAUTILUS_VERSION, USER_AGENT},
     datetime::{
         MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
         NANOSECONDS_IN_SECOND,
     },
-    uuid::UUID4,
-    version::{NAUTILUS_VERSION, USER_AGENT},
+    UUID4,
 };
 
 /// Gets the type name for the given Python `obj`.

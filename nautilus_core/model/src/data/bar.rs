@@ -28,8 +28,8 @@ use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_predicate_true, FAILED},
-    nanos::UnixNanos,
     serialization::Serializable,
+    UnixNanos,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{python::to_pyvalue_err, uuid::UUID4};
+use nautilus_core::{python::to_pyvalue_err, UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,

@@ -22,7 +22,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
+use nautilus_core::{AtomicTime, UnixNanos, UUID4};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},

@@ -33,7 +33,7 @@ pub mod winner_min;
 
 use std::collections::BTreeMap;
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 fn transform_returns(raw_returns: BTreeMap<u64, f64>) -> BTreeMap<UnixNanos, f64> {
     raw_returns

@@ -57,7 +57,7 @@ impl PortfolioStatistic for ProfitFactor {
 mod profit_factor_tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
 
     use super::*;
 

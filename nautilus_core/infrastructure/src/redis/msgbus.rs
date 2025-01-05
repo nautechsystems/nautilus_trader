@@ -33,7 +33,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     time::{duration_since_unix_epoch, get_atomic_clock_realtime},
-    uuid::UUID4,
+    UUID4,
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;

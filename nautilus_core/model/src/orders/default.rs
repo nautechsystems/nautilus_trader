@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 
 use super::{
     limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,

@@ -19,7 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use crate::uuid::UUID4;
+use crate::UUID4;
 
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {

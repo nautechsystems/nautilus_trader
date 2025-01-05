@@ -21,7 +21,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -525,7 +525,7 @@ impl Display for Position {
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use crate::{

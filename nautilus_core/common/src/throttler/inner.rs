@@ -15,7 +15,7 @@
 
 use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
-use nautilus_core::{correctness::FAILED, nanos::UnixNanos};
+use nautilus_core::{correctness::FAILED, UnixNanos};
 
 use super::Throttler;
 use crate::{clock::Clock, timer::TimeEventCallback};

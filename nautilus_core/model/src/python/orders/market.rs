@@ -16,7 +16,7 @@
 use indexmap::IndexMap;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
-    uuid::UUID4,
+    UUID4,
 };
 use pyo3::{
     basic::CompareOp,

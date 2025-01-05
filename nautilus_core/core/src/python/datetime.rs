@@ -22,7 +22,7 @@ use crate::{
         nanos_to_micros, nanos_to_millis, nanos_to_secs, secs_to_millis, secs_to_nanos,
         unix_nanos_to_iso8601, unix_nanos_to_iso8601_millis,
     },
-    nanos::UnixNanos,
+    UnixNanos,
 };
 
 /// Return round nanoseconds (ns) converted from the given seconds.

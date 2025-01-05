@@ -65,7 +65,7 @@ impl PortfolioStatistic for LongRatio {
 mod tests {
     use std::collections::HashMap;
 
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::OrderSide,
         identifiers::{

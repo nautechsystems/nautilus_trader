@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     types::{Price, Quantity},

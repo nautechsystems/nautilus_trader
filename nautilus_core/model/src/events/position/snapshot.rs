@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{

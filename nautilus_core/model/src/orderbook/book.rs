@@ -18,7 +18,7 @@
 use std::fmt::Display;
 
 use indexmap::IndexMap;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel};

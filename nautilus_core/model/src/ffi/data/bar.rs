@@ -22,7 +22,7 @@ use std::{
 
 use nautilus_core::{
     ffi::string::{cstr_as_str, str_to_cstr},
-    nanos::UnixNanos,
+    UnixNanos,
 };
 
 use crate::{

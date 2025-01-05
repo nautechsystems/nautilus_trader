@@ -16,7 +16,7 @@
 //! Factories for constructing domain objects such as orders.
 
 use indexmap::IndexMap;
-use nautilus_core::{time::AtomicTime, uuid::UUID4};
+use nautilus_core::{AtomicTime, UUID4};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce},
     identifiers::{

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, QuoteTick, TradeTick},
     identifiers::{InstrumentId, TradeId},

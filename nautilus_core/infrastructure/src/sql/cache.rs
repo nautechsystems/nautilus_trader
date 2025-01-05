@@ -22,7 +22,7 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
 };
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},

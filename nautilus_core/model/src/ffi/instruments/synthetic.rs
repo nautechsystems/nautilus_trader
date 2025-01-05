@@ -24,7 +24,7 @@ use nautilus_core::{
         parsing::{bytes_to_string_vec, string_vec_to_bytes},
         string::{cstr_as_str, str_to_cstr},
     },
-    nanos::UnixNanos,
+    UnixNanos,
 };
 
 use crate::{

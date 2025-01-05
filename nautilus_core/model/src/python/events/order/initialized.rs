@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{nanos::UnixNanos, python::serialization::from_dict_pyo3, uuid::UUID4};
+use nautilus_core::{python::serialization::from_dict_pyo3, UnixNanos, UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,

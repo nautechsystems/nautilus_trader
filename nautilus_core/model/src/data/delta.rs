@@ -203,7 +203,7 @@ impl GetTsInit for OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+    use nautilus_core::{serialization::Serializable, UnixNanos};
     use rstest::rstest;
 
     use crate::{

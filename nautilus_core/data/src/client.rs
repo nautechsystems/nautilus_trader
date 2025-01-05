@@ -33,7 +33,7 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
 };
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     data::{Bar, BarType, DataType, QuoteTick, TradeTick},
     enums::BookType,

@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
 
 use super::any::OrderAny;
 use crate::{

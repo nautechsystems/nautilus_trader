@@ -41,7 +41,7 @@ use nautilus_common::{
     logging::{CMD, EVT, RECV},
     msgbus::MessageBus,
 };
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::{
     enums::{ContingencyType, OmsType, OrderSide, PositionSide},
     events::{

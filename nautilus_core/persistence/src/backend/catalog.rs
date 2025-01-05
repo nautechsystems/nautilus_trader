@@ -19,7 +19,7 @@ use datafusion::{arrow::record_batch::RecordBatch, error::Result};
 use heck::ToSnakeCase;
 use itertools::Itertools;
 use log::info;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::data::{
     Bar, Data, GetTsInit, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
 };

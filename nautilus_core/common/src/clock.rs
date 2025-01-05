@@ -27,8 +27,8 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
-    nanos::UnixNanos,
-    time::{get_atomic_clock_realtime, AtomicTime},
+    time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos,
 };
 use tokio::sync::Mutex;
 use ustr::Ustr;

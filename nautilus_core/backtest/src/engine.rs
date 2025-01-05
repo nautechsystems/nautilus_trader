@@ -16,7 +16,7 @@
 //! The core `BacktestEngine` for backtesting on historical data.
 
 use nautilus_common::{clock::TestClock, timer::TimeEventHandlerV2};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
@@ -62,7 +62,7 @@ impl Default for TimeEventAccumulator {
 #[cfg(test)]
 mod tests {
     use nautilus_common::timer::{TimeEvent, TimeEventCallback};
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use pyo3::{prelude::*, types::PyList, Py, Python};
     use rstest::*;
     use ustr::Ustr;

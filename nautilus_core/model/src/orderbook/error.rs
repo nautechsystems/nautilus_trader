@@ -15,7 +15,7 @@
 
 //! Errors associated with order book operations and integrity.
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 use super::ladder::BookPrice;
 use crate::enums::{BookType, OrderSide};

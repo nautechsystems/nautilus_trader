@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{python::serialization::from_dict_pyo3, uuid::UUID4};
+use nautilus_core::{python::serialization::from_dict_pyo3, UUID4};
 use nautilus_model::{
     enums::PositionSide,
     identifiers::{AccountId, InstrumentId, PositionId},
