@@ -80,7 +80,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.5
+    rev: v0.8.6
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -137,7 +137,7 @@ repos:
     hooks:
       - id: poetry-lock-check
         name: poetry-lock-check
-        entry: poetry lock --check
+        entry: poetry check --lock
         language: system
         types: [python]
         pass_filenames: false
