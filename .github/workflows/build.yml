@@ -79,7 +79,6 @@ jobs:
         continue-on-error: true
         run: |
           pre-commit run --all-files
-          # sccache --show-stats
 
       - name: Add PR comment on failure
         if: failure() && github.event_name == 'pull_request'
@@ -232,7 +231,6 @@ jobs:
         run: |
           make install-cli
           nautilus database init --schema ${{ github.workspace }}/schema
-          # sccache --show-stats
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -248,7 +246,6 @@ jobs:
       - name: Run nautilus_core tests
         run: |
           make cargo-test
-          # sccache --show-stats
 
       - name: Update version in pyproject.toml
         run: |
@@ -291,7 +288,6 @@ jobs:
         run: |
           poetry build --format wheel
           ls -lh dist/
-          # sccache --show-stats
 
       - name: Install Python wheel
         run: |
