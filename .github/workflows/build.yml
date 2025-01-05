@@ -61,8 +61,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: ${{ matrix.os }}-sccache-pre-commit-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: ${{ matrix.os }}-sccache-pre-commit-
+          key: ${{ runner.os }}-sccache-pre-commit-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-sccache-pre-commit-
 
       - name: Run sccache
         uses: mozilla-actions/sccache-action@v0.0.7
