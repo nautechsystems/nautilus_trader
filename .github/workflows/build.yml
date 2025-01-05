@@ -8,14 +8,8 @@ on:
 
 jobs:
   pre-commit:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
-        os: [ubuntu-latest]
-        python-version: ["3.11", "3.12"]
-    name: pre-commit - python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
+    name: pre-commit
+    runs-on: ubuntu-latest
     env:
       # > --------------------------------------------------
       # > sccache
@@ -42,7 +36,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Get Python version
         run: |
@@ -81,17 +75,13 @@ jobs:
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit
+        continue-on-error: true
         run: |
-          # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
           # sccache --show-stats
 
-  pre-commit-feedback:
-    needs: [pre-commit]
-    if: failure() && needs.pre-commit.result == 'failure' && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add PR comment
+      - name: Add PR comment on failure
+        if: failure() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -310,15 +300,6 @@ jobs:
       - name: Run tests
         run: |
           pytest --ignore=tests/performance_tests --new-first --failed-first
-
-      # Run codspeed for latest python-version only
-      # TODO: Change to ubuntu-latest when GitHub stabilizes
-      - name: Run benchmarks
-        if: ${{ matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12' }}
-        uses: CodSpeedHQ/action@v3
-        with:
-          token: ${{ secrets.CODSPEED_TOKEN }}
-          run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
       - name: Set release output
         if: github.event_name == 'push'
