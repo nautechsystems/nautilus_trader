@@ -61,31 +61,31 @@ impl ExecutionMassStatus {
 
     #[getter]
     #[pyo3(name = "client_id")]
-    fn py_client_id(&self) -> ClientId {
+    const fn py_client_id(&self) -> ClientId {
         self.client_id
     }
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_account_id(&self) -> AccountId {
+    const fn py_account_id(&self) -> AccountId {
         self.account_id
     }
 
     #[getter]
     #[pyo3(name = "venue")]
-    fn py_venue(&self) -> Venue {
+    const fn py_venue(&self) -> Venue {
         self.venue
     }
 
     #[getter]
     #[pyo3(name = "report_id")]
-    fn py_report_id(&self) -> UUID4 {
+    const fn py_report_id(&self) -> UUID4 {
         self.report_id
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 
@@ -142,20 +142,20 @@ impl ExecutionMassStatus {
         dict.set_item("ts_init", self.ts_init.as_u64())?;
 
         let order_reports_dict = PyDict::new_bound(py);
-        for (key, value) in self.order_reports().iter() {
+        for (key, value) in &self.order_reports() {
             order_reports_dict.set_item(key.to_string(), value.py_to_dict(py)?)?;
         }
         dict.set_item("order_reports", order_reports_dict)?;
 
         let fill_reports_dict = PyDict::new_bound(py);
-        for (key, value) in self.fill_reports().iter() {
+        for (key, value) in &self.fill_reports() {
             let reports: PyResult<Vec<_>> = value.iter().map(|r| r.py_to_dict(py)).collect();
             fill_reports_dict.set_item(key.to_string(), reports?)?;
         }
         dict.set_item("fill_reports", fill_reports_dict)?;
 
         let position_reports_dict = PyDict::new_bound(py);
-        for (key, value) in self.position_reports().iter() {
+        for (key, value) in &self.position_reports() {
             let reports: PyResult<Vec<_>> = value.iter().map(|r| r.py_to_dict(py)).collect();
             position_reports_dict.set_item(key.to_string(), reports?)?;
         }

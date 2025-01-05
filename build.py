@@ -50,9 +50,12 @@ else:
 
 TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
+use_sccache = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
+
 if platform.system() == "Linux":
     # Use clang as the default compiler
-    os.environ["CC"] = "clang"
+    os.environ["CC"] = "sccache clang" if use_sccache else "clang"
+    os.environ["CXX"] = "sccache clang++" if use_sccache else "clang++"
     os.environ["LDSHARED"] = "clang -shared"
 
 if platform.system() == "Darwin" and platform.machine() == "arm64":

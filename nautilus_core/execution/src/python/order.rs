@@ -176,97 +176,97 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_account_id(&self) -> AccountId {
+    const fn py_account_id(&self) -> AccountId {
         self.account_id
     }
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
+    const fn py_instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
     #[getter]
     #[pyo3(name = "venue_order_id")]
-    fn py_venue_order_id(&self) -> VenueOrderId {
+    const fn py_venue_order_id(&self) -> VenueOrderId {
         self.venue_order_id
     }
 
     #[getter]
     #[pyo3(name = "order_side")]
-    fn py_order_side(&self) -> OrderSide {
+    const fn py_order_side(&self) -> OrderSide {
         self.order_side
     }
 
     #[getter]
     #[pyo3(name = "order_type")]
-    fn py_order_type(&self) -> OrderType {
+    const fn py_order_type(&self) -> OrderType {
         self.order_type
     }
 
     #[getter]
     #[pyo3(name = "time_in_force")]
-    fn py_time_in_force(&self) -> TimeInForce {
+    const fn py_time_in_force(&self) -> TimeInForce {
         self.time_in_force
     }
 
     #[getter]
     #[pyo3(name = "order_status")]
-    fn py_order_status(&self) -> OrderStatus {
+    const fn py_order_status(&self) -> OrderStatus {
         self.order_status
     }
 
     #[getter]
     #[pyo3(name = "quantity")]
-    fn py_quantity(&self) -> Quantity {
+    const fn py_quantity(&self) -> Quantity {
         self.quantity
     }
 
     #[getter]
     #[pyo3(name = "filled_qty")]
-    fn py_filled_qty(&self) -> Quantity {
+    const fn py_filled_qty(&self) -> Quantity {
         self.filled_qty
     }
 
     #[getter]
     #[pyo3(name = "report_id")]
-    fn py_report_id(&self) -> UUID4 {
+    const fn py_report_id(&self) -> UUID4 {
         self.report_id
     }
 
     #[getter]
     #[pyo3(name = "ts_accepted")]
-    fn py_ts_accepted(&self) -> u64 {
+    const fn py_ts_accepted(&self) -> u64 {
         self.ts_accepted.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_last")]
-    fn py_ts_last(&self) -> u64 {
+    const fn py_ts_last(&self) -> u64 {
         self.ts_last.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "client_order_id")]
-    fn py_client_order_id(&self) -> Option<ClientOrderId> {
+    const fn py_client_order_id(&self) -> Option<ClientOrderId> {
         self.client_order_id
     }
 
     #[getter]
     #[pyo3(name = "order_list_id")]
-    fn py_order_list_id(&self) -> Option<OrderListId> {
+    const fn py_order_list_id(&self) -> Option<OrderListId> {
         self.order_list_id
     }
 
     #[getter]
     #[pyo3(name = "contingency_type")]
-    fn py_contingency_type(&self) -> ContingencyType {
+    const fn py_contingency_type(&self) -> ContingencyType {
         self.contingency_type
     }
 
@@ -278,61 +278,61 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "price")]
-    fn py_price(&self) -> Option<Price> {
+    const fn py_price(&self) -> Option<Price> {
         self.price
     }
 
     #[getter]
     #[pyo3(name = "trigger_price")]
-    fn py_trigger_price(&self) -> Option<Price> {
+    const fn py_trigger_price(&self) -> Option<Price> {
         self.trigger_price
     }
 
     #[getter]
     #[pyo3(name = "trigger_type")]
-    fn py_trigger_type(&self) -> Option<TriggerType> {
+    const fn py_trigger_type(&self) -> Option<TriggerType> {
         self.trigger_type
     }
 
     #[getter]
     #[pyo3(name = "limit_offset")]
-    fn py_limit_offset(&self) -> Option<Price> {
+    const fn py_limit_offset(&self) -> Option<Price> {
         self.limit_offset
     }
 
     #[getter]
     #[pyo3(name = "trailing_offset")]
-    fn py_trailing_offset(&self) -> Option<Price> {
+    const fn py_trailing_offset(&self) -> Option<Price> {
         self.trailing_offset
     }
 
     #[getter]
     #[pyo3(name = "trailing_offset_type")]
-    fn py_trailing_offset_type(&self) -> TrailingOffsetType {
+    const fn py_trailing_offset_type(&self) -> TrailingOffsetType {
         self.trailing_offset_type
     }
 
     #[getter]
     #[pyo3(name = "avg_px")]
-    fn py_avg_px(&self) -> Option<f64> {
+    const fn py_avg_px(&self) -> Option<f64> {
         self.avg_px
     }
 
     #[getter]
     #[pyo3(name = "display_qty")]
-    fn py_display_qty(&self) -> Option<Quantity> {
+    const fn py_display_qty(&self) -> Option<Quantity> {
         self.display_qty
     }
 
     #[getter]
     #[pyo3(name = "post_only")]
-    fn py_post_only(&self) -> bool {
+    const fn py_post_only(&self) -> bool {
         self.post_only
     }
 
     #[getter]
     #[pyo3(name = "reduce_only")]
-    fn py_reduce_only(&self) -> bool {
+    const fn py_reduce_only(&self) -> bool {
         self.reduce_only
     }
 

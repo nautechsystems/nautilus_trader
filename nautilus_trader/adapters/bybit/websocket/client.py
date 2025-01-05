@@ -193,9 +193,8 @@ class BybitWebSocketClient:
             if self._auth_required:
                 await self._authenticate()
 
-            if self._is_private:
-                # Re-subscribe to all streams
-                await self._subscribe_all()
+            # Re-subscribe to all streams
+            await self._subscribe_all()
 
             if self._handler_reconnect:
                 await self._handler_reconnect()

@@ -18,12 +18,20 @@ jobs:
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
     env:
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
+      SCCACHE_IDLE_TIMEOUT: 0
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
-      CXX: "sccache clang"
+      CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -46,8 +54,16 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set up Rust toolchain
         run: |
@@ -120,12 +136,20 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_IDLE_TIMEOUT: 0
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
       RUSTC_WRAPPER: "sccache"
       CC: "sccache clang"
-      CXX: "sccache clang"
+      CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -145,8 +169,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set up Rust toolchain
         run: |
@@ -220,7 +252,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-latest, windows-latest]  # Change to ubuntu-latest when GitHub stabilizes
+        os: [ubuntu-22.04, ubuntu-24.04, macos-latest, windows-latest] # Change to ubuntu-latest when GitHub stabilizes
         python-version: ["3.11", "3.12"]
     defaults:
       run:
@@ -229,9 +261,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: release
+      # > --------------------------------------------------
+      # > sccache
       # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_IDLE_TIMEOUT: 0
+      SCCACHE_DIRECT: "true"
       SCCACHE_CACHE_MULTIARCH: 1
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -259,22 +298,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
-
-      - name: Set sccache-cache env vars (non-Windows)
+      - name: Set sccache env vars (non-Windows)
         if: runner.os != 'Windows'
         run: |
+          echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
           echo "CC=sccache clang" >> $GITHUB_ENV
-          echo "CXX=sccache clang" >> $GITHUB_ENV
+          echo "CXX=sccache clang++" >> $GITHUB_ENV
 
-      - name: Set sccache-cache env vars (Windows)
+      - name: Set sccache env vars (Windows)
         if: runner.os == 'Windows'
         run: |
-          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
-          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
+          echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
+
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ matrix.os }}-sccache-build-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: ${{ matrix.os }}-sccache-build-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set up Rust toolchain
         run: |

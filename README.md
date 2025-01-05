@@ -111,8 +111,10 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 > “The intent of this project is to be free of soundness bugs.
 > The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
 
-**MSRV:** NautilusTrader relies heavily on improvements in the Rust language and compiler.
-As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the latest stable release of Rust.
+> [!NOTE]
+>
+> **MSRV:** NautilusTrader relies heavily on improvements in the Rust language and compiler.
+> As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the latest stable release of Rust.
 
 ## Architecture (data flow)
 
@@ -157,9 +159,11 @@ We aim to maintain a stable, passing build across all branches.
 - `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
 - `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
 
-Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
-Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
-This approach allows us to maintain a rapid development pace for now.
+> [!NOTE]
+>
+> Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+> Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+> This approach allows us to maintain a rapid development pace for now.
 
 ## Versioning and releases
 
@@ -203,9 +207,9 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 - `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
 - `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
-| :warning: WARNING |
-| :---------------- |
-**We don't recommend using development wheels in production environments, such as live trading controlling real capital.**
+> [!WARNING]
+>
+> We don't recommend using development wheels in production environments, such as live trading controlling real capital.
 
 #### Installation commands
 
@@ -356,123 +360,15 @@ Then open your browser at the following address:
 
     http://127.0.0.1:8888/lab
 
-| :warning: WARNING |
-| :---------------- |
-
-**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
-logging will cause the notebook to hang during cell execution. We are investigating a fix, which
-may involve either raising the configured rate limits for Jupyter or throttling the log flushing
-from Nautilus.**
-- https://github.com/jupyterlab/jupyterlab/issues/12845
-- https://github.com/deshaw/jupyterlab-limit-output
-
-## Minimal Strategy
-
-The following is a minimal EMA Cross strategy example that uses bar data. While this platform
-supports very advanced trading strategies, it is also possible to create simple ones. Start by
-inheriting from the `Strategy` base class and implement only the methods required by your strategy.
-
-```python
-class EMACross(Strategy):
-    """
-    A simple moving average cross example strategy.
-
-    When the fast EMA crosses the slow EMA then enters a position at the market
-    in that direction.
-
-    Cancels all orders and closes all positions on stop.
-    """
-
-    def __init__(self, config: EMACrossConfig) -> None:
-        super().__init__(config)
-
-        self.instrument: Instrument | None = None  # Initialized in on_start
-
-        # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
-        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
-
-    def on_start(self) -> None:
-        """
-        Actions to be performed on strategy start.
-        """
-        # Get instrument
-        self.instrument = self.cache.instrument(self.config.instrument_id)
-
-        # Register the indicators for updating
-        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
-
-        # Get historical data
-        self.request_bars(self.config.bar_type)
-
-        # Subscribe to live data
-        self.subscribe_bars(self.config.bar_type)
-
-    def on_bar(self, bar: Bar) -> None:
-        """
-        Actions to be performed when the strategy receives a bar.
-        """
-        # BUY LOGIC
-        if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
-                self.buy()
-            elif self.portfolio.is_net_short(self.config.instrument_id):
-                self.close_all_positions(self.config.instrument_id)
-                self.buy()
-        # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
-                self.sell()
-            elif self.portfolio.is_net_long(self.config.instrument_id):
-                self.close_all_positions(self.config.instrument_id)
-                self.sell()
-
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        order: MarketOrder = self.order_factory.market(
-            instrument_id=self.config.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.config.trade_size),
-        )
-
-        self.submit_order(order)
-
-    def sell(self) -> None:
-        """
-        Users simple sell method (example).
-        """
-        order: MarketOrder = self.order_factory.market(
-            instrument_id=self.config.instrument_id,
-            order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.trade_size),
-        )
-
-        self.submit_order(order)
-
-    def on_stop(self) -> None:
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        # Cleanup orders and positions
-        self.cancel_all_orders(self.config.instrument_id)
-        self.close_all_positions(self.config.instrument_id)
-
-        # Unsubscribe from data
-        self.unsubscribe_bars(self.config.bar_type)
-
-    def on_reset(self) -> None:
-        """
-        Actions to be performed when the strategy is reset.
-        """
-        # Reset indicators here
-        self.fast_ema.reset()
-        self.slow_ema.reset()
-
-```
+> [!WARNING]
+>
+> NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
+> As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
+> logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+> may involve either raising the configured rate limits for Jupyter or throttling the log flushing
+> from Nautilus.
+> - https://github.com/jupyterlab/jupyterlab/issues/12845
+> - https://github.com/deshaw/jupyterlab-limit-output
 
 ## Development
 
