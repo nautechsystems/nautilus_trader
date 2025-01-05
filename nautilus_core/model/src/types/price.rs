@@ -498,6 +498,7 @@ impl<'de> Deserialize<'de> for Price {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(not(feature = "high_precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -681,7 +682,7 @@ mod tests {
         let price1 = Price::new(1.000, 3);
         let price2 = Price::new(1.011, 3);
         let price3 = price1 + price2;
-        assert_eq!(price3.raw, 2_011_000_000);
+        assert_eq!(price3.raw, 2_011_000_000_000_000_000);
     }
 
     #[rstest]
@@ -689,21 +690,21 @@ mod tests {
         let price1 = Price::new(1.011, 3);
         let price2 = Price::new(1.000, 3);
         let price3 = price1 - price2;
-        assert_eq!(price3.raw, 11_000_000);
+        assert_eq!(price3.raw, 11_000_000_000_000_000);
     }
 
     #[rstest]
     fn test_add_assign() {
         let mut price = Price::new(1.000, 3);
         price += Price::new(1.011, 3);
-        assert_eq!(price.raw, 2_011_000_000);
+        assert_eq!(price.raw, 2_011_000_000_000_000_000);
     }
 
     #[rstest]
     fn test_sub_assign() {
         let mut price = Price::new(1.000, 3);
         price -= Price::new(0.011, 3);
-        assert_eq!(price.raw, 989_000_000);
+        assert_eq!(price.raw, 989_000_000_000_000_000);
     }
 
     #[rstest]

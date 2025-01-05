@@ -219,7 +219,7 @@ mod tests {
     }
 
     #[ignore = "High precision issue"]
-    #[test]
+    #[rstest]
     fn test_maker_taker_fee_model_taker_commission() {
         let fee_model = MakerTakerFeeModel;
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());

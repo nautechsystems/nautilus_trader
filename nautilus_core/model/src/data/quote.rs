@@ -287,17 +287,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PriceType::Bid, 10_000_000_000_000)]
-    #[case(PriceType::Ask, 10_001_000_000_000)]
-    #[case(PriceType::Mid, 10_000_500_000_000)]
-    #[cfg(not(feature = "high_precision"))]
+    #[case(PriceType::Bid, Price::from("10000.0000"))]
+    #[case(PriceType::Ask, Price::from("10001.0000"))]
+    #[case(PriceType::Mid, Price::from("10000.5000"))]
     fn test_extract_price(
         #[case] input: PriceType,
-        #[case] expected: i64,
+        #[case] expected: Price,
         quote_ethusdt_binance: QuoteTick,
     ) {
         let quote = quote_ethusdt_binance;
-        let result = quote.extract_price(input).raw;
+        let result = quote.extract_price(input);
         assert_eq!(result, expected);
     }
 

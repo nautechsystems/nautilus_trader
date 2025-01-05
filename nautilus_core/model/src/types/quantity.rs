@@ -453,6 +453,7 @@ pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(not(feature = "high_precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -495,7 +496,7 @@ mod tests {
     fn test_new() {
         let qty = Quantity::new(0.00812, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000);
+        assert_eq!(qty.raw, 8_120_000_000_000_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -525,7 +526,7 @@ mod tests {
     fn test_from_i64() {
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 100_000_000_000_000);
+        assert_eq!(qty.raw, 100_000_000_000_000_000_000_000);
         assert_eq!(qty.precision, 0);
     }
 

@@ -187,8 +187,9 @@ mod tests {
         types::{Price, Quantity},
     };
 
+    #[cfg(feature = "high_precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
-    #[should_panic(expected = "invalid u64 for 'size.raw' not positive, was 0")]
+    #[should_panic(expected = "invalid u128 for 'size.raw' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");

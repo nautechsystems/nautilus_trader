@@ -274,11 +274,12 @@ mod tests {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
     }
 
+    #[cfg(feature = "high_precision")] // TODO: Add test for 64-bit precision
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision() {
-        // Precision out of range for fixed
-        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
+        // Precision greater than maximum
+        let _ = Currency::new("USD", 19, 840, "United States dollar", CurrencyType::Fiat);
     }
 
     #[rstest]

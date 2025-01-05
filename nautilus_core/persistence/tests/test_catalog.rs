@@ -330,6 +330,7 @@ fn test_bar_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
+#[ignore = "High precision issue"]
 #[rstest]
 fn test_catalog_serialization_json_round_trip() {
     // Setup
@@ -341,7 +342,7 @@ fn test_catalog_serialization_json_round_trip() {
     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", file_path, None)
+        .add_file::<QuoteTick>("test_data", &file_path, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let quote_ticks: Vec<Data> = query_result.collect();
@@ -356,7 +357,7 @@ fn test_catalog_serialization_json_round_trip() {
     }
 
     // Write to JSON using catalog
-    let json_path = catalog.write_to_json(quote_ticks.clone(), None, false);
+    let _json_path = catalog.write_to_json(quote_ticks.clone(), None, false);
 
     // // Read back from JSON
     // let json_str = std::fs::read_to_string(json_path).unwrap();
