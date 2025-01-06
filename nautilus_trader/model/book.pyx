@@ -60,6 +60,7 @@ from nautilus_trader.core.rust.model cimport orderbook_clear_asks
 from nautilus_trader.core.rust.model cimport orderbook_clear_bids
 from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
+from nautilus_trader.core.rust.model cimport orderbook_deltas_is_snapshot
 from nautilus_trader.core.rust.model cimport orderbook_drop
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
@@ -97,18 +98,36 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class OrderBook(Data):
     """
     Provides an order book which can handle L1/L2/L3 granularity data.
+
+    Parameters
+    ----------
+    instrument_id : IntrumentId
+        The instrument ID for the order book.
+    book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
+        The order book type.
+    allow_trade_updates : bool, default False
+        If the book can be updated with trades.
+        If True, then will put the book into a mode where only snapshot deltas can be applied.
+        This is to protect the logical integrity of the book.
+
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         BookType book_type,
+        bint allow_trade_updates = False,
     ) -> None:
+        if allow_trade_updates and book_type == BookType.L3_MBO:
+            raise ValueError(
+                "Invalid book configuration: cannot use `allow_trade_updates` for an L3_MBO book"
+            )
         self._book_type = book_type
         self._mem = orderbook_new(
             instrument_id._mem,
             book_type,
         )
+        self.allow_trade_updates = allow_trade_updates
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
@@ -342,6 +361,9 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(delta, "delta")
 
+        if self.allow_trade_updates and not delta._mem.action != BookAction.CLEAR:
+            raise RuntimeError("Invalid book action for `allow_trade_updates` mode (individual deltas can be CLEAR actions only)")
+
         orderbook_apply_delta(&self._mem, &delta._mem)
 
     cpdef void apply_deltas(self, OrderBookDeltas deltas):
@@ -355,6 +377,9 @@ cdef class OrderBook(Data):
 
         """
         Condition.not_none(deltas, "deltas")
+
+        if self.allow_trade_updates and not orderbook_deltas_is_snapshot(&deltas._mem):
+            raise RuntimeError("Invalid deltas for `allow_trade_updates` mode (only snapshots as valid)")
 
         orderbook_apply_deltas(&self._mem, &deltas._mem)
 
@@ -665,7 +690,7 @@ cdef class OrderBook(Data):
         if self._book_type != BookType.L1_MBP:
             raise RuntimeError(
                 "Invalid book operation: "
-                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+                f"cannot update with quote for {book_type_to_str(self.book_type)} book",
             )
 
         orderbook_update_quote_tick(&self._mem, &tick._mem)
@@ -673,8 +698,6 @@ cdef class OrderBook(Data):
     cpdef void update_trade_tick(self, TradeTick tick):
         """
         Update the order book with the given trade tick.
-
-        This operation is only valid for ``L1_MBP`` books maintaining a top level.
 
         Parameters
         ----------
@@ -684,14 +707,16 @@ cdef class OrderBook(Data):
         Raises
         ------
         RuntimeError
-            If `book_type` is not ``L1_MBP``.
+            If `book_type` is ``L3_MBO``.
+
+        Warnings
+        --------
+        Updating with a trade tick may lead to a book integrity exception
+        if the subsequent delta update is not a snapshot with an initial clear.
 
         """
-        if self._book_type != BookType.L1_MBP:
-            raise RuntimeError(
-                "Invalid book operation: "
-                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
-            )
+        if self._book_type == BookType.L3_MBO:
+            raise RuntimeError("Invalid book operation: cannot update with trade for L3_MBO book")
 
         orderbook_update_trade_tick(&self._mem, &tick._mem)
 

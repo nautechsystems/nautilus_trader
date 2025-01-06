@@ -36,6 +36,8 @@ cdef class OrderBook(Data):
     cdef OrderBook_API _mem
     cdef BookType _book_type
 
+    cdef readonly bint allow_trade_updates
+
     cpdef void reset(self)
     cpdef void add(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
     cpdef void update(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)

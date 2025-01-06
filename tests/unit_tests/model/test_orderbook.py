@@ -774,7 +774,6 @@ class TestOrderBook:
     @pytest.mark.parametrize(
         ("book_type"),
         [
-            BookType.L2_MBP,
             BookType.L3_MBO,
         ],
     )
