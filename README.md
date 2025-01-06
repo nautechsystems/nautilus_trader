@@ -71,7 +71,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
-using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
+using vectorized methods, with the strategy then needing to be reimplemented in a more event-driven way
 using C++, C#, Java or other statically typed language(s). The reasoning here is that vectorized backtesting code cannot
 express the granular time and event dependent complexity of real-time trading, where compiled languages have
 proven to be more suitable due to their inherently higher performance, and type safety.
@@ -313,7 +313,6 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make install`: Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default).
 - `make install-debug`: Same as `make install` but with `debug` build mode.
 - `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package).
-- `make install-just-deps-all`: Same as `make install-just-deps` and additionally installs `docs` dependencies.
 - `make build`: Runs the build script in `release` build mode (default).
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
@@ -321,10 +320,13 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make clean`: **CAUTION** removes all non-source artifacts from the repository.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
-- `make ruff`: Runs ruff over all files using the `pyproject.toml` config.
-- `make outdated`: Runs commands to show outdated dependencies for both Rust and Python.
+- `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
 - `make pytest`: Runs all tests with `pytest` (except performance tests).
 - `make pytest-coverage`: Same as `make pytest` and additionally runs with test coverage and produces a report.
+
+> [!TIP]
+>
+> Running `make build-debug` to compile after changes to Rust or Cython code is currently the most efficient workflow when developing.
 
 ## Examples
 
