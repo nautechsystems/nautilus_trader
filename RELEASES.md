@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Use timeout when initializing account for dYdX (#2169), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
+- Ported trailing stop logic to Rust (#2174), thanks @DeevsDeevs
 - Upgraded Cython to v3.1.0a1
 - Upgraded `datafusion` crate to v44.0.0
 
