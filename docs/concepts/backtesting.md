@@ -64,12 +64,61 @@ Data provided for backtesting drives the execution flow. Since a variety of data
 it's crucial that your venue configurations align with the data being provided for backtesting.
 Mismatches between data and configuration can lead to unexpected behavior during execution.
 
+NautilusTrader is primarily designed and optimized for order book and tick level data, which shows every price level
+and order - just like what you'd see on a real exchange. This gives you the highest level of execution granularity
+and realism, as the platform can process market data in descending order of detail:
+
+1. L3 (market-by-order) and L2 (market-by-price) orderbook data - showing complete market depth and order flow.
+2. L1 orderbook data - showing only the top of book with best bid and ask prices.
+3. Quote ticks - providing current best bid and ask prices.
+4. Trade ticks - showing actual executed trades.
+5. Bars - summarizing trading activity over fixed time intervals.
+
 :::info
-NautilusTrader is primarily designed and optimized for backtesting on order book or tick data, providing the highest
-execution granularity and realism. If order book or tick data is unavailable or unsuitable, backtests
-can also be run on bar data; however, users should note that this results in a loss of information and detail,
-reducing execution precision and realism.
+While the platform fully supports bar data for backtesting (like 1-minute or 5-minute OHLC bars), using bars represents
+a compromise in terms of execution simulation since bar data inherently contains less information than tick-by-tick data.
 :::
+
+### Bar based execution
+
+#### Understanding bar data limitations
+
+Bar data provides a summary of market activity with four key prices for each time period:
+
+- Open: opening price (first trade).
+- High: highest price reached.
+- Low: lowest price hit.
+- Close: closing price (last trade).
+
+While this gives us a good overview of price movement, we lose some important details that we'd have with more granular data:
+
+- We don't know if the market hit the high price before the low price.
+- We can't see exactly when prices changed within the time period.
+- We don't know the actual sequence of trades that occurred.
+
+This is why NautilusTrader processes bar data through a sophisticated system that tries to maintain realistic market behavior despite these limitations. At its core, the platform always maintains a Level 2 (L2) order book simulation - even when you provide less granular data like bars, trades, quotes, or Level 1 (L1) order book updates. Think of it as the platform automatically "upgrading" simpler market data into a more detailed market structure with some limitations.
+
+#### Processing bar data: Time / Prices / Executions
+
+Even when you provide bar data, NautilusTrader maintains an internal order book for each instrument - just like a real exchange would.
+
+1. **Time Processing**
+   - NautilusTrader has a specific way of handling the timing of bar data that's crucial for accurate simulation.
+   - Bar timestamps (`ts_event`) are expected to represent the close time of the bar. This approach is most logical because it represents the moment when the bar is fully formed and its aggregation is complete.
+   - The initialization time (`ts_init`) can be controlled using the `ts_init_delta` parameter in `BarDataWrangler`, which should typically be set to the bar's step size (timeframe) in nanoseconds.
+   - The platform ensures all events happen in the correct sequence based on these timestamps, preventing any possibility of look-ahead bias in your backtests.
+2. **Price Processing**
+   - The platform converts each bar's OHLC prices into a sequence of market updates.
+   - These updates always follow the same order: Open → High → Low → Close.
+   - If you provide multiple timeframes (like both 1-minute and 5-minute bars), the platform smartly uses the more detailed data for better accuracy.
+3. **Executions**
+   - When you place any orders, they interact with the simulated order book just like they would on a real exchange.
+   - For market orders, execution happens at the current simulated market price plus any configured latency.
+   - For limit orders sitting in the market, they'll execute if any of the bar's prices cross your limit price.
+   - The matching engine continuously processes orders as prices move, rather than waiting for complete bars.
+
+
+
 
 ### Slippage and Spread Handling
 
