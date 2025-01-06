@@ -62,9 +62,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
             sccache-${{ runner.os }}-${{ github.workflow }}-
             sccache-${{ runner.os }}-
 
@@ -194,9 +193,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
             sccache-${{ runner.os }}-${{ github.workflow }}-
             sccache-${{ runner.os }}-
 
@@ -392,9 +390,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
             sccache-${{ runner.os }}-${{ github.workflow }}-
             sccache-${{ runner.os }}-
 
@@ -578,9 +575,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
           restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
             sccache-${{ runner.os }}-${{ github.workflow }}-
             sccache-${{ runner.os }}-
 
