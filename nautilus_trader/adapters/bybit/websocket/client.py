@@ -193,8 +193,9 @@ class BybitWebSocketClient:
             if self._auth_required:
                 await self._authenticate()
 
-            # Re-subscribe to all streams
-            await self._subscribe_all()
+            if not self._is_trade:
+                # Re-subscribe to all streams, trade client does not need to do this
+                await self._subscribe_all()
 
             if self._handler_reconnect:
                 await self._handler_reconnect()
