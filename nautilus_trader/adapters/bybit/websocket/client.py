@@ -193,9 +193,8 @@ class BybitWebSocketClient:
             if self._auth_required:
                 await self._authenticate()
 
-            if not self._is_trade:
-                # Re-subscribe to all streams, trade client does not need to do this
-                await self._subscribe_all()
+            # Re-subscribe to all streams
+            await self._subscribe_all()
 
             if self._handler_reconnect:
                 await self._handler_reconnect()
@@ -296,7 +295,7 @@ class BybitWebSocketClient:
             self._log.error("Cannot subscribe all: not connected")
             return
 
-        self._log.info("Resubscribe to all data streams")
+        self._log.info(f"Resubscribing {self.channel_type} channel to `{len(self._subscriptions)}` streams")
 
         # You can input up to 10 args for each subscription request sent to one connection
         subscription_lists = [
