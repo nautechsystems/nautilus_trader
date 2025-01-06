@@ -87,7 +87,6 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _trade_execution
     cdef bint _reject_stop_orders
-    cdef bint _slip_and_fill_market_orders
     cdef bint _support_gtd_orders
     cdef bint _support_contingent_orders
     cdef bint _use_position_ids

@@ -85,12 +85,6 @@ For L1 data types (e.g., trades, quotes, bars), the default slippage behavior is
 - Remainder fills at the next price level.
 - This behavior applies by default for market type orders (`MARKET`, `MARKET_TO_LIMIT`, `STOP_MARKET`).
 
-:::info
-The default slippage behavior for top-of-book data can be modified by setting `slip_and_fill_market_orders` to `False`
-in your venue configuration. However, this may result in less realistic execution simulation, as market orders
-typically impact multiple price levels unless specifically configured with IOC (Immediate-or-Cancel) time in force.
-:::
-
 :::warning
 When backtesting with bar data, be aware that the reduced granularity of price information can impact the accuracy
 of slippage simulation. For the most realistic backtesting results, consider using higher granularity data sources
