@@ -12,7 +12,7 @@ Released on TBD (UTC).
 - Added `execution.fast` support for Bybit (#2165), thanks @sunlei
 - Added catalog helper functions to export data (#2135), thanks @twitu
 - Added additional timestamp properties for `NautilusKernel`
-- Added enable_event_logging for `StrategyConfig` (#2183), thanks @sunlei
+- Added `event_logging` config option for `StrategyConfig` (#2183), thanks @sunlei
 
 ### Breaking Changes
 - Changed `unix_nanos_to_iso8601` to output an ISO 8601 (RFC 3339) format string with nanosecond precision

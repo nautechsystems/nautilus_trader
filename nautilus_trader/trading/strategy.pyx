@@ -152,7 +152,7 @@ cdef class Strategy(Actor):
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
-        self.enable_event_logging = config.enable_event_logging
+        self.event_logging = config.event_logging
 
         # Public components
         self.clock = self._clock
@@ -1530,7 +1530,7 @@ cdef class Strategy(Actor):
 
         if type(event) in self._warning_events:
             self.log.warning(f"{RECV}{EVT} {event}")
-        elif self.enable_event_logging:
+        elif self.event_logging:
             self.log.info(f"{RECV}{EVT} {event}")
 
         cdef Order order
