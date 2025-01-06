@@ -60,15 +60,15 @@ pub fn trailing_stop_calculate(
                     .unwrap_or_default(),
                 last,
             )?;
-            println!("temp_trigger_price: {:?}", temp_trigger_price);
-
-            println!("order.order_side(): {:?}", order.order_side());
 
             match order.order_side() {
                 OrderSide::Buy => {
-                    if trigger_price.is_none() || trigger_price.unwrap() > temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger > temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
-                        println!("new_trigger_price: {:?}", new_trigger_price);
                     }
 
                     if order.order_type() == OrderType::TrailingStopLimit {
@@ -81,16 +81,22 @@ pub fn trailing_stop_calculate(
                             order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
                             last,
                         )?;
-                        if price.is_none() || price.unwrap() > temp_price {
+                        if let Some(p) = price {
+                            if p > temp_price {
+                                new_price = Some(temp_price);
+                            }
+                        } else {
                             new_price = Some(temp_price);
-                            println!("new_price: {:?}", new_price);
                         }
                     }
                 }
                 OrderSide::Sell => {
-                    if trigger_price.is_none() || trigger_price.unwrap() < temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger < temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
-                        println!("new_trigger_price: {:?}", new_trigger_price);
                     }
 
                     if order.order_type() == OrderType::TrailingStopLimit {
@@ -103,9 +109,12 @@ pub fn trailing_stop_calculate(
                             order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
                             last,
                         )?;
-                        if price.is_none() || price.unwrap() < temp_price {
+                        if let Some(p) = price {
+                            if p < temp_price {
+                                new_price = Some(temp_price);
+                            }
+                        } else {
                             new_price = Some(temp_price);
-                            println!("new_price: {:?}", new_price);
                         }
                     }
                 }
@@ -134,7 +143,11 @@ pub fn trailing_stop_calculate(
 
             match order.order_side() {
                 OrderSide::Buy => {
-                    if trigger_price.is_none() || trigger_price.unwrap() > temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger > temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
                     }
 
@@ -149,13 +162,21 @@ pub fn trailing_stop_calculate(
                             bid,
                             ask,
                         )?;
-                        if price.is_none() || price.unwrap() > temp_price {
+                        if let Some(p) = price {
+                            if p > temp_price {
+                                new_price = Some(temp_price);
+                            }
+                        } else {
                             new_price = Some(temp_price);
                         }
                     }
                 }
                 OrderSide::Sell => {
-                    if trigger_price.is_none() || trigger_price.unwrap() < temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger < temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
                     }
 
@@ -170,7 +191,11 @@ pub fn trailing_stop_calculate(
                             bid,
                             ask,
                         )?;
-                        if price.is_none() || price.unwrap() < temp_price {
+                        if let Some(p) = price {
+                            if p < temp_price {
+                                new_price = Some(temp_price);
+                            }
+                        } else {
                             new_price = Some(temp_price);
                         }
                     }
@@ -200,7 +225,12 @@ pub fn trailing_stop_calculate(
 
             match order.order_side() {
                 OrderSide::Buy => {
-                    if trigger_price.is_none() || trigger_price.unwrap() > temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger > temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                            trigger_price = new_trigger_price;
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
                         trigger_price = new_trigger_price;
                     }
@@ -214,7 +244,12 @@ pub fn trailing_stop_calculate(
                             order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
                             last,
                         )?;
-                        if price.is_none() || price.unwrap() > temp_price {
+                        if let Some(p) = price {
+                            if p > temp_price {
+                                new_price = Some(temp_price);
+                                price = new_price;
+                            }
+                        } else {
                             new_price = Some(temp_price);
                             price = new_price;
                         }
@@ -232,7 +267,11 @@ pub fn trailing_stop_calculate(
                         bid,
                         ask,
                     )?;
-                    if trigger_price.is_none() || trigger_price.unwrap() > temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger > temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
                     }
                     if order.order_type() == OrderType::TrailingStopLimit {
@@ -246,13 +285,22 @@ pub fn trailing_stop_calculate(
                             bid,
                             ask,
                         )?;
-                        if price.is_none() || price.unwrap() > temp_price {
+                        if let Some(p) = price {
+                            if p > temp_price {
+                                new_price = Some(temp_price);
+                            }
+                        } else {
                             new_price = Some(temp_price);
                         }
                     }
                 }
                 OrderSide::Sell => {
-                    if trigger_price.is_none() || trigger_price.unwrap() < temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger < temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                            trigger_price = new_trigger_price;
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
                         trigger_price = new_trigger_price;
                     }
@@ -267,7 +315,12 @@ pub fn trailing_stop_calculate(
                             order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
                             last,
                         )?;
-                        if price.is_none() || price.unwrap() < temp_price {
+                        if let Some(p) = price {
+                            if p < temp_price {
+                                new_price = Some(temp_price);
+                                price = new_price;
+                            }
+                        } else {
                             new_price = Some(temp_price);
                             price = new_price;
                         }
@@ -285,7 +338,11 @@ pub fn trailing_stop_calculate(
                         bid,
                         ask,
                     )?;
-                    if trigger_price.unwrap() < temp_trigger_price {
+                    if let Some(trigger) = trigger_price {
+                        if trigger < temp_trigger_price {
+                            new_trigger_price = Some(temp_trigger_price);
+                        }
+                    } else {
                         new_trigger_price = Some(temp_trigger_price);
                     }
                     if order.order_type() == OrderType::TrailingStopLimit {
@@ -299,7 +356,11 @@ pub fn trailing_stop_calculate(
                             bid,
                             ask,
                         )?;
-                        if price.is_none() || price.unwrap() < temp_price {
+                        if let Some(p) = price {
+                            if p < temp_price {
+                                new_price = Some(temp_price);
+                            }
+                        } else {
                             new_price = Some(temp_price);
                         }
                     }
@@ -484,5 +545,213 @@ mod tests {
         );
 
         assert!(matches!(result, Err(OrderError::NoOrderSide)));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, 100.0, 1.0, 99.0, None)] // Last price 99 > trigger 98, no update needed
+    #[case(OrderSide::Buy, 100.0, 1.0, 98.0, Some(99.0))] // Last price 98 < trigger 100, update to 98 + 1
+    #[case(OrderSide::Sell, 100.0, 1.0, 101.0, None)] // Last price 101 < trigger 102, no update needed
+    #[case(OrderSide::Sell, 100.0, 1.0, 102.0, Some(101.0))] // Last price 102 > trigger 100, update to 102 - 1
+    fn test_trailing_stop_market_last_price(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] offset: f64,
+        #[case] last_price: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(Price::new(offset, 2))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            &order.into(),
+            None,
+            None,
+            Some(Price::new(last_price, 2)),
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
+            (None, None) => (),
+            _ => panic!(
+                "Expected trigger {:?} but got {:?}",
+                expected_trigger, actual_trigger
+            ),
+        }
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, 100.0, 50.0, 98.0, Some(98.49))] // 50bp = 0.5% of 98 = 0.49
+    #[case(OrderSide::Buy, 100.0, 100.0, 97.0, Some(97.97))] // 100bp = 1% of 97 = 0.97
+    #[case(OrderSide::Sell, 100.0, 50.0, 102.0, Some(101.49))] // 50bp = 0.5% of 102 = 0.51
+    #[case(OrderSide::Sell, 100.0, 100.0, 103.0, Some(101.97))] // 100bp = 1% of 103 = 1.03
+    fn test_trailing_stop_market_basis_points(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] basis_points: f64,
+        #[case] last_price: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::BasisPoints)
+            .trailing_offset(Price::new(basis_points, 2))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            &order.into(),
+            None,
+            None,
+            Some(Price::new(last_price, 2)),
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
+            (None, None) => (),
+            _ => panic!(
+                "Expected trigger {:?} but got {:?}",
+                expected_trigger, actual_trigger
+            ),
+        }
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, 100.0, 1.0, 98.0, 99.0, None)] // Ask 99 > trigger 100, no update
+    #[case(OrderSide::Buy, 100.0, 1.0, 97.0, 98.0, Some(99.0))] // Ask 98 < trigger 100, update to 98 + 1
+    #[case(OrderSide::Sell, 100.0, 1.0, 101.0, 102.0, None)] // Bid 101 < trigger 100, no update
+    #[case(OrderSide::Sell, 100.0, 1.0, 102.0, 103.0, Some(101.0))] // Bid 102 > trigger 100, update to 102 - 1
+    fn test_trailing_stop_market_bid_ask(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] offset: f64,
+        #[case] bid: f64,
+        #[case] ask: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(Price::new(offset, 2))
+            .trigger_type(TriggerType::BidAsk)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            &order.into(),
+            Some(Price::new(bid, 2)),
+            Some(Price::new(ask, 2)),
+            None, // last price not needed for BidAsk trigger type
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
+            (None, None) => (),
+            _ => panic!(
+                "Expected trigger {:?} but got {:?}",
+                expected_trigger, actual_trigger
+            ),
+        }
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, 100.0, 5.0, 98.0, Some(98.05))] // 5 ticks * 0.01 = 0.05 offset
+    #[case(OrderSide::Buy, 100.0, 10.0, 97.0, Some(97.10))] // 10 ticks * 0.01 = 0.10 offset
+    #[case(OrderSide::Sell, 100.0, 5.0, 102.0, Some(101.95))] // 5 ticks * 0.01 = 0.05 offset
+    #[case(OrderSide::Sell, 100.0, 10.0, 103.0, Some(102.90))] // 10 ticks * 0.01 = 0.10 offset
+    fn test_trailing_stop_market_ticks(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] ticks: f64,
+        #[case] last_price: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::Ticks)
+            .trailing_offset(Price::new(ticks, 2))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            &order.into(),
+            None,
+            None,
+            Some(Price::new(last_price, 2)),
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
+            (None, None) => (),
+            _ => panic!(
+                "Expected trigger {:?} but got {:?}",
+                expected_trigger, actual_trigger
+            ),
+        }
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, 100.0, 1.0, 98.0, 97.0, 98.0, Some(99.0))] // Last price gives higher trigger
+    #[case(OrderSide::Buy, 100.0, 1.0, 97.0, 96.0, 99.0, Some(98.0))] // Bid/Ask gives higher trigger
+    #[case(OrderSide::Sell, 100.0, 1.0, 102.0, 102.0, 103.0, Some(101.0))] // Last price gives lower trigger
+    #[case(OrderSide::Sell, 100.0, 1.0, 103.0, 101.0, 102.0, Some(102.0))] // Bid/Ask gives lower trigger
+    fn test_trailing_stop_last_or_bid_ask(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] offset: f64,
+        #[case] last_price: f64,
+        #[case] bid: f64,
+        #[case] ask: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(Price::new(offset, 2))
+            .trigger_type(TriggerType::LastOrBidAsk)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            &order.into(),
+            Some(Price::new(bid, 2)),
+            Some(Price::new(ask, 2)),
+            Some(Price::new(last_price, 2)),
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
+            (None, None) => (),
+            _ => panic!(
+                "Expected trigger {:?} but got {:?}",
+                expected_trigger, actual_trigger
+            ),
+        }
     }
 }
