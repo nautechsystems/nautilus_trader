@@ -54,10 +54,7 @@ pub fn trailing_stop_calculate(
                     .trailing_offset_type()
                     .unwrap_or(TrailingOffsetType::Price),
                 order.order_side(),
-                order
-                    .trailing_offset()
-                    .map(|p| p.as_f64())
-                    .unwrap_or_default(),
+                order.trailing_offset().unwrap_or_default(),
                 last,
             )?;
 
@@ -78,7 +75,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             last,
                         )?;
                         if let Some(p) = price {
@@ -106,7 +103,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             last,
                         )?;
                         if let Some(p) = price {
@@ -133,10 +130,7 @@ pub fn trailing_stop_calculate(
                     .trailing_offset_type()
                     .unwrap_or(TrailingOffsetType::Price),
                 order.order_side(),
-                order
-                    .trailing_offset()
-                    .map(|p| p.as_f64())
-                    .unwrap_or_default(),
+                order.trailing_offset().unwrap_or_default(),
                 bid,
                 ask,
             )?;
@@ -158,7 +152,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             bid,
                             ask,
                         )?;
@@ -187,7 +181,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             bid,
                             ask,
                         )?;
@@ -216,10 +210,7 @@ pub fn trailing_stop_calculate(
                     .trailing_offset_type()
                     .unwrap_or(TrailingOffsetType::Price),
                 order.order_side(),
-                order
-                    .trailing_offset()
-                    .map(|p| p.as_f64())
-                    .unwrap_or_default(),
+                order.trailing_offset().unwrap_or_default(),
                 last,
             )?;
 
@@ -241,7 +232,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             last,
                         )?;
                         if let Some(p) = price {
@@ -260,10 +251,7 @@ pub fn trailing_stop_calculate(
                             .trailing_offset_type()
                             .unwrap_or(TrailingOffsetType::Price),
                         order.order_side(),
-                        order
-                            .trailing_offset()
-                            .map(|p| p.as_f64())
-                            .unwrap_or_default(),
+                        order.trailing_offset().unwrap_or_default(),
                         bid,
                         ask,
                     )?;
@@ -281,7 +269,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             bid,
                             ask,
                         )?;
@@ -312,7 +300,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             last,
                         )?;
                         if let Some(p) = price {
@@ -331,10 +319,7 @@ pub fn trailing_stop_calculate(
                             .trailing_offset_type()
                             .unwrap_or(TrailingOffsetType::Price),
                         order.order_side(),
-                        order
-                            .trailing_offset()
-                            .map(|p| p.as_f64())
-                            .unwrap_or_default(),
+                        order.trailing_offset().unwrap_or_default(),
                         bid,
                         ask,
                     )?;
@@ -352,7 +337,7 @@ pub fn trailing_stop_calculate(
                                 .trailing_offset_type()
                                 .unwrap_or(TrailingOffsetType::Price),
                             order.order_side(),
-                            order.limit_offset().map(|p| p.as_f64()).unwrap_or_default(),
+                            order.limit_offset().unwrap_or_default(),
                             bid,
                             ask,
                         )?;
@@ -382,19 +367,19 @@ fn trailing_stop_calculate_with_last(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
     side: OrderSide,
-    offset: f64,
+    offset: Price,
     last: Price,
 ) -> Result<Price, OrderError> {
-    let mut offset = offset;
+    let mut offset_value = offset.as_f64();
     let last_f64 = last.as_f64();
 
     match trailing_offset_type {
         TrailingOffsetType::Price => {} // Offset already calculated
         TrailingOffsetType::BasisPoints => {
-            offset = last_f64 * (offset / 100.0) / 100.0;
+            offset_value = last_f64 * (offset_value / 100.0) / 100.0;
         }
         TrailingOffsetType::Ticks => {
-            offset *= price_increment.as_f64();
+            offset_value *= price_increment.as_f64();
         }
         TrailingOffsetType::NoTrailingOffset | TrailingOffsetType::PriceTier => {
             return Err(OrderError::InvalidStateTransition);
@@ -402,8 +387,14 @@ fn trailing_stop_calculate_with_last(
     }
 
     match side {
-        OrderSide::Buy => Ok(Price::new(last_f64 + offset, price_increment.precision)),
-        OrderSide::Sell => Ok(Price::new(last_f64 - offset, price_increment.precision)),
+        OrderSide::Buy => Ok(Price::new(
+            last_f64 + offset_value,
+            price_increment.precision,
+        )),
+        OrderSide::Sell => Ok(Price::new(
+            last_f64 - offset_value,
+            price_increment.precision,
+        )),
         OrderSide::NoOrderSide => Err(OrderError::NoOrderSide),
     }
 }
@@ -412,23 +403,23 @@ fn trailing_stop_calculate_with_bid_ask(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
     side: OrderSide,
-    offset: f64,
+    offset: Price,
     bid: Price,
     ask: Price,
 ) -> Result<Price, OrderError> {
-    let mut offset = offset;
+    let mut offset_value = offset.as_f64();
     let bid_f64 = bid.as_f64();
     let ask_f64 = ask.as_f64();
 
     match trailing_offset_type {
         TrailingOffsetType::Price => {} // Offset already calculated
         TrailingOffsetType::BasisPoints => match side {
-            OrderSide::Buy => offset = ask_f64 * (offset / 100.0) / 100.0,
-            OrderSide::Sell => offset = bid_f64 * (offset / 100.0) / 100.0,
+            OrderSide::Buy => offset_value = ask_f64 * (offset_value / 100.0) / 100.0,
+            OrderSide::Sell => offset_value = bid_f64 * (offset_value / 100.0) / 100.0,
             OrderSide::NoOrderSide => return Err(OrderError::NoOrderSide),
         },
         TrailingOffsetType::Ticks => {
-            offset *= price_increment.as_f64();
+            offset_value *= price_increment.as_f64();
         }
         TrailingOffsetType::NoTrailingOffset | TrailingOffsetType::PriceTier => {
             return Err(OrderError::InvalidStateTransition);
@@ -436,8 +427,14 @@ fn trailing_stop_calculate_with_bid_ask(
     }
 
     match side {
-        OrderSide::Buy => Ok(Price::new(ask_f64 + offset, price_increment.precision)),
-        OrderSide::Sell => Ok(Price::new(bid_f64 - offset, price_increment.precision)),
+        OrderSide::Buy => Ok(Price::new(
+            ask_f64 + offset_value,
+            price_increment.precision,
+        )),
+        OrderSide::Sell => Ok(Price::new(
+            bid_f64 - offset_value,
+            price_increment.precision,
+        )),
         OrderSide::NoOrderSide => Err(OrderError::NoOrderSide),
     }
 }
