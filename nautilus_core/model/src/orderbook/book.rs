@@ -407,9 +407,10 @@ impl OrderBook {
 
     /// Updates L1 book state from a trade tick. Only valid for L1_MBP book type.
     pub fn update_trade_tick(&mut self, trade: &TradeTick) -> Result<(), InvalidBookOperation> {
-        if self.book_type != BookType::L1_MBP {
-            return Err(InvalidBookOperation::Update(self.book_type));
-        };
+        // TODO: Implement `allow_trade_updates` flag (needs `is_snapshot` flag for deltas)
+        // if self.book_type != BookType::L1_MBP {
+        //     return Err(InvalidBookOperation::Update(self.book_type));
+        // };
 
         let bid = BookOrder::new(
             OrderSide::Buy,

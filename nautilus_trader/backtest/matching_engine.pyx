@@ -33,6 +33,7 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
@@ -175,7 +176,7 @@ cdef class OrderMatchingEngine:
         CacheFacade cache not None,
         TestClock clock not None,
         bint bar_execution = True,
-        bint trade_execution = True,
+        bint trade_execution = False,
         bint reject_stop_orders = True,
         bint slip_and_fill_market_orders = True,
         bint support_gtd_orders = True,
@@ -215,6 +216,7 @@ cdef class OrderMatchingEngine:
         self._book = OrderBook(
             instrument_id=instrument.id,
             book_type=book_type,
+            allow_trade_updates=trade_execution,
         )
         self._opening_auction_book = OrderBook(
             instrument_id=instrument.id,
@@ -466,7 +468,7 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {tick!r}")
 
-        if self.book_type == BookType.L1_MBP:
+        if self._trade_execution or self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
 
         cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
