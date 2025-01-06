@@ -381,9 +381,9 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 
     cargo install cargo-nextest
 
-> [!NOTE]
+> [!TIP]
 >
-> Rust tests will fail unless run via cargo-nextest.
+> Rust tests will only pass when run via `cargo-nextest`.
 
 ## Contributing
 
