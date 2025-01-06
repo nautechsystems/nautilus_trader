@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added `event_logging` config option for `StrategyConfig` (#2183), thanks @sunlei
 
 ### Breaking Changes
+- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
 - Changed `unix_nanos_to_iso8601` to output an ISO 8601 (RFC 3339) format string with nanosecond precision
 - Changed `format_iso8601` to output ISO 8601 (RFC 3339) format string with nanosecond precision
 - Changed `format_iso8601` `dt` parameter to enforce `pd.Timestamp` (which has nanosecond precision)
@@ -22,7 +23,7 @@ Released on TBD (UTC).
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
 - Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
 - Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
-- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
+- Changed `aggregation_source` filter parameter for `Cache.bar_types(...)` to optional with default of `None`
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)

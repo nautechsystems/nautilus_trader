@@ -2507,19 +2507,21 @@ cdef class Cache(CacheFacade):
         self,
         InstrumentId instrument_id = None,
         object price_type = None,
-        AggregationSource aggregation_source = AggregationSource.EXTERNAL,
+        aggregation_source = None,
     ):
         """
-        Return a list of BarType for the given instrument ID and price type.
+        Return all bar types with the given query filters.
+
+        If a filter parameter is ``None``, then no filtering occurs for that parameter.
 
         Parameters
         ----------
         instrument_id : InstrumentId, optional
-            The instrument ID to filter the BarType objects. If None, no filtering is done based on instrument ID.
+            The instrument ID query filter.
         price_type : PriceType, optional
-            The price type to filter the BarType objects. If None, no filtering is done based on price type.
-        aggregation_source : AggregationSource, default AggregationSource.EXTERNAL
-            The aggregation source to filter the BarType objects.
+            The price type query filter.
+        aggregation_source : AggregationSource, optional
+            The aggregation source query filter.
 
         Returns
         -------
@@ -2529,14 +2531,16 @@ cdef class Cache(CacheFacade):
         Condition.type_or_none(instrument_id, InstrumentId, "instrument_id")
         Condition.type_or_none(price_type, PriceType_py, "price_type")
 
-        cdef list bar_types = [bar_type for bar_type in self._bars.keys()
-                               if bar_type.aggregation_source == aggregation_source]
+        cdef list[BarType] bar_types = list(self._bars.keys())
 
         if instrument_id is not None:
             bar_types = [bar_type for bar_type in bar_types if bar_type.instrument_id == instrument_id]
 
         if price_type is not None:
             bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == price_type]
+
+        if aggregation_source is not None:
+            bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == aggregation_source]
 
         if instrument_id and price_type:
             bar_types.sort(key=self._get_timedelta)
