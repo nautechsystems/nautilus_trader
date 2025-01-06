@@ -218,7 +218,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         client_order_id_str: str = self.c
         if not client_order_id_str or not client_order_id_str.startswith("O"):
             client_order_id_str = self.C
-        client_order_id = ClientOrderId(client_order_id_str)
+        client_order_id = ClientOrderId(client_order_id_str or UUID4().value)
         ts_event = millis_to_nanos(self.T)
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
