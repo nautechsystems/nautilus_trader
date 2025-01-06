@@ -33,6 +33,7 @@ pub mod manager;
 pub mod matching_core;
 pub mod messages;
 pub mod reports;
+pub mod trailing;
 
 #[cfg(feature = "python")]
 pub mod python;
