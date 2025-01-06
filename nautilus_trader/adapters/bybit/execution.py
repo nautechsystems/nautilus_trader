@@ -197,7 +197,7 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
         # WebSocket private client
-        self._ws_client = BybitWebSocketClient(
+        self._ws_private_client = BybitWebSocketClient(
             clock=clock,
             handler=self._handle_ws_message_private,
             handler_reconnect=None,
@@ -274,21 +274,21 @@ class BybitExecutionClient(LiveExecutionClient):
         await self._instrument_provider.initialize()
         await self._update_account_state()
 
-        await self._ws_client.connect()
+        await self._ws_private_client.connect()
 
-        await self._ws_client.subscribe_orders_update()
-        await self._ws_client.subscribe_wallet_update()
+        await self._ws_private_client.subscribe_orders_update()
+        await self._ws_private_client.subscribe_wallet_update()
 
         if self._use_ws_execution_fast:
-            await self._ws_client.subscribe_executions_fast_update()
+            await self._ws_private_client.subscribe_executions_fast_update()
         else:
-            await self._ws_client.subscribe_executions_update()
+            await self._ws_private_client.subscribe_executions_update()
 
         if self._use_ws_trade_api:
             await self._ws_order_client.connect()
 
     async def _disconnect(self) -> None:
-        await self._ws_client.disconnect()
+        await self._ws_private_client.disconnect()
 
         if self._use_ws_trade_api:
             await self._ws_order_client.disconnect()
