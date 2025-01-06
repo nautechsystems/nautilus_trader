@@ -200,7 +200,7 @@ class DYDXWebsocketClient:
         try:
             await self._client.send_pong(raw)
         except WebSocketClientError as e:
-            self._log.error(str(e))
+            self._log.error(f"Failed to send pong: {e}")
 
     async def _reconnect_guard(self) -> None:
         """
