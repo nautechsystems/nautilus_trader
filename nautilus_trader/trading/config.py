@@ -51,6 +51,9 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     manage_gtd_expiry : bool, default False
         If all order GTD time in force expirations should be managed by the strategy.
         If True, then will ensure open orders have their GTD timers re-activated on start.
+    event_logging : bool, default True
+        If event logging should be enabled for the strategy.
+        If False, then only warning events and above are logged.
 
     """
 
@@ -60,7 +63,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
-    enable_event_logging: bool = True
+    event_logging: bool = True
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

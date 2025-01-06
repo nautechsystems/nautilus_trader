@@ -194,7 +194,7 @@ class TestStrategy:
             "external_order_claims": None,
             "manage_contingent_orders": False,
             "manage_gtd_expiry": False,
-            "enable_event_logging": True,
+            "event_logging": True,
         }
 
     def test_strategy_to_importable_config(self) -> None:
@@ -205,7 +205,7 @@ class TestStrategy:
             external_order_claims=["ETHUSDT-PERP.DYDX"],
             manage_contingent_orders=True,
             manage_gtd_expiry=True,
-            enable_event_logging=False,
+            event_logging=False,
         )
 
         strategy = Strategy(config=config)
@@ -224,7 +224,7 @@ class TestStrategy:
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
             "manage_contingent_orders": True,
             "manage_gtd_expiry": True,
-            "enable_event_logging": False,
+            "event_logging": False,
         }
 
     def test_strategy_equality(self) -> None:
