@@ -144,9 +144,6 @@ cdef class OrderMatchingEngine:
         If trades should be processed by the matching engine (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected if already in the market on submitting.
-    slip_and_fill_market_orders : bool, default True
-        If market orders slip to the next price level after exhausting the top level to fill any remaining size.
-        If False, market orders behave like IOC (Immediate or Cancel) orders.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
     support_contingent_orders : bool, default True
@@ -178,7 +175,6 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint trade_execution = False,
         bint reject_stop_orders = True,
-        bint slip_and_fill_market_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
         bint use_position_ids = True,
@@ -204,7 +200,6 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._trade_execution = trade_execution
         self._reject_stop_orders = reject_stop_orders
-        self._slip_and_fill_market_orders = slip_and_fill_market_orders
         self._support_gtd_orders = support_gtd_orders
         self._support_contingent_orders = support_contingent_orders
         self._use_position_ids = use_position_ids
@@ -1861,11 +1856,6 @@ cdef class OrderMatchingEngine:
             or order.order_type == OrderType.STOP_MARKET
         )
         ):
-            if not self._slip_and_fill_market_orders:
-                # No remaining size available so treat like IOC order
-                self.cancel_order(order)
-                return
-
             # Exhausted simulated book volume (continue aggressive filling into next level)
             # This is a very basic implementation of slipping by a single tick, in the future
             # we will implement more detailed fill modeling.
