@@ -60,6 +60,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
+    enable_event_logging: bool = True
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):
