@@ -3333,9 +3333,13 @@ cdef class Actor(Component):
 
         return self._future_greeks[instrument_id]
 
-    def portfolio_greeks(self, str underlying = "", Venue venue = None, InstrumentId instrument_id = None,
-                         StrategyId strategy_id = None,
-                         PositionSide side = PositionSide.NO_POSITION_SIDE) -> PortfolioGreeks:
+    def portfolio_greeks(
+        self, str underlying = "",
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
+    ) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
 
