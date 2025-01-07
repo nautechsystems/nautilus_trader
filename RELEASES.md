@@ -34,6 +34,7 @@ Released on TBD (UTC).
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
+- Refined WebSocket client re-subscribe log for Bybit (#2179), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
 - Enhance `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
 - Renamed WebSocket private client for Bybit (#2180), thanks @sunlei
