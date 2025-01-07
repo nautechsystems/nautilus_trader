@@ -211,7 +211,6 @@ cdef class OrderMatchingEngine:
         self._book = OrderBook(
             instrument_id=instrument.id,
             book_type=book_type,
-            allow_trade_updates=trade_execution,
         )
         self._opening_auction_book = OrderBook(
             instrument_id=instrument.id,
@@ -463,7 +462,7 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {tick!r}")
 
-        if self._trade_execution or self.book_type == BookType.L1_MBP:
+        if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
 
         cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
