@@ -295,7 +295,9 @@ class BybitWebSocketClient:
             self._log.error("Cannot subscribe all: not connected")
             return
 
-        self._log.info("Resubscribe to all data streams")
+        self._log.warning(
+            f"Resubscribing {self.channel_type} channel to `{len(self._subscriptions)}` streams",
+        )
 
         # You can input up to 10 args for each subscription request sent to one connection
         subscription_lists = [
