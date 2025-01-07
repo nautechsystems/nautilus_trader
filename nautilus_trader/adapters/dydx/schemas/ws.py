@@ -865,6 +865,7 @@ class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=Tr
     trades24H: int | None = None
     nextFundingRate: str | None = None
     baseOpenInterest: str | None = None
+    marketType: str | None = None
 
 
 class DYDXMarketMessageContents(msgspec.Struct, forbid_unknown_fields=True):
