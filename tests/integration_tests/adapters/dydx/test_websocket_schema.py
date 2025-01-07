@@ -182,7 +182,7 @@ def test_markets_subscribed_message() -> None:
     assert msg.type == "subscribed"
 
 
-def test_markets_channel_message(file_path: str) -> None:
+def test_markets_channel_message() -> None:
     """
     Test parsing the account subscribed message.
     """
