@@ -6,14 +6,15 @@ Released on TBD (UTC).
 - Added `PerContractFeeModel`, thanks @stefansimik
 - Added `DYDXInternalError` and `DYDXOraclaPrice` data types for dYdX (#2155), thanks @davidsblom
 - Added proper `OrderBookDeltas` flags parsing for Betfair
-- Added `slip_and_fill_market_orders` config option for `BacktestVenueConfig` and `OrderMatchingEngine` (default `True` to retain current behavior)
 - Added Binance TradeLite message support (#2156), thanks @DeevsDeevs
 - Added `DataEngineConfig.time_bars_skip_first_non_full_bar` config option (#2160), thanks @faysou
 - Added `execution.fast` support for Bybit (#2165), thanks @sunlei
 - Added catalog helper functions to export data (#2135), thanks @twitu
 - Added additional timestamp properties for `NautilusKernel`
+- Added `event_logging` config option for `StrategyConfig` (#2183), thanks @sunlei
 
 ### Breaking Changes
+- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
 - Changed `unix_nanos_to_iso8601` to output an ISO 8601 (RFC 3339) format string with nanosecond precision
 - Changed `format_iso8601` to output ISO 8601 (RFC 3339) format string with nanosecond precision
 - Changed `format_iso8601` `dt` parameter to enforce `pd.Timestamp` (which has nanosecond precision)
@@ -21,7 +22,7 @@ Released on TBD (UTC).
 - Changed `TradingNode.is_running` from a property to a method `.is_running()`
 - Changed `OrderInitialized` Arrow schema (`linked_order_ids` and `tags` data types changed from `string` to `binary`)
 - Changed order dictionary representation field types for `avg_px` and `slippage`  from `str` to `float` (as out of alignment with position events)
-- Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
+- Changed `aggregation_source` filter parameter for `Cache.bar_types(...)` to optional with default of `None`
 
 ### Internal Improvements
 - Improved market order handling when no size available in book (now explicitly rejects)
@@ -33,14 +34,18 @@ Released on TBD (UTC).
 - Refined parsing candles for dYdX (#2148), thanks @davidsblom
 - Refined imports for type hints in Bybit (#2149), thanks @sunlei
 - Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
+- Refined WebSocket client re-subscribe log for Bybit (#2179), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
 - Enhance `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
+- Renamed WebSocket private client for Bybit (#2180), thanks @sunlei
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 - Use timeout when initializing account for dYdX (#2169), thanks @davidsblom
+- Refined error logs when sending pong for dYdX (#2184), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
+- Ported trailing stop logic to Rust (#2174), thanks @DeevsDeevs
 - Upgraded Cython to v3.1.0a1
 - Upgraded `datafusion` crate to v44.0.0
 
@@ -56,9 +61,11 @@ Released on TBD (UTC).
 - Fixed account balance for dYdX (#2167), thanks @davidsblom
 - Fixed missing `OrderEmulated` and `OrderReleased` Arrow schemas
 - Fixed websocket public channel reconnect for Bybit (#2176), thanks @sunlei
+- Fixed execution report parsing for Binance Spot (client order ID empty string now becomes a UUID4 string)
 
 ### Documentation updates
 - Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
+- Added docs for `FillModel` and bar based execution (#2187), thanks @stefansimik
 - Added docs for timestamp and UUID specs
 
 ---

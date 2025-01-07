@@ -18,6 +18,7 @@ use std::fmt::{Debug, Display};
 use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -87,9 +88,9 @@ pub struct OrderInitialized {
     /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
-    pub limit_offset: Option<Price>,
+    pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
-    pub trailing_offset: Option<Price>,
+    pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
     pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order expiration, `None` for no expiration.
@@ -181,8 +182,8 @@ impl OrderInitialized {
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
-        limit_offset: Option<Price>,
-        trailing_offset: Option<Price>,
+        limit_offset: Option<Decimal>,
+        trailing_offset: Option<Decimal>,
         trailing_offset_type: Option<TrailingOffsetType>,
         expire_time: Option<UnixNanos>,
         display_qty: Option<Quantity>,
@@ -504,11 +505,11 @@ impl OrderEvent for OrderInitialized {
         self.trigger_type
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         self.limit_offset
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         self.trailing_offset
     }
 

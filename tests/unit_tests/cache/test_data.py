@@ -467,11 +467,26 @@ class TestCache:
         [
             [
                 AUDUSD_SIM.id,
+                None,
+                None,
+                [
+                    TestDataStubs.bartype_audusd_1min_bid(),
+                    TestDataStubs.bartype_audusd_5min_bid(),
+                    BarType.from_str("AUD/USD.SIM-1-MONTH-MID-EXTERNAL"),
+                ],
+            ],
+            [
+                AUDUSD_SIM.id,
+                PriceType.BID,
+                None,
+                [TestDataStubs.bartype_audusd_1min_bid(), TestDataStubs.bartype_audusd_5min_bid()],
+            ],
+            [
+                AUDUSD_SIM.id,
                 PriceType.BID,
                 AggregationSource.EXTERNAL,
                 [TestDataStubs.bartype_audusd_1min_bid(), TestDataStubs.bartype_audusd_5min_bid()],
             ],
-            [AUDUSD_SIM.id, PriceType.BID, AggregationSource.INTERNAL, []],
             [AUDUSD_SIM.id, PriceType.ASK, AggregationSource.EXTERNAL, []],
             [ETHUSDT_BINANCE.id, PriceType.BID, AggregationSource.EXTERNAL, []],
         ],

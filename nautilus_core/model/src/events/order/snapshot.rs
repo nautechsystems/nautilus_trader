@@ -15,6 +15,7 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -67,9 +68,9 @@ pub struct OrderSnapshot {
     /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
-    pub limit_offset: Option<Price>,
+    pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
-    pub trailing_offset: Option<Price>,
+    pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
     pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order time in force.

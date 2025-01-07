@@ -45,7 +45,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
-using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
+using vectorized methods, with the strategy then needing to be reimplemented in a more event-driven way
 using C++, C#, Java or other statically typed language(s). The reasoning here is that vectorized backtesting code cannot
 express the granular time and event dependent complexity of real-time trading, where compiled languages have
 proven to be more suitable due to their inherently higher performance, and type safety.

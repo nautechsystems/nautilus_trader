@@ -23,6 +23,7 @@ use nautilus_core::{
     correctness::{check_predicate_false, FAILED},
     UnixNanos, UUID4,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -292,11 +293,11 @@ impl Order for MarketOrder {
         None
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         None
     }
 

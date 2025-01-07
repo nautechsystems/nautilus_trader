@@ -17,6 +17,7 @@ use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -47,7 +48,7 @@ pub struct TrailingStopMarketOrder {
     core: OrderCore,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
-    pub trailing_offset: Price,
+    pub trailing_offset: Decimal,
     pub trailing_offset_type: TrailingOffsetType,
     pub expire_time: Option<UnixNanos>,
     pub display_qty: Option<Quantity>,
@@ -68,7 +69,7 @@ impl TrailingStopMarketOrder {
         quantity: Quantity,
         trigger_price: Price,
         trigger_type: TriggerType,
-        trailing_offset: Price,
+        trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
         time_in_force: TimeInForce,
         expire_time: Option<UnixNanos>,
@@ -253,11 +254,11 @@ impl Order for TrailingStopMarketOrder {
         self.display_qty
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         Some(self.trailing_offset)
     }
 

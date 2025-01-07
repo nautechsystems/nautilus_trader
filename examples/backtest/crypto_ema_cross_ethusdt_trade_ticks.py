@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -57,6 +58,7 @@ if __name__ == "__main__":
     engine.add_venue(
         venue=BINANCE,
         oms_type=OmsType.NETTING,
+        book_type=BookType.L1_MBP,
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],

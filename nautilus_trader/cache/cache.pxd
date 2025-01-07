@@ -186,5 +186,5 @@ cdef class Cache(CacheFacade):
         self,
         InstrumentId instrument_id=*,
         object price_type=*,
-        AggregationSource aggregation_source=*,
+        aggregation_source=*,
     )

@@ -15,6 +15,7 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -48,8 +49,8 @@ pub struct OrderTestBuilder {
     price: Option<Price>,
     trigger_price: Option<Price>,
     trigger_type: Option<TriggerType>,
-    limit_offset: Option<Price>,
-    trailing_offset: Option<Price>,
+    limit_offset: Option<Decimal>,
+    trailing_offset: Option<Decimal>,
     trailing_offset_type: Option<TrailingOffsetType>,
     time_in_force: Option<TimeInForce>,
     expire_time: Option<UnixNanos>,
@@ -231,22 +232,22 @@ impl OrderTestBuilder {
     }
 
     // ----------- LimitOffset ----------
-    pub fn limit_offset(&mut self, limit_offset: Price) -> &mut Self {
+    pub fn limit_offset(&mut self, limit_offset: Decimal) -> &mut Self {
         self.limit_offset = Some(limit_offset);
         self
     }
 
-    fn get_limit_offset(&self) -> Price {
+    fn get_limit_offset(&self) -> Decimal {
         self.limit_offset.expect("Limit offset not set")
     }
 
     // ----------- TrailingOffset ----------
-    pub fn trailing_offset(&mut self, trailing_offset: Price) -> &mut Self {
+    pub fn trailing_offset(&mut self, trailing_offset: Decimal) -> &mut Self {
         self.trailing_offset = Some(trailing_offset);
         self
     }
 
-    fn get_trailing_offset(&self) -> Price {
+    fn get_trailing_offset(&self) -> Decimal {
         self.trailing_offset.expect("Trailing offset not set")
     }
 
