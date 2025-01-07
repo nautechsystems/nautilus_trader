@@ -394,15 +394,15 @@ cdef class BacktestEngine:
         book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
         frozen_account: bool = False,
-        bar_execution: bool = True,
-        trade_execution: bool = False,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
         support_contingent_orders: bool = True,
         use_position_ids: bool = True,
         use_random_ids: bool = False,
         use_reduce_only: bool = True,
-        adaptive_bar_ordering: bool = False,
+        bar_execution: bool = True,
+        bar_adaptive_high_low_ordering: bool = False,
+        trade_execution: bool = False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -438,10 +438,6 @@ cdef class BacktestEngine:
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
-        bar_execution : bool, default True
-            If bars should be processed by the matching engine(s) (and move the market).
-        trade_execution : bool, default False
-            If trades should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -455,11 +451,17 @@ cdef class BacktestEngine:
             If all venue generated identifiers will be random UUID4's.
         use_reduce_only : bool, default True
             If the `reduce_only` execution instruction on orders will be honored.
-        adaptive_bar_ordering : bool, default False
-            If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.
-            If False then the processing order is always Open, High, Low, Close.
-            If High is closer to Open than Low then the processing order is Open, High, Low, Close.
-            If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+        bar_execution : bool, default True
+            If bars should be processed by the matching engine(s) (and move the market).
+        bar_adaptive_high_low_ordering : bool, default False
+            Determines whether the processing order of bar High and Low prices are adaptive based on a heuristic.
+            This setting is only relevant when `bar_execution` is True.
+            If False, bar prices are always processed in the fixed order: Open, High, Low, Close.
+            If True, the processing order adapts with the heuristic:
+            - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+            - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+        trade_execution : bool, default False
+            If trades should be processed by the matching engine(s) (and move the market).
 
         Raises
         ------
@@ -505,15 +507,15 @@ cdef class BacktestEngine:
             book_type=book_type,
             clock=self.kernel.clock,
             frozen_account=frozen_account,
-            bar_execution=bar_execution,
-            trade_execution=trade_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
             support_contingent_orders=support_contingent_orders,
             use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
             use_reduce_only=use_reduce_only,
-            adaptive_bar_ordering=adaptive_bar_ordering,
+            bar_execution=bar_execution,
+            bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
+            trade_execution=trade_execution,
         )
 
         self._venues[venue] = exchange
