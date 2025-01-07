@@ -103,6 +103,8 @@ cdef class SimulatedExchange:
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
+    cdef readonly bint adaptive_bar_ordering
+    """If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.\n\n:returns: `bool`"""
 
     cdef dict _matching_engines
     cdef object _message_queue

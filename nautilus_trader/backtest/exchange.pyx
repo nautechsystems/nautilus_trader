@@ -124,6 +124,11 @@ cdef class SimulatedExchange:
         they have initially arrived. Setting this to False would be appropriate for real-time
         sandbox environments, where we don't want to introduce additional latency of waiting for
         the next data event before processing the trading command.
+    adaptive_bar_ordering : bool, default False
+        If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.
+        If False then the processing order is always Open, High, Low, Close.
+        If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+        If Low is closer to Open than High then the processing order is Open, Low, High, Close.
 
     Raises
     ------
@@ -170,6 +175,7 @@ cdef class SimulatedExchange:
         bint use_random_ids = False,
         bint use_reduce_only = True,
         bint use_message_queue = True,
+        bint adaptive_bar_ordering = False,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -212,6 +218,7 @@ cdef class SimulatedExchange:
         self.fill_model = fill_model
         self.fee_model = fee_model
         self.latency_model = latency_model
+        self.adaptive_bar_ordering = adaptive_bar_ordering
 
         # Load modules
         self.modules = []
@@ -356,6 +363,7 @@ cdef class SimulatedExchange:
             use_position_ids=self.use_position_ids,
             use_random_ids=self.use_random_ids,
             use_reduce_only=self.use_reduce_only,
+            adaptive_bar_ordering=self.adaptive_bar_ordering,
         )
 
         self._matching_engines[instrument.id] = matching_engine
