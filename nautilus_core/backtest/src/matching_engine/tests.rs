@@ -51,7 +51,7 @@ use ustr::Ustr;
 
 use crate::{
     matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
-    models::fill::FillModel,
+    models::{fee::FeeModelAny, fill::FillModel},
 };
 
 static ATOMIC_TIME: LazyLock<AtomicTime> =
@@ -176,6 +176,7 @@ fn get_order_matching_engine(
         instrument,
         1,
         FillModel::default(),
+        FeeModelAny::default(),
         BookType::L1_MBP,
         OmsType::Netting,
         account_type.unwrap_or(AccountType::Cash),
@@ -199,6 +200,7 @@ fn get_order_matching_engine_l2(
         instrument,
         1,
         FillModel::default(),
+        FeeModelAny::default(),
         BookType::L2_MBP,
         OmsType::Netting,
         account_type.unwrap_or(AccountType::Cash),
@@ -801,6 +803,7 @@ fn test_get_position_id_hedging_with_existing_position(
         instrument_eth_usdt.clone(),
         1,
         FillModel::default(),
+        FeeModelAny::default(),
         BookType::L1_MBP,
         OmsType::Hedging,
         AccountType::Cash,
@@ -841,6 +844,7 @@ fn test_get_position_id_hedging_with_generated_position(
         instrument_eth_usdt,
         1,
         FillModel::default(),
+        FeeModelAny::default(),
         BookType::L1_MBP,
         OmsType::Hedging,
         AccountType::Cash,
@@ -868,6 +872,7 @@ fn test_get_position_id_netting(
         instrument_eth_usdt.clone(),
         1,
         FillModel::default(),
+        FeeModelAny::default(),
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Cash,

@@ -37,6 +37,29 @@ pub enum FeeModelAny {
     MakerTaker(MakerTakerFeeModel),
 }
 
+impl FeeModel for FeeModelAny {
+    fn get_commission(
+        &self,
+        order: &OrderAny,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<Money> {
+        match self {
+            Self::Fixed(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
+            Self::MakerTaker(model) => {
+                model.get_commission(order, fill_quantity, fill_px, instrument)
+            }
+        }
+    }
+}
+
+impl Default for FeeModelAny {
+    fn default() -> Self {
+        Self::MakerTaker(MakerTakerFeeModel)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FixedFeeModel {
     commission: Money,
