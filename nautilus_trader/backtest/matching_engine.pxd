@@ -92,6 +92,7 @@ cdef class OrderMatchingEngine:
     cdef bint _use_position_ids
     cdef bint _use_random_ids
     cdef bint _use_reduce_only
+    cdef bint _adaptive_bar_ordering
     cdef dict _account_ids
     cdef dict _execution_bar_types
     cdef dict _execution_bar_deltas
@@ -152,7 +153,17 @@ cdef class OrderMatchingEngine:
     cpdef void process_auction_book(self, OrderBook book)
     cpdef void process_instrument_close(self, InstrumentClose close)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
+    cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size)
+    cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_high(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_low(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_close(self, Bar bar, TradeTick tick)
     cdef void _process_quote_ticks_from_bar(self)
+    cdef QuoteTick _create_base_quote_tick(self, Quantity bid_size, Quantity ask_size)
+    cdef void _process_quote_bar_open(self, QuoteTick tick)
+    cdef void _process_quote_bar_high(self, QuoteTick tick)
+    cdef void _process_quote_bar_low(self, QuoteTick tick)
+    cdef void _process_quote_bar_close(self, QuoteTick tick)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 

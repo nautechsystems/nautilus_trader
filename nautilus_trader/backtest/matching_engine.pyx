@@ -157,6 +157,11 @@ cdef class OrderMatchingEngine:
         If the `reduce_only` execution instruction on orders will be honored.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
+    adaptive_bar_ordering : bool, default False
+        If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.
+        If False then the processing order is always Open, High, Low, Close.
+        If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+        If Low is closer to Open than High then the processing order is Open, Low, High, Close.
 
     """
 
@@ -180,6 +185,7 @@ cdef class OrderMatchingEngine:
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
+        bint adaptive_bar_ordering = False,
         # auction_match_algo = default_auction_match
     ) -> None:
         self._clock = clock
@@ -205,6 +211,7 @@ cdef class OrderMatchingEngine:
         self._use_position_ids = use_position_ids
         self._use_random_ids = use_random_ids
         self._use_reduce_only = use_reduce_only
+        self._adaptive_bar_ordering = adaptive_bar_ordering
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._fee_model = fee_model
@@ -635,8 +642,23 @@ cdef class OrderMatchingEngine:
         cdef double size_value = max(bar.volume.as_double() / 4.0, self.instrument.size_increment.as_double())
         cdef Quantity size = Quantity(size_value, bar._mem.volume.precision)
 
-        # Create reusable tick
-        cdef TradeTick tick = TradeTick(
+        # Create base tick template
+        cdef TradeTick tick = self._create_base_trade_tick(bar, size)
+
+        # Process each price point
+        cdef bint process_high_first = not self._adaptive_bar_ordering or abs(bar._mem.high.raw - bar._mem.open.raw) < abs(bar._mem.low.raw - bar._mem.open.raw)
+
+        self._process_trade_bar_open(bar, tick)
+        if process_high_first:
+            self._process_trade_bar_high(bar, tick)
+            self._process_trade_bar_low(bar, tick)
+        else:
+            self._process_trade_bar_low(bar, tick)
+            self._process_trade_bar_high(bar, tick)
+        self._process_trade_bar_close(bar, tick)
+
+    cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size):
+        return TradeTick(
             bar.bar_type.instrument_id,
             bar.open,
             size,
@@ -646,51 +668,43 @@ cdef class OrderMatchingEngine:
             bar.ts_event,
         )
 
-        if is_logging_initialized():
-            self._log.debug(f"Processing trade from bar {tick!r}")
-
-        # Open
-        if not self._core.is_last_initialized or bar._mem.open.raw != self._core.last_raw:  # Direct memory comparison
+    cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick):
+        if not self._core.is_last_initialized or bar._mem.open.raw != self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with open {bar.open}")
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.open.raw)
 
-        cdef str trade_id_str  # Assigned below
-
-        # High
-        if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
+    cdef void _process_trade_bar_high(self, Bar bar, TradeTick tick):
+        if bar._mem.high.raw > self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with high {bar.high}")
-            tick._mem.price = bar._mem.high  # Direct memory assignment
-            tick._mem.aggressor_side = AggressorSide.BUYER  # Direct memory assignment
-            trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
+            tick._mem.price = bar._mem.high
+            tick._mem.aggressor_side = AggressorSide.BUYER
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.high.raw)
 
-        # Low
-        if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
+    cdef void _process_trade_bar_low(self, Bar bar, TradeTick tick):
+        if bar._mem.low.raw < self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with low {bar.low}")
-            tick._mem.price = bar._mem.low  # Direct memory assignment
+            tick._mem.price = bar._mem.low
             tick._mem.aggressor_side = AggressorSide.SELLER
-            trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.low.raw)
 
-        # Close
-        if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
+    cdef void _process_trade_bar_close(self, Bar bar, TradeTick tick):
+        if bar._mem.close.raw != self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with close {bar.close}")
-            tick._mem.price = bar._mem.close  # Direct memory assignment
+            tick._mem.price = bar._mem.close
             tick._mem.aggressor_side = AggressorSide.BUYER if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELLER
-            trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.close.raw)
@@ -705,8 +719,26 @@ cdef class OrderMatchingEngine:
         cdef Quantity bid_size = Quantity(self._last_bid_bar.volume.as_double() / 4.0, self._last_bid_bar._mem.volume.precision)
         cdef Quantity ask_size = Quantity(self._last_ask_bar.volume.as_double() / 4.0, self._last_ask_bar._mem.volume.precision)
 
-        # Create reusable tick
-        cdef QuoteTick tick = QuoteTick(
+        # Create base tick template
+        cdef QuoteTick tick = self._create_base_quote_tick(bid_size, ask_size)
+
+        # Process each price point
+        cdef bint process_high_first = not self._adaptive_bar_ordering or abs(self._last_bid_bar._mem.high.raw - self._last_bid_bar._mem.open.raw) < abs(self._last_bid_bar._mem.low.raw - self._last_bid_bar._mem.open.raw)
+
+        self._process_quote_bar_open(tick)
+        if process_high_first:
+            self._process_quote_bar_high(tick)
+            self._process_quote_bar_low(tick)
+        else:
+            self._process_quote_bar_low(tick)
+            self._process_quote_bar_high(tick)
+        self._process_quote_bar_close(tick)
+
+        self._last_bid_bar = None
+        self._last_ask_bar = None
+
+    cdef QuoteTick _create_base_quote_tick(self, Quantity bid_size, Quantity ask_size):
+        return QuoteTick(
             self._book.instrument_id,
             self._last_bid_bar.open,
             self._last_ask_bar.open,
@@ -716,32 +748,29 @@ cdef class OrderMatchingEngine:
             self._last_ask_bar.ts_init,
         )
 
-        # Open
+    cdef void _process_quote_bar_open(self, QuoteTick tick):
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        # High
-        tick._mem.bid_price = self._last_bid_bar._mem.high  # Direct memory assignment
-        tick._mem.ask_price = self._last_ask_bar._mem.high  # Direct memory assignment
+    cdef void _process_quote_bar_high(self, QuoteTick tick):
+        tick._mem.bid_price = self._last_bid_bar._mem.high
+        tick._mem.ask_price = self._last_ask_bar._mem.high
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        # Low
-        tick._mem.bid_price = self._last_bid_bar._mem.low  # Assigning memory directly
-        tick._mem.ask_price = self._last_ask_bar._mem.low  # Assigning memory directly
+    cdef void _process_quote_bar_low(self, QuoteTick tick):
+        tick._mem.bid_price = self._last_bid_bar._mem.low
+        tick._mem.ask_price = self._last_ask_bar._mem.low
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        # Close
-        tick._mem.bid_price = self._last_bid_bar._mem.close  # Assigning memory directly
-        tick._mem.ask_price = self._last_ask_bar._mem.close  # Assigning memory directly
+    cdef void _process_quote_bar_close(self, QuoteTick tick):
+        tick._mem.bid_price = self._last_bid_bar._mem.close
+        tick._mem.ask_price = self._last_ask_bar._mem.close
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        self._last_bid_bar = None
-        self._last_ask_bar = None
-
-# -- TRADING COMMANDS -----------------------------------------------------------------------------
+    # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void process_order(self, Order order, AccountId account_id):
         if self._core.order_exists(order.client_order_id):
