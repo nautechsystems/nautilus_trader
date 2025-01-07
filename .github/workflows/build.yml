@@ -98,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04] # TODO: Change to ubuntu-latest when GitHub stabilizes
+        os: [ubuntu-22.04]
         python-version: ["3.11", "3.12"]
     defaults:
       run:
