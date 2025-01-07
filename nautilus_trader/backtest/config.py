@@ -110,6 +110,11 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         If all venue generated identifiers will be random UUID4's.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
+    adaptive_bar_ordering : bool, default False
+        If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.
+        If False then the processing order is always Open, High, Low, Close.
+        If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+        If Low is closer to Open than High then the processing order is Open, Low, High, Close.
 
     """
 
@@ -131,6 +136,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_position_ids: bool = True
     use_random_ids: bool = False
     use_reduce_only: bool = True
+    adaptive_bar_ordering: bool = False
     # fill_model: FillModel | None = None  # TODO: Implement
     modules: list[ImportableActorConfig] | None = None
 

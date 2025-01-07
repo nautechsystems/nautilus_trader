@@ -271,6 +271,7 @@ class BacktestNode:
                 use_position_ids=config.use_position_ids,
                 use_random_ids=config.use_random_ids,
                 use_reduce_only=config.use_reduce_only,
+                adaptive_bar_ordering=config.adaptive_bar_ordering,
             )
 
         # Add instruments

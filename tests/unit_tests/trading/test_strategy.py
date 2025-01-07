@@ -1665,7 +1665,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_canceled_entry_then_cancels_oto_orders(
+    def test_managed_contingencies_when_canceled_entry_then_cancels_oto_orders(
         self,
         contingency_type: ContingencyType,
     ) -> None:
@@ -1714,7 +1714,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_canceled_bracket_then_cancels_contingent_order(
+    def test_managed_contingencies_when_canceled_bracket_then_cancels_contingent_order(
         self,
         contingency_type: ContingencyType,
     ) -> None:
@@ -1755,7 +1755,7 @@ class TestStrategy:
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.PENDING_CANCEL
 
-    def test_managed_contingenies_when_modify_bracket_then_modifies_ouo_order(
+    def test_managed_contingencies_when_modify_bracket_then_modifies_ouo_order(
         self,
     ) -> None:
         # Arrange
@@ -1804,7 +1804,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_filled_sl_then_cancels_contingent_order(
+    def test_managed_contingencies_when_filled_sl_then_cancels_contingent_order(
         self,
         contingency_type: ContingencyType,
     ) -> None:
@@ -1859,7 +1859,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_filled_tp_then_cancels_contingent_order(
+    def test_managed_contingencies_when_filled_tp_then_cancels_contingent_order(
         self,
         contingency_type: ContingencyType,
     ) -> None:
