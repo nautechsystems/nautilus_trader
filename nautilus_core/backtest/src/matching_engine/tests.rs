@@ -37,13 +37,12 @@ use nautilus_model::{
         order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
         OrderRejected,
     },
-    identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+    identifiers::{stubs::account_id, AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
     instruments::{
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
         CryptoPerpetual, Equity, InstrumentAny,
     },
     orders::{stubs::TestOrderStubs, OrderAny, OrderTestBuilder},
-    position::Position,
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -63,12 +62,7 @@ fn msgbus() -> MessageBus {
 }
 
 #[fixture]
-fn account_id() -> AccountId {
-    AccountId::from("SIM-001")
-}
-
-#[fixture]
-fn time() -> AtomicTime {
+pub fn time() -> AtomicTime {
     AtomicTime::new(true, UnixNanos::default())
 }
 
@@ -78,22 +72,23 @@ fn order_event_handler() -> ShareableMessageHandler {
 }
 
 #[fixture]
-fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
+pub fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
     InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt)
 }
 
 // Market buy order with corresponding fill
 #[fixture]
-fn market_order_buy(instrument_eth_usdt: InstrumentAny) -> OrderAny {
+pub fn market_order_buy(instrument_eth_usdt: InstrumentAny) -> OrderAny {
     OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .build()
 }
 
 #[fixture]
-fn market_order_fill(
+pub fn market_order_fill(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
     market_order_buy: OrderAny,
@@ -123,11 +118,12 @@ fn market_order_fill(
 
 // Market sell order
 #[fixture]
-fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
+pub fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
     OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from("1"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
         .build()
 }
 
@@ -450,7 +446,7 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         Ustr::from(
             "Short selling not permitted on a CASH account with position None and \
             order MarketOrder(SELL 1 ETHUSDT-PERP.BINANCE @ MARKET GTC, status=INITIALIZED, \
-            client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, \
+            client_order_id=O-19700101-000000-001-001-2, venue_order_id=None, position_id=None, \
             exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
         )
     );
@@ -699,7 +695,6 @@ fn test_process_market_order_no_market_rejected(
 #[rstest]
 fn test_matching_core_bid_ask_initialized(
     msgbus: MessageBus,
-    order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
     instrument_es: InstrumentAny,
@@ -743,159 +738,4 @@ fn test_matching_core_bid_ask_initialized(
     assert!(engine_l2.core.is_bid_initialized);
     assert_eq!(engine_l2.core.ask, Some(Price::from("101")));
     assert!(engine_l2.core.is_ask_initialized);
-}
-
-#[rstest]
-fn test_generate_venue_position_id(
-    order_event_handler: ShareableMessageHandler,
-    account_id: AccountId,
-    time: AtomicTime,
-    instrument_eth_usdt: InstrumentAny,
-) {
-    // Create two order matching engines with different configs
-    // one with and other without position ids
-    let config_no_position_id = OrderMatchingEngineConfig {
-        use_position_ids: false,
-        ..OrderMatchingEngineConfig::default()
-    };
-    let mut engine_no_position_id = get_order_matching_engine_l2(
-        instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(MessageBus::default())),
-        None,
-        None,
-        Some(config_no_position_id),
-    );
-
-    let config_with_position_id = OrderMatchingEngineConfig {
-        use_position_ids: true,
-        ..OrderMatchingEngineConfig::default()
-    };
-    let mut engine_with_position_id = get_order_matching_engine_l2(
-        instrument_eth_usdt,
-        Rc::new(RefCell::new(MessageBus::default())),
-        None,
-        None,
-        Some(config_with_position_id),
-    );
-
-    // Engine which doesnt have position id should return None
-    assert_eq!(engine_no_position_id.generate_venue_position_id(), None);
-
-    // Engine which has position id should return position id in incrementing order
-    let position_id_1 = engine_with_position_id.generate_venue_position_id();
-    let position_id_2 = engine_with_position_id.generate_venue_position_id();
-    assert_eq!(position_id_1, Some(PositionId::new("BINANCE-1-1")));
-    assert_eq!(position_id_2, Some(PositionId::new("BINANCE-1-2")));
-}
-
-#[rstest]
-fn test_get_position_id_hedging_with_existing_position(
-    account_id: AccountId,
-    time: AtomicTime,
-    instrument_eth_usdt: InstrumentAny,
-    market_order_buy: OrderAny,
-    market_order_fill: OrderFilled,
-) {
-    let cache = Rc::new(RefCell::new(Cache::default()));
-
-    // Create oms type hedging engine
-    let mut engine = OrderMatchingEngine::new(
-        instrument_eth_usdt.clone(),
-        1,
-        FillModel::default(),
-        FeeModelAny::default(),
-        BookType::L1_MBP,
-        OmsType::Hedging,
-        AccountType::Cash,
-        &ATOMIC_TIME,
-        Rc::new(RefCell::new(MessageBus::default())),
-        cache,
-        OrderMatchingEngineConfig::default(),
-    );
-
-    let position = Position::new(&instrument_eth_usdt, market_order_fill);
-
-    // Add position to cache
-    engine
-        .cache
-        .borrow_mut()
-        .add_position(position.clone(), engine.oms_type)
-        .unwrap();
-
-    let position_id = engine.get_position_id(&market_order_buy, None);
-    assert_eq!(position_id, Some(position.id));
-}
-
-#[rstest]
-fn test_get_position_id_hedging_with_generated_position(
-    instrument_eth_usdt: InstrumentAny,
-    account_id: AccountId,
-    market_order_buy: OrderAny,
-) {
-    let cache = Rc::new(RefCell::new(Cache::default()));
-
-    // Use order matching config with position ids
-    let config_with_position_id = OrderMatchingEngineConfig {
-        use_position_ids: true,
-        ..OrderMatchingEngineConfig::default()
-    };
-    // Create oms type hedging engine
-    let mut engine = OrderMatchingEngine::new(
-        instrument_eth_usdt,
-        1,
-        FillModel::default(),
-        FeeModelAny::default(),
-        BookType::L1_MBP,
-        OmsType::Hedging,
-        AccountType::Cash,
-        &ATOMIC_TIME,
-        Rc::new(RefCell::new(MessageBus::default())),
-        cache,
-        config_with_position_id,
-    );
-
-    let position_id = engine.get_position_id(&market_order_buy, None);
-    assert_eq!(position_id, Some(PositionId::new("BINANCE-1-1")));
-}
-
-#[rstest]
-fn test_get_position_id_netting(
-    instrument_eth_usdt: InstrumentAny,
-    account_id: AccountId,
-    market_order_buy: OrderAny,
-    market_order_fill: OrderFilled,
-) {
-    let cache = Rc::new(RefCell::new(Cache::default()));
-
-    // create engine with Netting OMS type
-    let mut engine = OrderMatchingEngine::new(
-        instrument_eth_usdt.clone(),
-        1,
-        FillModel::default(),
-        FeeModelAny::default(),
-        BookType::L1_MBP,
-        OmsType::Netting,
-        AccountType::Cash,
-        &ATOMIC_TIME,
-        Rc::new(RefCell::new(MessageBus::default())),
-        cache,
-        OrderMatchingEngineConfig::default(),
-    );
-
-    // position id should be none in non-initialized position id for this instrument
-    let position_id = engine.get_position_id(&market_order_buy, None);
-    assert_eq!(position_id, None);
-
-    // create and add position in cache
-    let position = Position::new(&instrument_eth_usdt, market_order_fill);
-    engine
-        .cache
-        .as_ref()
-        .borrow_mut()
-        .add_position(position.clone(), engine.oms_type)
-        .unwrap();
-
-    // position id should be returned for the existing position
-    let position_id = engine.get_position_id(&market_order_buy, None);
-    assert_eq!(position_id, Some(position.id));
 }
