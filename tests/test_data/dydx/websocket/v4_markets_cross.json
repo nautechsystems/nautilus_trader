@@ -1,0 +1,35 @@
+{
+    "type": "channel_data",
+    "connection_id": "3f42a31a-07a0-4c4b-b74e-bfa3dbf03012",
+    "message_id": 768900,
+    "channel": "v4_markets",
+    "version": "1.0.0",
+    "contents": {
+        "trading": {
+            "FTM-USD": {
+                "id": "86",
+                "clobPairId": "86",
+                "ticker": "FTM-USD",
+                "marketId": 86,
+                "status": "FINAL_SETTLEMENT",
+                "quantumConversionExponent": -9,
+                "atomicResolution": -5,
+                "subticksPerTick": 1000000,
+                "stepBaseQuantums": 1000000,
+                "marketType": "CROSS",
+                "initialMarginFraction": "0.2",
+                "maintenanceMarginFraction": "0.1",
+                "openInterestLowerCap": "5000000",
+                "openInterestUpperCap": "10000000",
+                "tickSize": "0.0001",
+                "stepSize": "10",
+                "priceChange24H": "-0.0036333222",
+                "volume24H": "292953.744",
+                "trades24H": 2656,
+                "nextFundingRate": "0",
+                "openInterest": "564710",
+                "baseOpenInterest": "263330"
+            }
+        }
+    }
+}

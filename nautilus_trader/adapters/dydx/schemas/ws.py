@@ -845,9 +845,7 @@ class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=Tr
     clobPairId: str | None = None
     ticker: str | None = None
     marketId: int | None = None
-    status: DYDXPerpetualMarketStatus | None = (
-        None  # 'ACTIVE', 'PAUSED', 'CANCEL_ONLY', 'POST_ONLY', or 'INITIALIZING'
-    )
+    status: DYDXPerpetualMarketStatus | None = None
     baseAsset: str | None = None
     quoteAsset: str | None = None
     initialMarginFraction: str | None = None
@@ -865,6 +863,11 @@ class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=Tr
     trades24H: int | None = None
     nextFundingRate: str | None = None
     baseOpenInterest: str | None = None
+    marketType: str | None = None
+    openInterestLowerCap: str | None = None
+    openInterestUpperCap: str | None = None
+    tickSize: str | None = None
+    stepSize: str | None = None
 
 
 class DYDXMarketMessageContents(msgspec.Struct, forbid_unknown_fields=True):

@@ -81,10 +81,6 @@ cdef class SimulatedExchange:
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly FeeModel fee_model
     """The fee model for the exchange.\n\n:returns: `FeeModel`"""
-    cdef readonly bint bar_execution
-    """If bars should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
-    cdef readonly bint trade_execution
-    """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
@@ -99,6 +95,12 @@ cdef class SimulatedExchange:
     """If the `reduce_only` option on orders will be honored.\n\n:returns: `bool`"""
     cdef readonly bint use_message_queue
     """If an internal message queue is being used to sequentially process incoming trading commands.\n\n:returns: `bool`"""
+    cdef readonly bint bar_execution
+    """If bars should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
+    cdef readonly bint bar_adaptive_high_low_ordering
+    """If the processing order of bar High and Low prices are adaptive based on a heuristic.\n\n:returns: `bool`"""
+    cdef readonly bint trade_execution
+    """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments

@@ -200,6 +200,7 @@ impl SimulatedExchange {
             instrument,
             self.instruments.len() as u32,
             self.fill_model.clone(),
+            self.fee_model.clone(),
             self.book_type,
             self.oms_type,
             self.account_type,

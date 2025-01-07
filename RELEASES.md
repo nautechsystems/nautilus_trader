@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added catalog helper functions to export data (#2135), thanks @twitu
 - Added additional timestamp properties for `NautilusKernel`
 - Added `event_logging` config option for `StrategyConfig` (#2183), thanks @sunlei
+- Added `bar_adaptive_high_low_ordering` to `BacktestVenueConfig` (#2188), thanks @faysou and @stefansimik
 
 ### Breaking Changes
 - Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API
@@ -46,6 +47,7 @@ Released on TBD (UTC).
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Ported trailing stop logic to Rust (#2174), thanks @DeevsDeevs
+- Ported `FeeModel` to Rust (#2191), thanks @filipmacek
 - Upgraded Cython to v3.1.0a1
 - Upgraded `datafusion` crate to v44.0.0
 
@@ -59,11 +61,13 @@ Released on TBD (UTC).
 - Fixed missing `init_id` field from some order `.to_dict()` representations
 - Fixed writing `DYDXOraclePrice` to catalog (#2158), thanks @davidsblom
 - Fixed account balance for dYdX (#2167), thanks @davidsblom
+- Fixed markets schema for dYdX (#2190), thanks @davidsblom
 - Fixed missing `OrderEmulated` and `OrderReleased` Arrow schemas
 - Fixed websocket public channel reconnect for Bybit (#2176), thanks @sunlei
 - Fixed execution report parsing for Binance Spot (client order ID empty string now becomes a UUID4 string)
+- Fixed docs typo for `fill_order` function in `OrderMatchingEngine` (#2189), thanks @filipmacek
 
-### Documentation updates
+### Documentation Updates
 - Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
 - Added docs for `FillModel` and bar based execution (#2187), thanks @stefansimik
 - Added docs for timestamp and UUID specs

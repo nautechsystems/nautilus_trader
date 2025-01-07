@@ -54,7 +54,10 @@ use nautilus_model::{
 use ustr::Ustr;
 use uuid::Uuid;
 
-use crate::{matching_engine::config::OrderMatchingEngineConfig, models::fill::FillModel};
+use crate::{
+    matching_engine::config::OrderMatchingEngineConfig,
+    models::{fee::FeeModelAny, fill::FillModel},
+};
 
 /// An order matching engine for a single market.
 pub struct OrderMatchingEngine {
@@ -80,6 +83,7 @@ pub struct OrderMatchingEngine {
     book: OrderBook,
     core: OrderMatchingCore,
     fill_model: FillModel,
+    fee_model: FeeModelAny,
     target_bid: Option<Price>,
     target_ask: Option<Price>,
     target_last: Option<Price>,
@@ -100,6 +104,7 @@ impl OrderMatchingEngine {
         instrument: InstrumentAny,
         raw_id: u32,
         fill_model: FillModel,
+        fee_model: FeeModelAny,
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,
@@ -121,6 +126,7 @@ impl OrderMatchingEngine {
             instrument,
             raw_id,
             fill_model,
+            fee_model,
             book_type,
             oms_type,
             account_type,
