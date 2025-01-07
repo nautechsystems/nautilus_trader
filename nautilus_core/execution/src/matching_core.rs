@@ -27,6 +27,7 @@ use nautilus_model::{
 };
 
 /// A generic order matching core.
+#[derive(Clone)]
 pub struct OrderMatchingCore {
     /// The instrument ID for the matching core.
     pub instrument_id: InstrumentId,
@@ -185,7 +186,7 @@ impl OrderMatchingCore {
 
     // -- MATCHING --------------------------------------------------------------------------------
 
-    fn match_order(&self, order: &PassiveOrderAny, _initial: bool) {
+    pub fn match_order(&self, order: &PassiveOrderAny, _initial: bool) {
         match order {
             PassiveOrderAny::Limit(o) => self.match_limit_order(o),
             PassiveOrderAny::Stop(o) => self.match_stop_order(o),

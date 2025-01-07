@@ -720,6 +720,20 @@ impl OrderAny {
         }
     }
 
+    pub fn is_pending_cancel(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_pending_cancel(),
+            Self::LimitIfTouched(order) => order.is_pending_cancel(),
+            Self::Market(order) => order.is_pending_cancel(),
+            Self::MarketIfTouched(order) => order.is_pending_cancel(),
+            Self::MarketToLimit(order) => order.is_pending_cancel(),
+            Self::StopLimit(order) => order.is_pending_cancel(),
+            Self::StopMarket(order) => order.is_pending_cancel(),
+            Self::TrailingStopLimit(order) => order.is_pending_cancel(),
+            Self::TrailingStopMarket(order) => order.is_pending_cancel(),
+        }
+    }
+
     #[must_use]
     pub fn price(&self) -> Option<Price> {
         match self {
@@ -732,6 +746,20 @@ impl OrderAny {
             Self::StopMarket(_) => None,
             Self::TrailingStopLimit(order) => Some(order.price),
             Self::TrailingStopMarket(_) => None,
+        }
+    }
+
+    pub fn has_price(&self) -> bool {
+        match self {
+            Self::Limit(_) => true,
+            Self::LimitIfTouched(_) => true,
+            Self::Market(_) => false,
+            Self::MarketIfTouched(_) => false,
+            Self::MarketToLimit(order) => order.price.is_some(),
+            Self::StopLimit(_) => true,
+            Self::StopMarket(_) => false,
+            Self::TrailingStopLimit(_) => true,
+            Self::TrailingStopMarket(_) => false,
         }
     }
 
@@ -963,6 +991,20 @@ impl OrderAny {
         }
     }
 
+    pub fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
+        match self {
+            Self::Limit(order) => order.emulation_trigger = emulation_trigger,
+            Self::LimitIfTouched(order) => order.emulation_trigger = emulation_trigger,
+            Self::Market(order) => order.emulation_trigger = emulation_trigger,
+            Self::MarketIfTouched(order) => order.emulation_trigger = emulation_trigger,
+            Self::MarketToLimit(order) => order.emulation_trigger = emulation_trigger,
+            Self::StopLimit(order) => order.emulation_trigger = emulation_trigger,
+            Self::StopMarket(order) => order.emulation_trigger = emulation_trigger,
+            Self::TrailingStopLimit(order) => order.emulation_trigger = emulation_trigger,
+            Self::TrailingStopMarket(order) => order.emulation_trigger = emulation_trigger,
+        };
+    }
+
     pub fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
         match self {
             Self::Limit(order) => order.is_quote_quantity = is_quote_quantity,
@@ -1022,6 +1064,15 @@ impl From<OrderAny> for PassiveOrderAny {
     }
 }
 
+impl From<PassiveOrderAny> for OrderAny {
+    fn from(order: PassiveOrderAny) -> OrderAny {
+        match order {
+            PassiveOrderAny::Limit(order) => order.into(),
+            PassiveOrderAny::Stop(order) => order.into(),
+        }
+    }
+}
+
 impl From<StopOrderAny> for PassiveOrderAny {
     fn from(order: StopOrderAny) -> PassiveOrderAny {
         match order {
@@ -1060,12 +1111,36 @@ impl From<OrderAny> for StopOrderAny {
     }
 }
 
+impl From<StopOrderAny> for OrderAny {
+    fn from(order: StopOrderAny) -> OrderAny {
+        match order {
+            StopOrderAny::LimitIfTouched(order) => OrderAny::LimitIfTouched(order),
+            StopOrderAny::MarketIfTouched(order) => OrderAny::MarketIfTouched(order),
+            StopOrderAny::StopLimit(order) => OrderAny::StopLimit(order),
+            StopOrderAny::StopMarket(order) => OrderAny::StopMarket(order),
+            StopOrderAny::TrailingStopLimit(order) => OrderAny::TrailingStopLimit(order),
+            StopOrderAny::TrailingStopMarket(order) => OrderAny::TrailingStopMarket(order),
+        }
+    }
+}
+
 impl From<OrderAny> for LimitOrderAny {
     fn from(order: OrderAny) -> LimitOrderAny {
         match order {
             OrderAny::Limit(order) => LimitOrderAny::Limit(order),
             OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
             _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
+        }
+    }
+}
+
+impl From<LimitOrderAny> for OrderAny {
+    fn from(order: LimitOrderAny) -> OrderAny {
+        match order {
+            LimitOrderAny::Limit(order) => OrderAny::Limit(order),
+            LimitOrderAny::MarketToLimit(order) => OrderAny::MarketToLimit(order),
+            LimitOrderAny::StopLimit(order) => OrderAny::StopLimit(order),
+            LimitOrderAny::TrailingStopLimit(order) => OrderAny::TrailingStopLimit(order),
         }
     }
 }
