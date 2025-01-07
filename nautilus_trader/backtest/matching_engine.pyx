@@ -1896,7 +1896,7 @@ cdef class OrderMatchingEngine:
             The order to fill.
         last_px : Price
             The fill price for the order.
-        last_qty : Price
+        last_qty : Quantity
             The fill quantity for the order.
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
