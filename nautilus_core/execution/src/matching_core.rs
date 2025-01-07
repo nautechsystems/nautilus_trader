@@ -27,6 +27,7 @@ use nautilus_model::{
 };
 
 /// A generic order matching core.
+#[derive(Clone)]
 pub struct OrderMatchingCore {
     /// The instrument ID for the matching core.
     pub instrument_id: InstrumentId,

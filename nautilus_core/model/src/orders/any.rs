@@ -1063,6 +1063,15 @@ impl From<OrderAny> for PassiveOrderAny {
     }
 }
 
+impl From<PassiveOrderAny> for OrderAny {
+    fn from(order: PassiveOrderAny) -> OrderAny {
+        match order {
+            PassiveOrderAny::Limit(order) => order.into(),
+            PassiveOrderAny::Stop(order) => order.into(),
+        }
+    }
+}
+
 impl From<StopOrderAny> for PassiveOrderAny {
     fn from(order: StopOrderAny) -> PassiveOrderAny {
         match order {
@@ -1101,12 +1110,36 @@ impl From<OrderAny> for StopOrderAny {
     }
 }
 
+impl From<StopOrderAny> for OrderAny {
+    fn from(order: StopOrderAny) -> OrderAny {
+        match order {
+            StopOrderAny::LimitIfTouched(order) => OrderAny::LimitIfTouched(order),
+            StopOrderAny::MarketIfTouched(order) => OrderAny::MarketIfTouched(order),
+            StopOrderAny::StopLimit(order) => OrderAny::StopLimit(order),
+            StopOrderAny::StopMarket(order) => OrderAny::StopMarket(order),
+            StopOrderAny::TrailingStopLimit(order) => OrderAny::TrailingStopLimit(order),
+            StopOrderAny::TrailingStopMarket(order) => OrderAny::TrailingStopMarket(order),
+        }
+    }
+}
+
 impl From<OrderAny> for LimitOrderAny {
     fn from(order: OrderAny) -> LimitOrderAny {
         match order {
             OrderAny::Limit(order) => LimitOrderAny::Limit(order),
             OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
             _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
+        }
+    }
+}
+
+impl From<LimitOrderAny> for OrderAny {
+    fn from(order: LimitOrderAny) -> OrderAny {
+        match order {
+            LimitOrderAny::Limit(order) => OrderAny::Limit(order),
+            LimitOrderAny::MarketToLimit(order) => OrderAny::MarketToLimit(order),
+            LimitOrderAny::StopLimit(order) => OrderAny::StopLimit(order),
+            LimitOrderAny::TrailingStopLimit(order) => OrderAny::TrailingStopLimit(order),
         }
     }
 }

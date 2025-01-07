@@ -32,6 +32,7 @@ use nautilus_common::{
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
+    data::{OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
     events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderUpdated},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
@@ -106,7 +107,6 @@ impl OrderEmulator {
     }
 
     // Action Implementations
-
     pub fn on_start(&mut self) -> Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
@@ -238,6 +238,7 @@ impl OrderEmulator {
         }
     }
 
+    // keep it in Outer
     pub fn create_matching_core(
         &mut self,
         instrument_id: InstrumentId,
@@ -282,12 +283,12 @@ impl OrderEmulator {
             .trigger_instrument_id()
             .unwrap_or_else(|| order.instrument_id());
 
-        let matching_core = if let Some(core) = self.matching_cores.get_mut(&trigger_instrument_id)
+        let mut matching_core = if let Some(core) = self.matching_cores.get(&trigger_instrument_id)
         {
-            core
+            core.clone()
         } else {
             // Handle synthetic instruments
-            &mut if trigger_instrument_id.is_synthetic() {
+            if trigger_instrument_id.is_synthetic() {
                 let synthetic = self
                     .cache
                     .borrow()
@@ -324,14 +325,17 @@ impl OrderEmulator {
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
         ) {
             // todo: fix
-            // self.update_trailing_stop_order(matching_core, &PassiveOrderAny::from(order.clone()));
-            // if order.trigger_price().is_none() {
-            //     log::error!(
-            //         "Cannot handle trailing stop order with no trigger_price and no market updates"
-            //     );
-            //     self.manager.cancel_order(order.clone());
-            //     return;
-            // }
+            self.update_trailing_stop_order(
+                &mut matching_core,
+                &PassiveOrderAny::from(order.clone()),
+            );
+            if order.trigger_price().is_none() {
+                log::error!(
+                    "Cannot handle trailing stop order with no trigger_price and no market updates"
+                );
+                self.manager.cancel_order(order.clone());
+                return;
+            }
         }
 
         // Cache command
@@ -346,7 +350,7 @@ impl OrderEmulator {
             TriggerType::Default | TriggerType::BidAsk => {
                 if !self.subscribed_quotes.contains(&trigger_instrument_id) {
                     if !trigger_instrument_id.is_synthetic() {
-                        // todo: fix
+                        // todo: fix after completing Actor Trait
                         // self.subscribe_order_book_deltas(&trigger_instrument_id);
                     }
                     // todo: fix
@@ -362,11 +366,8 @@ impl OrderEmulator {
                 }
             }
             _ => {
+                log::error!("Invalid TriggerType: {:?}", emulation_trigger);
                 return;
-                // Err(anyhow::anyhow!(
-                //     "Invalid TriggerType: {:?}",
-                //     emulation_trigger
-                // ))
             }
         }
 
@@ -376,7 +377,7 @@ impl OrderEmulator {
             .get_submit_order_commands()
             .contains_key(&order.client_order_id())
         {
-            return;
+            return; // Already released
         }
 
         // Hold in matching core
@@ -400,19 +401,23 @@ impl OrderEmulator {
             self.cache.borrow_mut().update_order(&order).unwrap();
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
-            // todo: check diff of passing event directly vs wrapping in OrderEventAny
+            // todo: check diff of passing event directly vs wrapping in OrderEventAny??
             self.msgbus.borrow().publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
         }
 
+        // Since we are cloning the matching core, we need to insert it back into the map
+        self.matching_cores
+            .insert(trigger_instrument_id, matching_core);
+
         log::info!("Emulating {}", order);
     }
 
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) -> Result<()> {
-        // todo: fix
-        // self.check_monitoring(&command.strategy_id, &command.position_id);
+        // todo: fix unwrap
+        self.check_monitoring(command.strategy_id, command.position_id.unwrap());
 
         for order in command.order_list.orders {
             if let Some(parent_order_id) = order.parent_order_id() {
@@ -573,34 +578,36 @@ impl OrderEmulator {
 
         for order in orders {
             // todo: fix
-            // self.manager.cancel_order(OrderAny::from(order.clone()));
+            self.manager.cancel_order(order.clone().into());
         }
 
         Ok(())
     }
 
-    const fn check_monitoring(&self, strategy_id: StrategyId, position_id: PositionId) {
+    fn check_monitoring(&mut self, strategy_id: StrategyId, position_id: PositionId) {
         // todo: fix: add handler
-        // if !self.subscribed_strategies.contains(&strategy_id) {
-        //     // Subscribe to all strategy events
-        //     self.msgbus
-        //         .borrow()
-        //         .subscribe(format!("events.order.{}", strategy_id), handler, None);
-        //     self.msgbus.borrow().subscribe(
-        //         format!("events.position.{}", strategy_id),
-        //         handler,
-        //         None,
-        //     );
-        //     self.subscribed_strategies.insert(strategy_id);
-        //     log::info!(
-        //         "Subscribed to strategy {} order and position events",
-        //         strategy_id
-        //     )
-        // }
+        if !self.subscribed_strategies.contains(&strategy_id) {
+            // Subscribe to all strategy events
+            // self.msgbus.borrow().subscribe(
+            //     format!("events.order.{}", strategy_id),
+            //     self.on_event,
+            //     None,
+            // );
+            // self.msgbus.borrow().subscribe(
+            //     format!("events.position.{}", strategy_id),
+            //     self.on_event,
+            //     None,
+            // );
+            self.subscribed_strategies.insert(strategy_id);
+            log::info!(
+                "Subscribed to strategy {} order and position events",
+                strategy_id
+            );
+        }
 
-        // if !self.monitored_positions.contains(&position_id) {
-        //         self.monitored_positions.insert(position_id);
-        //     }
+        if !self.monitored_positions.contains(&position_id) {
+            self.monitored_positions.insert(position_id);
+        }
     }
 
     fn cancel_order(&mut self, order: &OrderAny) {
@@ -741,88 +748,88 @@ impl OrderEmulator {
         // cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
     }
 
-    // pub fn on_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
-    //     log::debug!("Processing OrderBookDeltas:{}", deltas);
+    pub fn on_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
+        log::debug!("Processing OrderBookDeltas:{}", deltas);
 
-    //     let matching_core = match self.matching_cores.get_mut(&deltas.instrument_id) {
-    //         Some(matching_core) => matching_core,
-    //         None => {
-    //             log::error!(
-    //                 "Cannot handle `OrderBookDeltas`: no matching core for instrument {}",
-    //                 deltas.instrument_id
-    //             );
-    //             return;
-    //         }
-    //     };
+        //     let matching_core = match self.matching_cores.get_mut(&deltas.instrument_id) {
+        //         Some(matching_core) => matching_core,
+        //         None => {
+        //             log::error!(
+        //                 "Cannot handle `OrderBookDeltas`: no matching core for instrument {}",
+        //                 deltas.instrument_id
+        //             );
+        //             return;
+        //         }
+        //     };
 
-    //     let borrowed_cache = self.cache.borrow();
-    //     let book = match borrowed_cache.order_book(&deltas.instrument_id) {
-    //         Some(book) => book,
-    //         None => {
-    //             log::error!(
-    //                 "Cannot handle `OrderBookDeltas`: no book being maintained for {}",
-    //                 deltas.instrument_id
-    //             );
-    //             return;
-    //         }
-    //     };
+        //     let borrowed_cache = self.cache.borrow();
+        //     let book = match borrowed_cache.order_book(&deltas.instrument_id) {
+        //         Some(book) => book,
+        //         None => {
+        //             log::error!(
+        //                 "Cannot handle `OrderBookDeltas`: no book being maintained for {}",
+        //                 deltas.instrument_id
+        //             );
+        //             return;
+        //         }
+        //     };
 
-    //     let best_bid = book.best_bid_price();
-    //     let best_ask = book.best_ask_price();
+        //     let best_bid = book.best_bid_price();
+        //     let best_ask = book.best_ask_price();
 
-    //     if let Some(best_bid) = best_bid {
-    //         matching_core.set_bid_raw(best_bid);
-    //     }
+        //     if let Some(best_bid) = best_bid {
+        //         matching_core.set_bid_raw(best_bid);
+        //     }
 
-    //     if let Some(best_ask) = best_ask {
-    //         matching_core.set_ask_raw(best_ask);
-    //     }
+        //     if let Some(best_ask) = best_ask {
+        //         matching_core.set_ask_raw(best_ask);
+        //     }
 
-    //     self.iterate_orders(matching_core).unwrap();
-    // }
+        //     self.iterate_orders(matching_core).unwrap();
+    }
 
-    // fn on_quote_tick(&mut self, tick: QuoteTick) {
-    //     log::debug!("Processing QuoteTick:{}", tick);
+    fn on_quote_tick(&mut self, tick: QuoteTick) {
+        //     log::debug!("Processing QuoteTick:{}", tick);
 
-    //     let matching_core = match self.matching_cores.get_mut(&tick.instrument_id) {
-    //         Some(matching_core) => matching_core,
-    //         None => {
-    //             log::error!(
-    //                 "Cannot handle `QuoteTick`: no matching core for instrument {}",
-    //                 tick.instrument_id
-    //             );
-    //             return;
-    //         }
-    //     };
+        //     let matching_core = match self.matching_cores.get_mut(&tick.instrument_id) {
+        //         Some(matching_core) => matching_core,
+        //         None => {
+        //             log::error!(
+        //                 "Cannot handle `QuoteTick`: no matching core for instrument {}",
+        //                 tick.instrument_id
+        //             );
+        //             return;
+        //         }
+        //     };
 
-    //     matching_core.set_bid_raw(tick.bid_price);
-    //     matching_core.set_ask_raw(tick.ask_price);
+        //     matching_core.set_bid_raw(tick.bid_price);
+        //     matching_core.set_ask_raw(tick.ask_price);
 
-    //     self.iterate_orders(matching_core).unwrap();
-    // }
+        //     self.iterate_orders(matching_core).unwrap();
+    }
 
-    // fn on_trade_tick(&mut self, tick: TradeTick) {
-    //     log::debug!("Processing TradeTick:{}", tick);
+    fn on_trade_tick(&mut self, tick: TradeTick) {
+        //     log::debug!("Processing TradeTick:{}", tick);
 
-    //     let matching_core = match self.matching_cores.get_mut(&tick.instrument_id) {
-    //         Some(matching_core) => matching_core,
-    //         None => {
-    //             log::error!(
-    //                 "Cannot handle `TradeTick`: no matching core for instrument {}",
-    //                 tick.instrument_id
-    //             );
-    //             return;
-    //         }
-    //     };
+        //     let matching_core = match self.matching_cores.get_mut(&tick.instrument_id) {
+        //         Some(matching_core) => matching_core,
+        //         None => {
+        //             log::error!(
+        //                 "Cannot handle `TradeTick`: no matching core for instrument {}",
+        //                 tick.instrument_id
+        //             );
+        //             return;
+        //         }
+        //     };
 
-    //     matching_core.set_last_raw(tick.price);
-    //     if !self.subscribed_quotes.contains(&tick.instrument_id) {
-    //         matching_core.set_bid_raw(tick.price);
-    //         matching_core.set_ask_raw(tick.price);
-    //     }
+        //     matching_core.set_last_raw(tick.price);
+        //     if !self.subscribed_quotes.contains(&tick.instrument_id) {
+        //         matching_core.set_bid_raw(tick.price);
+        //         matching_core.set_ask_raw(tick.price);
+        //     }
 
-    //     self.iterate_orders(matching_core).unwrap();
-    // }
+        //     self.iterate_orders(matching_core).unwrap();
+    }
 
     fn iterate_orders(&mut self, matching_core: &mut OrderMatchingCore) -> Result<()> {
         matching_core.iterate();
@@ -845,7 +852,7 @@ impl OrderEmulator {
     }
 
     fn update_trailing_stop_order(
-        &mut self,
+        &self,
         matching_core: &mut OrderMatchingCore,
         order: &PassiveOrderAny,
     ) {
@@ -861,20 +868,6 @@ impl OrderEmulator {
         // }
         // if matching_core.is_last_initialized {
         //     last = matching_core.last;
-        // }
-
-        let borrowed_cache = self.cache.borrow();
-        let quote_tick = borrowed_cache.quote(&matching_core.instrument_id);
-        let trade_tick = borrowed_cache.trade(&matching_core.instrument_id);
-
-        // if bid.is_none() && quote_tick.is_some() {
-        //     bid = Some(quote_tick.unwrap().bid_price);
-        // }
-        // if ask.is_none() && quote_tick.is_some() {
-        //     ask = Some(quote_tick.unwrap().ask_price);
-        // }
-        // if last.is_none() && trade_tick.is_some() {
-        //     last = Some(trade_tick.unwrap().price);
         // }
 
         // TODO
