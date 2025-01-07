@@ -102,10 +102,6 @@ cdef class SimulatedExchange:
         The order book type for the exchange.
     frozen_account : bool, default False
         If the account for this exchange is frozen (balances will not change).
-    bar_execution : bool, default True
-        If bars should be processed by the matching engine(s) (and move the market).
-    trade_execution : bool, default False
-        If trades should be processed by the matching engine(s) (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
@@ -124,11 +120,17 @@ cdef class SimulatedExchange:
         they have initially arrived. Setting this to False would be appropriate for real-time
         sandbox environments, where we don't want to introduce additional latency of waiting for
         the next data event before processing the trading command.
-    adaptive_bar_ordering : bool, default False
-        If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.
-        If False then the processing order is always Open, High, Low, Close.
-        If High is closer to Open than Low then the processing order is Open, High, Low, Close.
-        If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+    bar_execution : bool, default True
+        If bars should be processed by the matching engine(s) (and move the market).
+    bar_adaptive_high_low_ordering : bool, default False
+        Determines whether the processing order of bar High and Low prices are adaptive based on a heuristic.
+        This setting is only relevant when `bar_execution` is True.
+        If False, bar prices are always processed in the fixed order: Open, High, Low, Close.
+        If True, the processing order adapts with the heuristic:
+        - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+        - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+    trade_execution : bool, default False
+        If trades should be processed by the matching engine(s) (and move the market).
 
     Raises
     ------
@@ -166,8 +168,6 @@ cdef class SimulatedExchange:
         LatencyModel latency_model = None,
         BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
-        bint bar_execution = True,
-        bint trade_execution = False,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
@@ -175,7 +175,9 @@ cdef class SimulatedExchange:
         bint use_random_ids = False,
         bint use_reduce_only = True,
         bint use_message_queue = True,
-        bint adaptive_bar_ordering = False,
+        bint bar_execution = True,
+        bint bar_adaptive_high_low_ordering = False,
+        bint trade_execution = False,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -205,9 +207,7 @@ cdef class SimulatedExchange:
         self.leverages = leverages
         self.is_frozen_account = frozen_account
 
-        # Execution
-        self.bar_execution = bar_execution
-        self.trade_execution = trade_execution
+        # Execution config
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
         self.support_contingent_orders = support_contingent_orders
@@ -215,10 +215,14 @@ cdef class SimulatedExchange:
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
         self.use_message_queue = use_message_queue
+        self.bar_execution = bar_execution
+        self.bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
+        self.trade_execution = trade_execution
+
+        # Execution models
         self.fill_model = fill_model
         self.fee_model = fee_model
         self.latency_model = latency_model
-        self.adaptive_bar_ordering = adaptive_bar_ordering
 
         # Load modules
         self.modules = []
@@ -355,15 +359,15 @@ cdef class SimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self._clock,
-            bar_execution=self.bar_execution,
-            trade_execution=self.trade_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
             support_contingent_orders=self.support_contingent_orders,
             use_position_ids=self.use_position_ids,
             use_random_ids=self.use_random_ids,
             use_reduce_only=self.use_reduce_only,
-            adaptive_bar_ordering=self.adaptive_bar_ordering,
+            bar_execution=self.bar_execution,
+            bar_adaptive_high_low_ordering=self.bar_adaptive_high_low_ordering,
+            trade_execution=self.trade_execution,
         )
 
         self._matching_engines[instrument.id] = matching_engine

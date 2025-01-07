@@ -168,7 +168,7 @@ class TestOrderMatchingEngine:
         assert self.matching_engine.msgbus.sent_count == 1
         assert isinstance(messages[0], OrderFilled)
 
-    # @pytest.mark.parametrize("adaptive_ordering,bar_prices,expected_prices",
+    # @pytest.mark.parametrize("adaptive_ordering, bar_prices, expected_prices",
     #     [
     #         (   # Test case 1: Adaptive ordering, Low closer to Open
     #             True,
@@ -187,7 +187,7 @@ class TestOrderMatchingEngine:
     #         ),
     #     ],
     # )
-    # def test_adaptive_bar_ordering(
+    # def test_bar_adaptive_high_low_ordering(
     #         self,
     #         adaptive_ordering: bool,
     #         bar_prices: dict,
@@ -205,7 +205,7 @@ class TestOrderMatchingEngine:
     #         msgbus=self.msgbus,
     #         cache=self.cache,
     #         clock=self.clock,
-    #         adaptive_bar_ordering=adaptive_ordering,
+    #         bar_adaptive_high_low_ordering=adaptive_ordering,
     #     )
     #
     #     client_order = MarketOrder(

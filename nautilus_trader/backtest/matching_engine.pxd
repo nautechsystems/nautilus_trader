@@ -84,15 +84,15 @@ cdef class OrderMatchingEngine:
     cdef InstrumentClose _instrument_close
     # cdef object _auction_match_algo
     cdef bint _instrument_has_expiration
-    cdef bint _bar_execution
-    cdef bint _trade_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
     cdef bint _support_contingent_orders
     cdef bint _use_position_ids
     cdef bint _use_random_ids
     cdef bint _use_reduce_only
-    cdef bint _adaptive_bar_ordering
+    cdef bint _bar_execution
+    cdef bint _bar_adaptive_high_low_ordering
+    cdef bint _trade_execution
     cdef dict _account_ids
     cdef dict _execution_bar_types
     cdef dict _execution_bar_deltas

@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added catalog helper functions to export data (#2135), thanks @twitu
 - Added additional timestamp properties for `NautilusKernel`
 - Added `event_logging` config option for `StrategyConfig` (#2183), thanks @sunlei
+- Added `bar_adaptive_high_low_ordering` to `BacktestVenueConfig` (#2188), thanks @faysou and @stefansimik
 
 ### Breaking Changes
 - Removed optional `value` param from `UUID4` (use `UUID4.from_str(...)` instead), aligns with Nautilus PyO3 API

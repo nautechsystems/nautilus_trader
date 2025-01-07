@@ -157,11 +157,13 @@ cdef class OrderMatchingEngine:
         If the `reduce_only` execution instruction on orders will be honored.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
-    adaptive_bar_ordering : bool, default False
-        If High or Low should be processed first depending on distance with Open when using bars with the order matching engine.
-        If False then the processing order is always Open, High, Low, Close.
-        If High is closer to Open than Low then the processing order is Open, High, Low, Close.
-        If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+    bar_adaptive_high_low_ordering : bool, default False
+        Determines whether the processing order of bar High and Low prices are adaptive based on a heuristic.
+        This setting is only relevant when `bar_execution` is True.
+        If False, bar prices are always processed in the fixed order: Open, High, Low, Close.
+        If True, the processing order adapts with the heuristic:
+        - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+        - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
 
     """
 
@@ -177,15 +179,15 @@ cdef class OrderMatchingEngine:
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
-        bint bar_execution = True,
-        bint trade_execution = False,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
-        bint adaptive_bar_ordering = False,
+        bint bar_execution = True,
+        bint bar_adaptive_high_low_ordering = False,
+        bint trade_execution = False,
         # auction_match_algo = default_auction_match
     ) -> None:
         self._clock = clock
@@ -203,15 +205,16 @@ cdef class OrderMatchingEngine:
 
         self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
         self._instrument_close = None
-        self._bar_execution = bar_execution
-        self._trade_execution = trade_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._support_contingent_orders = support_contingent_orders
         self._use_position_ids = use_position_ids
         self._use_random_ids = use_random_ids
         self._use_reduce_only = use_reduce_only
-        self._adaptive_bar_ordering = adaptive_bar_ordering
+        self._bar_execution = bar_execution
+        self._bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
+        self._trade_execution = trade_execution
+
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._fee_model = fee_model
@@ -646,7 +649,10 @@ cdef class OrderMatchingEngine:
         cdef TradeTick tick = self._create_base_trade_tick(bar, size)
 
         # Process each price point
-        cdef bint process_high_first = not self._adaptive_bar_ordering or abs(bar._mem.high.raw - bar._mem.open.raw) < abs(bar._mem.low.raw - bar._mem.open.raw)
+        cdef bint process_high_first = (
+            not self._bar_adaptive_high_low_ordering
+            or abs(bar._mem.high.raw - bar._mem.open.raw) < abs(bar._mem.low.raw - bar._mem.open.raw)
+        )
 
         self._process_trade_bar_open(bar, tick)
         if process_high_first:
@@ -723,7 +729,10 @@ cdef class OrderMatchingEngine:
         cdef QuoteTick tick = self._create_base_quote_tick(bid_size, ask_size)
 
         # Process each price point
-        cdef bint process_high_first = not self._adaptive_bar_ordering or abs(self._last_bid_bar._mem.high.raw - self._last_bid_bar._mem.open.raw) < abs(self._last_bid_bar._mem.low.raw - self._last_bid_bar._mem.open.raw)
+        cdef bint process_high_first = (
+            not self._bar_adaptive_high_low_ordering
+            or abs(self._last_bid_bar._mem.high.raw - self._last_bid_bar._mem.open.raw) < abs(self._last_bid_bar._mem.low.raw - self._last_bid_bar._mem.open.raw)
+        )
 
         self._process_quote_bar_open(tick)
         if process_high_first:

@@ -263,15 +263,15 @@ class BacktestNode:
                 routing=config.routing,
                 modules=[ActorFactory.create(module) for module in (config.modules or [])],
                 frozen_account=config.frozen_account,
-                bar_execution=config.bar_execution,
-                trade_execution=config.trade_execution,
                 reject_stop_orders=config.reject_stop_orders,
                 support_gtd_orders=config.support_gtd_orders,
                 support_contingent_orders=config.support_contingent_orders,
                 use_position_ids=config.use_position_ids,
                 use_random_ids=config.use_random_ids,
                 use_reduce_only=config.use_reduce_only,
-                adaptive_bar_ordering=config.adaptive_bar_ordering,
+                bar_execution=config.bar_execution,
+                bar_adaptive_high_low_ordering=config.bar_adaptive_high_low_ordering,
+                trade_execution=config.trade_execution,
             )
 
         # Add instruments
