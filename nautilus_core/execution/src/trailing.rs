@@ -20,6 +20,7 @@ use nautilus_model::{
     orders::{base::OrderError, OrderAny},
     types::Price,
 };
+use rust_decimal::{prelude::*, Decimal};
 
 pub fn trailing_stop_calculate(
     price_increment: Price,
@@ -347,10 +348,10 @@ pub fn trailing_stop_calculate_with_last(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
     side: OrderSideSpecified,
-    offset: Price,
+    offset: Decimal,
     last: Price,
 ) -> anyhow::Result<Price> {
-    let mut offset_value = offset.as_f64();
+    let mut offset_value = offset.to_f64().expect("Invalid `offset` value");
     let last_f64 = last.as_f64();
 
     match trailing_offset_type {
@@ -376,11 +377,11 @@ pub fn trailing_stop_calculate_with_bid_ask(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
     side: OrderSideSpecified,
-    offset: Price,
+    offset: Decimal,
     bid: Price,
     ask: Price,
 ) -> anyhow::Result<Price> {
-    let mut offset_value = offset.as_f64();
+    let mut offset_value = offset.to_f64().expect("Invalid `offset` value");
     let bid_f64 = bid.as_f64();
     let ask_f64 = ask.as_f64();
 
@@ -415,6 +416,8 @@ mod tests {
         types::Quantity,
     };
     use rstest::rstest;
+    use rust_decimal::prelude::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -441,7 +444,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trailing_offset(Price::new(1.0, 2))
+            .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
@@ -461,7 +464,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trailing_offset(Price::new(1.0, 2))
+            .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::BidAsk)
             .quantity(Quantity::from(1))
             .build();
@@ -479,7 +482,7 @@ mod tests {
             .side(OrderSide::Buy)
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trailing_offset(Price::new(1.0, 2))
+            .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::IndexPrice)
             .quantity(Quantity::from(1))
             .build();
@@ -507,7 +510,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(initial_trigger, 2))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trailing_offset(Price::new(offset, 2))
+            .trailing_offset(Decimal::from_f64(offset).unwrap())
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
@@ -545,7 +548,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(initial_trigger, 2))
             .trailing_offset_type(TrailingOffsetType::BasisPoints)
-            .trailing_offset(Price::new(basis_points, 2))
+            .trailing_offset(Decimal::from_f64(basis_points).unwrap())
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
@@ -584,7 +587,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(initial_trigger, 2))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trailing_offset(Price::new(offset, 2))
+            .trailing_offset(Decimal::from_f64(offset).unwrap())
             .trigger_type(TriggerType::BidAsk)
             .quantity(Quantity::from(1))
             .build();
@@ -606,14 +609,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case(OrderSide::Buy, 100.0, 5.0, 98.0, Some(98.05))] // 5 ticks * 0.01 = 0.05 offset
-    #[case(OrderSide::Buy, 100.0, 10.0, 97.0, Some(97.10))] // 10 ticks * 0.01 = 0.10 offset
-    #[case(OrderSide::Sell, 100.0, 5.0, 102.0, Some(101.95))] // 5 ticks * 0.01 = 0.05 offset
-    #[case(OrderSide::Sell, 100.0, 10.0, 103.0, Some(102.90))] // 10 ticks * 0.01 = 0.10 offset
+    #[case(OrderSide::Buy, 100.0, 5, 98.0, Some(98.05))] // 5 ticks * 0.01 = 0.05 offset
+    #[case(OrderSide::Buy, 100.0, 10, 97.0, Some(97.10))] // 10 ticks * 0.01 = 0.10 offset
+    #[case(OrderSide::Sell, 100.0, 5, 102.0, Some(101.95))] // 5 ticks * 0.01 = 0.05 offset
+    #[case(OrderSide::Sell, 100.0, 10, 103.0, Some(102.90))] // 10 ticks * 0.01 = 0.10 offset
     fn test_trailing_stop_market_ticks(
         #[case] side: OrderSide,
         #[case] initial_trigger: f64,
-        #[case] ticks: f64,
+        #[case] ticks: u32,
         #[case] last_price: f64,
         #[case] expected_trigger: Option<f64>,
     ) {
@@ -622,7 +625,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(initial_trigger, 2))
             .trailing_offset_type(TrailingOffsetType::Ticks)
-            .trailing_offset(Price::new(ticks, 2))
+            .trailing_offset(Decimal::from_u32(ticks).unwrap())
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
@@ -662,7 +665,7 @@ mod tests {
             .side(side)
             .trigger_price(Price::new(initial_trigger, 2))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trailing_offset(Price::new(offset, 2))
+            .trailing_offset(Decimal::from_f64(offset).unwrap())
             .trigger_type(TriggerType::LastOrBidAsk)
             .quantity(Quantity::from(1))
             .build();

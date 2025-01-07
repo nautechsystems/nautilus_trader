@@ -33,6 +33,7 @@ use nautilus_model::{
     },
     types::{Currency, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
 
@@ -158,11 +159,11 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
-            .and_then(|x| x.map(Price::from));
+            .and_then(|x| x.and_then(|s| Decimal::from_str(s).ok()));
         let trailing_offset = row
             .try_get::<Option<&str>, _>("trailing_offset")
             .ok()
-            .and_then(|x| x.map(Price::from));
+            .and_then(|x| x.and_then(|s| Decimal::from_str(s).ok()));
         let trailing_offset_type = row
             .try_get::<Option<TrailingOffsetTypeModel>, _>("trailing_offset_type")
             .ok()
@@ -514,11 +515,11 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
-            .and_then(|x| x.map(Price::from));
+            .and_then(|x| x.and_then(|s| Decimal::from_str(s).ok()));
         let trailing_offset = row
             .try_get::<Option<&str>, _>("trailing_offset")
             .ok()
-            .and_then(|x| x.map(Price::from));
+            .and_then(|x| x.and_then(|s| Decimal::from_str(s).ok()));
         let trailing_offset_type = row
             .try_get::<Option<TrailingOffsetTypeModel>, _>("trailing_offset_type")
             .ok()

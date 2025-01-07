@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal_macros::dec;
 
 use super::{
     limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
@@ -267,8 +268,8 @@ impl Default for TrailingStopLimitOrder {
             Price::from("1.00000"),
             Price::from("1.00000"),
             TriggerType::BidAsk,
-            Price::from("0.00100"),
-            Price::from("0.00100"),
+            dec!(0.001),
+            dec!(0.001),
             TrailingOffsetType::Price,
             TimeInForce::Gtc,
             None,
@@ -304,7 +305,7 @@ impl Default for TrailingStopMarketOrder {
             Quantity::from(100_000),
             Price::from("1.00000"),
             TriggerType::BidAsk,
-            Price::from("0.00100"),
+            dec!(0.001),
             TrailingOffsetType::Price,
             TimeInForce::Gtc,
             None,

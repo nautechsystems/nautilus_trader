@@ -17,6 +17,7 @@ use std::fmt::Display;
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -765,7 +766,7 @@ impl OrderAny {
     }
 
     #[must_use]
-    pub fn limit_offset(&self) -> Option<Price> {
+    pub fn limit_offset(&self) -> Option<Decimal> {
         match self {
             Self::Limit(_) => None,
             Self::LimitIfTouched(_) => None,
@@ -780,7 +781,7 @@ impl OrderAny {
     }
 
     #[must_use]
-    pub fn trailing_offset(&self) -> Option<Price> {
+    pub fn trailing_offset(&self) -> Option<Decimal> {
         match self {
             Self::Limit(_) => None,
             Self::LimitIfTouched(_) => None,

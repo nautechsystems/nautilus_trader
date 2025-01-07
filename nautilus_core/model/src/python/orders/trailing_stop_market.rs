@@ -16,6 +16,7 @@
 use indexmap::IndexMap;
 use nautilus_core::{python::to_pyruntime_err, UUID4};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -46,7 +47,7 @@ impl TrailingStopMarketOrder {
         quantity: Quantity,
         trigger_price: Price,
         trigger_type: TriggerType,
-        trailing_offset: Price,
+        trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
         time_in_force: TimeInForce,
         reduce_only: bool,
