@@ -89,6 +89,11 @@ class BybitWebSocketClient:
     ws_trade_timeout_secs: float, default 5.0
         The timeout for trade websocket messages.
 
+    Raises
+    ------
+    ValueError
+        If `is_private` and `is_trade` are both True.
+
     """
 
     def __init__(
@@ -105,6 +110,9 @@ class BybitWebSocketClient:
         max_reconnection_tries: int | None = 3,
         ws_trade_timeout_secs: float | None = 5.0,
     ) -> None:
+        if is_private and is_trade:
+            raise ValueError("`is_private` and `is_trade` cannot both be True")
+
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)
 
@@ -134,9 +142,6 @@ class BybitWebSocketClient:
         self._decoder_ws_order_response = msgspec_json.Decoder(BybitWsOrderResponseMsg)
 
         self._pending_order_requests: dict[str, WsOrderResponseFuture] = {}
-
-        if self._is_private and self._is_trade:
-            raise ValueError("`is_private` and `is_trade` cannot both be True")
 
     @property
     def subscriptions(self) -> list[str]:
@@ -192,6 +197,10 @@ class BybitWebSocketClient:
             # Authenticate
             if self._auth_required:
                 await self._authenticate()
+
+            self._log.warning(
+                f"Resubscribing {self.channel_type} channel to {len(self._subscriptions)} streams",
+            )
 
             # Re-subscribe to all streams
             await self._subscribe_all()
@@ -294,10 +303,6 @@ class BybitWebSocketClient:
         if self._client is None:
             self._log.error("Cannot subscribe all: not connected")
             return
-
-        self._log.warning(
-            f"Resubscribing {self.channel_type} channel to `{len(self._subscriptions)}` streams",
-        )
 
         # You can input up to 10 args for each subscription request sent to one connection
         subscription_lists = [
