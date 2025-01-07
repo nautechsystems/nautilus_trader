@@ -64,6 +64,7 @@ Released on TBD (UTC).
 
 ### Documentation updates
 - Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
+- Added docs for `FillModel` and bar based execution (#2187), thanks @stefansimik
 - Added docs for timestamp and UUID specs
 
 ---
