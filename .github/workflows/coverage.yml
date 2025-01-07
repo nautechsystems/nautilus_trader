@@ -14,21 +14,23 @@ jobs:
         python-version: ["3.11"]
     name: build - python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      # > --------------------------------------------------
-      # > sccache
-      # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_IDLE_TIMEOUT: 0
-      SCCACHE_DIRECT: "true"
-      SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
-      RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang++"
-      # Incrementally compiled crates cannot be cached by sccache
-      # https://github.com/mozilla/sccache#rust
-      CARGO_INCREMENTAL: 0
-      # > --------------------------------------------------
+
+    # env:
+    #   # > --------------------------------------------------
+    #   # > sccache
+    #   # https://github.com/Mozilla-Actions/sccache-action
+    #   SCCACHE_IDLE_TIMEOUT: 0
+    #   SCCACHE_DIRECT: "true"
+    #   SCCACHE_CACHE_MULTIARCH: 1
+    #   SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
+    #   RUSTC_WRAPPER: "sccache"
+    #   CC: "sccache clang"
+    #   CXX: "sccache clang++"
+    #   # Incrementally compiled crates cannot be cached by sccache
+    #   # https://github.com/mozilla/sccache#rust
+    #   CARGO_INCREMENTAL: 0
+    #   # > --------------------------------------------------
+
     services:
       redis:
         image: redis
@@ -94,19 +96,19 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Cached sccache
-        id: cached-sccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-            sccache-${{ runner.os }}-${{ github.workflow }}-
-            sccache-${{ runner.os }}-
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
+      # - name: Cached sccache
+      #   id: cached-sccache
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ${{ env.SCCACHE_DIR }}
+      #     key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+      #     restore-keys: |
+      #       sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
+      #       sccache-${{ runner.os }}-${{ github.workflow }}-
+      #       sccache-${{ runner.os }}-
+      #
+      # - name: Run sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
