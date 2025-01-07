@@ -17,6 +17,7 @@ use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -208,11 +209,11 @@ impl OrderEvent for OrderReleased {
         None
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         None
     }
 

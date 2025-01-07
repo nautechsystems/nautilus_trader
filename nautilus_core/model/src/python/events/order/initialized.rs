@@ -20,6 +20,7 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -56,8 +57,8 @@ impl OrderInitialized {
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
-        limit_offset: Option<Price>,
-        trailing_offset: Option<Price>,
+        limit_offset: Option<Decimal>,
+        trailing_offset: Option<Decimal>,
         trailing_offset_type: Option<TrailingOffsetType>,
         expire_time: Option<u64>,
         display_qty: Option<Quantity>,

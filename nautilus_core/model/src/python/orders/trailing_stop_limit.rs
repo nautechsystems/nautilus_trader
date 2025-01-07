@@ -16,6 +16,7 @@
 use indexmap::IndexMap;
 use nautilus_core::{python::to_pyruntime_err, UUID4};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -47,8 +48,8 @@ impl TrailingStopLimitOrder {
         price: Price,
         trigger_price: Price,
         trigger_type: TriggerType,
-        limit_offset: Price,
-        trailing_offset: Price,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
         time_in_force: TimeInForce,
         post_only: bool,

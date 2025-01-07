@@ -185,8 +185,8 @@ pub trait Order: 'static + Send {
     fn is_reduce_only(&self) -> bool;
     fn is_quote_quantity(&self) -> bool;
     fn display_qty(&self) -> Option<Quantity>;
-    fn limit_offset(&self) -> Option<Price>;
-    fn trailing_offset(&self) -> Option<Price>;
+    fn limit_offset(&self) -> Option<Decimal>;
+    fn trailing_offset(&self) -> Option<Decimal>;
     fn trailing_offset_type(&self) -> Option<TrailingOffsetType>;
     fn emulation_trigger(&self) -> Option<TriggerType>;
     fn trigger_instrument_id(&self) -> Option<InstrumentId>;
