@@ -18,6 +18,7 @@
 #![allow(unused_variables)]
 
 pub mod config;
+pub mod ids_generator;
 
 #[cfg(test)]
 mod tests;
@@ -40,7 +41,7 @@ use nautilus_model::{
         OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
         VenueOrderId,
     },
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
@@ -52,10 +53,9 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;
-use uuid::Uuid;
 
 use crate::{
-    matching_engine::config::OrderMatchingEngineConfig,
+    matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{fee::FeeModelAny, fill::FillModel},
 };
 
@@ -92,9 +92,7 @@ pub struct OrderMatchingEngine {
     execution_bar_types: HashMap<InstrumentId, BarType>,
     execution_bar_deltas: HashMap<BarType, TimeDelta>,
     account_ids: HashMap<TraderId, AccountId>,
-    position_count: usize,
-    order_count: usize,
-    execution_count: usize,
+    ids_generator: IdsGenerator,
 }
 
 impl OrderMatchingEngine {
@@ -121,6 +119,15 @@ impl OrderMatchingEngine {
             None, // TBD (will be a function on the engine)
             None, // TBD (will be a function on the engine)
         );
+        let ids_generator = IdsGenerator::new(
+            instrument.id().venue,
+            oms_type,
+            raw_id,
+            config.use_random_ids,
+            config.use_position_ids,
+            cache.clone(),
+        );
+
         Self {
             venue: instrument.id().venue,
             instrument,
@@ -145,9 +152,7 @@ impl OrderMatchingEngine {
             execution_bar_types: HashMap::new(),
             execution_bar_deltas: HashMap::new(),
             account_ids: HashMap::new(),
-            position_count: 0,
-            order_count: 0,
-            execution_count: 0,
+            ids_generator,
         }
     }
 
@@ -160,9 +165,7 @@ impl OrderMatchingEngine {
         self.target_bid = None;
         self.target_ask = None;
         self.target_last = None;
-        self.position_count = 0;
-        self.order_count = 0;
-        self.execution_count = 0;
+        self.ids_generator.reset();
 
         log::info!("Reset {}", self.instrument.id());
     }
@@ -319,7 +322,7 @@ impl OrderMatchingEngine {
             bar.open,
             size,
             aggressor_side,
-            self.generate_trade_id(),
+            self.ids_generator.generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         );
@@ -337,7 +340,7 @@ impl OrderMatchingEngine {
         if self.core.last.is_some_and(|last| bar.high > last) {
             trade_tick.price = bar.high;
             trade_tick.aggressor_side = AggressorSide::Buyer;
-            trade_tick.trade_id = self.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id();
 
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init);
@@ -351,7 +354,7 @@ impl OrderMatchingEngine {
         if self.core.last.is_some_and(|last| bar.low < last) {
             trade_tick.price = bar.low;
             trade_tick.aggressor_side = AggressorSide::Seller;
-            trade_tick.trade_id = self.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id();
 
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init);
@@ -370,7 +373,7 @@ impl OrderMatchingEngine {
             } else {
                 AggressorSide::Seller
             };
-            trade_tick.trade_id = self.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id();
 
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init);
@@ -851,61 +854,6 @@ impl OrderMatchingEngine {
         todo!()
     }
 
-    // -- IDENTIFIER GENERATORS -----------------------------------------------------
-
-    fn generate_trade_id(&mut self) -> TradeId {
-        self.execution_count += 1;
-        let trade_id = if self.config.use_random_ids {
-            Uuid::new_v4().to_string()
-        } else {
-            format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count)
-        };
-        TradeId::from(trade_id.as_str())
-    }
-
-    fn get_position_id(&mut self, order: &OrderAny, generate: Option<bool>) -> Option<PositionId> {
-        let generate = generate.unwrap_or(true);
-        if self.oms_type == OmsType::Hedging {
-            {
-                let cache = self.cache.as_ref().borrow();
-                let position_id_result = cache.position_id(&order.client_order_id());
-                if let Some(position_id) = position_id_result {
-                    return Some(position_id.to_owned());
-                }
-            }
-            if generate {
-                self.generate_venue_position_id()
-            } else {
-                panic!("Position id should be generated. Hedging Oms type order matching engine doesnt exists in cache.")
-            }
-        } else {
-            // Netting OMS (position id will be derived from instrument and strategy)
-            let cache = self.cache.as_ref().borrow();
-            let positions_open =
-                cache.positions_open(None, Some(&order.instrument_id()), None, None);
-            if positions_open.is_empty() {
-                None
-            } else {
-                Some(positions_open[0].id)
-            }
-        }
-    }
-
-    fn generate_venue_position_id(&mut self) -> Option<PositionId> {
-        if !self.config.use_position_ids {
-            return None;
-        }
-
-        self.position_count += 1;
-        if self.config.use_random_ids {
-            Some(PositionId::new(Uuid::new_v4().to_string()))
-        } else {
-            Some(PositionId::new(
-                format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),
-            ))
-        }
-    }
-
     // -- EVENT HANDLING -----------------------------------------------------
 
     fn accept_order(&mut self, order: &OrderAny) {
@@ -1143,7 +1091,7 @@ impl OrderMatchingEngine {
             order.client_order_id(),
             venue_order_id,
             account_id,
-            self.generate_trade_id(),
+            self.ids_generator.generate_trade_id(),
             order.order_side(),
             order.order_type(),
             last_qty,
