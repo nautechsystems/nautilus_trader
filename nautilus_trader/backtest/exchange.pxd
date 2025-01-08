@@ -98,7 +98,7 @@ cdef class SimulatedExchange:
     cdef readonly bint bar_execution
     """If bars should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint bar_adaptive_high_low_ordering
-    """If the processing order of bar High and Low prices are adaptive based on a heuristic.\n\n:returns: `bool`"""
+    """If the processing order of bar prices is adaptive based on a heuristic.\n\n:returns: `bool`"""
     cdef readonly bint trade_execution
     """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly list modules

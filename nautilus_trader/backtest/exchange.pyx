@@ -123,7 +123,7 @@ cdef class SimulatedExchange:
     bar_execution : bool, default True
         If bars should be processed by the matching engine(s) (and move the market).
     bar_adaptive_high_low_ordering : bool, default False
-        Determines whether the processing order of bar High and Low prices are adaptive based on a heuristic.
+        Determines whether the processing order of bar prices is adaptive based on a heuristic.
         This setting is only relevant when `bar_execution` is True.
         If False, bar prices are always processed in the fixed order: Open, High, Low, Close.
         If True, the processing order adapts with the heuristic:
