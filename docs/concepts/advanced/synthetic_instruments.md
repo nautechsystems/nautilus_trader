@@ -3,9 +3,9 @@
 The platform supports creating customized synthetic instruments, which can generate synthetic quote
 and trades. These are useful for:
 
-- Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds
-- Triggering emulated orders
-- Constructing bars from synthetic quotes or trades
+- Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds.
+- Triggering emulated orders.
+- Constructing bars from synthetic quotes or trades.
 
 Synthetic instruments cannot be traded directly, as they are constructs that only exist locally
 within the platform. They serve as analytical tools, providing useful metrics based on their component
@@ -92,7 +92,7 @@ the following example, we build upon the previous one to submit a new emulated o
 This order will be retained in the emulator until a trigger from synthetic quotes releases it.
 It will then be submitted to Binance as a MARKET order:
 
-```
+```python
 order = self.strategy.order_factory.limit(
     instrument_id=ETHUSDT_BINANCE.id,
     order_side=OrderSide.BUY,
