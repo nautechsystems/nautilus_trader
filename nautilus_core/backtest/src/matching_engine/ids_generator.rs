@@ -36,7 +36,7 @@ pub struct IdsGenerator {
 }
 
 impl IdsGenerator {
-    pub fn new(
+    pub const fn new(
         venue: Venue,
         oms_type: OmsType,
         raw_id: u32,
@@ -216,7 +216,7 @@ mod tests {
         market_order_buy: OrderAny,
     ) {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let mut ids_generator = get_ids_generator(cache.clone(), true, OmsType::Hedging);
+        let mut ids_generator = get_ids_generator(cache, true, OmsType::Hedging);
 
         let position_id = ids_generator.get_position_id(&market_order_buy, None);
         assert_eq!(position_id, Some(PositionId::new("BINANCE-1-1")));
@@ -258,8 +258,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut ids_generator_with_position_ids =
             get_ids_generator(cache.clone(), true, OmsType::Netting);
-        let mut ids_generator_no_position_ids =
-            get_ids_generator(cache.clone(), false, OmsType::Netting);
+        let mut ids_generator_no_position_ids = get_ids_generator(cache, false, OmsType::Netting);
 
         assert_eq!(
             ids_generator_no_position_ids.generate_venue_position_id(),
@@ -281,7 +280,7 @@ mod tests {
         market_order_fill: OrderFilled,
     ) {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let mut ids_generator = get_ids_generator(cache.clone(), true, OmsType::Netting);
+        let mut ids_generator = get_ids_generator(cache, true, OmsType::Netting);
 
         let venue_order_id1 = ids_generator.get_venue_order_id(&market_order_buy).unwrap();
         let venue_order_id2 = ids_generator
