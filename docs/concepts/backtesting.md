@@ -84,6 +84,21 @@ available or necessary, then the platform has the capability of processing marke
 5. **Bars**:
    - Aggregating trading activity - typically over fixed time intervals, such as 1-minute, 1-hour, or 1-day.
 
+### Choosing data: Cost vs. Accuracy
+
+For many trading strategies, 1-minute bar data can be sufficient for backtesting and strategy development. This is
+particularly important because bar data is typically much more accessible and cost-effective compared to tick or order book data.
+
+Given this practical reality, Nautilus Trader is designed to handle bar-based backtesting with sophisticated features,
+that help maximize simulation accuracy while working with this lower granularity data.
+
+:::tip
+For some trading strategies, it can be practical to start development with bar data to validate core trading ideas.
+If the strategy looks promising, but is more sensitive to precise execution timing (e.g., requires fills at specific prices
+between OHLC levels, or uses tight take-profit/stop-loss levels), you can then invest in higher granularity data
+for more accurate validation.
+:::
+
 ## Venues
 
 When initializing a venue for backtesting, you must specify its internal order `book_type` for execution processing from the following options:
