@@ -48,7 +48,9 @@ Released on TBD (UTC).
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Ported trailing stop logic to Rust (#2174), thanks @DeevsDeevs
 - Ported `FeeModel` to Rust (#2191), thanks @filipmacek
+- Implemented IDs generator for `OrderMatchingEngine` in Rust (#2193), thanks @filipmacek
 - Upgraded Cython to v3.1.0a1
+- Upgraded `tokio` crate to v1.43.0
 - Upgraded `datafusion` crate to v44.0.0
 
 ### Fixes
