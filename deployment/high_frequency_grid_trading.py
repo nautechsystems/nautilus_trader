@@ -20,6 +20,7 @@ import pandas as pd
 from decimal import Decimal
 from typing import List, Dict
 from collections import deque
+import os
 
 from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import PositiveInt
@@ -83,19 +84,20 @@ class HighFrequencyGridTradingConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     max_trade_size: Decimal
-    min_seconds_between_triggers: NonNegativeFloat = 0.1
+    min_seconds_between_triggers: NonNegativeFloat = 0.2
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = True
     subscribe_ticker: bool = True
     use_trade_ticks: bool = True
 
-    grid_num: PositiveInt = 10
-    max_position: PositiveFloat = 1.0
-    grid_interval: PositiveInt = 28
-    half_spread: PositiveInt = 36
-    skew: PositiveFloat = 1.2
+    grid_num: PositiveInt = int(os.getenv('GRID_NUM', 10))
+    max_position: PositiveFloat = float(os.getenv('MAX_POSITION', 1.0))
+    grid_interval: PositiveInt = int(os.getenv('GRID_INTERVAL', 28))
+    half_spread: PositiveInt = int(os.getenv('HALF_SPREAD', 36))
+    skew: PositiveFloat = float(os.getenv('SKEW', 1.2))
 
-    looking_depth: PositiveFloat = 0.01
+    looking_depth: PositiveFloat = float(os.getenv('LOOKING_DEPTH', 0.01))
+    adjusted_factor: PositiveFloat = float(os.getenv('ADJUSTED_FACTOR', 1.2))
 
 
 class HighFrequencyGridTrading(Strategy):
@@ -126,6 +128,10 @@ class HighFrequencyGridTrading(Strategy):
         self.qty: float = None
         self.avg_px: float = None
 
+        self.last_px: float = None
+        self.last_order_side: OrderSide = None
+        
+        self.prev_mid: float = None
 
     def on_start(self) -> None:
         """
@@ -212,56 +218,91 @@ class HighFrequencyGridTrading(Strategy):
         
         if (best_ask_price - best_bid_price) / self.tick_size > 2:
             self.cancel_all_orders(self.instrument.id)
-            #self.close_all_positions(self.instrument.id)
             return 
 
         net_position = self.portfolio.net_position(self.instrument_id)
         mid_price = (best_bid_price + best_ask_price) / Decimal('2.0')
         skew_position = np.power(self.config.skew, float(net_position) / self.config.max_position)
-        #reservation_price = mid_price - Decimal(self.config.skew) * self.tick_size * net_position / Decimal(self.config.max_position)
         reservation_price = mid_price - self.tick_size * Decimal(skew_position)
+        
+        if reservation_price == self.prev_mid:
+            return 
 
         looking_depth = int(np.floor(float(mid_price) * self.config.looking_depth / self.tick_size))
         grid_interval = max(self.config.grid_interval, int(np.floor(looking_depth/self.config.grid_num)))
 
         grid_interval *= self.tick_size
-        #grid_interval = self.tick_size * self.config.grid_interval
-        half_spread = self.tick_size * self.config.half_spread
-        
+        bid_half_spread = self.tick_size * self.config.half_spread
+        ask_half_spread = self.tick_size * self.config.half_spread
+
+        pow_coef = 0.0
+        if self.portfolio.is_net_short(self.instrument_id):
+            pow_coef = np.minimum(0, float(net_position) + self.config.max_position / 2)
+        elif self.portfolio.is_net_long(self.instrument_id):
+            pow_coef = np.maximum(0, float(net_position) - self.config.max_position / 2)
+
+        bid_half_spread *= Decimal(np.power(self.config.adjusted_factor, pow_coef / self.config.max_position))
+        ask_half_spread *= Decimal(np.power(1/self.config.adjusted_factor, pow_coef / self.config.max_position))
+
         # Since our price is skewed, it may cross the spread. To ensure market making and avoid crossing the spread,
         # limit the price to the best bid and best ask.
-        bid_price = np.minimum(reservation_price - half_spread, best_bid_price)
-        ask_price = np.maximum(reservation_price + half_spread, best_ask_price)
+        bid_price = np.minimum(reservation_price - bid_half_spread, best_bid_price)
+        ask_price = np.maximum(reservation_price + ask_half_spread, best_ask_price)
 
         # Aligns the prices to the grid.
         bid_price = np.floor(bid_price / grid_interval) * grid_interval
         ask_price = np.ceil(ask_price / grid_interval) * grid_interval
+
+        #if (bid_price == self.last_px and self.last_order_side == OrderSide.BUY) or \
+        #        (ask_price == self.last_px and self.last_order_side == OrderSide.SELL):
+        #    return 
 
         if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
             self.log.info("Already have orders in flight - skipping.")
             return
         
         fib_coef = [1.,1.,2.,3.,5.,8.,13.,21.,34.,55.]
-
+        
+        half_spread = self.tick_size * self.config.half_spread
         new_bid_orders = dict()
         if net_position < self.config.max_position:
             for coef, i in zip(fib_coef, range(self.config.grid_num)):
                 bid_price_tick = round(bid_price / self.tick_size)
                 
+                if net_position != 0 and self.last_px is not None and self.last_order_side is not None:
+                    if self.last_order_side == OrderSide.BUY and \
+                            bid_price > self.last_px - 3*half_spread and \
+                            bid_price < self.last_px + 3*half_spread:
+                        bid_price -= Decimal(coef) * grid_interval
+                        continue
+
                 # order price in tick is used as order id.
                 new_bid_orders[np.uint64(bid_price_tick)] = bid_price
                 
-                bid_price -= Decimal(coef) * grid_interval
+                if net_position > self.config.max_position/2:
+                    bid_price -= Decimal(coef) * grid_interval * Decimal(np.power(self.config.adjusted_factor, pow_coef / self.config.max_position))
+                else:
+                    bid_price -= Decimal(coef) * grid_interval
 
         new_ask_orders = dict()
         if -net_position < self.config.max_position:
             for coef, i in zip(fib_coef, range(self.config.grid_num)):
                 ask_price_tick = round(ask_price / self.tick_size)
                 
+                if net_position != 0 and self.last_px is not None and self.last_order_side is not None:
+                    if self.last_order_side == OrderSide.SELL and \
+                            ask_price > self.last_px - 3*half_spread and \
+                            ask_price < self.last_px + 3*half_spread:
+                        ask_price += Decimal(coef) * grid_interval
+                        continue
+
                 # order price in tick is used as order id.
                 new_ask_orders[np.uint64(ask_price_tick)] = ask_price
-
-                ask_price += Decimal(coef) * grid_interval
+                
+                if net_position < -self.config.max_position/2:
+                    ask_price += Decimal(coef) * grid_interval * Decimal(np.power(1/self.config.adjusted_factor, pow_coef / self.config.max_position))
+                else:
+                    ask_price += Decimal(coef) * grid_interval
         
         open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
         for order in open_orders:
@@ -295,6 +336,8 @@ class HighFrequencyGridTrading(Strategy):
 
             if order_id not in open_order_price_ticks:
                 self.sell(order_price, self.max_trade_size)
+
+        self.prev_mid = reservation_price
             
 
     def buy(self, bid_price, quantity) -> None:
@@ -306,6 +349,7 @@ class HighFrequencyGridTrading(Strategy):
             #time_in_force=TimeInForce.GTD,
             #expire_time=self.clock.utc_now() + pd.Timedelta(seconds=10),
             #post_only=True,  # default value is True
+            #reduce_only=False
         )
         #self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
         self.submit_order(order)
@@ -319,6 +363,7 @@ class HighFrequencyGridTrading(Strategy):
             #time_in_force=TimeInForce.GTD,
             #expire_time=self.clock.utc_now() + pd.Timedelta(seconds=10),
             #post_only=True,  # default value is True
+            #reduce_only=False
         )
             
         #self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
@@ -329,6 +374,10 @@ class HighFrequencyGridTrading(Strategy):
             self.qty = event.signed_qty
             self.order_side = event.side
             self.avg_px = event.avg_px_open
+
+        if isinstance(event, OrderFilled):
+            self.last_px = event.last_px
+            self.last_order_side = event.order_side
         
     def on_stop(self) -> None:
         """
