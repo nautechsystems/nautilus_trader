@@ -86,11 +86,11 @@ available or necessary, then the platform has the capability of processing marke
 
 ### Choosing data: Cost vs. Accuracy
 
-For many trading strategies, 1-minute bar data can be sufficient for backtesting and strategy development. This is
+For many trading strategies, bar data (e.g., 1-minute) can be sufficient for backtesting and strategy development. This is
 particularly important because bar data is typically much more accessible and cost-effective compared to tick or order book data.
 
-Given this practical reality, Nautilus Trader is designed to handle bar-based backtesting with sophisticated features,
-that help maximize simulation accuracy while working with this lower granularity data.
+Given this practical reality, Nautilus is designed to support bar-based backtesting with advanced features
+that maximize simulation accuracy, even when working with lower granularity data.
 
 :::tip
 For some trading strategies, it can be practical to start development with bar data to validate core trading ideas.
@@ -166,20 +166,21 @@ Even when you provide bar data, Nautilus maintains an internal order book for ea
 
 #### OHLC prices simulation
 
-During backtest execution, each bar is converted into a sequence of four price points(O HLC). How these price points
+During backtest execution, each bar is converted into a sequence of four price points (OHLC). How these price points
 are sequenced can be controlled via the `bar_adaptive_high_low_ordering` parameter when configuring a venue.
 
-Nautilus supports 2 modes:
+Nautilus supports two modes of bar processing:
 
 1. **Fixed Ordering** (`bar_adaptive_high_low_ordering=False`, default)
-   - Processes every bar in fixed sequence: `Open → High → Low → Close`
-   - Simple and deterministic approach  
+   - Processes every bar in a fixed sequence: `Open → High → Low → Close`.
+   - Simple and deterministic approach.
+
 2. **Adaptive Ordering** (`bar_adaptive_high_low_ordering=True`)
    - Uses bar structure to estimate likely price path:
-   - If Open is closer to High: processes as `Open → High → Low → Close`
-   - If Open is closer to Low: processes as `Open → Low → High → Close`
-   - Testing shows this approach achieves 75-85% accuracy in predicting correct High/Low sequence (compared to statistical 50% accuracy with fixed ordering)
-   - This is particularly important, when both take-profit and stop-loss levels fall within the same bar - as the sequence determines which order is filled first
+     - If Open is closer to High: processes as `Open → High → Low → Close`.
+     - If Open is closer to Low: processes as `Open → Low → High → Close`.
+   - Research shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
+   - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
 
 Here's how to configure adaptive bar ordering for a venue:
 
@@ -188,7 +189,7 @@ Here's how to configure adaptive bar ordering for a venue:
 engine.add_venue(
     venue=venue,
     oms_type=OmsType.NETTING,
-    bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low in the bars
+    bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
 )
 ```
 
