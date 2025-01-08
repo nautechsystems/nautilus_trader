@@ -61,7 +61,7 @@ class TestPrice:
         result = Price(1, precision=1)
 
         # Assert
-        assert result.raw == 1_000_000_000
+        assert result.raw == 10_000_000_000_000_000
         assert str(result) == "1.0"
 
     def test_instantiate_base_decimal_from_float(self):
@@ -69,7 +69,7 @@ class TestPrice:
         result = Price(1.12300, precision=5)
 
         # Assert
-        assert result.raw == 1_123_000_000
+        assert result.raw == 11_230_000_000_000_000
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
@@ -614,13 +614,14 @@ class TestPrice:
 
     def test_from_raw_returns_expected_price(self):
         # Arrange, Act
-        price1 = Price.from_raw(1000000000000, 3)
+        price1 = Price.from_raw(10_000_000_000_000_000_000, 3)
         price2 = Price(1000, 3)
 
         # Assert
         assert price1 == price2
         assert str(price1) == "1000.000"
         assert price1.precision == 3
+        assert Price.from_raw(price1.raw, 3) == price1
 
     def test_equality(self):
         # Arrange, Act

@@ -41,19 +41,11 @@ pub const SCALAR: f64 = FIXED_SCALAR;
 /// # Errors
 ///
 /// This function returns an error:
-/// - If `precision` exceeds `FIXED_PRECISION`.
-#[cfg(not(feature = "high_precision"))]
-pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
-    if precision > FIXED_PRECISION {
-        anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
-    }
-    Ok(())
-}
-
+/// - If `precision` exceeds `PRECISION`.
 #[cfg(feature = "high_precision")]
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
-    if precision > FIXED_HIGH_PRECISION {
-        anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_HIGH_PRECISION` (18), was {precision}")
+    if precision > PRECISION {
+        anyhow::bail!("Condition failed: `precision` was greater than the maximum `PRECISION` ({PRECISION}), was {precision}")
     }
     Ok(())
 }

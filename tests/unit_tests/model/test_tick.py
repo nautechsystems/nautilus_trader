@@ -36,7 +36,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestQuoteTick:
     def test_pickling_instrument_id_round_trip(self):
         pickled = pickle.dumps(AUDUSD_SIM.id)
-        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301
 
         assert unpickled == AUDUSD_SIM.id
 
@@ -47,6 +47,10 @@ class TestQuoteTick:
     def test_tick_hash_str_and_repr(self):
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+
+        bid_price = Price.from_str("1.00000")
+        ask_price = Price.from_str("1.00001")
+        assert bid_price.precision == ask_price.precision
 
         quote = QuoteTick(
             instrument_id=instrument_id,
@@ -236,7 +240,7 @@ class TestQuoteTick:
 
         # Act
         pickled = pickle.dumps(quote)
-        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301
 
         # Assert
         assert quote == unpickled
@@ -380,9 +384,9 @@ class TestTradeTick:
 
         trade = TradeTick.from_raw(
             AUDUSD_SIM.id,
-            1000010000,
+            10000100000000000,
             5,
-            10000000000000,
+            100000000000000000000,
             0,
             AggressorSide.BUYER,
             trade_id,

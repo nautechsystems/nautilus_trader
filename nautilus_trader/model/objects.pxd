@@ -22,6 +22,8 @@ from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport Money_t
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
+from nautilus_trader.core.rust.model cimport int128_t
+from nautilus_trader.core.rust.model cimport uint128_t
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -37,7 +39,7 @@ cdef class Quantity:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef uint64_t raw_uint64_c(self)
+    cdef uint128_t raw_uint128_c(self)
     cdef double as_f64_c(self)
 
     cdef Quantity add(self, Quantity other)
@@ -52,13 +54,13 @@ cdef class Quantity:
     cdef bint _compare(a, b, int op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw)
+    cdef double raw_to_f64_c(uint128_t raw)
 
     @staticmethod
     cdef Quantity from_mem_c(Quantity_t mem)
 
     @staticmethod
-    cdef Quantity from_raw_c(uint64_t raw, uint8_t precision)
+    cdef Quantity from_raw_c(uint128_t raw, uint8_t precision)
 
     @staticmethod
     cdef Quantity zero_c(uint8_t precision)
@@ -86,7 +88,7 @@ cdef class Price:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef int64_t raw_int64_c(self)
+    cdef int128_t raw_int128_c(self)
     cdef double as_f64_c(self)
 
     cdef Price add(self, Price other)
@@ -101,13 +103,13 @@ cdef class Price:
     cdef bint _compare(a, b, int op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw)
+    cdef double raw_to_f64_c(uint128_t raw)
 
     @staticmethod
     cdef Price from_mem_c(Price_t mem)
 
     @staticmethod
-    cdef Price from_raw_c(int64_t raw, uint8_t precision)
+    cdef Price from_raw_c(int128_t raw, uint8_t precision)
 
     @staticmethod
     cdef Price from_str_c(str value)
@@ -127,14 +129,14 @@ cdef class Money:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef int64_t raw_int64_c(self)
+    cdef int128_t raw_int128_c(self)
     cdef double as_f64_c(self)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw)
+    cdef double raw_to_f64_c(uint128_t raw)
 
     @staticmethod
-    cdef Money from_raw_c(uint64_t raw, Currency currency)
+    cdef Money from_raw_c(uint128_t raw, Currency currency)
 
     @staticmethod
     cdef Money from_str_c(str value)

@@ -60,7 +60,7 @@ class TestQuantity:
         result = Quantity(1.12300, precision=5)
 
         # Assert
-        assert result.raw == 1_123_000_000
+        assert result.raw == 11_230_000_000_000_000
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
@@ -75,7 +75,7 @@ class TestQuantity:
         result = Quantity.from_str("1.23")
 
         # Assert
-        assert result.raw == 1_230_000_000
+        assert result.raw == 12_300_000_000_000_000
         assert str(result) == "1.23"
 
     @pytest.mark.parametrize(
@@ -568,7 +568,7 @@ class TestQuantity:
 
     def test_from_raw_returns_expected_quantity(self):
         # Arrange, Act
-        qty1 = Quantity.from_raw(1000000000000, 3)
+        qty1 = Quantity.from_raw(10_000_000_000_000_000_000, 3)
         qty2 = Quantity(1000, 3)
 
         # Assert

@@ -38,6 +38,8 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.model cimport TradeTick_t
+from nautilus_trader.core.rust.model cimport int128_t
+from nautilus_trader.core.rust.model cimport uint128_t
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
@@ -161,12 +163,12 @@ cdef class Bar(Data):
     @staticmethod
     cdef Bar from_raw_c(
         BarType bar_type,
-        int64_t open,
-        int64_t high,
-        int64_t low,
-        int64_t close,
+        int128_t open,
+        int128_t high,
+        int128_t low,
+        int128_t close,
         uint8_t price_prec,
-        uint64_t volume,
+        uint128_t volume,
         uint8_t size_prec,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -210,9 +212,9 @@ cdef class BookOrder:
     @staticmethod
     cdef BookOrder from_raw_c(
         OrderSide side,
-        int64_t price_raw,
+        int128_t price_raw,
         uint8_t price_prec,
-        uint64_t size_raw,
+        uint128_t size_raw,
         uint8_t size_prec,
         uint64_t order_id,
     )
@@ -235,9 +237,9 @@ cdef class OrderBookDelta(Data):
         InstrumentId instrument_id,
         BookAction action,
         OrderSide side,
-        int64_t price_raw,
+        int128_t price_raw,
         uint8_t price_prec,
-        uint64_t size_raw,
+        uint128_t size_raw,
         uint8_t size_prec,
         uint64_t order_id,
         uint8_t flags,
@@ -360,12 +362,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     cdef QuoteTick from_raw_c(
         InstrumentId instrument_id,
-        int64_t bid_price_raw,
-        int64_t ask_price_raw,
+        int128_t bid_price_raw,
+        int128_t ask_price_raw,
         uint8_t bid_price_prec,
         uint8_t ask_price_prec,
-        uint64_t bid_size_raw,
-        uint64_t ask_size_raw,
+        uint128_t bid_size_raw,
+        uint128_t ask_size_raw,
         uint8_t bid_size_prec,
         uint8_t ask_size_prec,
         uint64_t ts_event,
@@ -377,10 +379,10 @@ cdef class QuoteTick(Data):
         InstrumentId instrument_id,
         uint8_t price_prec,
         uint8_t size_prec,
-        int64_t[:] bid_prices_raw,
-        int64_t[:] ask_prices_raw,
-        uint64_t[:] bid_sizes_raw,
-        uint64_t[:] ask_sizes_raw,
+        int128_t[:] bid_prices_raw,
+        int128_t[:] ask_prices_raw,
+        uint128_t[:] bid_sizes_raw,
+        uint128_t[:] ask_sizes_raw,
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     )
@@ -415,9 +417,9 @@ cdef class TradeTick(Data):
     @staticmethod
     cdef TradeTick from_raw_c(
         InstrumentId instrument_id,
-        int64_t price_raw,
+        int128_t price_raw,
         uint8_t price_prec,
-        uint64_t size_raw,
+        uint128_t size_raw,
         uint8_t size_prec,
         AggressorSide aggressor_side,
         TradeId trade_id,
@@ -430,8 +432,8 @@ cdef class TradeTick(Data):
         InstrumentId instrument_id,
         uint8_t price_prec,
         uint8_t size_prec,
-        int64_t[:] prices_raw,
-        uint64_t[:] sizes_raw,
+        int128_t[:] prices_raw,
+        uint128_t[:] sizes_raw,
         uint8_t[:] aggressor_sides,
         list[str] trade_ids,
         uint64_t[:] ts_events,
