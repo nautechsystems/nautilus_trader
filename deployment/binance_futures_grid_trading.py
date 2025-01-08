@@ -48,6 +48,8 @@ timeoutPostStop = float(os.getenv('POST_STOP_TIME_OUT', 5))
 instrumentId = os.getenv('INSTRUMENT_ID', 'BNBUSDT-PERP.BINANCE')
 maxTradeSize = os.getenv('MAX_TRADE_SIZE', '0.1')
 
+inflightCheckRetries=int(os.getenv('INFLIGHT_CHECK_RETRY', 5))
+
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Configure the trading node
@@ -62,10 +64,14 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
         filter_position_reports=True,
+        inflight_check_interval_ms=2_000,
+        inflight_check_threshold_ms=5_000,
+        inflight_check_retries=inflightCheckRetries,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
     ),
+    
     cache=CacheConfig(
         database=None,
         timestamps_as_iso8601=True,
