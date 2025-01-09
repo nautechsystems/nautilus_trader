@@ -148,7 +148,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
 
 5. Clone the source with `git`, and install from the projects root directory:
 
-       git clone --depth 1 https://github.com/nautechsystems/nautilus_trader
+       git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
        poetry install --only main --all-extras
 
