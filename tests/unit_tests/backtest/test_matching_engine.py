@@ -40,17 +40,6 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-# from nautilus_trader.model.data import Bar
-# from nautilus_trader.model.data import BarType
-# from nautilus_trader.model.events.order import OrderFilled
-# from nautilus_trader.model.identifiers import AccountId
-# from nautilus_trader.model.identifiers import ClientOrderId
-# from nautilus_trader.model.objects import Price
-# from nautilus_trader.model.objects import Quantity
-# from nautilus_trader.model.orders import MarketOrder
-# from nautilus_trader.core.uuid import UUID4
-
-
 _ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
@@ -167,84 +156,3 @@ class TestOrderMatchingEngine:
         # Assert
         assert self.matching_engine.msgbus.sent_count == 1
         assert isinstance(messages[0], OrderFilled)
-
-    # @pytest.mark.parametrize("adaptive_ordering, bar_prices, expected_prices",
-    #     [
-    #         (   # Test case 1: Adaptive ordering, Low closer to Open
-    #             True,
-    #             {"open": "10.00", "high": "10.50", "low": "9.90", "close": "10.20"},
-    #             ["10.00", "9.90", "10.50", "10.20"]  # Open -> Low -> High -> Close
-    #         ),
-    #         (   # Test case 2: Adaptive ordering, High closer to Open
-    #             True,
-    #             {"open": "10.00", "high": "10.10", "low": "9.50", "close": "10.20"},
-    #             ["10.00", "10.10", "9.50", "10.20"]  # Open -> High -> Low -> Close
-    #         ),
-    #         (   # Test case 3: Non-adaptive ordering (always same sequence)
-    #             False,
-    #             {"open": "10.00", "high": "10.10", "low": "9.50", "close": "10.20"},
-    #             ["10.00", "10.10", "9.50", "10.20"]  # Always Open -> High -> Low -> Close
-    #         ),
-    #     ],
-    # )
-    # def test_bar_adaptive_high_low_ordering(
-    #         self,
-    #         adaptive_ordering: bool,
-    #         bar_prices: dict,
-    #         expected_prices: list,
-    # ):
-    #     # Arrange
-    #     engine = OrderMatchingEngine(
-    #         instrument=self.instrument,
-    #         raw_id=1,
-    #         fill_model=FillModel(),
-    #         fee_model=MakerTakerFeeModel(),
-    #         book_type=BookType.L1_MBP,
-    #         oms_type=OmsType.HEDGING,
-    #         account_type=AccountType.MARGIN,
-    #         msgbus=self.msgbus,
-    #         cache=self.cache,
-    #         clock=self.clock,
-    #         bar_adaptive_high_low_ordering=adaptive_ordering,
-    #     )
-    #
-    #     client_order = MarketOrder(
-    #         trader_id=TestIdStubs.trader_id(),
-    #         strategy_id=TestIdStubs.strategy_id(),
-    #         instrument_id=self.instrument_id,
-    #         client_order_id=ClientOrderId("O-123456"),
-    #         order_side=OrderSide.BUY,
-    #         quantity=Quantity.from_str("1.000"),
-    #         init_id=UUID4(),
-    #         ts_init=0,
-    #     )
-    #
-    #     self.cache.add_order(client_order)
-    #     engine.process_order(client_order, self.account_id)
-    #     # engine.process_status(MarketStatusAction.PRE_OPEN)
-    #
-    #     bar = Bar(
-    #         bar_type=BarType.from_str(f"{self.instrument_id.value}-1-MINUTE-LAST-EXTERNAL"),
-    #         open=Price.from_str(bar_prices["open"]),
-    #         high=Price.from_str(bar_prices["high"]),
-    #         low=Price.from_str(bar_prices["low"]),
-    #         close=Price.from_str(bar_prices["close"]),
-    #         volume=Quantity.from_str("100.0"),
-    #         ts_event=0,
-    #         ts_init=0,
-    #     )
-    #
-    #     received_messages = []
-    #     engine.msgbus.register("ExecEngine.process", received_messages.append)
-    #     self.matching_engine.process_status(MarketStatusAction.TRADING)
-    #
-    #     # Act
-    #     engine._core.set_last_raw(bar._mem.open.raw)
-    #     engine.process_order(client_order, AccountId("SIM-000"))
-    #     engine.process_bar(bar)
-    #
-    #     # Assert
-    #     assert len(received_messages) == 4
-    #     fill_events = [msg for msg in received_messages if isinstance(msg, OrderFilled)]
-    #     actual_prices = [str(event.last_px) for event in fill_events]
-    #     assert actual_prices == expected_prices
