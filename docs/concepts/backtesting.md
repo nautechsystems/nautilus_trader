@@ -166,8 +166,18 @@ Even when you provide bar data, Nautilus maintains an internal order book for ea
 
 #### OHLC prices simulation
 
-During backtest execution, each bar is converted into a sequence of four price points (OHLC). How these price points
-are sequenced can be controlled via the `bar_adaptive_high_low_ordering` parameter when configuring a venue.
+During backtest execution, each bar is converted into a sequence of four price points:
+
+1. Opening price
+2. High price *(Order between High/Low is configurable. See `bar_adaptive_high_low_ordering` below.)*
+3. Low price
+4. Closing price
+
+The trading volume for that bar is **split evenly** among these four points (25% each). In marginal case, if original
+bar's volume is less than 4, we still use a minimum of 1 volume unit per price point to ensure there's always some
+activity to analyze.
+
+How these price points are sequenced can be controlled via the `bar_adaptive_high_low_ordering` parameter when configuring a venue.
 
 Nautilus supports two modes of bar processing:
 
@@ -179,7 +189,7 @@ Nautilus supports two modes of bar processing:
    - Uses bar structure to estimate likely price path:
      - If Open is closer to High: processes as `Open → High → Low → Close`.
      - If Open is closer to Low: processes as `Open → Low → High → Close`.
-   - Research shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
+   - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
    - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
 
 Here's how to configure adaptive bar ordering for a venue:
