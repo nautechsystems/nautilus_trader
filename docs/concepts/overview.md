@@ -6,15 +6,15 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
 
-The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant
-and robust Python native environment. This helps to address the parity challenge of keeping the Python research/backtest
+The platform is *AI-first*, designed to develop and deploy algorithmic trading strategies within a highly performant
+and robust Python-native environment. This helps to address the parity challenge of keeping the Python research/backtest
 environment, consistent with the production live trading environment.
 
-NautilusTraders design, architecture and implementation philosophy holds software correctness and safety at the
-highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
+NautilusTrader's design, architecture and implementation philosophy holds software correctness and safety at the
+highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
+The platform is also universal and asset-class-agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
 adapters. Thus, it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
@@ -44,7 +44,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Reduced operational risk**: Enhanced risk management functionality, logical accuracy, and type safety.
 - **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
-Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
+Traditionally, trading strategy research and backtesting might be conducted in Python
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-driven way
 using C++, C#, Java or other statically typed language(s). The reasoning here is that vectorized backtesting code cannot
 express the granular time and event dependent complexity of real-time trading, where compiled languages have
@@ -53,7 +53,7 @@ proven to be more suitable due to their inherently higher performance, and type 
 One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
 have all been written entirely in [Rust](https://www.rust-lang.org/) or [Cython](https://cython.org/).
 This means we're using the right tools for the job, where systems programming languages compile performant binaries,
-with CPython C extension modules then able to offer a Python native environment, suitable for professional quantitative traders and trading firms.
+with CPython C extension modules then able to offer a Python-native environment, suitable for professional quantitative traders and trading firms.
 
 ## Use cases
 
