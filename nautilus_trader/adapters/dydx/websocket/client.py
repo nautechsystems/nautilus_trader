@@ -25,6 +25,7 @@ import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
+from nautilus_trader.adapters.dydx.http.errors import should_retry
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
@@ -32,6 +33,7 @@ from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.live.retry import RetryManagerPool
 
 
 class DYDXWebsocketClient:
@@ -52,9 +54,13 @@ class DYDXWebsocketClient:
         The event loop for the client.
     subscription_rate_limit_per_second : int, default 2
         The maximum number of subscription message to send to the venue.
-    max_reconnection_tries: int, default 3
+    max_reconnection_tries : int, default 3
         The number of retries to reconnect the websocket connection if the
         connection is broken.
+    max_send_retries : int, optional
+        Maximum retries when sending websocket messages.
+    retry_delay_secs : float, optional
+        The delay (seconds) between retry attempts when resending websocket messages.
 
     """
 
@@ -67,6 +73,8 @@ class DYDXWebsocketClient:
         loop: asyncio.AbstractEventLoop,
         subscription_rate_limit_per_second: int = 2,
         max_reconnection_tries: int | None = 3,
+        max_send_retries: int | None = None,
+        retry_delay_secs: float | None = None,
     ) -> None:
         """
         Provide a dYdX streaming WebSocket client.
@@ -85,6 +93,8 @@ class DYDXWebsocketClient:
         self._msg_timestamp = self._clock.utc_now()
         self._msg_timeout_secs: int = 60
         self._reconnect_task: asyncio.Task | None = None
+        self._max_send_retries = max_send_retries
+        self._retry_delay_secs = retry_delay_secs
 
     def is_connected(self) -> bool:
         """
@@ -143,6 +153,15 @@ class DYDXWebsocketClient:
         Connect to the websocket server.
         """
         self._is_running = True
+        self._retry_manager_pool = RetryManagerPool(
+            pool_size=100,
+            max_retries=self._max_send_retries or 0,
+            retry_delay_secs=self._retry_delay_secs or 1.0,
+            logger=self._log,
+            exc_types=(WebSocketClientError,),
+            retry_check=should_retry,
+        )
+
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
@@ -197,10 +216,13 @@ class DYDXWebsocketClient:
         if self._client is None:
             return
 
-        try:
-            await self._client.send_pong(raw)
-        except WebSocketClientError as e:
-            self._log.error(f"Failed to send pong: {e}")
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                name="send_pong",
+                details=[raw],
+                func=self._client.send_pong,
+                data=raw,
+            )
 
     async def _reconnect_guard(self) -> None:
         """
@@ -269,6 +291,8 @@ class DYDXWebsocketClient:
             self._log.error(f"Failed to close websocket connection: {e}")
 
         self._client = None  # Dispose (will go out of scope)
+
+        self._retry_manager_pool.shutdown()
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
 
@@ -592,7 +616,12 @@ class DYDXWebsocketClient:
 
         self._log.debug(f"SENDING: {msg}")
 
-        try:
-            await self._client.send_text(msgspec.json.encode(msg))
-        except WebSocketClientError as e:
-            self._log.error(f"Failed to send websocket message: {e}")
+        data = msgspec.json.encode(msg)
+
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                name="send_text",
+                details=[data],
+                func=self._client.send_text,
+                data=data,
+            )
