@@ -46,6 +46,7 @@ Released on TBD (UTC).
 - Use retry manager when sending websocket messages for dYdX (#2196), thanks @davidsblom
 - Refined error logs when sending pong for dYdX (#2184), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
+- Added tests for `bar_adaptive_high_low_ordering` (#2197), thanks @faysou
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Ported trailing stop logic to Rust (#2174), thanks @DeevsDeevs
 - Ported `FeeModel` to Rust (#2191), thanks @filipmacek
@@ -74,6 +75,7 @@ Released on TBD (UTC).
 - Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
 - Added docs for `FillModel` and bar based execution (#2187), thanks @stefansimik
 - Added docs for choosing data (cost vs. accuracy) and bars OHLC processing (#2195), thanks @stefansimik
+- Added docs for bar processing in backtests (#2198), thanks @stefansimik
 - Added docs for timestamp and UUID specs
 
 ---
