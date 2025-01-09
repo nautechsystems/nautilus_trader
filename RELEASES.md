@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 - Use timeout when initializing account for dYdX (#2169), thanks @davidsblom
+- Use retry manager when sending websocket messages for dYdX (#2196), thanks @davidsblom
 - Refined error logs when sending pong for dYdX (#2184), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
