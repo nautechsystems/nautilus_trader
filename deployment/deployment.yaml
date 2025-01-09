@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: trading-bot
+spec:
+  restartPolicy: Always
+  containers:
+  - name: trading-container
+    image: ghcr.io/xingyanan/nautilus_trader:develop
+    command: ["/bin/bash", "-c"]
+    args: ["/app/deployment/run.sh"]
+    env:
+      # 从 ConfigMap 加载环境变量
+    - name: GRID_NUM
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: GRID_NUM
+    - name: MAX_POSITION
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: MAX_POSITION
+    - name: GRID_INTERVAL
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: GRID_INTERVAL
+    - name: HALF_SPREAD
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: HALF_SPREAD
+    - name: SKEW
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: SKEW
+    - name: LOOKING_DEPTH
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: LOOKING_DEPTH
+    - name: ADJUSTED_FACTOR
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: ADJUSTED_FACTOR
+    - name: INSTRUMENT_ID
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: INSTRUMENT_ID
+    - name: MAX_TRADE_SIZE
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: MAX_TRADE_SIZE
+    - name: CONNECTION_TIME_OUT
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: CONNECTION_TIME_OUT
+    - name: RECONCILIATION_TIME_OUT
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: RECONCILIATION_TIME_OUT
+    - name: PORTFOLIO_TIME_OUT
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: PORTFOLIO_TIME_OUT
+    - name: DISCONNECTION_TIME_OUT
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: DISCONNECTION_TIME_OUT
+    - name: POST_STOP_TIME_OUT
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: POST_STOP_TIME_OUT
+    - name: INFLIGHT_CHECK_RETRY
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: INFLIGHT_CHECK_RETRY
+      # 从 Secret 加载环境变量
+    - name: API_KEY
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: API_KEY
+    - name: API_SECRET
+      valueFrom:
+        configMapKeyRef:
+          name: trading-config
+          key: API_SECRET
