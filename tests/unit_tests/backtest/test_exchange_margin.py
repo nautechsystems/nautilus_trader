@@ -633,7 +633,9 @@ class TestSimulatedExchangeMarginAccount:
         ],
     )
     def test_submit_two_limit_orders_with_bar(
-        self, bar_adaptive_high_low_ordering, expected_fill_prices
+        self,
+        bar_adaptive_high_low_ordering,
+        expected_fill_prices,
     ) -> None:
         # Arrange
         self.setup(bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering)

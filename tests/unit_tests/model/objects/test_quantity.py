@@ -19,6 +19,9 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model import convert_to_raw_int
+from nautilus_trader.model.objects import FIXED_PRECISION
+from nautilus_trader.model.objects import QUANTITY_MAX
 from nautilus_trader.model.objects import Quantity
 
 
@@ -44,12 +47,12 @@ class TestQuantity:
     def test_instantiate_with_precision_over_maximum_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Quantity(1.0, precision=10)
+            Quantity(1.0, precision=FIXED_PRECISION + 1)
 
     def test_instantiate_with_value_exceeding_limit_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Quantity(18_446_744_073 + 1, precision=0)
+            Quantity(QUANTITY_MAX + 1, precision=0)
 
     def test_instantiate_base_decimal_from_int(self):
         # Arrange, Act
@@ -567,14 +570,19 @@ class TestQuantity:
         assert new_qty == 0
 
     def test_from_raw_returns_expected_quantity(self):
-        # Arrange, Act
-        qty1 = Quantity.from_raw(10_000_000_000_000_000_000, 3)
-        qty2 = Quantity(1000, 3)
+        # Arrange
+        value = 1000
+        precision = 3
+
+        # Act
+        raw_value = convert_to_raw_int(value, precision)
+        qty1 = Quantity.from_raw(raw_value, precision)
+        qty2 = Quantity(value, precision)
 
         # Assert
         assert qty1 == qty2
         assert str(qty1) == "1000.000"
-        assert qty1.precision == 3
+        assert qty1.precision == precision
 
     def test_zero_returns_zero_quantity(self):
         # Arrange, Act

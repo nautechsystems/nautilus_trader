@@ -19,12 +19,15 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import MONEY_MAX
+from nautilus_trader.model.objects import MONEY_MIN
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
@@ -45,12 +48,12 @@ class TestMoney:
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Money(9_223_372_036 + 1, currency=USD)
+            Money(MONEY_MAX + 1, currency=USD)
 
     def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Money(-9_223_372_036 - 1, currency=USD)
+            Money(MONEY_MIN - 1, currency=USD)
 
     def test_instantiate_with_none_value_returns_money_with_zero_amount(self) -> None:
         # Arrange, Act
@@ -178,8 +181,8 @@ class TestMoney:
         ("value", "currency", "expected"),
         [
             [0, USDT, Money(0, USDT)],
-            [10_000_000_000_000_000, USD, Money(1.00, USD)],
-            [100_000_000_000_000_000, AUD, Money(10.00, AUD)],
+            [convert_to_raw_int(1, USD.precision), USD, Money(1.00, USD)],
+            [convert_to_raw_int(10, AUD.precision), AUD, Money(10.00, AUD)],
         ],
     )
     def test_from_raw_given_valid_values_returns_expected_result(
