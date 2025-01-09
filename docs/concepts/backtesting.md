@@ -84,6 +84,21 @@ available or necessary, then the platform has the capability of processing marke
 5. **Bars**:
    - Aggregating trading activity - typically over fixed time intervals, such as 1-minute, 1-hour, or 1-day.
 
+### Choosing data: Cost vs. Accuracy
+
+For many trading strategies, bar data (e.g., 1-minute) can be sufficient for backtesting and strategy development. This is
+particularly important because bar data is typically much more accessible and cost-effective compared to tick or order book data.
+
+Given this practical reality, Nautilus is designed to support bar-based backtesting with advanced features
+that maximize simulation accuracy, even when working with lower granularity data.
+
+:::tip
+For some trading strategies, it can be practical to start development with bar data to validate core trading ideas.
+If the strategy looks promising, but is more sensitive to precise execution timing (e.g., requires fills at specific prices
+between OHLC levels, or uses tight take-profit/stop-loss levels), you can then invest in higher granularity data
+for more accurate validation.
+:::
+
 ## Venues
 
 When initializing a venue for backtesting, you must specify its internal order `book_type` for execution processing from the following options:
@@ -102,13 +117,13 @@ This may cause orders to appear as though they are never filled. We are actively
 :::
 
 :::warning
-When providing Level 2 or higher order book data, ensure that the `book_type` is updated to reflect the data's granularity.
+When providing L2 or higher order book data, ensure that the `book_type` is updated to reflect the data's granularity.
 Failing to do so will result in data aggregation: L2 data will be reduced to a single order per level, and L1 data will reflect only top-of-book levels.
 :::
 
 ## Execution
 
-### Bar based execution
+### Bar Based Execution
 
 Bar data provides a summary of market activity with four key prices for each time period (assuming bars are aggregated by trades):
 
@@ -126,9 +141,9 @@ While this gives us an overview of price movement, we lose some important detail
 This is why Nautilus processes bar data through a sophisticated system that attempts to maintain
 the most realistic yet conservative market behavior possible, despite these limitations.
 At its core, the platform always maintains an order book simulation - even when you provide less
-granular data such as quotes, trades or bars (although the simulation will only have a top level book).
+granular data such as quotes, trades, or bars (although the simulation will only have a top level book).
 
-#### Processing bar data: Time / Prices / Executions
+#### Processing Bar Data
 
 Even when you provide bar data, Nautilus maintains an internal order book for each instrument - just like a real venue would.
 
@@ -149,18 +164,58 @@ Even when you provide bar data, Nautilus maintains an internal order book for ea
    - For LIMIT orders working in the market, they'll execute if any of the bar's prices reach or cross your limit price (see below).
    - The matching engine continuously processes orders as OHLC prices move, rather than waiting for complete bars.
 
+#### OHLC prices simulation
+
+During backtest execution, each bar is converted into a sequence of four price points:
+
+1. Opening price
+2. High price *(Order between High/Low is configurable. See `bar_adaptive_high_low_ordering` below.)*
+3. Low price
+4. Closing price
+
+The trading volume for that bar is **split evenly** among these four points (25% each). In marginal cases,
+if the original bar's volume divided by 4 is less than the instrument's minimum `size_increment`,
+we still use the minimum `size_increment` per price point to ensure valid market activity (e.g., 1 contract
+for CME group exchanges).
+
+How these price points are sequenced can be controlled via the `bar_adaptive_high_low_ordering` parameter when configuring a venue.
+
+Nautilus supports two modes of bar processing:
+
+1. **Fixed Ordering** (`bar_adaptive_high_low_ordering=False`, default)
+   - Processes every bar in a fixed sequence: `Open → High → Low → Close`.
+   - Simple and deterministic approach.
+
+2. **Adaptive Ordering** (`bar_adaptive_high_low_ordering=True`)
+   - Uses bar structure to estimate likely price path:
+     - If Open is closer to High: processes as `Open → High → Low → Close`.
+     - If Open is closer to Low: processes as `Open → Low → High → Close`.
+   - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
+   - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
+
+Here's how to configure adaptive bar ordering for a venue:
+
+```python
+# Configure venue with adaptive bar ordering
+engine.add_venue(
+    venue=venue,
+    oms_type=OmsType.NETTING,
+    bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
+)
+```
+
 ### Slippage and Spread Handling
 
-When backtesting with different types of data, NautilusTrader implements specific handling for slippage and spread simulation:
+When backtesting with different types of data, Nautilus implements specific handling for slippage and spread simulation:
 
 For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated with high accuracy by:
-- Filling orders against actual order book levels
-- Matching available size at each price level sequentially
-- Maintaining realistic order book depth impact (per order fill)
+- Filling orders against actual order book levels.
+- Matching available size at each price level sequentially.
+- Maintaining realistic order book depth impact (per order fill).
 
 For L1 data types (e.g., L1 orderbook, trades, quotes, bars), slippage is handled through:
 
-**Initial Fill Slippage** (`prob_slippage`)
+**Initial fill slippage** (`prob_slippage`):
    - Controlled by the `prob_slippage` parameter of the `FillModel`.
    - Determines if the initial fill will occur one tick away from current market price.
    - Example: With `prob_slippage=0.5`, a market BUY has 50% chance of filling one tick above the best ask price.
@@ -173,15 +228,15 @@ For the most realistic backtesting results, consider using higher granularity da
 ### Fill Model
 
 The `FillModel` helps simulate order queue position and execution in a simple probabilistic way during backtesting.
-It addresses a fundamental challenge: even with perfect historical market data, we can't fully simulate how orders may have interacted with other
-market participants in real-time.
+It addresses a fundamental challenge: *even with perfect historical market data, we can't fully simulate how orders may have interacted with other
+market participants in real-time*.
 
 The `FillModel` simulates two key aspects of trading that exist in real markets regardless of data quality:
 
-1. **Queue Position for Limit Orders**
+1. **Queue Position for Limit Orders**:
    - When multiple traders place orders at the same price level, the order's position in the queue affects if and when it gets filled.
 
-2. **Market Impact and Competition**
+2. **Market Impact and Competition**:
    - When taking liquidity with market orders, you compete with other traders for available liquidity, which can affect your fill price.
 
 #### Configuration and Parameters
@@ -209,6 +264,7 @@ engine = BacktestEngine(
 ```
 
 **prob_fill_on_limit** (default: `1.0`)
+
 - Purpose:
    - Simulates the probability of a limit order getting filled when its price level is reached in the market.
 - Details:
@@ -216,21 +272,24 @@ engine = BacktestEngine(
    - Applies to all data types (e.g., L3/L2/L1 orderbook, quotes, trades, bars).
    - New random probability check occurs each time market price touches your order price (but does not move through it).
    - On successful probability check, fills entire remaining order quantity.
-- Examples:
+
+**Examples**:
+
    - With `prob_fill_on_limit=0.0`:
-      - Limit buy orders never fill when best ask reaches the limit price
-      - Limit sell orders never fill when best bid reaches the limit price
-      - This simulates being at the very back of the queue and never reaching the front
+      - Limit BUY orders never fill when best ask reaches the limit price.
+      - Limit SELL orders never fill when best bid reaches the limit price.
+      - This simulates being at the very back of the queue and never reaching the front.
    - With `prob_fill_on_limit=0.5`:
-      - Limit buy orders have 50% chance of filling when best ask reaches the limit price
-      - Limit sell orders have 50% chance of filling when best bid reaches the limit price
-      - This simulates being in the middle of the queue
+      - Limit BUY orders have 50% chance of filling when best ask reaches the limit price.
+      - Limit SELL orders have 50% chance of filling when best bid reaches the limit price.
+      - This simulates being in the middle of the queue.
    - With `prob_fill_on_limit=1.0` (default):
-      - Limit buy orders always fill when best ask reaches the limit price
-      - Limit sell orders always fill when best bid reaches the limit price
-      - This simulates being at the front of the queue with guaranteed fills
+      - Limit BUY orders always fill when best ask reaches the limit price.
+      - Limit SELL orders always fill when best bid reaches the limit price.
+      - This simulates being at the front of the queue with guaranteed fills.
 
 **prob_slippage** (default: `0.0`)
+
 - Purpose:
    - Simulates the probability of experiencing price slippage when executing market orders.
 - Details:
@@ -238,21 +297,26 @@ engine = BacktestEngine(
      - When triggered, moves fill price one tick against your order direction.
      - Affects all market-type orders (`MARKET`, `MARKET_TO_LIMIT`, `MARKET_IF_TOUCHED`, `STOP_MARKET`).
      - Not utilized with L2/L3 data where order book depth can determine slippage.
-- Example:
+
+**Examples**:
+
    - With `prob_slippage=0.0` (default):
-      - No artificial slippage is applied, representing an idealized scenario where you always get filled at the current market price
+      - No artificial slippage is applied, representing an idealized scenario where you always get filled at the current market price.
    - With `prob_slippage=0.5`:
-      - Market BUY orders have 50% chance of filling one tick above the best ask price, and 50% chance at the best ask price
-      - Market SELL orders have 50% chance of filling one tick below the best bid price, and 50% chance at the best bid price
+      - Market BUY orders have 50% chance of filling one tick above the best ask price, and 50% chance at the best ask price.
+      - Market SELL orders have 50% chance of filling one tick below the best bid price, and 50% chance at the best bid price.
    - With `prob_slippage=1.0`:
-      - Market BUY orders always fill one tick above the best ask price
-      - Market SELL orders always fill one tick below the best bid price
-      - This simulates consistent adverse price movement against your orders
+      - Market BUY orders always fill one tick above the best ask price.
+      - Market SELL orders always fill one tick below the best bid price.
+      - This simulates consistent adverse price movement against your orders.
 
 **prob_fill_on_stop** (default: `1.0`)
-- **DEPRECATED**: This parameter will be removed in a future version.
-- Stop order is just shorter name for stop-market order, that convert to market orders when market-price touches the stop-price
+- Stop order is just shorter name for stop-market order, that convert to market orders when market-price touches the stop-price.
 - That means, stop order order-fill mechanics is simply market-order mechanics, that is controlled by the `prob_slippage` parameter.
+
+:::warning
+The `prob_fill_on_stop` parameter is deprecated and will be removed in a future version (use `prob_slippage` instead).
+:::
 
 #### How Simulation Varies by Data Type
 
@@ -260,34 +324,35 @@ The behavior of the `FillModel` adapts based on the order book type being used:
 
 **L2/L3 Orderbook data**
 
-With full order book depth, the `FillModel` focuses purely on simulating queue position for limit orders through `prob_fill_on_limit`. The order book itself handles slippage naturally based on available liquidity at each price level.
+With full order book depth, the `FillModel` focuses purely on simulating queue position for limit orders through `prob_fill_on_limit`.
+The order book itself handles slippage naturally based on available liquidity at each price level.
 
-- `prob_fill_on_limit` is active - simulates queue position
-- `prob_slippage` is not used - real order book depth determines price impact
+- `prob_fill_on_limit` is active - simulates queue position.
+- `prob_slippage` is not used - real order book depth determines price impact.
 
 **L1 Orderbook data**
 
 With only best bid/ask prices available, the `FillModel` provides additional simulation:
 
-- `prob_fill_on_limit` is active - simulates queue position
-- `prob_slippage` is active - simulates basic price impact since we lack real depth information
+- `prob_fill_on_limit` is active - simulates queue position.
+- `prob_slippage` is active - simulates basic price impact since we lack real depth information.
 
 **Bar/Quote/Trade data**
 
 When using less granular data, the same behaviors apply as L1:
 
-- `prob_fill_on_limit` is active - simulates queue position
-- `prob_slippage` is active - simulates basic price impact
+- `prob_fill_on_limit` is active - simulates queue position.
+- `prob_slippage` is active - simulates basic price impact.
 
 #### Important Considerations
 
 The `FillModel` has certain limitations to keep in mind:
 
-- Partial fills are not simulated - orders either fill completely or not at all
-- With L1 data, slippage is limited to a fixed 1-tick, at which entire order's quantity is filled
+- Partial fills are not simulated - orders either fill completely or not at all.
+- With L1 data, slippage is limited to a fixed 1-tick, at which entire order's quantity is filled.
 
 :::note
-The `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
+As the `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
 - Partial fill simulation
 - Variable slippage based on order size
 - More complex queue position modeling

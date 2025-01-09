@@ -43,12 +43,16 @@ Released on TBD (UTC).
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
 - Handle directory and live streams to catalog (#2153), thanks @limx0
 - Use timeout when initializing account for dYdX (#2169), thanks @davidsblom
+- Use retry manager when sending websocket messages for dYdX (#2196), thanks @davidsblom
 - Refined error logs when sending pong for dYdX (#2184), thanks @davidsblom
 - Optimized message bus topic `is_matching` (#2151), thanks @ryantam626
+- Added tests for `bar_adaptive_high_low_ordering` (#2197), thanks @faysou
 - Ported `OrderManager` to Rust (#2161), thanks @Pushkarm029
 - Ported trailing stop logic to Rust (#2174), thanks @DeevsDeevs
 - Ported `FeeModel` to Rust (#2191), thanks @filipmacek
+- Implemented IDs generator for `OrderMatchingEngine` in Rust (#2193), thanks @filipmacek
 - Upgraded Cython to v3.1.0a1
+- Upgraded `tokio` crate to v1.43.0
 - Upgraded `datafusion` crate to v44.0.0
 
 ### Fixes
@@ -70,6 +74,8 @@ Released on TBD (UTC).
 ### Documentation Updates
 - Added docs for `Cache`, slippage and spread handling in backtesting (#2162), thanks @stefansimik
 - Added docs for `FillModel` and bar based execution (#2187), thanks @stefansimik
+- Added docs for choosing data (cost vs. accuracy) and bars OHLC processing (#2195), thanks @stefansimik
+- Added docs for bar processing in backtests (#2198), thanks @stefansimik
 - Added docs for timestamp and UUID specs
 
 ---
