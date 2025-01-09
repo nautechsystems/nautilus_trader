@@ -173,9 +173,10 @@ During backtest execution, each bar is converted into a sequence of four price p
 3. Low price
 4. Closing price
 
-The trading volume for that bar is **split evenly** among these four points (25% each). In marginal case, if original
-bar's volume is less than 4, we still use a minimum of 1 volume unit per price point to ensure there's always some
-activity to analyze.
+The trading volume for that bar is **split evenly** among these four points (25% each). In marginal cases,
+if the original bar's volume divided by 4 is less than the instrument's minimum `size_increment`,
+we still use the minimum `size_increment` per price point to ensure valid market activity (e.g., 1 contract
+for CME group exchanges).
 
 How these price points are sequenced can be controlled via the `bar_adaptive_high_low_ordering` parameter when configuring a venue.
 

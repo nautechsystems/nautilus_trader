@@ -5,19 +5,19 @@ the execution instructions supported for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
 NautilusTrader has unified a large set of order types and execution instructions
-from standard to more advanced, to offer as much of an exchanges available functionality
+from standard to more advanced, to provide as much of a trading venues potential functionality
 as possible. This enables traders to define certain conditions and instructions for
 order execution and management, facilitating the creation of virtually any type of trading strategy.
 
 ## Overview
 
-The two main types of orders are *Market* orders and *Limit* orders. All the other order
-types are built from these two fundamental types, in terms of liquidity provision they
-are exact opposites. *Market* orders demand liquidity and require immediate trading at the best
+The two main types of orders are *Market* orders and *Limit* orders. All other order
+types are built from these two fundamental order types, in terms of liquidity provision they
+are exact opposites, *Market* orders demand liquidity and require immediate trading at the best
 price available. Conversely, *Limit* orders provide liquidity, they act as standing orders in a limit order book
 at a specified limit price.
 
-The core order types available for the platform are (using the enum values):
+The order types available for the platform are (using the enum values):
 - `MARKET`
 - `LIMIT`
 - `STOP_MARKET`
@@ -30,30 +30,30 @@ The core order types available for the platform are (using the enum values):
 
 :::info
 NautilusTrader has unified the API for a large set of order types and execution instructions.
-Not all of these are available for every exchange. If an order is submitted where an instruction or
-option is not available, the system will **NOT** submit the order and an error will be logged with
+However, these are not necessarily available for every venue. If an order is submitted where an instruction or
+option is not available, the system should either **NOT** submit the order and an error will be logged with
 a clear explanatory message.
 :::
 
 ### Terminology
 
-- An order is **aggressive** if the type is `MARKET` or if its executing like a `MARKET` order (taking liquidity).
-- An order is **passive** if the type is not `MARKET` (providing liquidity).
-- An order is **active local** if it is still within the local system boundary in one of the following three (non-terminal) status:
+- An order is **aggressive** if its type is `MARKET`, or if its executing as a *marketable* order (i.e., taking liquidity).
+- An order is **passive** if not *marketable* (i.e., providing liquidity).
+- An order is **active local** if it remains within the local system boundary in one of the following three non-terminal statuses:
     - `INITIALIZED`
     - `EMULATED`
     - `RELEASED`
-- An order is **in-flight** when in one of the following status:
+- An order is **in-flight** when at one of the following statuses:
     - `SUBMITTED`
     - `PENDING_UPDATE`
     - `PENDING_CANCEL`
-- An order is **open** when in one of the following (non-terminal) status:
+- An order is **open** when at one of the following (non-terminal) statuses:
     - `ACCEPTED`
     - `TRIGGERED`
     - `PENDING_UPDATE`
     - `PENDING_CANCEL`
     - `PARTIALLY_FILLED`
-- An order is **closed** when in one of the following (terminal) status:
+- An order is **closed** when at one of the following (terminal) statuses:
     - `DENIED`
     - `REJECTED`
     - `CANCELED`
@@ -110,26 +110,26 @@ Specifying a display quantity of zero is also equivalent to setting an order as 
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm)
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
-- `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`)
-- `LAST`: The trigger price will be based on the last traded price
-- `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders
-- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices
-- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable
-- `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`
-- `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`
-- `MARK`: The trigger price will be based on the exchanges mark price for the instrument
-- `INDEX`: The trigger price will be based on the exchanges index price for the instrument
+- `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`).
+- `LAST`: The trigger price will be based on the last traded price.
+- `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders.
+- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices.
+- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
+- `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
+- `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
+- `MARK`: The trigger price will be based on the exchanges mark price for the instrument.
+- `INDEX`: The trigger price will be based on the exchanges index price for the instrument.
 
 ### Trigger offset type
 
 Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
 of the stop price based on the offset from the *market* (bid, ask or last price as applicable).
 
-- `DEFAULT`: The default offset type for the exchange (typically `PRICE`)
-- `PRICE`: The offset is based on a price difference
-- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%)
-- `TICKS`: The offset is based on a number of ticks
-- `PRICE_TIER`: The offset is based on an exchange specific price tier
+- `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
+- `PRICE`: The offset is based on a price difference.
+- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%).
+- `TICKS`: The offset is based on a number of ticks.
+- `PRICE_TIER`: The offset is based on an exchange specific price tier.
 
 ### Contingent orders
 
