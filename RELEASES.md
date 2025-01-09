@@ -1,6 +1,6 @@
 # NautilusTrader 1.210.0 Beta
 
-Released on TBD (UTC).
+Released on 10th January 2025 (UTC).
 
 ### Enhancements
 - Added `PerContractFeeModel`, thanks @stefansimik
