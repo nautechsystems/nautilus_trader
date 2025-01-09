@@ -34,11 +34,15 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
         `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
     testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
-    update_instruments_interval_mins: PositiveInt or None, default 60
+    update_instruments_interval_mins : PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
-    max_ws_reconnection_tries: int, default 3
+    max_ws_reconnection_tries : int, default 3
         The number of retries to reconnect the websocket connection if the
         connection is broken.
+    max_ws_send_retries : int, optional
+        Maximum retries when sending websocket messages.
+    max_ws_retry_delay_secs : float, optional
+        The delay (seconds) between retry attempts when resending websocket messages.
 
     """
 
@@ -46,6 +50,8 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
     is_testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     max_ws_reconnection_tries: int | None = 3
+    max_ws_send_retries: PositiveInt | None = None
+    max_ws_retry_delay_secs: PositiveFloat | None = None
 
 
 class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
