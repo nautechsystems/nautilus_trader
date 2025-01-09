@@ -179,7 +179,7 @@ Nautilus supports two modes of bar processing:
    - Uses bar structure to estimate likely price path:
      - If Open is closer to High: processes as `Open → High → Low → Close`.
      - If Open is closer to Low: processes as `Open → Low → High → Close`.
-   - Research shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
+   - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
    - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
 
 Here's how to configure adaptive bar ordering for a venue:
