@@ -24,7 +24,7 @@ members = [
 
 [workspace.package]
 rust-version = "1.84.0"
-version = "0.40.0"
+version = "0.41.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -69,7 +69,7 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
 tokio = { version = "1.43.0", features = ["full"] }
 tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.11.0", features = ["v4", "serde"] }
+uuid = { version = "1.11.1", features = ["v4", "serde"] }
 
 # dev-dependencies
 axum = "0.8.1"

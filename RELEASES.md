@@ -1,3 +1,24 @@
+# NautilusTrader 1.211.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+None
+
+### Fixes
+None
+
+### Documentation Updates
+None
+
+---
+
 # NautilusTrader 1.210.0 Beta
 
 Released on 10th January 2025 (UTC).
@@ -37,7 +58,7 @@ Released on 10th January 2025 (UTC).
 - Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
 - Refined WebSocket client re-subscribe log for Bybit (#2179), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
-- Enhance `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
+- Enhanced `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
 - Renamed WebSocket private client for Bybit (#2180), thanks @sunlei
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
@@ -338,7 +359,7 @@ Released on 22nd October 2024 (UTC).
 - Ported `BettingInstrument` to Rust
 - Refined `RateLimiter` for `WebSocketClient` and add tests (#2000), thanks @Pushkarm029
 - Refined `WebSocketClient` to close existing tasks on reconnect (#1986), thanks @davidsblom
-- Remove mutable references in `CacheDatabaseAdapter` trait in Rust (#2015), thanks @filipmacek
+- Removed mutable references in `CacheDatabaseAdapter` trait in Rust (#2015), thanks @filipmacek
 - Use Rust rate limiter for dYdX websockets (#1996, #1999), thanks @davidsblom
 - Improved error logs for dYdX websocket subscriptions (#1993), thanks @davidsblom
 - Standardized log and error message syntax in Rust
@@ -970,7 +991,7 @@ None
 Released on 26th January 2024 (UTC).
 
 ### Enhancements
-- Add warning log when `bypass_logging` is set true for a `LIVE` context
+- Added warning log when `bypass_logging` is set true for a `LIVE` context
 - Improved `register_serializable object` to also add type to internal `_EXTERNAL_PUBLIHSABLE_TYPES`
 - Improved Interactive Brokers expiration contract parsing, thanks @fhill2
 
@@ -2870,7 +2891,7 @@ hood' code cleanup and consolidation.
 - Refactored `PositionEvent` types
 
 ### Enhancements
-- Add pre-trade risk checks to `RiskEngine` iteration 2
+- Added pre-trade risk checks to `RiskEngine` iteration 2
 - Improve `Throttler` functionality and performance
 - Removed redundant `OrderInvalid` state and associated code
 - Improve analysis reports
@@ -3113,7 +3134,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Removed redundant `OrderFilled.leaves_qty`
 - `BacktestEngine` constructor simplified
 - `BacktestMarketDataClient` no longer needs instruments
-- Rename `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`
+- Renamed `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`
 
 ### Enhancements
 - Re-engineered `BacktestEngine` to take data directly
@@ -3174,8 +3195,8 @@ None
 
 ### Enhancements
 - Performance test refactoring
-- Remove redundant performance harness
-- Add `Queue.peek()` to high-performance queue
+- Removed redundant performance harness
+- Added `Queue.peek()` to high-performance queue
 - GitHub action refactoring, CI for Windows
 - Builds for 32-bit platforms
 
@@ -3195,10 +3216,10 @@ Further fundamental changes to the core API have been made.
 
 ### Breaking Changes
 - Introduce `ClientId` for data and execution client identification
-- Standardize client IDs to upper case
-- Rename `OrderBookOperation` to `OrderBookDelta`
-- Rename `OrderBookOperations` to `OrderBookDeltas`
-- Rename `OrderBookOperationType` to `OrderBookDeltaType`
+- Standardized client IDs to upper case
+- Renamed `OrderBookOperation` to `OrderBookDelta`
+- Renamed `OrderBookOperations` to `OrderBookDeltas`
+- Renamed `OrderBookOperationType` to `OrderBookDeltaType`
 
 ### Enhancements
 None
@@ -3225,16 +3246,16 @@ its full name `Order.venue_order_id`. This naturally resulted in `ClientOrderId`
 being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 
 ### Breaking Changes
-- Rename `OrderId` to `VenueOrderId`
-- Rename `Order.id` to `Order.venue_order_id`
-- Rename `Order.cl_ord_id` to `Order.client_order_id`
-- Rename `AssetClass.STOCK` to `AssetClass.EQUITY`
-- Remove redundant flag `generate_position_ids` (handled by `OmsType`)
+- Renamed `OrderId` to `VenueOrderId`
+- Renamed `Order.id` to `Order.venue_order_id`
+- Renamed `Order.cl_ord_id` to `Order.client_order_id`
+- Renamed `AssetClass.STOCK` to `AssetClass.EQUITY`
+- Removed redundant flag `generate_position_ids` (handled by `OmsType`)
 
 ### Enhancements
 - Introduce integration for Betfair.
-- Add `AssetClass.METAL` and `AssetClass.ENERGY`
-- Add `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`
+- Added `AssetClass.METAL` and `AssetClass.ENERGY`
+- Added `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`
 - Usage of `np.ndarray` to improve function and indicator performance
 
 ### Fixes
@@ -3252,16 +3273,16 @@ Further standardization of naming conventions along with internal refinements
 and fixes.
 
 ### Breaking Changes
-- Rename `AmendOrder` to `UpdateOrder`
-- Rename `OrderAmended` to `OrderUpdated`
-- Rename `amend` and `amended` related methods to `update` and `updated`
-- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
+- Renamed `AmendOrder` to `UpdateOrder`
+- Renamed `OrderAmended` to `OrderUpdated`
+- Renamed `amend` and `amended` related methods to `update` and `updated`
+- Renamed `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
 
 ### Enhancements
 - Improve efficiency of data wrangling
 - Simplify `Logger` and general system logging
-- Add `stdout` and `stderr` log streams with configuration
-- Add `OrderBookData` base class
+- Added `stdout` and `stderr` log streams with configuration
+- Added `OrderBookData` base class
 
 ### Fixes
 - Backtest handling of `GenericData` and `OrderBook` related data
@@ -3279,10 +3300,10 @@ Further standardization of naming conventions along with internal refinements
 and fixes.
 
 ### Breaking Changes
-- Rename `AmendOrder` to `UpdateOrder`
-- Rename `OrderAmended` to `OrderUpdated`
-- Rename `amend` and `amended` related methods to `update` and `updated`
-- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
+- Renamed `AmendOrder` to `UpdateOrder`
+- Renamed `OrderAmended` to `OrderUpdated`
+- Renamed `amend` and `amended` related methods to `update` and `updated`
+- Renamed `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
 
 ### Enhancements
 - Introduce `OrderUpdateRejected`, event separated for clarity
@@ -3313,26 +3334,26 @@ closely with established financial market terminology with reference to the
 FIX5.0 SP2 specification, and CME MDP 3.0.
 
 ### Breaking Changes
-- Move `BarType` into `Bar` as a property
-- Change signature of `Bar` handling methods due to above
-- Remove `Instrument.leverage` (incorrect place for concept)
-- Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`
-- Change serialization of timestamp datatype to `int64`
-- Extensive changes to serialization constant names
-- Rename `OrderFilled.filled_qty` to `OrderFilled.last_qty`
-- Rename `OrderFilled.filled_price` to `OrderFilled.last_px`
-- Rename `avg_price` to `avg_px` in methods and properties
-- Rename `avg_open` to `avg_px_open` in methods and properties
-- Rename `avg_close` to `avg_px_close` in methods and properties
-- Rename `Position.relative_quantity` to `Position.relative_qty`
-- Rename `Position.peak_quantity` to `Position.peak_qty`
+- Moved `BarType` into `Bar` as a property
+- Changed signature of `Bar` handling methods due to above
+- Removed `Instrument.leverage` (incorrect place for concept)
+- Changed `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`
+- Changed serialization of timestamp datatype to `int64`
+- Changed serialization constant names extensively
+- Renamed `OrderFilled.filled_qty` to `OrderFilled.last_qty`
+- Renamed `OrderFilled.filled_price` to `OrderFilled.last_px`
+- Renamed `avg_price` to `avg_px` in methods and properties
+- Renamed `avg_open` to `avg_px_open` in methods and properties
+- Renamed `avg_close` to `avg_px_close` in methods and properties
+- Renamed `Position.relative_quantity` to `Position.relative_qty`
+- Renamed `Position.peak_quantity` to `Position.peak_qty`
 
 ### Enhancements
-- Standardize nanosecond timestamps
-- Add time unit conversion functions as found in `nautilus_trader.core.datetime`
-- Add optional `broker` property to `Venue` to assist with routing
-- Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`
-- Add internal messages to aid state reconciliation
+- Standardized nanosecond timestamps
+- Added time unit conversion functions as found in `nautilus_trader.core.datetime`
+- Added optional `broker` property to `Venue` to assist with routing
+- Enhanced state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`
+- Added internal messages to aid state reconciliation
 
 ### Fixes
 - `DataCache` incorrectly caching bars
@@ -3351,13 +3372,13 @@ None
 ### Enhancements
 - `RiskEngine` built out including configuration options hook and
   `LiveRiskEngine` implementation
-- Add generic `Throttler`
-- Add details `dict` to `instrument_id` related requests to cover IB futures
+- Added generic `Throttler`
+- Added details `dict` to `instrument_id` related requests to cover IB futures
   contracts
-- Add missing Fiat currencies
-- Add additional Crypto currencies
-- Add ISO 4217 codes
-- Add currency names
+- Added missing Fiat currencies
+- Added additional Crypto currencies
+- Added ISO 4217 codes
+- Added currency names
 
 ### Fixes
 - Queue `put` coroutines in live engines when blocking at `maxlen` was not
@@ -3387,8 +3408,8 @@ A `RiskEngine` base class has also been scaffolded.
 - `on_data` methods now take `GenericData`
 
 ### Enhancements
-- Add `GenericData`
-- Add `Future` instrument
+- Added `GenericData`
+- Added`Future` instrument
 
 ### Fixes
 None
@@ -3411,7 +3432,7 @@ Errors in the CCXT clients caused by the last release have been addressed.
 
 ### Enhancements
 - Ensure `TestTimer` advances monotonically increase
-- Add `AssetClass.BETTING`
+- Added `AssetClass.BETTING`
 
 ### Fixes
 - CCXT data and execution clients regarding `instrument_id` vs `symbol` naming
@@ -3442,7 +3463,7 @@ symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
 ### Enhancements
 - Reports now include full instrument_id name
-- Add `AssetType.WARRANT`
+- Added `AssetType.WARRANT`
 
 ### Fixes
 - `StopLimitOrder` serialization
@@ -3489,7 +3510,7 @@ None
 
 ### Enhancements
 - Refactored `SimulatedExchange` order matching and amendment logic
-- Add `risk` subpackage to group risk components
+- Added `risk` subpackage to group risk components
 
 ### Fixes
 - `StopLimitOrder` triggering behavior
@@ -3509,10 +3530,10 @@ integration, and begin adding platform capabilities to support this effort.
 
 ### Enhancements
 - Scaffold Interactive Brokers integration in `adapters/ib`
-- Add the `Future` instrument type
-- Add the `StopLimitOrder` order type
-- Add the `Data` and `DataType` types to support custom data handling
-- Add the `InstrumentId` identifier types initial implementation to support extending the platforms capabilities
+- Added the `Future` instrument type
+- Added the `StopLimitOrder` order type
+- Added the `Data` and `DataType` types to support custom data handling
+- Added the `InstrumentId` identifier types initial implementation to support extending the platforms capabilities
 
 ### Fixes
 - `BracketOrder` correctness
