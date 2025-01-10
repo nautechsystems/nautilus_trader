@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Validate file extension
     if !file_path
         .extension()
-        .map_or(false, |ext| ext.eq_ignore_ascii_case("parquet"))
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("parquet"))
     {
         return Err("Input file must be a parquet file".into());
     }
