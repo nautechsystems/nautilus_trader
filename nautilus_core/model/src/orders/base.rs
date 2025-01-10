@@ -331,9 +331,8 @@ pub trait Order: 'static + Send {
     }
 
     fn is_spawned(&self) -> bool {
-        self.exec_spawn_id().map_or(false, |exec_spawn_id| {
-            exec_spawn_id != self.client_order_id()
-        })
+        self.exec_spawn_id()
+            .is_some_and(|exec_spawn_id| exec_spawn_id != self.client_order_id())
     }
 }
 
