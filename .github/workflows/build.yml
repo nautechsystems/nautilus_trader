@@ -94,8 +94,8 @@ jobs:
               body: 'Thank you for your contribution! 🙏\n\nThe pre-commit checks failed, but this is easy to fix. You\'ll need to run:\n\n```bash\nmake pre-commit\n# or\npre-commit run --all-files\n```\n\nThis will automatically fix most formatting issues. Just commit any changes and push again.\n\nSee our [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) guide for more details.'
             })
 
-      - name: Fail job if pre-commit fails
-        if: failure()  # Explicitly fail the job if pre-commit failed
+      - name: Fail job if pre-commit failed
+        if: failure()
         run: |
           echo "Pre-commit checks failed, exiting"
           exit 1
