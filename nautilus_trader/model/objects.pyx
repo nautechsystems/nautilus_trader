@@ -361,12 +361,8 @@ cdef class Quantity:
         return Quantity(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
 
     @staticmethod
-    cdef Quantity from_int_c(int value):
+    cdef Quantity from_int_c(uint128_t value):
         return Quantity(value, precision=0)
-
-    @staticmethod
-    def from_raw(uint128_t raw, uint8_t precision):
-        return Quantity.from_raw_c(raw, precision)
 
     @staticmethod
     def zero(uint8_t precision=0) -> Quantity:
@@ -395,7 +391,7 @@ cdef class Quantity:
         return Quantity.zero_c(precision)
 
     @staticmethod
-    def from_raw(int128_t raw, uint8_t precision) -> Quantity:
+    def from_raw(raw: int, uint8_t precision) -> Quantity:
         """
         Return a quantity from the given `raw` fixed-point integer and `precision`.
 
@@ -403,7 +399,7 @@ cdef class Quantity:
 
         Parameters
         ----------
-        raw : int128_t
+        raw : uint128_t
             The raw fixed-point quantity value.
         precision : uint8_t
             The precision for the quantity. Use a precision of 0 for whole numbers
@@ -425,7 +421,7 @@ cdef class Quantity:
         Small `raw` values can produce a zero quantity depending on the `precision`.
 
         """
-        Condition.is_true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        Condition.is_true(precision <= PRECISION, f"invalid `precision` greater than max 9, was {precision}")
         return Quantity.from_raw_c(raw, precision)
 
     @staticmethod
@@ -462,7 +458,7 @@ cdef class Quantity:
         return Quantity.from_str_c(value)
 
     @staticmethod
-    def from_int(int value) -> Quantity:
+    def from_int(value: int) -> Quantity:
         """
         Return a quantity from the given integer value.
 
@@ -746,7 +742,7 @@ cdef class Price:
         return Price(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
 
     @staticmethod
-    cdef Price from_int_c(int value):
+    cdef Price from_int_c(int128_t value):
         return Price(value, precision=0)
 
     cdef bint eq(self, Price other):
@@ -795,7 +791,7 @@ cdef class Price:
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    def from_raw(int128_t raw, uint8_t precision) -> Price:
+    def from_raw(raw: int, uint8_t precision) -> Price:
         """
         Return a price from the given `raw` fixed-point integer and `precision`.
 
@@ -862,7 +858,7 @@ cdef class Price:
         return Price.from_str_c(value)
 
     @staticmethod
-    def from_int(int value) -> Price:
+    def from_int(value: int) -> Price:
         """
         Return a price from the given integer value.
 
@@ -1157,7 +1153,7 @@ cdef class Money:
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    def from_raw(int128_t raw, Currency currency) -> Money:
+    def from_raw(raw: int, Currency currency) -> Money:
         """
         Return money from the given `raw` fixed-point integer and `currency`.
 
@@ -1292,7 +1288,7 @@ cdef class Currency:
     ) -> None:
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
-        Condition.is_true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        Condition.is_true(precision <= PRECISION, f"invalid `precision` greater than max 9, was {precision}")
 
         self._mem = currency_from_py(
             pystr_to_cstr(code),

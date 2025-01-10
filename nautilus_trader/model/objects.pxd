@@ -69,7 +69,7 @@ cdef class Quantity:
     cdef Quantity from_str_c(str value)
 
     @staticmethod
-    cdef Quantity from_int_c(int value)
+    cdef Quantity from_int_c(uint128_t value)
 
     cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
@@ -115,7 +115,7 @@ cdef class Price:
     cdef Price from_str_c(str value)
 
     @staticmethod
-    cdef Price from_int_c(int value)
+    cdef Price from_int_c(int128_t value)
 
     cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
