@@ -253,10 +253,6 @@ class HighFrequencyGridTrading(Strategy):
         bid_price = np.floor(bid_price / grid_interval) * grid_interval
         ask_price = np.ceil(ask_price / grid_interval) * grid_interval
 
-        #if (bid_price == self.last_px and self.last_order_side == OrderSide.BUY) or \
-        #        (ask_price == self.last_px and self.last_order_side == OrderSide.SELL):
-        #    return 
-
         if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
             self.log.info("Already have orders in flight - skipping.")
             return
@@ -338,7 +334,15 @@ class HighFrequencyGridTrading(Strategy):
                 self.sell(order_price, self.max_trade_size)
 
         self.prev_mid = reservation_price
-            
+
+        # Position management, if the current position exceeds the maximum position, then start to reduce a small amount
+        # of the position, so that the position is dynamically maintained below the maximum position. The backtesting
+        # results show better optimization for both drawdown and returns.
+        if net_position >= self.config.max_position:
+            self.sell(best_ask_price, self.max_trade_size)
+        elif net_position <= -self.config.max_position:
+            self.buy(best_bid_price, self.max_trade_size)
+
 
     def buy(self, bid_price, quantity) -> None:
         order = self.order_factory.limit(
