@@ -153,7 +153,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
        poetry install --only main --all-extras
 
 :::note
-The `--branch develop` flag clones only the develop branch, and `--depth 1` fetches just the latest commit for a faster, lightweight clone.
+The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::
 
 ## From GitHub Release

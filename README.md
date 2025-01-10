@@ -13,11 +13,11 @@
 | `nightly` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform           | Rust    | Python |
-| :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.84.0+ | 3.11+  |
-| `macOS (arm64)`    | 1.84.0+ | 3.11+  |
-| `Windows (x86_64)` | 1.84.0+ | 3.11+  |
+| Platform           | Rust    | Python      |
+| :----------------- | :------ | :---------- |
+| `Linux (x86_64)`   | 1.84.0+ | 3.11, 3.12  |
+| `macOS (arm64)`    | 1.84.0+ | 3.11, 3.12  |
+| `Windows (x86_64)` | 1.84.0+ | 3.11, 3.12  |
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
@@ -39,9 +39,9 @@ NautilusTrader's design, architecture, and implementation philosophy holds softw
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset-class-agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
-adapters. Thus, it can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
+The platform is also universal and asset-class-agnostic — with any REST, WebSocket or FIX API able to be integrated via modular
+adapters. It supports high-frequency trading operations across a wide range of asset classes and instrument types
+including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
 ## Features
 
@@ -146,7 +146,7 @@ The following integrations are currently supported:
 
 ### Status
 - `building`: Under construction and likely not in a usable state.
-- `beta`: Completed to a minimally working state and in a 'beta' testing phase.
+- `beta`: Completed to a minimally working state and in a beta testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
@@ -162,12 +162,12 @@ We aim to maintain a stable, passing build across all branches.
 > [!NOTE]
 >
 > Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
-> Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+> Once this milestone is reached, we plan to implement a formal deprecation process for any API changes.
 > This approach allows us to maintain a rapid development pace for now.
 
 ## Versioning and releases
 
-NautilusTrader is still under active development. Some features may be incomplete, and while
+**NautilusTrader is still under active development**. Some features may be incomplete, and while
 the API is becoming more stable, breaking changes can occur between releases.
 We strive to document these changes in the release notes on a **best-effort basis**.
 
@@ -301,7 +301,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
 
 > [!NOTE]
 >
-> The `--branch develop` flag clones only the develop branch, and `--depth 1` fetches just the latest commit for a faster, lightweight clone.
+> The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
