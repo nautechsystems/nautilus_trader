@@ -59,11 +59,15 @@ class TestQuantity:
         Quantity(1, precision=1)
 
     def test_instantiate_base_decimal_from_float(self):
-        # Arrange, Act
-        result = Quantity(1.12300, precision=5)
+        # Arrange
+        value = 1.12300
+        precision = 5
+
+        # Act
+        result = Quantity(value, precision=precision)
 
         # Assert
-        assert result.raw == 11_230_000_000_000_000
+        assert result.raw == convert_to_raw_int(value, precision)
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
@@ -78,7 +82,7 @@ class TestQuantity:
         result = Quantity.from_str("1.23")
 
         # Assert
-        assert result.raw == 12_300_000_000_000_000
+        assert result.raw == convert_to_raw_int(1.23, 2)
         assert str(result) == "1.23"
 
     @pytest.mark.parametrize(

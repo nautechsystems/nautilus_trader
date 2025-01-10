@@ -102,21 +102,26 @@ class TestMoney:
 
     def test_as_double_returns_expected_result(self) -> None:
         # Arrange, Act
-        money = Money(1, USD)
+        amount = 1.0
+        money = Money(amount, USD)
 
         # Assert
-        assert money.as_double() == 1.0
-        assert money.raw == 10_000_000_000_000_000
+        assert money.as_double() == amount
+        assert money.raw == convert_to_raw_int(amount, USD.precision)
         assert str(money) == "1.00 USD"
 
     def test_initialized_with_many_decimals_rounds_to_currency_precision(self) -> None:
         # Arrange, Act
-        result1 = Money(1000.333, USD)
-        result2 = Money(5005.556666, USD)
+        amount1 = 1000.333
+        amount2 = 5005.556666
+        result1 = Money(amount1, USD)
+        result2 = Money(amount2, USD)
 
         # Assert
-        assert result1.raw == 10_003_300_000_000_000_000
-        assert result2.raw == 50_055_600_000_000_000_000
+        assert result1.raw == convert_to_raw_int(amount1, USD.precision)
+        assert result2.raw == convert_to_raw_int(amount2, USD.precision)
+        assert str(result1) == "1000.33 USD"
+        assert str(result2) == "5005.56 USD"
         assert result1.to_formatted_str() == "1_000.33 USD"
         assert result2.to_formatted_str() == "5_005.56 USD"
 

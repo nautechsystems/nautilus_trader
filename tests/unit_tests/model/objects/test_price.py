@@ -62,18 +62,26 @@ class TestPrice:
 
     def test_instantiate_base_decimal_from_int(self):
         # Arrange, Act
-        result = Price(1, precision=1)
+        value = 1.0
+        precision = 1
+
+        # Act
+        result = Price(value, precision=precision)
 
         # Assert
-        assert result.raw == 10_000_000_000_000_000
+        assert result.raw == convert_to_raw_int(value, precision)
         assert str(result) == "1.0"
 
     def test_instantiate_base_decimal_from_float(self):
-        # Arrange, Act
-        result = Price(1.12300, precision=5)
+        # Arrange
+        value = 1.12300
+        precision = 5
+
+        # Act
+        result = Price(value, precision=precision)
 
         # Assert
-        assert result.raw == 11_230_000_000_000_000
+        assert result.raw == convert_to_raw_int(value, precision)
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
