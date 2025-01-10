@@ -266,13 +266,13 @@ impl OrderBook {
     /// Returns true if the book has any bid orders.
     #[must_use]
     pub fn has_bid(&self) -> bool {
-        self.bids.top().map_or(false, |top| !top.orders.is_empty())
+        self.bids.top().is_some_and(|top| !top.orders.is_empty())
     }
 
     /// Returns true if the book has any ask orders.
     #[must_use]
     pub fn has_ask(&self) -> bool {
-        self.asks.top().map_or(false, |top| !top.orders.is_empty())
+        self.asks.top().is_some_and(|top| !top.orders.is_empty())
     }
 
     /// Returns the best bid price if available.
