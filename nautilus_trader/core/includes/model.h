@@ -1964,14 +1964,10 @@ const char *book_order_display_to_cstr(const struct BookOrder_t *order);
 const char *book_order_debug_to_cstr(const struct BookOrder_t *order);
 
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
-                                  PriceRaw bid_price_raw,
-                                  PriceRaw ask_price_raw,
-                                  uint8_t bid_price_prec,
-                                  uint8_t ask_price_prec,
-                                  QuantityRaw bid_size_raw,
-                                  QuantityRaw ask_size_raw,
-                                  uint8_t bid_size_prec,
-                                  uint8_t ask_size_prec,
+                                  struct Price_t bid_price,
+                                  struct Price_t ask_price,
+                                  struct Quantity_t bid_size,
+                                  struct Quantity_t ask_size,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 

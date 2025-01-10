@@ -48,10 +48,7 @@ class TestQuoteTick:
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
-        bid_price = Price.from_str("1.00000")
-        ask_price = Price.from_str("1.00001")
-        assert bid_price.precision == ask_price.precision
-
+        # Act
         quote = QuoteTick(
             instrument_id=instrument_id,
             bid_price=Price.from_str("1.00000"),
@@ -62,7 +59,7 @@ class TestQuoteTick:
             ts_init=4,
         )
 
-        # Act, Assert
+        # Assert
         assert isinstance(hash(quote), int)
         assert str(quote) == "AUD/USD.SIM,1.00000,1.00001,1,1,3"
         assert repr(quote) == "QuoteTick(AUD/USD.SIM,1.00000,1.00001,1,1,3)"
@@ -160,12 +157,12 @@ class TestQuoteTick:
         # Arrange, Act
         quote = QuoteTick.from_raw(
             AUDUSD_SIM.id,
-            1000000000,
-            1000010000,
+            10000000000000000,
+            10000100000000000,
             5,
             5,
-            1000000000,
-            2000000000,
+            10000000000000000,
+            20000000000000000,
             0,
             0,
             1,

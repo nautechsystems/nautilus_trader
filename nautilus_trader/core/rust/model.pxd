@@ -1173,14 +1173,10 @@ cdef extern from "../includes/model.h":
     const char *book_order_debug_to_cstr(const BookOrder_t *order);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
-                               PriceRaw bid_price_raw,
-                               PriceRaw ask_price_raw,
-                               uint8_t bid_price_prec,
-                               uint8_t ask_price_prec,
-                               QuantityRaw bid_size_raw,
-                               QuantityRaw ask_size_raw,
-                               uint8_t bid_size_prec,
-                               uint8_t ask_size_prec,
+                               Price_t bid_price,
+                               Price_t ask_price,
+                               Quantity_t bid_size,
+                               Quantity_t ask_size,
                                uint64_t ts_event,
                                uint64_t ts_init);
 

@@ -47,7 +47,9 @@ from nautilus_trader.core.rust.model cimport Data_t_Tag
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.core.rust.model cimport RecordFlag
 from nautilus_trader.core.rust.model cimport bar_eq
 from nautilus_trader.core.rust.model cimport bar_hash
@@ -3620,14 +3622,10 @@ cdef class QuoteTick(Data):
 
         self._mem = quote_tick_new(
             instrument_id._mem,
-            bid_price._mem.raw,
-            ask_price._mem.raw,
-            bid_price._mem.precision,
-            ask_price._mem.precision,
-            bid_size._mem.raw,
-            ask_size._mem.raw,
-            bid_size._mem.precision,
-            ask_size._mem.precision,
+            bid_price._mem,
+            ask_price._mem,
+            bid_size._mem,
+            ask_size._mem,
             ts_event,
             ts_init,
         )
@@ -3649,16 +3647,16 @@ cdef class QuoteTick(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        cdef Price bid_price = Price.from_raw_c(state[1], state[3])
+        cdef Price ask_price = Price.from_raw_c(state[2], state[4])
+        cdef Quantity bid_size = Quantity.from_raw_c(state[5], state[7])
+        cdef Quantity ask_size = Quantity.from_raw_c(state[6], state[8])
         self._mem = quote_tick_new(
             instrument_id._mem,
-            state[1],
-            state[2],
-            state[3],
-            state[4],
-            state[5],
-            state[6],
-            state[7],
-            state[8],
+            bid_price._mem,
+            ask_price._mem,
+            bid_size._mem,
+            ask_size._mem,
             state[9],
             state[10],
         )
@@ -3815,17 +3813,29 @@ cdef class QuoteTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        cdef Price_t bid_price_mem
+        bid_price_mem.raw = bid_price_raw
+        bid_price_mem.precision = bid_price_prec
+
+        cdef Price_t ask_price_mem
+        ask_price_mem.raw = ask_price_raw
+        ask_price_mem.precision = ask_price_prec
+
+        cdef Quantity_t bid_size_mem
+        bid_size_mem.raw = bid_size_raw
+        bid_size_mem.precision = bid_size_prec
+
+        cdef Quantity_t ask_size_mem
+        ask_size_mem.raw = ask_size_raw
+        ask_size_mem.precision = ask_size_prec
+
         cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
         quote._mem = quote_tick_new(
             instrument_id._mem,
-            bid_price_raw,
-            ask_price_raw,
-            bid_price_prec,
-            ask_price_prec,
-            bid_size_raw,
-            ask_size_raw,
-            bid_size_prec,
-            ask_size_prec,
+            bid_price_mem,
+            ask_price_mem,
+            bid_size_mem,
+            ask_size_mem,
             ts_event,
             ts_init,
         )
@@ -3847,29 +3857,38 @@ cdef class QuoteTick(Data):
                        == len(ts_events) == len(ts_inits), "Array lengths must be equal")
 
         cdef int count = ts_events.shape[0]
-        cdef list[QuoteTick] ticks = []
+        cdef list[QuoteTick] quotes = []
 
         cdef:
             int i
+            cdef Price_t bid_price_mem
+            cdef Price_t ask_price_mem
+            cdef Quantity_t bid_size_mem
+            cdef Quantity_t ask_size_mem
             QuoteTick quote
         for i in range(count):
+            bid_price_mem.raw = bid_prices_raw[i]
+            bid_price_mem.precision = price_prec
+            ask_price_mem.raw = ask_prices_raw[i]
+            ask_price_mem.precision = price_prec
+            bid_size_mem.raw = bid_sizes_raw[i]
+            bid_size_mem.precision = size_prec
+            ask_size_mem.raw = ask_sizes_raw[i]
+            ask_size_mem.precision = size_prec
+
             quote = QuoteTick.__new__(QuoteTick)
             quote._mem = quote_tick_new(
                 instrument_id._mem,
-                bid_prices_raw[i],
-                ask_prices_raw[i],
-                price_prec,
-                price_prec,
-                bid_sizes_raw[i],
-                ask_sizes_raw[i],
-                size_prec,
-                size_prec,
+                bid_price_mem,
+                ask_price_mem,
+                bid_size_mem,
+                ask_size_mem,
                 ts_events[i],
                 ts_inits[i],
             )
-            ticks.append(quote)
+            quotes.append(quote)
 
-        return ticks
+        return quotes
 
     @staticmethod
     def from_raw_arrays_to_list(
