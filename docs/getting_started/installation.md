@@ -51,7 +51,9 @@ To install the latest stable release:
 
 ### Development wheels
 
-Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS, allowing users to test features and fixes ahead of stable releases.
+Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS,
+allowing users to test features and fixes ahead of stable releases.
+
 This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
@@ -90,7 +92,7 @@ To programmatically fetch and list available versions:
 ### Retention policies
 
 - `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`.a`): Only the 3 most recent wheel builds are retained.
+- `nightly` branch wheels (`a`): Only the 3 most recent wheel builds are retained.
 
 ## From Source
 
@@ -146,9 +148,13 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
 
 5. Clone the source with `git`, and install from the projects root directory:
 
-       git clone https://github.com/nautechsystems/nautilus_trader
+       git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
        poetry install --only main --all-extras
+
+:::note
+The `--branch develop` flag clones only the develop branch, and `--depth 1` fetches just the latest commit for a faster, lightweight clone.
+:::
 
 ## From GitHub Release
 

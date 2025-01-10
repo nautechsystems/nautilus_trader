@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -70,9 +70,10 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, int] _query_group_n_components
     cdef readonly dict[UUID4, list] _query_group_components
 
-    cdef readonly bint _time_bars_build_with_no_updates
-    cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
+    cdef readonly bint _time_bars_timestamp_on_close
+    cdef readonly bint _time_bars_skip_first_non_full_bar
+    cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly dict[BarAggregation, object] _time_bars_origins # pd.Timedelta or pd.DateOffset
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
@@ -198,6 +199,7 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
+    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type, bint await_partial, dict params)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type, dict params)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)

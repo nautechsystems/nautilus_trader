@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,7 +34,6 @@ from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
-from cpython.datetime cimport datetime
 from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
@@ -49,6 +48,7 @@ from nautilus_trader.backtest.models cimport MakerTakerFeeModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.component cimport FORCE_STOP
 from nautilus_trader.common.component cimport LOGGING_PYO3
 from nautilus_trader.common.component cimport LiveClock
 from nautilus_trader.common.component cimport Logger
@@ -59,11 +59,13 @@ from nautilus_trader.common.component cimport TimeEventHandler
 from nautilus_trader.common.component cimport get_component_clocks
 from nautilus_trader.common.component cimport log_level_from_str
 from nautilus_trader.common.component cimport log_sysinfo
+from nautilus_trader.common.component cimport set_backtest_force_stop
 from nautilus_trader.common.component cimport set_logging_clock_realtime_mode
 from nautilus_trader.common.component cimport set_logging_clock_static_mode
 from nautilus_trader.common.component cimport set_logging_clock_static_time
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
@@ -142,10 +144,10 @@ cdef class BacktestEngine:
         self._iteration: uint64_t = 0
 
         # Timing
-        self._run_started: datetime | None = None
-        self._run_finished: datetime | None = None
-        self._backtest_start: datetime | None = None
-        self._backtest_end: datetime | None = None
+        self._run_started: pd.Timestamp | None = None
+        self._run_finished: pd.Timestamp | None = None
+        self._backtest_start: pd.Timestamp | None = None
+        self._backtest_end: pd.Timestamp | None = None
 
         # Build core system kernel
         self._kernel = NautilusKernel(name=type(self).__name__, config=config)
@@ -257,49 +259,49 @@ cdef class BacktestEngine:
         return self._iteration
 
     @property
-    def run_started(self) -> datetime | None:
+    def run_started(self) -> pd.Timestamp | None:
         """
         Return when the last backtest run started (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._run_started
 
     @property
-    def run_finished(self) -> datetime | None:
+    def run_finished(self) -> pd.Timestamp | None:
         """
         Return when the last backtest run finished (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._run_finished
 
     @property
-    def backtest_start(self) -> datetime | None:
+    def backtest_start(self) -> pd.Timestamp | None:
         """
         Return the last backtest run time range start (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._backtest_start
 
     @property
-    def backtest_end(self) -> datetime | None:
+    def backtest_end(self) -> pd.Timestamp | None:
         """
         Return the last backtest run time range end (if run).
 
         Returns
         -------
-        datetime or ``None``
+        pd.Timestamp or ``None``
 
         """
         return self._backtest_end
@@ -392,14 +394,15 @@ cdef class BacktestEngine:
         book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
         frozen_account: bool = False,
-        bar_execution: bool = True,
-        trade_execution: bool = False,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
         support_contingent_orders: bool = True,
         use_position_ids: bool = True,
         use_random_ids: bool = False,
         use_reduce_only: bool = True,
+        bar_execution: bool = True,
+        bar_adaptive_high_low_ordering: bool = False,
+        trade_execution: bool = False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -435,10 +438,6 @@ cdef class BacktestEngine:
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
-        bar_execution : bool, default True
-            If bars should be processed by the matching engine(s) (and move the market).
-        trade_execution : bool, default False
-            If trades should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -452,6 +451,17 @@ cdef class BacktestEngine:
             If all venue generated identifiers will be random UUID4's.
         use_reduce_only : bool, default True
             If the `reduce_only` execution instruction on orders will be honored.
+        bar_execution : bool, default True
+            If bars should be processed by the matching engine(s) (and move the market).
+        bar_adaptive_high_low_ordering : bool, default False
+            Determines whether the processing order of bar prices is adaptive based on a heuristic.
+            This setting is only relevant when `bar_execution` is True.
+            If False, bar prices are always processed in the fixed order: Open, High, Low, Close.
+            If True, the processing order adapts with the heuristic:
+            - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+            - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+        trade_execution : bool, default False
+            If trades should be processed by the matching engine(s) (and move the market).
 
         Raises
         ------
@@ -497,14 +507,15 @@ cdef class BacktestEngine:
             book_type=book_type,
             clock=self.kernel.clock,
             frozen_account=frozen_account,
-            bar_execution=bar_execution,
-            trade_execution=trade_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
             support_contingent_orders=support_contingent_orders,
             use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
             use_reduce_only=use_reduce_only,
+            bar_execution=bar_execution,
+            bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
+            trade_execution=trade_execution,
         )
 
         self._venues[venue] = exchange
@@ -1100,6 +1111,9 @@ cdef class BacktestEngine:
                     matching_engine.process_order(order, order.account_id)
                 ###################################################################################
 
+            # Reset any previously set FORCE_STOP
+            set_backtest_force_stop(False)
+
             # Common kernel start-up sequence
             self._kernel.start()
 
@@ -1125,7 +1139,6 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef bint force_stop = False
         cdef uint64_t last_ns = 0
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
@@ -1185,11 +1198,11 @@ cdef class BacktestEngine:
 
                 self._iteration += 1
         except AccountError as e:
-            force_stop = True
+            set_backtest_force_stop(True)
             self._log.error(f"Stopping backtest from {e}")
         # ---------------------------------------------------------------------#
 
-        if force_stop:
+        if FORCE_STOP:
             return
 
         # Process remaining messages
@@ -1202,6 +1215,7 @@ cdef class BacktestEngine:
                 raw_handlers,
                 last_ns,
                 only_now=True,
+                asof_now=True,
             )
             vec_time_event_handlers_drop(raw_handlers)
 
@@ -1248,6 +1262,7 @@ cdef class BacktestEngine:
         CVec raw_handler_vec,
         uint64_t ts_now,
         bint only_now,
+        bint asof_now = False,
     ):
         cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
@@ -1261,10 +1276,15 @@ cdef class BacktestEngine:
             object callback
             SimulatedExchange exchange
         for i in range(raw_handler_vec.len):
+            if FORCE_STOP:
+                # The FORCE_STOP flag has already been set,
+                # no further time events should be processed.
+                return
+
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
-            if (only_now and ts_event_init < ts_now) or (not only_now and ts_event_init == ts_now):
-                continue
+            if should_skip_time_event(ts_event_init, ts_now, only_now, asof_now):
+                continue  # Do not process event
 
             # Set all clocks to event timestamp
             set_logging_clock_static_time(ts_event_init)
@@ -1320,10 +1340,10 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {self._run_started}")
-        self._log.info(f"Backtest start: {self._backtest_start}")
-        self._log.info(f"Batch start:    {start}")
-        self._log.info(f"Batch end:      {end}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        self._log.info(f"Batch start:    {format_iso8601(start)}")
+        self._log.info(f"Batch end:      {format_iso8601(end)}")
         self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
@@ -1344,11 +1364,11 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {self._run_started}")
-        self._log.info(f"Run finished:   {self._run_finished}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
+        self._log.info(f"Run finished:   {format_iso8601(self._run_finished)}")
         self._log.info(f"Elapsed time:   {elapsed_time}")
-        self._log.info(f"Backtest start: {self._backtest_start}")
-        self._log.info(f"Backtest end:   {self._backtest_end}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
         self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:_}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:_}")

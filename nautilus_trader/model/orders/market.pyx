@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -200,7 +200,7 @@ cdef class MarketOrder(Order):
             client_order_id=ClientOrderId(str(pyo3_order.client_order_id)),
             order_side=order_side_from_str(str(pyo3_order.side)),
             quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
-            init_id=UUID4(str(pyo3_order.init_id)),
+            init_id=UUID4.from_str_c(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             reduce_only=pyo3_order.is_reduce_only,
@@ -246,8 +246,8 @@ cdef class MarketOrder(Order):
             "is_quote_quantity": self.is_quote_quantity,
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "avg_px": self.avg_px if self.filled_qty.as_f64_c() > 0.0 else None,
+            "slippage": self.slippage if self.filled_qty.as_f64_c() > 0.0 else None,
             "commissions": [str(c) for c in self.commissions()] if self._commissions else None,
             "emulation_trigger": trigger_type_to_str(self.emulation_trigger),
             "status": self._fsm.state_string_c(),

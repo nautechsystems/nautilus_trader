@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use indexmap::IndexMap;
+use nautilus_core::{UnixNanos, UUID4};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -76,14 +75,14 @@ pub enum OrderError {
 }
 
 #[must_use]
-pub fn ustr_hashmap_to_str(h: HashMap<Ustr, Ustr>) -> HashMap<String, String> {
+pub fn ustr_indexmap_to_str(h: IndexMap<Ustr, Ustr>) -> IndexMap<String, String> {
     h.into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
 }
 
 #[must_use]
-pub fn str_hashmap_to_ustr(h: HashMap<String, String>) -> HashMap<Ustr, Ustr> {
+pub fn str_indexmap_to_ustr(h: IndexMap<String, String>) -> IndexMap<Ustr, Ustr> {
     h.into_iter()
         .map(|(k, v)| (Ustr::from(&k), Ustr::from(&v)))
         .collect()
@@ -186,8 +185,8 @@ pub trait Order: 'static + Send {
     fn is_reduce_only(&self) -> bool;
     fn is_quote_quantity(&self) -> bool;
     fn display_qty(&self) -> Option<Quantity>;
-    fn limit_offset(&self) -> Option<Price>;
-    fn trailing_offset(&self) -> Option<Price>;
+    fn limit_offset(&self) -> Option<Decimal>;
+    fn trailing_offset(&self) -> Option<Decimal>;
     fn trailing_offset_type(&self) -> Option<TrailingOffsetType>;
     fn emulation_trigger(&self) -> Option<TriggerType>;
     fn trigger_instrument_id(&self) -> Option<InstrumentId>;
@@ -196,7 +195,7 @@ pub trait Order: 'static + Send {
     fn linked_order_ids(&self) -> Option<&[ClientOrderId]>;
     fn parent_order_id(&self) -> Option<ClientOrderId>;
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
-    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>>;
+    fn exec_algorithm_params(&self) -> Option<&IndexMap<Ustr, Ustr>>;
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
     fn tags(&self) -> Option<&[Ustr]>;
     fn filled_qty(&self) -> Quantity;
@@ -332,9 +331,8 @@ pub trait Order: 'static + Send {
     }
 
     fn is_spawned(&self) -> bool {
-        self.exec_spawn_id().map_or(false, |exec_spawn_id| {
-            exec_spawn_id != self.client_order_id()
-        })
+        self.exec_spawn_id()
+            .is_some_and(|exec_spawn_id| exec_spawn_id != self.client_order_id())
     }
 }
 
@@ -400,7 +398,7 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderCore {
     pub events: Vec<OrderEventAny>,
-    pub commissions: HashMap<Currency, Money>,
+    pub commissions: IndexMap<Currency, Money>,
     pub venue_order_ids: Vec<VenueOrderId>,
     pub trade_ids: Vec<TradeId>,
     pub previous_status: Option<OrderStatus>,
@@ -426,7 +424,7 @@ pub struct OrderCore {
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
     pub parent_order_id: Option<ClientOrderId>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
-    pub exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+    pub exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
     pub exec_spawn_id: Option<ClientOrderId>,
     pub tags: Option<Vec<Ustr>>,
     pub filled_qty: Quantity,
@@ -444,7 +442,7 @@ impl OrderCore {
         let events: Vec<OrderEventAny> = vec![OrderEventAny::Initialized(init.clone())];
         Self {
             events,
-            commissions: HashMap::new(),
+            commissions: IndexMap::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             previous_status: None,
@@ -667,8 +665,13 @@ impl OrderCore {
     }
 
     #[must_use]
-    pub fn commissions(&self) -> HashMap<Currency, Money> {
+    pub fn commissions(&self) -> IndexMap<Currency, Money> {
         self.commissions.clone()
+    }
+
+    #[must_use]
+    pub fn commissions_vec(&self) -> Vec<Money> {
+        self.commissions.values().cloned().collect()
     }
 
     #[must_use]
@@ -802,6 +805,6 @@ mod tests {
         assert!(!order.is_open());
         assert!(order.is_closed());
         assert_eq!(order.commission(&Currency::USD()), None);
-        assert_eq!(order.commissions(), HashMap::new());
+        assert_eq!(order.commissions(), IndexMap::new());
     }
 }

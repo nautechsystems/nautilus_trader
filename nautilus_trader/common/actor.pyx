@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -2598,7 +2598,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint include_external_data = False,
-        bint update_existing_subscriptions = False,
+        bint update_subscriptions = False,
         bint update_catalog = False,
         dict[str, object] params = None,
     ):
@@ -2629,8 +2629,8 @@ cdef class Actor(Component):
             completed processing.
         include_external_data : bool, default False
             If True, includes the queried external data in the response.
-        update_existing_subscriptions : bool, default False
-            If True, updates the aggregators of any existing subscription with the queried external data.
+        update_subscriptions : bool, default False
+            If True, updates the aggregators of any existing or future subscription with the queried external data.
         update_catalog : bool, default False
             If True then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
@@ -2687,7 +2687,7 @@ cdef class Actor(Component):
 
         params = params if params else {}
         params["include_external_data"] = include_external_data
-        params["update_existing_subscriptions"] = update_existing_subscriptions
+        params["update_subscriptions"] = update_subscriptions
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
@@ -3333,9 +3333,13 @@ cdef class Actor(Component):
 
         return self._future_greeks[instrument_id]
 
-    def portfolio_greeks(self, str underlying = "", Venue venue = None, InstrumentId instrument_id = None,
-                         StrategyId strategy_id = None,
-                         PositionSide side = PositionSide.NO_POSITION_SIDE) -> PortfolioGreeks:
+    def portfolio_greeks(
+        self, str underlying = "",
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
+    ) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
 

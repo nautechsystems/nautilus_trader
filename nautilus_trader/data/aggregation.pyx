@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,7 +62,7 @@ cdef class BarBuilder:
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-    ):
+    ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self._bar_type = bar_type
@@ -286,7 +286,7 @@ cdef class BarAggregator:
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         bint await_partial = False,
-    ):
+    ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self.bar_type = bar_type
@@ -299,6 +299,7 @@ cdef class BarAggregator:
             bar_type=self.bar_type,
         )
         self._batch_mode = False
+        self.is_running = False # is_running means that an aggregator receives data from the message bus
 
     def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
         self._batch_mode = True
@@ -429,7 +430,7 @@ cdef class TickBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -476,7 +477,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -571,7 +572,7 @@ cdef class ValueBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-    ):
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -675,33 +676,41 @@ cdef class TimeBarAggregator(BarAggregator):
         The bar handler for the aggregator.
     clock : Clock
         The clock for the aggregator.
-    build_with_no_updates : bool, default True
-        If build and emit bars with no new market updates.
-    timestamp_on_close : bool, default True
-        If True, then timestamp will be the bar close's time.
-        If False, then timestamp will be the bar open's time.
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
         - 'right-open': start time is included and end time is excluded.
+    timestamp_on_close : bool, default True
+        If True, then timestamp will be the bar close time.
+        If False, then timestamp will be the bar open time.
+    skip_first_non_full_bar : bool, default False
+        If will skip emitting a bar if the aggregation starts mid-interval.
+    build_with_no_updates : bool, default True
+        If build and emit bars with no new market updates.
+    time_bars_origin : pd.Timedelta or pd.DateOffset, optional
+        The origin time offset.
+    composite_bar_build_delay : int, default 15
+        The time delay (microseconds) before building and emitting a composite bar type.
 
     Raises
     ------
     ValueError
         If `instrument.id` != `bar_type.instrument_id`.
     """
+
     def __init__(
         self,
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         Clock clock not None,
-        bint build_with_no_updates = True,
-        bint timestamp_on_close = True,
         str interval_type = "left-open",
-        object time_bars_origin=None, # pd.Timedelta or pd.DateOffset
-        int composite_bar_build_delay=15, # in microsecond
-    ):
+        bint timestamp_on_close = True,
+        bint skip_first_non_full_bar = False,
+        bint build_with_no_updates = True,
+        object time_bars_origin: pd.Timedelta | pd.DateOffset = None,
+        int composite_bar_build_delay = 15, # in microsecond
+    ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
@@ -726,6 +735,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._batch_open_ns = 0
         self._batch_next_close_ns = 0
         self._time_bars_origin = time_bars_origin
+        self._skip_first_non_full_bar = skip_first_non_full_bar
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -839,6 +849,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"was {bar_aggregation_to_str(aggregation)}",
             )
 
+        if start_time == now:
+            self._skip_first_non_full_bar = False
+
         if self._add_delay and enable_delay:
             start_time += timedelta(microseconds=self._composite_bar_build_delay)
 
@@ -926,6 +939,13 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
         self._log.debug(f"Started timer {self._timer_name}")
+
+    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
+        if self._skip_first_non_full_bar:
+            self._builder.reset()
+            self._skip_first_non_full_bar = False
+        else:
+            BarAggregator._build_and_send(self, ts_event, ts_init)
 
     def _start_batch_time(self, uint64_t time_ns):
         cdef int step = self.bar_type.spec.step

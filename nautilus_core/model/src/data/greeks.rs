@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -117,176 +117,187 @@ pub fn imply_vol_and_greeks(
     }
 }
 
-#[test]
-fn test_greeks_accuracy_call() {
-    let s = 100.0;
-    let k = 100.1;
-    let t = 1.0;
-    let r = 0.01;
-    let b = 0.005;
-    let sigma = 0.2;
-    let is_call = true;
-    let eps = 1e-3;
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
-    let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
 
-    let price0 = |s: f64| black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0).price;
+    use super::*;
 
-    let delta_bnr = (price0(s + eps) - price0(s - eps)) / (2.0 * eps);
-    let gamma_bnr = (price0(s + eps) + price0(s - eps) - 2.0 * price0(s)) / (eps * eps);
-    let vega_bnr = (black_scholes_greeks(s, r, b, sigma + eps, is_call, k, t, 1.0).price
-        - black_scholes_greeks(s, r, b, sigma - eps, is_call, k, t, 1.0).price)
-        / (2.0 * eps)
-        / 100.0;
-    let theta_bnr = (black_scholes_greeks(s, r, b, sigma, is_call, k, t - eps, 1.0).price
-        - black_scholes_greeks(s, r, b, sigma, is_call, k, t + eps, 1.0).price)
-        / (2.0 * eps)
-        / 365.25;
+    #[rstest]
+    fn test_greeks_accuracy_call() {
+        let s = 100.0;
+        let k = 100.1;
+        let t = 1.0;
+        let r = 0.01;
+        let b = 0.005;
+        let sigma = 0.2;
+        let is_call = true;
+        let eps = 1e-3;
 
-    let tolerance = 1e-5;
-    assert!(
-        (greeks.delta - delta_bnr).abs() < tolerance,
-        "Delta difference exceeds tolerance"
-    );
-    assert!(
-        (greeks.gamma - gamma_bnr).abs() < tolerance,
-        "Gamma difference exceeds tolerance"
-    );
-    assert!(
-        (greeks.vega - vega_bnr).abs() < tolerance,
-        "Vega difference exceeds tolerance"
-    );
-    assert!(
-        (greeks.theta - theta_bnr).abs() < tolerance,
-        "Theta difference exceeds tolerance"
-    );
-}
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
 
-#[test]
-fn test_greeks_accuracy_put() {
-    let s = 100.0;
-    let k = 100.1;
-    let t = 1.0;
-    let r = 0.01;
-    let b = 0.005;
-    let sigma = 0.2;
-    let is_call = false;
-    let eps = 1e-3;
+        let price0 = |s: f64| black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0).price;
 
-    let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
+        let delta_bnr = (price0(s + eps) - price0(s - eps)) / (2.0 * eps);
+        let gamma_bnr = (price0(s + eps) + price0(s - eps) - 2.0 * price0(s)) / (eps * eps);
+        let vega_bnr = (black_scholes_greeks(s, r, b, sigma + eps, is_call, k, t, 1.0).price
+            - black_scholes_greeks(s, r, b, sigma - eps, is_call, k, t, 1.0).price)
+            / (2.0 * eps)
+            / 100.0;
+        let theta_bnr = (black_scholes_greeks(s, r, b, sigma, is_call, k, t - eps, 1.0).price
+            - black_scholes_greeks(s, r, b, sigma, is_call, k, t + eps, 1.0).price)
+            / (2.0 * eps)
+            / 365.25;
 
-    let price0 = |s: f64| black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0).price;
+        let tolerance = 1e-5;
+        assert!(
+            (greeks.delta - delta_bnr).abs() < tolerance,
+            "Delta difference exceeds tolerance"
+        );
+        assert!(
+            (greeks.gamma - gamma_bnr).abs() < tolerance,
+            "Gamma difference exceeds tolerance"
+        );
+        assert!(
+            (greeks.vega - vega_bnr).abs() < tolerance,
+            "Vega difference exceeds tolerance"
+        );
+        assert!(
+            (greeks.theta - theta_bnr).abs() < tolerance,
+            "Theta difference exceeds tolerance"
+        );
+    }
 
-    let delta_bnr = (price0(s + eps) - price0(s - eps)) / (2.0 * eps);
-    let gamma_bnr = (price0(s + eps) + price0(s - eps) - 2.0 * price0(s)) / (eps * eps);
-    let vega_bnr = (black_scholes_greeks(s, r, b, sigma + eps, is_call, k, t, 1.0).price
-        - black_scholes_greeks(s, r, b, sigma - eps, is_call, k, t, 1.0).price)
-        / (2.0 * eps)
-        / 100.0;
-    let theta_bnr = (black_scholes_greeks(s, r, b, sigma, is_call, k, t - eps, 1.0).price
-        - black_scholes_greeks(s, r, b, sigma, is_call, k, t + eps, 1.0).price)
-        / (2.0 * eps)
-        / 365.25;
+    #[rstest]
+    fn test_greeks_accuracy_put() {
+        let s = 100.0;
+        let k = 100.1;
+        let t = 1.0;
+        let r = 0.01;
+        let b = 0.005;
+        let sigma = 0.2;
+        let is_call = false;
+        let eps = 1e-3;
 
-    let tolerance = 1e-5;
-    assert!(
-        (greeks.delta - delta_bnr).abs() < tolerance,
-        "Delta difference exceeds tolerance"
-    );
-    assert!(
-        (greeks.gamma - gamma_bnr).abs() < tolerance,
-        "Gamma difference exceeds tolerance"
-    );
-    assert!(
-        (greeks.vega - vega_bnr).abs() < tolerance,
-        "Vega difference exceeds tolerance"
-    );
-    assert!(
-        (greeks.theta - theta_bnr).abs() < tolerance,
-        "Theta difference exceeds tolerance"
-    );
-}
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
 
-#[test]
-fn test_imply_vol_and_greeks_accuracy_call() {
-    let s = 100.0;
-    let k = 100.1;
-    let t = 1.0;
-    let r = 0.01;
-    let b = 0.005;
-    let sigma = 0.2;
-    let is_call = true;
+        let price0 = |s: f64| black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0).price;
 
-    let base_greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
-    let price = base_greeks.price;
+        let delta_bnr = (price0(s + eps) - price0(s - eps)) / (2.0 * eps);
+        let gamma_bnr = (price0(s + eps) + price0(s - eps) - 2.0 * price0(s)) / (eps * eps);
+        let vega_bnr = (black_scholes_greeks(s, r, b, sigma + eps, is_call, k, t, 1.0).price
+            - black_scholes_greeks(s, r, b, sigma - eps, is_call, k, t, 1.0).price)
+            / (2.0 * eps)
+            / 100.0;
+        let theta_bnr = (black_scholes_greeks(s, r, b, sigma, is_call, k, t - eps, 1.0).price
+            - black_scholes_greeks(s, r, b, sigma, is_call, k, t + eps, 1.0).price)
+            / (2.0 * eps)
+            / 365.25;
 
-    let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, 1.0);
+        let tolerance = 1e-5;
+        assert!(
+            (greeks.delta - delta_bnr).abs() < tolerance,
+            "Delta difference exceeds tolerance"
+        );
+        assert!(
+            (greeks.gamma - gamma_bnr).abs() < tolerance,
+            "Gamma difference exceeds tolerance"
+        );
+        assert!(
+            (greeks.vega - vega_bnr).abs() < tolerance,
+            "Vega difference exceeds tolerance"
+        );
+        assert!(
+            (greeks.theta - theta_bnr).abs() < tolerance,
+            "Theta difference exceeds tolerance"
+        );
+    }
 
-    let tolerance = 1e-5;
-    assert!(
-        (implied_result.vol - sigma).abs() < tolerance,
-        "Vol difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.price - base_greeks.price).abs() < tolerance,
-        "Price difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.delta - base_greeks.delta).abs() < tolerance,
-        "Delta difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.gamma - base_greeks.gamma).abs() < tolerance,
-        "Gamma difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.vega - base_greeks.vega).abs() < tolerance,
-        "Vega difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.theta - base_greeks.theta).abs() < tolerance,
-        "Theta difference exceeds tolerance"
-    );
-}
+    #[rstest]
+    fn test_imply_vol_and_greeks_accuracy_call() {
+        let s = 100.0;
+        let k = 100.1;
+        let t = 1.0;
+        let r = 0.01;
+        let b = 0.005;
+        let sigma = 0.2;
+        let is_call = true;
 
-#[test]
-fn test_imply_vol_and_greeks_accuracy_put() {
-    let s = 100.0;
-    let k = 100.1;
-    let t = 1.0;
-    let r = 0.01;
-    let b = 0.005;
-    let sigma = 0.2;
-    let is_call = false;
+        let base_greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
+        let price = base_greeks.price;
 
-    let base_greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
-    let price = base_greeks.price;
+        let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, 1.0);
 
-    let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, 1.0);
+        let tolerance = 1e-5;
+        assert!(
+            (implied_result.vol - sigma).abs() < tolerance,
+            "Vol difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.price - base_greeks.price).abs() < tolerance,
+            "Price difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.delta - base_greeks.delta).abs() < tolerance,
+            "Delta difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.gamma - base_greeks.gamma).abs() < tolerance,
+            "Gamma difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.vega - base_greeks.vega).abs() < tolerance,
+            "Vega difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.theta - base_greeks.theta).abs() < tolerance,
+            "Theta difference exceeds tolerance"
+        );
+    }
 
-    let tolerance = 1e-5;
-    assert!(
-        (implied_result.vol - sigma).abs() < tolerance,
-        "Vol difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.price - base_greeks.price).abs() < tolerance,
-        "Price difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.delta - base_greeks.delta).abs() < tolerance,
-        "Delta difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.gamma - base_greeks.gamma).abs() < tolerance,
-        "Gamma difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.vega - base_greeks.vega).abs() < tolerance,
-        "Vega difference exceeds tolerance"
-    );
-    assert!(
-        (implied_result.theta - base_greeks.theta).abs() < tolerance,
-        "Theta difference exceeds tolerance"
-    );
+    #[rstest]
+    fn test_imply_vol_and_greeks_accuracy_put() {
+        let s = 100.0;
+        let k = 100.1;
+        let t = 1.0;
+        let r = 0.01;
+        let b = 0.005;
+        let sigma = 0.2;
+        let is_call = false;
+
+        let base_greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
+        let price = base_greeks.price;
+
+        let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, 1.0);
+
+        let tolerance = 1e-5;
+        assert!(
+            (implied_result.vol - sigma).abs() < tolerance,
+            "Vol difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.price - base_greeks.price).abs() < tolerance,
+            "Price difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.delta - base_greeks.delta).abs() < tolerance,
+            "Delta difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.gamma - base_greeks.gamma).abs() < tolerance,
+            "Gamma difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.vega - base_greeks.vega).abs() < tolerance,
+            "Vega difference exceeds tolerance"
+        );
+        assert!(
+            (implied_result.theta - base_greeks.theta).abs() < tolerance,
+            "Theta difference exceeds tolerance"
+        );
+    }
 }

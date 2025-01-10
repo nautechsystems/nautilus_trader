@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use indexmap::IndexMap;
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -80,7 +79,7 @@ impl StopMarketOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
@@ -249,11 +248,11 @@ impl Order for StopMarketOrder {
         self.display_qty
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         None
     }
 
@@ -289,7 +288,7 @@ impl Order for StopMarketOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>> {
+    fn exec_algorithm_params(&self) -> Option<&IndexMap<Ustr, Ustr>> {
         self.exec_algorithm_params.as_ref()
     }
 

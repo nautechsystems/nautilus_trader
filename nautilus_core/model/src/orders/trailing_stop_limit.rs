@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use indexmap::IndexMap;
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -49,8 +48,8 @@ pub struct TrailingStopLimitOrder {
     pub price: Price,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
-    pub limit_offset: Price,
-    pub trailing_offset: Price,
+    pub limit_offset: Decimal,
+    pub trailing_offset: Decimal,
     pub trailing_offset_type: TrailingOffsetType,
     pub expire_time: Option<UnixNanos>,
     pub is_post_only: bool,
@@ -73,8 +72,8 @@ impl TrailingStopLimitOrder {
         price: Price,
         trigger_price: Price,
         trigger_type: TriggerType,
-        limit_offset: Price,
-        trailing_offset: Price,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
         time_in_force: TimeInForce,
         expire_time: Option<UnixNanos>,
@@ -89,7 +88,7 @@ impl TrailingStopLimitOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
@@ -263,11 +262,11 @@ impl Order for TrailingStopLimitOrder {
         self.display_qty
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         Some(self.limit_offset)
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         Some(self.trailing_offset)
     }
 
@@ -303,7 +302,7 @@ impl Order for TrailingStopLimitOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>> {
+    fn exec_algorithm_params(&self) -> Option<&IndexMap<Ustr, Ustr>> {
         self.exec_algorithm_params.as_ref()
     }
 

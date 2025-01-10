@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -324,11 +324,11 @@ class TestDatetimeFunctions:
 
         # Assert
         assert str(pd.to_datetime(dt1, utc=True)) == "1970-01-01 00:00:00+00:00"
-        assert result1 == "1970-01-01T00:00:00.000Z"
-        assert result2 == "1970-01-01T00:00:00.000Z"
-        assert result3 == "1970-01-01T00:00:00.001Z"
-        assert result4 == "1970-01-01T00:00:01.000Z"
-        assert result5 == "1970-01-01T01:01:02.003Z"
+        assert result1 == "1970-01-01T00:00:00.000000000Z"
+        assert result2 == "1970-01-01T00:00:00.000001000Z"
+        assert result3 == "1970-01-01T00:00:00.001000000Z"
+        assert result4 == "1970-01-01T00:00:01.000000000Z"
+        assert result5 == "1970-01-01T01:01:02.003000000Z"
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange

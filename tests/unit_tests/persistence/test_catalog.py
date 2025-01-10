@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -79,10 +79,8 @@ def test_catalog_query_filtered(
     deltas = catalog_betfair.order_book_deltas()
     assert len(deltas) == 2384
 
-    # No record flags so everything batched into one `OrderBookDeltas`
-    # Batching only makes sense with correct flags
     deltas = catalog_betfair.order_book_deltas(batched=True)
-    assert len(deltas) == 1
+    assert len(deltas) == 2007
 
 
 def test_catalog_query_custom_filtered(
@@ -166,7 +164,7 @@ def test_catalog_with_databento_instruments(catalog: ParquetDataCatalog) -> None
 
 
 @pytest.mark.skip(reason="Not yet partitioning")
-def test_partioning_min_rows_per_group(
+def test_partitioning_min_rows_per_group(
     catalog_betfair: ParquetDataCatalog,
 ) -> None:
     # Arrange

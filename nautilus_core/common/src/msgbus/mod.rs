@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ use std::{
 
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::{data::Data, identifiers::TraderId};
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
@@ -483,7 +483,7 @@ impl Default for MessageBus {
 #[cfg(test)]
 mod tests {
 
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use rstest::*;
     use stubs::check_handler_was_called;
 
@@ -638,6 +638,14 @@ mod tests {
     #[case("data.quotes.BINANCE", "data.*.BINANCE", true)]
     #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", true)]
     #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", true)]
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH???", false)]
+    #[case("data.trades.BINANCE.ETHUSD", "data.*.BINANCE.ETH???", true)]
+    // We don't support [seq] style pattern
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[HC]USDT", false)]
+    // We don't support [!seq] style pattern
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[!ABC]USDT", false)]
+    // We don't support [^seq] style pattern
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[^ABC]USDT", false)]
     fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected: bool) {
         assert_eq!(
             is_matching(&Ustr::from(topic), &Ustr::from(pattern)),

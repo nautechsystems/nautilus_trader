@@ -15,9 +15,9 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.83.0+ | 3.11+  |
-| `macOS (arm64)`    | 1.83.0+ | 3.11+  |
-| `Windows (x86_64)` | 1.83.0+ | 3.11+  |
+| `Linux (x86_64)`   | 1.84.0+ | 3.11+  |
+| `macOS (arm64)`    | 1.84.0+ | 3.11+  |
+| `Windows (x86_64)` | 1.84.0+ | 3.11+  |
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
@@ -31,15 +31,15 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
 
-The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant
-and robust Python native environment. This helps to address the parity challenge of keeping the Python research/backtest
-environment, consistent with the production live trading environment.
+The platform is *AI-first*, designed to develop and deploy algorithmic trading strategies within a highly performant
+and robust Python-native environment. This helps to address the parity challenge of keeping the Python research/backtest
+environment consistent with the production live trading environment.
 
-NautilusTraders design, architecture and implementation philosophy holds software correctness and safety at the
-highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
+NautilusTrader's design, architecture, and implementation philosophy holds software correctness and safety at the
+highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
+The platform is also universal and asset-class-agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
 adapters. Thus, it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
@@ -70,8 +70,8 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Reduced operational risk**: Enhanced risk management functionality, logical accuracy, and type safety.
 - **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
-Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
-using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
+Traditionally, trading strategy research and backtesting might be conducted in Python
+using vectorized methods, with the strategy then needing to be reimplemented in a more event-driven way
 using C++, C#, Java or other statically typed language(s). The reasoning here is that vectorized backtesting code cannot
 express the granular time and event dependent complexity of real-time trading, where compiled languages have
 proven to be more suitable due to their inherently higher performance, and type safety.
@@ -79,7 +79,7 @@ proven to be more suitable due to their inherently higher performance, and type 
 One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
 have all been written entirely in [Rust](https://www.rust-lang.org/) or [Cython](https://cython.org/).
 This means we're using the right tools for the job, where systems programming languages compile performant binaries,
-with CPython C extension modules then able to offer a Python native environment, suitable for professional quantitative traders and trading firms.
+with CPython C extension modules then able to offer a Python-native environment, suitable for professional quantitative traders and trading firms.
 
 ## Why Python?
 
@@ -111,8 +111,10 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 > “The intent of this project is to be free of soundness bugs.
 > The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
 
-**MSRV:** NautilusTrader relies heavily on improvements in the Rust language and compiler.
-As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the latest stable release of Rust.
+> [!NOTE]
+>
+> **MSRV:** NautilusTrader relies heavily on improvements in the Rust language and compiler.
+> As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the latest stable release of Rust.
 
 ## Architecture (data flow)
 
@@ -157,9 +159,11 @@ We aim to maintain a stable, passing build across all branches.
 - `nightly`: Includes experimental and in-progress features, merged from the `develop` branch daily at **14:00 UTC** and also when required.
 - `develop`: The most active branch, frequently updated with new commits, including experimental and in-progress features.
 
-Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
-Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
-This approach allows us to maintain a rapid development pace for now.
+> [!NOTE]
+>
+> Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+> Once this milestone is reached, we plan to implement a formal release process, including deprecation periods for any API changes.
+> This approach allows us to maintain a rapid development pace for now.
 
 ## Versioning and releases
 
@@ -203,9 +207,9 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 - `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
 - `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
-| :warning: WARNING |
-| :---------------- |
-**We don't recommend using development wheels in production environments, such as live trading controlling real capital.**
+> [!WARNING]
+>
+> We don't recommend using development wheels in production environments, such as live trading controlling real capital.
 
 #### Installation commands
 
@@ -291,9 +295,13 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
 
 5. Clone the source with `git`, and install from the projects root directory:
 
-       git clone https://github.com/nautechsystems/nautilus_trader
+       git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
        poetry install --only main --all-extras
+
+> [!NOTE]
+>
+> The `--branch develop` flag clones only the develop branch, and `--depth 1` fetches just the latest commit for a faster, lightweight clone.
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
@@ -309,18 +317,20 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make install`: Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default).
 - `make install-debug`: Same as `make install` but with `debug` build mode.
 - `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package).
-- `make install-just-deps-all`: Same as `make install-just-deps` and additionally installs `docs` dependencies.
 - `make build`: Runs the build script in `release` build mode (default).
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode.
-- `make clean`: **CAUTION** Cleans all non-source artifacts from the repository.
+- `make clean`: **CAUTION** removes all non-source artifacts from the repository.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
-- `make ruff`: Runs ruff over all files using the `pyproject.toml` config.
-- `make outdated`: Runs commands to show outdated dependencies for both Rust and Python.
+- `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
 - `make pytest`: Runs all tests with `pytest` (except performance tests).
 - `make pytest-coverage`: Same as `make pytest` and additionally runs with test coverage and produces a report.
+
+> [!TIP]
+>
+> Running `make build-debug` to compile after changes to Rust or Cython code is currently the most efficient workflow when developing.
 
 ## Examples
 
@@ -356,136 +366,34 @@ Then open your browser at the following address:
 
     http://127.0.0.1:8888/lab
 
-| :warning: WARNING |
-| :---------------- |
-
-**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
-logging will cause the notebook to hang during cell execution. We are investigating a fix, which
-may involve either raising the configured rate limits for Jupyter or throttling the log flushing
-from Nautilus.**
-- https://github.com/jupyterlab/jupyterlab/issues/12845
-- https://github.com/deshaw/jupyterlab-limit-output
-
-## Minimal Strategy
-
-The following is a minimal EMA Cross strategy example that uses bar data. While this platform
-supports very advanced trading strategies, it is also possible to create simple ones. Start by
-inheriting from the `Strategy` base class and implement only the methods required by your strategy.
-
-```python
-class EMACross(Strategy):
-    """
-    A simple moving average cross example strategy.
-
-    When the fast EMA crosses the slow EMA then enters a position at the market
-    in that direction.
-
-    Cancels all orders and closes all positions on stop.
-    """
-
-    def __init__(self, config: EMACrossConfig) -> None:
-        super().__init__(config)
-
-        self.instrument: Instrument | None = None  # Initialized in on_start
-
-        # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
-        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
-
-    def on_start(self) -> None:
-        """
-        Actions to be performed on strategy start.
-        """
-        # Get instrument
-        self.instrument = self.cache.instrument(self.config.instrument_id)
-
-        # Register the indicators for updating
-        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
-
-        # Get historical data
-        self.request_bars(self.config.bar_type)
-
-        # Subscribe to live data
-        self.subscribe_bars(self.config.bar_type)
-
-    def on_bar(self, bar: Bar) -> None:
-        """
-        Actions to be performed when the strategy receives a bar.
-        """
-        # BUY LOGIC
-        if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
-                self.buy()
-            elif self.portfolio.is_net_short(self.config.instrument_id):
-                self.close_all_positions(self.config.instrument_id)
-                self.buy()
-        # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
-                self.sell()
-            elif self.portfolio.is_net_long(self.config.instrument_id):
-                self.close_all_positions(self.config.instrument_id)
-                self.sell()
-
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        order: MarketOrder = self.order_factory.market(
-            instrument_id=self.config.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.config.trade_size),
-        )
-
-        self.submit_order(order)
-
-    def sell(self) -> None:
-        """
-        Users simple sell method (example).
-        """
-        order: MarketOrder = self.order_factory.market(
-            instrument_id=self.config.instrument_id,
-            order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.trade_size),
-        )
-
-        self.submit_order(order)
-
-    def on_stop(self) -> None:
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        # Cleanup orders and positions
-        self.cancel_all_orders(self.config.instrument_id)
-        self.close_all_positions(self.config.instrument_id)
-
-        # Unsubscribe from data
-        self.unsubscribe_bars(self.config.bar_type)
-
-    def on_reset(self) -> None:
-        """
-        Actions to be performed when the strategy is reset.
-        """
-        # Reset indicators here
-        self.fast_ema.reset()
-        self.slow_ema.reset()
-
-```
+> [!WARNING]
+>
+> NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
+> As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
+> logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+> may involve either raising the configured rate limits for Jupyter or throttling the log flushing
+> from Nautilus.
+> - https://github.com/jupyterlab/jupyterlab/issues/12845
+> - https://github.com/deshaw/jupyterlab-limit-output
 
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/index.html) for helpful information.
 
+### Testing with Rust
+
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 
     cargo install cargo-nextest
 
+> [!TIP]
+>
+> Rust tests will only pass when run via `cargo-nextest`.
+
 ## Contributing
 
-Thank you for considering contributing to Nautilus Trader! We welcome any and all help to improve
+Thank you for considering contributing to NautilusTrader! We welcome any and all help to improve
 the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues)
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be
 well-aligned with the goals of the project and avoids duplication of effort.
@@ -494,10 +402,11 @@ Once you're ready to start working on your contribution, make sure to follow the
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)
 to ensure that your contributions can be included in the project.
 
-Note that all pull requests should be made to the `develop` branch. This is where new features
-and improvements are integrated before being released.
+> [!NOTE]
+>
+> Pull requests should target the `develop` branch (the default branch). This is where new features and improvements are integrated before release.
 
-Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.
+Thank you again for your interest in NautilusTrader! We look forward to reviewing your contributions and working with you to improve the project.
 
 ## Community
 
@@ -519,7 +428,7 @@ Nautech Systems is not affiliated with the Rust Foundation, and this project is 
 work of the Rust Foundation.
 For more information, visit https://nautilustrader.io.
 
-Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
 <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">

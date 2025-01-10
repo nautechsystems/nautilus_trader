@@ -706,75 +706,137 @@ cdef extern from "../includes/model.h":
     cdef struct ClientOrderId_t:
         char* _0;
 
+    # Represents an event where an order has been denied by the Nautilus system.
+    #
+    # This could be due an unsupported feature, a risk limit exceedance, or for
+    # any other reason that an otherwise valid order is not able to be submitted.
     cdef struct OrderDenied_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The reason the order was denied.
         char* reason;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
+    # Represents an event where an order has become emulated by the Nautilus system.
     cdef struct OrderEmulated_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
+    # Represents an event where an order was released from the `OrderEmulated` by the Nautilus system.
     cdef struct OrderReleased_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
         Price_t released_price;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
     # Represents a valid account ID.
     cdef struct AccountId_t:
         char* _0;
 
+    # Represents an event where an order has been submitted by the system to the
+    # trading venue.
     cdef struct OrderSubmitted_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The account ID associated with the event.
         AccountId_t account_id;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
 
     # Represents a valid venue order ID (assigned by a trading venue).
     cdef struct VenueOrderId_t:
         char* _0;
 
+    # Represents an event where an order has been accepted by the trading venue.
+    #
+    # This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
     cdef struct OrderAccepted_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The venue order ID associated with the event.
         VenueOrderId_t venue_order_id;
+        # The account ID associated with the event.
         AccountId_t account_id;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
+        # If the event was generated during reconciliation.
         uint8_t reconciliation;
 
+    # Represents an event where an order has been rejected by the trading venue.
     cdef struct OrderRejected_t:
+        # The trader ID associated with the event.
         TraderId_t trader_id;
+        # The strategy ID associated with the event.
         StrategyId_t strategy_id;
+        # The instrument ID associated with the event.
         InstrumentId_t instrument_id;
+        # The client order ID associated with the event.
         ClientOrderId_t client_order_id;
+        # The account ID associated with the event.
         AccountId_t account_id;
+        # The reason the order was rejected.
         char* reason;
+        # The unique identifier for the event.
         UUID4_t event_id;
+        # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the event was initialized.
         uint64_t ts_init;
+        # If the event was generated during reconciliation.
         uint8_t reconciliation;
 
     # Represents a system client ID.

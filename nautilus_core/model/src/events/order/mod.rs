@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -96,8 +97,8 @@ pub trait OrderEvent: 'static + Send {
     fn last_qty(&self) -> Option<Quantity>;
     fn trigger_price(&self) -> Option<Price>;
     fn trigger_type(&self) -> Option<TriggerType>;
-    fn limit_offset(&self) -> Option<Price>;
-    fn trailing_offset(&self) -> Option<Price>;
+    fn limit_offset(&self) -> Option<Decimal>;
+    fn trailing_offset(&self) -> Option<Decimal>;
     fn trailing_offset_type(&self) -> Option<TrailingOffsetType>;
     fn expire_time(&self) -> Option<UnixNanos>;
     fn display_qty(&self) -> Option<Quantity>;

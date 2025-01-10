@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal_macros::dec;
 
 use super::{
     limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
@@ -267,8 +268,8 @@ impl Default for TrailingStopLimitOrder {
             Price::from("1.00000"),
             Price::from("1.00000"),
             TriggerType::BidAsk,
-            Price::from("0.00100"),
-            Price::from("0.00100"),
+            dec!(0.001),
+            dec!(0.001),
             TrailingOffsetType::Price,
             TimeInForce::Gtc,
             None,
@@ -304,7 +305,7 @@ impl Default for TrailingStopMarketOrder {
             Quantity::from(100_000),
             Price::from("1.00000"),
             TriggerType::BidAsk,
-            Price::from("0.00100"),
+            dec!(0.001),
             TrailingOffsetType::Price,
             TimeInForce::Gtc,
             None,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -453,6 +453,6 @@ cdef inline int64_t order_sort_key(Order order):
         return price._mem.raw if order.is_triggered else trigger_price._mem.raw
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"invalid order type to sort in book, "
-            f"was {order_type_to_str(order.order_type)}",
+            f"invalid order type to sort in book, "  # pragma: no cover (design-time error)
+            f"was {order_type_to_str(order.order_type)}",  # pragma: no cover (design-time error)
         )

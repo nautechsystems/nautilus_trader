@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,7 @@ use datafusion::{
     error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
 };
 use futures::StreamExt;
-use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
+use nautilus_core::{ffi::cvec::CVec, UnixNanos};
 use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,

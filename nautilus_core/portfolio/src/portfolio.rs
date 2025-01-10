@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1489,7 +1489,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::{UnixNanos, UUID4};
     use nautilus_model::{
         data::QuoteTick,
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
@@ -1734,6 +1734,7 @@ mod tests {
             last_px: Price::new(position.avg_px_open, 0),
             currency: position.settlement_currency,
             avg_px_open: position.avg_px_open,
+            event_id: UUID4::new(),
             ts_event: 0.into(),
             ts_init: 0.into(),
         }
@@ -1758,10 +1759,11 @@ mod tests {
             ts_event: 0.into(),
             ts_init: 0.into(),
             peak_quantity: position.quantity,
-            avg_px_close: position.avg_px_open,
+            avg_px_close: Some(position.avg_px_open),
             realized_return: position.avg_px_open,
-            realized_pnl: Money::new(10.0, Currency::USD()),
+            realized_pnl: Some(Money::new(10.0, Currency::USD())),
             unrealized_pnl: Money::new(10.0, Currency::USD()),
+            event_id: UUID4::new(),
             ts_opened: 0.into(),
         }
     }
@@ -1785,14 +1787,15 @@ mod tests {
             ts_event: 0.into(),
             ts_init: 0.into(),
             peak_quantity: position.quantity,
-            avg_px_close: position.avg_px_open,
+            avg_px_close: Some(position.avg_px_open),
             realized_return: position.avg_px_open,
-            realized_pnl: Money::new(10.0, Currency::USD()),
+            realized_pnl: Some(Money::new(10.0, Currency::USD())),
             unrealized_pnl: Money::new(10.0, Currency::USD()),
-            ts_opened: 0.into(),
-            closing_order_id: ClientOrderId::new("SSD"),
+            closing_order_id: Some(ClientOrderId::new("SSD")),
             duration: 0,
-            ts_closed: 0.into(),
+            event_id: UUID4::new(),
+            ts_opened: 0.into(),
+            ts_closed: None,
         }
     }
 

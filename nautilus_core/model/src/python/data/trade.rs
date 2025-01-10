@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,14 +20,14 @@ use std::{
 };
 
 use nautilus_core::{
-    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
+    UnixNanos,
 };
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
-    types::{PyDict, PyLong, PyString, PyTuple},
+    types::{PyBytes, PyDict, PyLong, PyString, PyTuple},
 };
 
 use super::data_to_pycapsule;
@@ -91,8 +91,8 @@ impl TradeTick {
         trade_id: TradeId,
         ts_event: u64,
         ts_init: u64,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             instrument_id,
             price,
             size,
@@ -101,6 +101,7 @@ impl TradeTick {
             ts_event.into(),
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -176,7 +177,7 @@ impl TradeTick {
         Self::new(
             InstrumentId::from("NULL.NULL"),
             Price::zero(0),
-            Quantity::zero(0),
+            Quantity::from(1), // size cannot be zero
             AggressorSide::NoAggressor,
             TradeId::from("NULL"),
             UnixNanos::default(),
@@ -321,12 +322,14 @@ impl TradeTick {
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        let json_bytes: Vec<u8> = serde_json::to_vec(self).map_err(to_pyvalue_err)?;
+
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
-            .call_method("loads", (json_str,), None)?
+        let py_bytes = PyBytes::new_bound(py, &json_bytes);
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "msgspec.json")?
+            .call_method("decode", (py_bytes,), None)?
             .extract()?;
+
         Ok(py_dict)
     }
 
@@ -353,7 +356,37 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{stubs::stub_trade_ethusdt_buyer, TradeTick};
+    use crate::{
+        data::{stubs::stub_trade_ethusdt_buyer, TradeTick},
+        enums::AggressorSide,
+        identifiers::{InstrumentId, TradeId},
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    fn test_trade_tick_py_new_with_zero_size() {
+        pyo3::prepare_freethreaded_python();
+
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let price = Price::from("10000.00");
+        let zero_size = Quantity::from(0);
+        let aggressor_side = AggressorSide::Buyer;
+        let trade_id = TradeId::from("123456789");
+        let ts_event = 1;
+        let ts_init = 2;
+
+        let result = TradeTick::py_new(
+            instrument_id,
+            price,
+            zero_size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_init,
+        );
+
+        assert!(result.is_err());
+    }
 
     #[rstest]
     fn test_as_dict(stub_trade_ethusdt_buyer: TradeTick) {

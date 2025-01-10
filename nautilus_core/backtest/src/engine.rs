@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 //! The core `BacktestEngine` for backtesting on historical data.
 
 use nautilus_common::{clock::TestClock, timer::TimeEventHandlerV2};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
@@ -62,7 +62,7 @@ impl Default for TimeEventAccumulator {
 #[cfg(test)]
 mod tests {
     use nautilus_common::timer::{TimeEvent, TimeEventCallback};
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use pyo3::{prelude::*, types::PyList, Py, Python};
     use rstest::*;
     use ustr::Ustr;

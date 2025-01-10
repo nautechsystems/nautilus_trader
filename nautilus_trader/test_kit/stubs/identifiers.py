@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 class TestIdStubs:
     @staticmethod
     def uuid() -> UUID4:
-        return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
+        return UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
 
     @staticmethod
     def trader_id() -> TraderId:

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,11 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{
+    correctness::{check_positive_u64, FAILED},
+    serialization::Serializable,
+    UnixNanos,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -61,8 +65,46 @@ pub struct OrderBookDelta {
 }
 
 impl OrderBookDelta {
+    /// Creates a new [`OrderBookDelta`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(
+        instrument_id: InstrumentId,
+        action: BookAction,
+        order: BookOrder,
+        flags: u8,
+        sequence: u64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        if matches!(action, BookAction::Add | BookAction::Update) {
+            check_positive_u64(order.size.raw, "order.size.raw")?;
+        }
+
+        Ok(Self {
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        })
+    }
+
     /// Creates a new [`OrderBookDelta`] instance.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
@@ -73,7 +115,7 @@ impl OrderBookDelta {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        Self {
+        Self::new_checked(
             instrument_id,
             action,
             order,
@@ -81,7 +123,8 @@ impl OrderBookDelta {
             sequence,
             ts_event,
             ts_init,
-        }
+        )
+        .expect(FAILED)
     }
 
     /// Creates a new [`OrderBookDelta`] instance with a `Clear` action and and NULL order.
@@ -163,7 +206,7 @@ impl GetTsInit for OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::serialization::Serializable;
+    use nautilus_core::{serialization::Serializable, UnixNanos};
     use rstest::rstest;
 
     use crate::{
@@ -172,6 +215,63 @@ mod tests {
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
+
+    #[rstest]
+    fn test_order_book_delta_new_with_zero_size_panics() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let action = BookAction::Add;
+        let price = Price::from("100.00");
+        let zero_size = Quantity::from(0);
+        let side = OrderSide::Buy;
+        let order_id = 123_456;
+        let flags = 0;
+        let sequence = 1;
+        let ts_event = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(1);
+
+        let order = BookOrder::new(side, price, zero_size, order_id);
+
+        let result = std::panic::catch_unwind(|| {
+            let _ = OrderBookDelta::new(
+                instrument_id,
+                action,
+                order,
+                flags,
+                sequence,
+                ts_event,
+                ts_init,
+            );
+        });
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_order_book_delta_new_checked_with_zero_size_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let action = BookAction::Add;
+        let price = Price::from("100.00");
+        let zero_size = Quantity::from(0);
+        let side = OrderSide::Buy;
+        let order_id = 123_456;
+        let flags = 0;
+        let sequence = 1;
+        let ts_event = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(1);
+
+        let order = BookOrder::new(side, price, zero_size, order_id);
+
+        let result = OrderBookDelta::new_checked(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        );
+
+        assert!(result.is_err());
+    }
 
     #[rstest]
     fn test_new() {

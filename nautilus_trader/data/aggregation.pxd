@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -66,6 +65,7 @@ cdef class BarAggregator:
     cdef object _handler_backup
     cdef bint _await_partial
     cdef bint _batch_mode
+    cdef public bint is_running
 
     cdef readonly BarType bar_type
     """The aggregators bar type.\n\n:returns: `BarType`"""
@@ -101,9 +101,10 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef uint64_t _stored_close_ns
     cdef tuple _cached_update
     cdef str _timer_name
-    cdef bint _build_with_no_updates
-    cdef bint _timestamp_on_close
     cdef bint _is_left_open
+    cdef bint _timestamp_on_close
+    cdef bint _skip_first_non_full_bar
+    cdef bint _build_with_no_updates
     cdef int _composite_bar_build_delay
     cdef bint _add_delay
     cdef uint64_t _batch_open_ns

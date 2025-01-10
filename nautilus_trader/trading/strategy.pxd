@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -81,6 +81,8 @@ cdef class Strategy(Actor):
     """If contingent orders should be managed automatically by the strategy.\n\n:returns: `bool`"""
     cdef readonly bint manage_gtd_expiry
     """If all order GTD time in force expirations should be managed automatically by the strategy.\n\n:returns: `bool`"""
+    cdef readonly bint event_logging
+    """If event logging should be enabled for the strategy.\n\n:returns: `bool`"""
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 

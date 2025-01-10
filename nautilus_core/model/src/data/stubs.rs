@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 //! Type stubs to facilitate testing.
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rstest::fixture;
 
 use super::{
@@ -326,11 +326,7 @@ pub fn stub_bar() -> Bar {
         symbol: Symbol::new("AUD/USD"),
         venue: Venue::new("SIM"),
     };
-    let bar_spec = BarSpecification {
-        step: 1,
-        aggregation: BarAggregation::Minute,
-        price_type: PriceType::Bid,
-    };
+    let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
     let bar_type = BarType::Standard {
         instrument_id,
         spec: bar_spec,
@@ -338,9 +334,9 @@ pub fn stub_bar() -> Bar {
     };
     Bar {
         bar_type,
-        open: Price::from("1.00001"),
+        open: Price::from("1.00002"),
         high: Price::from("1.00004"),
-        low: Price::from("1.00002"),
+        low: Price::from("1.00001"),
         close: Price::from("1.00003"),
         volume: Quantity::from("100000"),
         ts_event: UnixNanos::default(),

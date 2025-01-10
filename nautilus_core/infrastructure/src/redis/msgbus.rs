@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,7 +33,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     time::{duration_since_unix_epoch, get_atomic_clock_realtime},
-    uuid::UUID4,
+    UUID4,
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;

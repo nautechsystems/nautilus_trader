@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,7 @@ mod serial_tests {
         cache::database::CacheDatabaseAdapter, custom::CustomData, signal::Signal,
         testing::wait_until,
     };
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
@@ -33,7 +33,7 @@ mod serial_tests {
             DataType,
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
-        events::account::stubs::cash_account_state_million_usd,
+        events::{account::stubs::cash_account_state_million_usd, PositionSnapshot},
         identifiers::{
             stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, TradeId,
             VenueOrderId,
@@ -46,12 +46,13 @@ mod serial_tests {
             Instrument, InstrumentAny,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        position::Position,
         types::{Currency, Price, Quantity},
     };
     use serde::Serialize;
     use ustr::Ustr;
 
-    pub fn entirely_equal<T: Serialize>(a: T, b: T) {
+    pub fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
         let a_serialized = serde_json::to_string(&a).unwrap();
         let b_serialized = serde_json::to_string(&b).unwrap();
 
@@ -96,14 +97,16 @@ mod serial_tests {
         let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
         let usdc = Currency::new("USDC", 8, 0, "USDC", CurrencyType::Crypto);
         let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto);
-        // Insert all the currencies
+
+        // Insert all currencies
         pg_cache.add_currency(&btc).unwrap();
         pg_cache.add_currency(&eth).unwrap();
         pg_cache.add_currency(&gbp).unwrap();
         pg_cache.add_currency(&usd).unwrap();
         pg_cache.add_currency(&usdc).unwrap();
         pg_cache.add_currency(&usdt).unwrap();
-        // Define all the instruments
+
+        // Define all instruments
         let binary_option = binary_option();
         let crypto_future =
             crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
@@ -112,7 +115,8 @@ mod serial_tests {
         let equity = equity_aapl();
         let futures_contract = futures_contract_es(None, None);
         let options_contract = options_contract_appl();
-        // Insert all the instruments
+
+        // Insert all instruments
         pg_cache
             .add_instrument(&InstrumentAny::BinaryOption(binary_option))
             .unwrap();
@@ -134,7 +138,8 @@ mod serial_tests {
         pg_cache
             .add_instrument(&InstrumentAny::OptionsContract(options_contract))
             .unwrap();
-        // Wait for the cache to update
+
+        // Wait for cache to update
         wait_until(
             || {
                 let currencies = pg_cache.load_currencies().unwrap();
@@ -143,7 +148,8 @@ mod serial_tests {
             },
             Duration::from_secs(2),
         );
-        // Check that currency list is correct
+
+        // Check currency list is correct
         let currencies = pg_cache.load_currencies().unwrap();
         assert_eq!(currencies.len(), 6);
         assert_eq!(
@@ -162,6 +168,7 @@ mod serial_tests {
             .into_iter()
             .collect::<HashSet<String>>()
         );
+
         // Check individual currencies
         assert_eq!(
             pg_cache.load_currency(&Ustr::from("BTC")).unwrap().unwrap(),
@@ -193,6 +200,7 @@ mod serial_tests {
                 .unwrap(),
             usdt
         );
+
         // Check individual instruments
         assert_eq!(
             pg_cache
@@ -240,7 +248,8 @@ mod serial_tests {
                 .unwrap(),
             InstrumentAny::OptionsContract(options_contract)
         );
-        // Check that instrument list is correct
+
+        // Check instrument list is correct
         let instruments = pg_cache.load_instruments().unwrap();
         assert_eq!(instruments.len(), 7);
         assert_eq!(
@@ -263,7 +272,39 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_order_and_load_indexes() {
+    async fn test_truncate() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        // Add items in currency and instrument table
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        wait_until(
+            || {
+                pg_cache.load_currencies().unwrap().len() == 2
+                    && pg_cache.load_instruments().unwrap().len() == 1
+            },
+            Duration::from_secs(2),
+        );
+
+        // Call flush which will truncate all the tables
+        pg_cache.flush().unwrap();
+
+        // Check if all the tables are empty
+        let currencies = pg_cache.load_currencies().unwrap();
+        assert_eq!(currencies.len(), 0);
+        let instruments = pg_cache.load_instruments().unwrap();
+        assert_eq!(instruments.len(), 0);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_order_and_load_indexes() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1");
@@ -271,20 +312,20 @@ mod serial_tests {
         let instrument = currency_pair_ethusdt();
 
         let market_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id_1)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
-            .client_order_id(client_order_id_1)
             .build();
         let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id_2)
             .instrument_id(instrument.id())
             .side(OrderSide::Sell)
             .price(Price::from("100.0"))
             .quantity(Quantity::from("1.0"))
-            .client_order_id(client_order_id_2)
             .build();
 
-        // add foreign key dependencies: instrument and currencies
+        // Add foreign key dependencies: instrument and currencies
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
             .unwrap();
@@ -292,9 +333,11 @@ mod serial_tests {
         pg_cache
             .add_instrument(&InstrumentAny::CurrencyPair(instrument))
             .unwrap();
+
         // Set client id
         let client_id = ClientId::new("TEST");
-        // add orders
+
+        // Add orders
         pg_cache.add_order(&market_order, Some(client_id)).unwrap();
         pg_cache.add_order(&limit_order, Some(client_id)).unwrap();
         wait_until(
@@ -315,8 +358,9 @@ mod serial_tests {
             .unwrap();
         let limit_order_result = pg_cache.load_order(&limit_order.client_order_id()).unwrap();
         let client_order_ids = pg_cache.load_index_order_client().unwrap();
-        entirely_equal(market_order_result.unwrap(), market_order);
-        entirely_equal(limit_order_result.unwrap(), limit_order);
+        assert_entirely_equal(market_order_result.unwrap(), market_order);
+        assert_entirely_equal(limit_order_result.unwrap(), limit_order);
+
         // Check event client order ids
         assert_eq!(client_order_ids.len(), 2);
         assert_eq!(
@@ -347,27 +391,32 @@ mod serial_tests {
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
         let account = account_id();
-        // add foreign key dependencies: instrument and currencies
+
+        // Add foreign key dependencies: instrument and currencies
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
             .unwrap();
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
-        // 1. Create the order
+
         let mut market_order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
             .client_order_id(client_order_id_1)
             .build();
+
         pg_cache.add_order(&market_order, None).unwrap();
+
         let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
         market_order.apply(submitted).unwrap();
+
         pg_cache.update_order(market_order.last_event()).unwrap();
 
         let accepted =
             TestOrderEventStubs::order_accepted(&market_order, account, VenueOrderId::new("001"));
         market_order.apply(accepted).unwrap();
+
         pg_cache.update_order(market_order.last_event()).unwrap();
 
         let filled = TestOrderEventStubs::order_filled(
@@ -383,6 +432,7 @@ mod serial_tests {
             Some(AccountId::new("SIM-001")),
         );
         market_order.apply(filled).unwrap();
+
         pg_cache.update_order(market_order.last_event()).unwrap();
         wait_until(
             || {
@@ -393,11 +443,11 @@ mod serial_tests {
             },
             Duration::from_secs(2),
         );
-        // Assert
+
         let market_order_result = pg_cache
             .load_order(&market_order.client_order_id())
             .unwrap();
-        entirely_equal(market_order_result.unwrap(), market_order);
+        assert_entirely_equal(market_order_result.unwrap(), market_order);
 
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
@@ -423,8 +473,9 @@ mod serial_tests {
             Duration::from_secs(2),
         );
         let account_result = pg_cache.load_account(&account.id()).unwrap();
-        entirely_equal(account_result.unwrap(), account.clone());
-        // Update the account
+        assert_entirely_equal(account_result.unwrap(), account.clone());
+
+        // Update account
         let new_account_state_event =
             cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
         account.apply(new_account_state_event);
@@ -437,54 +488,24 @@ mod serial_tests {
             Duration::from_secs(2),
         );
         let account_result = pg_cache.load_account(&account.id()).unwrap();
-        entirely_equal(account_result.unwrap(), account);
+        assert_entirely_equal(account_result.unwrap(), account);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_trade_tick() {
+    async fn test_add_quote() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        // add target instrument and currencies
+
+        // Add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
             .unwrap();
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
-        // add trade tick
-        let trade_tick = stub_trade_ethusdt_buyer();
-        pg_cache.add_trade(&trade_tick).unwrap();
-        wait_until(
-            || {
-                pg_cache
-                    .load_instrument(&instrument.id())
-                    .unwrap()
-                    .is_some()
-                    && !pg_cache.load_trades(&instrument.id()).unwrap().is_empty()
-            },
-            Duration::from_secs(2),
-        );
-        let trades = pg_cache.load_trades(&instrument.id()).unwrap();
-        assert_eq!(trades.len(), 1);
-        assert_eq!(trades[0], trade_tick);
 
-        pg_cache.flush().unwrap();
-        pg_cache.close().unwrap();
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_quote_tick() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
-
-        // add target instrument and currencies
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        pg_cache
-            .add_currency(&instrument.base_currency().unwrap())
-            .unwrap();
-        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
-        pg_cache.add_instrument(&instrument).unwrap();
-        // add quote tick
-        let quote_tick = quote_ethusdt_binance();
-        pg_cache.add_quote(&quote_tick).unwrap();
+        // Add quote
+        let quote = quote_ethusdt_binance();
+        pg_cache.add_quote(&quote).unwrap();
         wait_until(
             || {
                 pg_cache
@@ -497,24 +518,58 @@ mod serial_tests {
         );
         let quotes = pg_cache.load_quotes(&instrument.id()).unwrap();
         assert_eq!(quotes.len(), 1);
-        assert_eq!(quotes[0], quote_tick);
+        assert_eq!(quotes[0], quote);
 
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_bar() {
+    async fn test_add_trade() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
-        // add target instrument and currencies
+        // Add target instrument and currencies
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        // Add trade
+        let trade = stub_trade_ethusdt_buyer();
+        pg_cache.add_trade(&trade).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_trades(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let trades = pg_cache.load_trades(&instrument.id()).unwrap();
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0], trade);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_bar() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        // Add target instrument and currencies
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
             .unwrap();
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
-        // add bar
+
+        // Add bar
         let bar = stub_bar();
         pg_cache.add_bar(&bar).unwrap();
         wait_until(
@@ -536,39 +591,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_truncate() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
-
-        // add items in currency and instrument table
-        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
-        pg_cache
-            .add_currency(&instrument.base_currency().unwrap())
-            .unwrap();
-        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
-        pg_cache.add_instrument(&instrument).unwrap();
-        wait_until(
-            || {
-                pg_cache.load_currencies().unwrap().len() == 2
-                    && pg_cache.load_instruments().unwrap().len() == 1
-            },
-            Duration::from_secs(2),
-        );
-
-        // call flush which will truncate all the tables
-        pg_cache.flush().unwrap();
-
-        // check if all the tables are empty
-        let currencies = pg_cache.load_currencies().unwrap();
-        assert_eq!(currencies.len(), 0);
-        let instruments = pg_cache.load_instruments().unwrap();
-        assert_eq!(instruments.len(), 0);
-
-        pg_cache.flush().unwrap();
-        pg_cache.close().unwrap();
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_signal() {
+    async fn test_add_signal() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         // Add signal
@@ -591,7 +614,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_postgres_cache_database_add_custom_data() {
+    async fn test_add_custom_data() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
         // Add custom data
@@ -620,6 +643,81 @@ mod serial_tests {
         assert_eq!(datas.len(), 1);
         assert_eq!(datas[0], data);
 
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_order_snapshot() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+
+        // Add foreign key dependencies: instrument and currencies
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        pg_cache.add_order_snapshot(&order.into()).unwrap();
+
+        let result = pg_cache.load_order_snapshot(&client_order_id);
+
+        assert!(result.is_ok());
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_position_snapshot() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+
+        // Add foreign key dependencies: instrument and currencies
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        let filled = TestOrderEventStubs::order_filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-19700101-000000-001-001-1")),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("1.0")),
+            None,
+            None,
+            None,
+            Some(AccountId::new("SIM-001")),
+        );
+        let position = Position::new(&instrument, filled.into());
+        let snapshot = PositionSnapshot::from(&position, None);
+
+        pg_cache.add_position_snapshot(&snapshot).unwrap();
+
+        let result = pg_cache.load_position_snapshot(&position.id);
+
+        assert!(result.is_ok());
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }

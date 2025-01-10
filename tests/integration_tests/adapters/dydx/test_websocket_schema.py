@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -96,6 +96,7 @@ from nautilus_trader.model.objects import Quantity
         "tests/test_data/dydx/websocket/v4_accounts_rewards.json",
         "tests/test_data/dydx/websocket/v4_accounts_fills.json",
         "tests/test_data/dydx/websocket/v4_markets_subscribed.json",
+        "tests/test_data/dydx/websocket/v4_markets_cross.json",
         "tests/test_data/dydx/websocket/v4_markets_channel_data.json",
         "tests/test_data/dydx/websocket/v4_block_height_subscribed.json",
         "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
@@ -196,6 +197,24 @@ def test_markets_channel_message() -> None:
     assert msg.channel == "v4_markets"
     assert msg.type == "channel_data"
     assert msg.contents.oraclePrices is not None
+
+
+def test_markets_channel_market_type() -> None:
+    """
+    Test parsing the account subscribed message with a CROSS market type.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsMarketChannelData)
+
+    # Act
+    with Path("tests/test_data/dydx/websocket/v4_markets_cross.json").open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Assert
+    assert msg.channel == "v4_markets"
+    assert msg.type == "channel_data"
+    assert msg.contents.trading is not None
+    assert msg.contents.trading["FTM-USD"].marketType == "CROSS"
 
 
 def test_markets_channel_trade_message() -> None:

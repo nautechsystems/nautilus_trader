@@ -2,7 +2,10 @@
 ignore=body-is-missing,body-min-length
 
 [title-max-length]
-line-length=80
+line-length=60
 
 [title-min-length]
 min-length=5
+
+[body-max-line-length]
+line-length=100

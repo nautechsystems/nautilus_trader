@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,8 +26,8 @@ use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_equal_u8, FAILED},
-    nanos::UnixNanos,
     serialization::Serializable,
+    UnixNanos,
 };
 use serde::{Deserialize, Serialize};
 
@@ -65,35 +65,13 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
-    /// Creates a new [`QuoteTick`] instance.
-    pub fn new(
-        instrument_id: InstrumentId,
-        bid_price: Price,
-        ask_price: Price,
-        bid_size: Quantity,
-        ask_size: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            ts_event,
-            ts_init,
-        )
-        .expect(FAILED)
-    }
-
     /// Creates a new [`QuoteTick`] instance with correctness checking.
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
-    /// - `bid_price.precision` does not equal `ask_price.precision`.
-    /// - `bid_size.precision` does not equal `ask_size.precision`.
+    /// This function returns an error:
+    /// - If `bid_price.precision` does not equal `ask_price.precision`.
+    /// - If `bid_size.precision` does not equal `ask_size.precision`.
     ///
     /// # Notes
     ///
@@ -128,6 +106,34 @@ impl QuoteTick {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`QuoteTick`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `bid_price.precision` does not equal `ask_price.precision`.
+    /// - If `bid_size.precision` does not equal `ask_size.precision`.
+    pub fn new(
+        instrument_id: InstrumentId,
+        bid_price: Price,
+        ask_price: Price,
+        bid_size: Quantity,
+        ask_size: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
@@ -214,14 +220,62 @@ impl GetTsInit for QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::serialization::Serializable;
-    use pyo3::{IntoPy, Python};
+    use nautilus_core::{serialization::Serializable, UnixNanos};
     use rstest::rstest;
 
     use crate::{
         data::{stubs::quote_ethusdt_binance, QuoteTick},
         enums::PriceType,
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
     };
+
+    #[rstest]
+    #[should_panic(
+        expected = "'bid_price.precision' u8 of 4 was not equal to 'ask_price.precision' u8 of 5"
+    )]
+    fn test_quote_tick_new_with_precision_mismatch_panics() {
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let bid_price = Price::from("10000.0000"); // Precision: 4
+        let ask_price = Price::from("10000.00100"); // Precision: 5 (mismatch)
+        let bid_size = Quantity::from("1.000000");
+        let ask_size = Quantity::from("1.000000");
+        let ts_event = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(1);
+
+        let _ = QuoteTick::new(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        );
+    }
+
+    #[rstest]
+    fn test_quote_tick_new_checked_with_precision_mismatch_error() {
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let bid_price = Price::from("10000.0000");
+        let ask_price = Price::from("10000.0010");
+        let bid_size = Quantity::from("10.000000"); // Precision: 6
+        let ask_size = Quantity::from("10.0000000"); // Precision: 7 (mismatch)
+        let ts_event = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(1);
+
+        let result = QuoteTick::new_checked(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        );
+
+        assert!(result.is_err());
+    }
 
     #[rstest]
     fn test_to_string(quote_ethusdt_binance: QuoteTick) {
@@ -244,18 +298,6 @@ mod tests {
         let quote = quote_ethusdt_binance;
         let result = quote.extract_price(input).raw;
         assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    fn test_from_pyobject(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
-        let quote = quote_ethusdt_binance;
-
-        Python::with_gil(|py| {
-            let tick_pyobject = quote.into_py(py);
-            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, quote);
-        });
     }
 
     #[rstest]

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use nautilus_core::{python::to_pyruntime_err, uuid::UUID4};
+use indexmap::IndexMap;
+use nautilus_core::{python::to_pyruntime_err, UUID4};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -26,7 +26,7 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_hashmap_to_ustr, Order},
+        base::{str_indexmap_to_ustr, Order},
         TrailingStopLimitOrder,
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
@@ -48,8 +48,8 @@ impl TrailingStopLimitOrder {
         price: Price,
         trigger_price: Price,
         trigger_type: TriggerType,
-        limit_offset: Price,
-        trailing_offset: Price,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
         time_in_force: TimeInForce,
         post_only: bool,
@@ -66,11 +66,11 @@ impl TrailingStopLimitOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
     ) -> Self {
-        let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
+        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
         Self::new(
             trader_id,
             strategy_id,

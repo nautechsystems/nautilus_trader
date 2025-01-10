@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -83,11 +83,7 @@ pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> B
         symbol: Symbol::new("ETHUSDT-PERP.BINANCE"),
         venue: Venue::new("BINANCE"),
     };
-    let bar_spec = BarSpecification {
-        step: 1,
-        aggregation: BarAggregation::Minute,
-        price_type: PriceType::Bid,
-    };
+    let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
     let bar_type = BarType::Standard {
         instrument_id,
         spec: bar_spec,

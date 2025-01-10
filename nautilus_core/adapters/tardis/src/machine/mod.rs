@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -149,14 +149,14 @@ async fn stream_from_websocket(
                     }
                     tungstenite::Message::Close(Some(frame)) => {
                         let reason = frame.reason.to_string();
-                        if frame.code != CloseCode::Normal {
+                        if frame.code == CloseCode::Normal {
+                            tracing::debug!("Connection closed normally: {reason}");
+                        } else {
                             tracing::error!(
                                 "Connection closed abnormally with code: {:?}, reason: {reason}",
                                 frame.code
                             );
                             yield Err(Error::ConnectionClosed { reason });
-                        } else {
-                            tracing::debug!("Connection closed normally: {reason}");
                         }
                         break;
                     }

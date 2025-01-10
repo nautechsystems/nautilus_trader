@@ -470,9 +470,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         historical: bool | None = False,
     ) -> Bar | None:
         """
-        Process received bar data and convert it into Nautilus Trader's Bar format. This
+        Process received bar data and convert it into NautilusTrader's Bar format. This
         method determines whether the bar is new or a revision of an existing bar and
-        converts the bar data to the Nautilus Trader's format.
+        converts the bar data to the NautilusTrader's format.
 
         Parameters
         ----------
@@ -582,7 +582,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         is_revision: bool = False,
     ) -> Bar:
         """
-        Convert Interactive Brokers bar data to Nautilus Trader's bar type.
+        Convert Interactive Brokers bar data to NautilusTrader's bar type.
 
         Parameters
         ----------
@@ -619,7 +619,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
     async def _process_trade_ticks(self, req_id: int, ticks: list[HistoricalTickLast]) -> None:
         """
-        Process received trade tick data, convert it to Nautilus Trader TradeTick type,
+        Process received trade tick data, convert it to NautilusTrader TradeTick type,
         and add it to the relevant request's result.
 
         Parameters

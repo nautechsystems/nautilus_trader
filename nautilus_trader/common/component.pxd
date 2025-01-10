@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -87,6 +87,12 @@ cdef dict[UUID4, Clock] _COMPONENT_CLOCKS
 cdef list[TestClock] get_component_clocks(UUID4 instance_id)
 cpdef void register_component_clock(UUID4 instance_id, Clock clock)
 cpdef void deregister_component_clock(UUID4 instance_id, Clock clock)
+
+
+cdef bint FORCE_STOP
+
+cpdef void set_backtest_force_stop(bint value)
+cpdef bint is_backtest_force_stop()
 
 
 cdef class TestClock(Clock):

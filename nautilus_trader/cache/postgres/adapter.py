@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,6 +29,7 @@ from nautilus_trader.cache.postgres.transformers import transform_instrument_to_
 from nautilus_trader.cache.postgres.transformers import transform_order_event_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_order_to_snapshot_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_position_to_snapshot_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_signal_from_pyo3
@@ -46,8 +47,10 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 
@@ -115,6 +118,22 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         data_pyo3 = self._backing.load_custom_data(data_type_pyo3)
         return [transform_custom_data_from_pyo3(d) for d in data_pyo3]
 
+    def load_order_snapshot(
+        self,
+        client_order_id: ClientOrderId,
+    ) -> nautilus_pyo3.OrderSnapshot | None:
+        client_order_id_pyo3 = nautilus_pyo3.ClientOrderId.from_str(str(client_order_id))
+        snapshot_pyo3 = self._backing.load_order_snapshot(client_order_id_pyo3)
+        return snapshot_pyo3
+
+    def load_position_snapshot(
+        self,
+        position_id: PositionId,
+    ) -> nautilus_pyo3.PositionSnapshot | None:
+        position_id_pyo3 = nautilus_pyo3.PositionId.from_str(str(position_id))
+        snapshot_pyo3 = self._backing.load_position_snapshot(position_id_pyo3)
+        return snapshot_pyo3
+
     def load_quotes(self, instrument_id: InstrumentId) -> list[QuoteTick]:
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         quotes = self._backing.load_quotes(instrument_id_pyo3)
@@ -145,8 +164,18 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         order_pyo3 = transform_order_to_pyo3(order)
         self._backing.add_order(order_pyo3)
 
-    def add_position_snapshot(self, position: Position) -> None:
-        snapshot_pyo3 = transform_position_to_snapshot_pyo3(position)
+    def add_order_snapshot(self, order: Order) -> None:
+        snapshot_pyo3 = transform_order_to_snapshot_pyo3(order)
+        assert snapshot_pyo3
+        self._backing.add_order_snapshot(snapshot_pyo3)
+
+    def add_position_snapshot(
+        self,
+        position: Position,
+        unrealized_pnl: Money | None = None,
+    ) -> None:
+        snapshot_pyo3 = transform_position_to_snapshot_pyo3(position, unrealized_pnl)
+        assert snapshot_pyo3
         self._backing.add_position_snapshot(snapshot_pyo3)
 
     def add_account(self, account: Account):

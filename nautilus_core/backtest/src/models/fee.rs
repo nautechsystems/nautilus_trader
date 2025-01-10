@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,6 +35,29 @@ pub trait FeeModel {
 pub enum FeeModelAny {
     Fixed(FixedFeeModel),
     MakerTaker(MakerTakerFeeModel),
+}
+
+impl FeeModel for FeeModelAny {
+    fn get_commission(
+        &self,
+        order: &OrderAny,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<Money> {
+        match self {
+            Self::Fixed(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
+            Self::MakerTaker(model) => {
+                model.get_commission(order, fill_quantity, fill_px, instrument)
+            }
+        }
+    }
+}
+
+impl Default for FeeModelAny {
+    fn default() -> Self {
+        Self::MakerTaker(MakerTakerFeeModel)
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -154,7 +154,7 @@ cdef class AccountState(Event):
             balances=[AccountBalance.from_dict(b) for b in values["balances"]],
             margins=[MarginBalance.from_dict(m) for m in values["margins"]],
             info=values["info"],
-            event_id=UUID4(values["event_id"]),
+            event_id=UUID4.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )

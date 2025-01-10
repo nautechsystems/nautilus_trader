@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,9 +28,8 @@ use log::{
 };
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
-    nanos::UnixNanos,
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
-    uuid::UUID4,
+    UnixNanos, UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
@@ -413,10 +412,10 @@ impl Logger {
         let mut stderr_writer = StderrWriter::new(is_colored);
 
         // Conditionally create file writer based on fileout_level
-        let mut file_writer_opt = if fileout_level != LevelFilter::Off {
-            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
-        } else {
+        let mut file_writer_opt = if fileout_level == LevelFilter::Off {
             None
+        } else {
+            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
         };
 
         // Continue to receive and handle log events until channel is hung up
@@ -538,7 +537,7 @@ mod tests {
     use std::{collections::HashMap, time::Duration};
 
     use log::LevelFilter;
-    use nautilus_core::uuid::UUID4;
+    use nautilus_core::UUID4;
     use nautilus_model::identifiers::TraderId;
     use rstest::*;
     use serde_json::Value;

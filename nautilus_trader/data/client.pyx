@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -361,6 +361,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         data_type : DataType
             The data type for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(
@@ -543,6 +545,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         data_type : DataType
             The data type for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(

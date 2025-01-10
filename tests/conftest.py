@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,6 +38,9 @@ def bypass_logging() -> None:
         level_stdout=LogLevel.DEBUG,
         bypass=True,  # Set this to False to see logging in tests
     )
+    # Uncomment below for tracing logs from Rust
+    # from nautilus_trader.core import nautilus_pyo3
+    # nautilus_pyo3.init_tracing()
 
 
 @pytest.fixture(name="audusd_instrument")

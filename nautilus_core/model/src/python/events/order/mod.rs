@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,6 +35,7 @@ pub mod pending_cancel;
 pub mod pending_update;
 pub mod rejected;
 pub mod released;
+pub mod snapshot;
 pub mod submitted;
 pub mod triggered;
 pub mod updated;

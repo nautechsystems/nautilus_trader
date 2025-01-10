@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -84,14 +84,15 @@ cdef class OrderMatchingEngine:
     cdef InstrumentClose _instrument_close
     # cdef object _auction_match_algo
     cdef bint _instrument_has_expiration
-    cdef bint _bar_execution
-    cdef bint _trade_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
     cdef bint _support_contingent_orders
     cdef bint _use_position_ids
     cdef bint _use_random_ids
     cdef bint _use_reduce_only
+    cdef bint _bar_execution
+    cdef bint _bar_adaptive_high_low_ordering
+    cdef bint _trade_execution
     cdef dict _account_ids
     cdef dict _execution_bar_types
     cdef dict _execution_bar_deltas
@@ -152,7 +153,17 @@ cdef class OrderMatchingEngine:
     cpdef void process_auction_book(self, OrderBook book)
     cpdef void process_instrument_close(self, InstrumentClose close)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
+    cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size)
+    cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_high(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_low(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_close(self, Bar bar, TradeTick tick)
     cdef void _process_quote_ticks_from_bar(self)
+    cdef QuoteTick _create_base_quote_tick(self, Quantity bid_size, Quantity ask_size)
+    cdef void _process_quote_bar_open(self, QuoteTick tick)
+    cdef void _process_quote_bar_high(self, QuoteTick tick)
+    cdef void _process_quote_bar_low(self, QuoteTick tick)
+    cdef void _process_quote_bar_close(self, QuoteTick tick)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 

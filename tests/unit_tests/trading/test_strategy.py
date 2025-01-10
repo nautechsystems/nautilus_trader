@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -188,22 +188,24 @@ class TestStrategy:
         assert result.strategy_path == "nautilus_trader.trading.strategy:Strategy"
         assert result.config_path == "nautilus_trader.trading.config:StrategyConfig"
         assert result.config == {
-            "oms_type": None,
-            "order_id_tag": None,
             "strategy_id": None,
+            "order_id_tag": None,
+            "oms_type": None,
             "external_order_claims": None,
             "manage_contingent_orders": False,
             "manage_gtd_expiry": False,
+            "event_logging": True,
         }
 
     def test_strategy_to_importable_config(self) -> None:
         # Arrange
         config = StrategyConfig(
-            order_id_tag="001",
             strategy_id="ALPHA-01",
+            order_id_tag="001",
             external_order_claims=["ETHUSDT-PERP.DYDX"],
             manage_contingent_orders=True,
             manage_gtd_expiry=True,
+            event_logging=False,
         )
 
         strategy = Strategy(config=config)
@@ -222,6 +224,7 @@ class TestStrategy:
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
             "manage_contingent_orders": True,
             "manage_gtd_expiry": True,
+            "event_logging": False,
         }
 
     def test_strategy_equality(self) -> None:
@@ -1662,7 +1665,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_canceled_entry_then_cancels_oto_orders(
+    def test_managed_contingencies_when_canceled_entry_then_cancels_oto_orders(
         self,
         contingency_type: ContingencyType,
     ) -> None:
@@ -1711,7 +1714,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_canceled_bracket_then_cancels_contingent_order(
+    def test_managed_contingencies_when_canceled_bracket_then_cancels_contingent_order(
         self,
         contingency_type: ContingencyType,
     ) -> None:
@@ -1752,7 +1755,7 @@ class TestStrategy:
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.PENDING_CANCEL
 
-    def test_managed_contingenies_when_modify_bracket_then_modifies_ouo_order(
+    def test_managed_contingencies_when_modify_bracket_then_modifies_ouo_order(
         self,
     ) -> None:
         # Arrange
@@ -1801,7 +1804,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_filled_sl_then_cancels_contingent_order(
+    def test_managed_contingencies_when_filled_sl_then_cancels_contingent_order(
         self,
         contingency_type: ContingencyType,
     ) -> None:
@@ -1856,7 +1859,7 @@ class TestStrategy:
             ContingencyType.OUO,
         ],
     )
-    def test_managed_contingenies_when_filled_tp_then_cancels_contingent_order(
+    def test_managed_contingencies_when_filled_tp_then_cancels_contingent_order(
         self,
         contingency_type: ContingencyType,
     ) -> None:

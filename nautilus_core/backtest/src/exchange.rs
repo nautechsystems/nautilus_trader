@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,8 +24,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{
     correctness::{check_equal, FAILED},
-    nanos::UnixNanos,
-    time::AtomicTime,
+    AtomicTime, UnixNanos,
 };
 use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
@@ -201,6 +200,7 @@ impl SimulatedExchange {
             instrument,
             self.instruments.len() as u32,
             self.fill_model.clone(),
+            self.fee_model.clone(),
             self.book_type,
             self.oms_type,
             self.account_type,
@@ -512,7 +512,7 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::LazyLock};
 
     use nautilus_common::{cache::Cache, msgbus::MessageBus};
-    use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+    use nautilus_core::{AtomicTime, UnixNanos};
     use nautilus_model::{
         data::{
             Bar, BarType, BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, QuoteTick,

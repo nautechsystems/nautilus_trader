@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,7 @@ use nautilus_core::{
         check_equal_u8, check_positive_i64, check_positive_u64, check_valid_string,
         check_valid_string_optional, FAILED,
     },
-    nanos::UnixNanos,
+    UnixNanos,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
-from decimal import ROUND_HALF_UP
+from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
 
 import pandas as pd
@@ -1510,7 +1510,7 @@ class TestTestValueBarAggregator:
         assert handler[1].close == Price.from_str("20.00000")
         assert handler[1].volume == Quantity.from_str("5000.00")
         expected = Decimal("40000.11")
-        assert aggregator.get_cumulative_value().quantize(expected, ROUND_HALF_UP) == expected
+        assert aggregator.get_cumulative_value().quantize(expected, ROUND_HALF_EVEN) == expected
 
     def test_handle_bar_when_value_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -1576,7 +1576,8 @@ class TestTestValueBarAggregator:
         assert handler[1].volume == Quantity.from_str("5000.00")
         expected = Decimal("40001.11")
         assert (
-            aggregator.get_cumulative_value().quantize(expected, rounding=ROUND_HALF_UP) == expected
+            aggregator.get_cumulative_value().quantize(expected, rounding=ROUND_HALF_EVEN)
+            == expected
         )
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
@@ -1960,6 +1961,76 @@ class TestTimeBarAggregator:
         assert bar.close == Price.from_str("1.00008")
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == 3 * 60 * NANOSECONDS_IN_SECOND
+
+    def test_update_timer_with_test_clock_sends_no_bar_to_handler_with_skip_first_non_full_bar(
+        self,
+    ):
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
+        bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType.new_composite(
+            instrument_id,
+            bar_spec3,
+            AggregationSource.INTERNAL,
+            bar_spec1.step,
+            bar_spec1.aggregation,
+            AggregationSource.EXTERNAL,
+        )
+
+        clock.advance_time(1)
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            skip_first_non_full_bar=True,
+        )
+        composite_bar_type = bar_type.composite()
+
+        bar1 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00007"),
+            volume=Quantity.from_int(1),
+            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
+        )
+
+        bar2 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00007"),
+            high=Price.from_str("1.00020"),
+            low=Price.from_str("1.00003"),
+            close=Price.from_str("1.00015"),
+            volume=Quantity.from_int(1),
+            ts_event=2 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=2 * 60 * NANOSECONDS_IN_SECOND,
+        )
+
+        bar3 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00015"),
+            high=Price.from_str("1.00015"),
+            low=Price.from_str("1.00007"),
+            close=Price.from_str("1.00008"),
+            volume=Quantity.from_int(1),
+            ts_event=3 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=3 * 60 * NANOSECONDS_IN_SECOND,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+        aggregator.handle_bar(bar3)
+        events = clock.advance_time(bar3.ts_event)
+
+        # Assert
+        assert len(events) == 0
 
     def test_update_timer_with_test_clock_sends_single_bar_to_handler_with_bars_and_time_origin(
         self,
@@ -2417,8 +2488,8 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            timestamp_on_close=timestamp_on_close,
             interval_type=interval_type,
+            timestamp_on_close=timestamp_on_close,
         )
         aggregator.handle_quote_tick(ticks[0])
 

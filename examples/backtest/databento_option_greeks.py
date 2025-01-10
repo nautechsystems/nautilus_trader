@@ -34,7 +34,7 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import StreamingConfig
-from nautilus_trader.core.datetime import unix_nanos_to_str
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
@@ -134,7 +134,7 @@ class OptionStrategy(Strategy):
         self.start_orders_done = True
 
     def on_bar(self, bar):
-        self.user_log(f"bar ts_init = {unix_nanos_to_str(bar.ts_init)}")
+        self.user_log(f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}")
 
         if not self.start_orders_done:
             self.user_log("Initializing the portfolio with some trades")

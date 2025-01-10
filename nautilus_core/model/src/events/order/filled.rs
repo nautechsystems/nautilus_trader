@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,8 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -42,24 +43,42 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderFilled {
+    /// The trader ID associated with the event.
     pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
     pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
+    /// The account ID associated with the event.
     pub account_id: AccountId,
+    /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
+    /// The order side.
     pub order_side: OrderSide,
+    /// The order type.
     pub order_type: OrderType,
+    /// The fill quantity for this execution.
     pub last_qty: Quantity,
+    /// The fill price for this execution.
     pub last_px: Price,
+    /// The currency of the `last_px`.
     pub currency: Currency,
+    /// The liquidity side of the execution.
     pub liquidity_side: LiquiditySide,
+    /// The unique identifier for the event.
     pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// If the event was generated during reconciliation.
     pub reconciliation: bool,
+    /// The position ID (assigned by the venue).
     pub position_id: Option<PositionId>,
+    /// The commission generated from this execution.
     pub commission: Option<Money>,
 }
 
@@ -336,11 +355,11 @@ impl OrderEvent for OrderFilled {
         None
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         None
     }
 

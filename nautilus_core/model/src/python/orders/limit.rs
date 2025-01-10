@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use nautilus_core::{
-    nanos::UnixNanos,
     python::{to_pyruntime_err, to_pyvalue_err},
-    uuid::UUID4,
+    UnixNanos, UUID4,
 };
 use pyo3::{
     basic::CompareOp,
@@ -37,10 +35,10 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_hashmap_to_ustr, Order, OrderCore},
+        base::{str_indexmap_to_ustr, Order, OrderCore},
         LimitOrder,
     },
-    python::{common::commissions_from_hashmap, events::order::pyobject_to_order_event},
+    python::{common::commissions_from_indexmap, events::order::pyobject_to_order_event},
     types::{Price, Quantity},
 };
 
@@ -72,11 +70,11 @@ impl LimitOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
+        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
         Self::new(
             trader_id,
             strategy_id,
@@ -323,7 +321,7 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
-    fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
+    fn py_exec_algorithm_params(&self) -> Option<IndexMap<&str, &str>> {
         self.exec_algorithm_params
             .as_ref()
             .map(|x| x.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
@@ -461,9 +459,9 @@ impl LimitOrder {
             }
         })?;
         let exec_algorithm_params = dict.get_item("exec_algorithm_params").map(|x| {
-            let extracted_str = x.extract::<HashMap<String, String>>();
+            let extracted_str = x.extract::<IndexMap<String, String>>();
             match extracted_str {
-                Ok(item) => Some(str_hashmap_to_ustr(item)),
+                Ok(item) => Some(str_indexmap_to_ustr(item)),
                 Err(_) => None,
             }
         })?;
@@ -543,7 +541,7 @@ impl LimitOrder {
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item(
             "commissions",
-            commissions_from_hashmap(py, self.commissions())?,
+            commissions_from_indexmap(py, self.commissions())?,
         )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),
@@ -634,7 +632,7 @@ impl LimitOrder {
         )?;
         self.avg_px.map_or_else(
             || dict.set_item("avg_px", py.None()),
-            |x| dict.set_item("avg_px", x.to_string()),
+            |x| dict.set_item("avg_px", x),
         )?;
         Ok(dict.into())
     }

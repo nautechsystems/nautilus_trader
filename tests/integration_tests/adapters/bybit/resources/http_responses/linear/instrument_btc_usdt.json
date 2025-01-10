@@ -27,7 +27,9 @@
                     "maxOrderQty": "100.000",
                     "minOrderQty": "0.001",
                     "qtyStep": "0.001",
-                    "postOnlyMaxOrderQty": "1000.000"
+                    "postOnlyMaxOrderQty": "1000.000",
+                    "maxMktOrderQty": "500.000",
+                    "minNotionalValue": "5"
                 },
                 "unifiedMarginTrade": true,
                 "fundingInterval": 480,

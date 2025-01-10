@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use indexmap::IndexMap;
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -49,8 +49,8 @@ pub struct OrderTestBuilder {
     price: Option<Price>,
     trigger_price: Option<Price>,
     trigger_type: Option<TriggerType>,
-    limit_offset: Option<Price>,
-    trailing_offset: Option<Price>,
+    limit_offset: Option<Decimal>,
+    trailing_offset: Option<Decimal>,
     trailing_offset_type: Option<TrailingOffsetType>,
     time_in_force: Option<TimeInForce>,
     expire_time: Option<UnixNanos>,
@@ -66,7 +66,7 @@ pub struct OrderTestBuilder {
     linked_order_ids: Option<Vec<ClientOrderId>>,
     parent_order_id: Option<ClientOrderId>,
     exec_algorithm_id: Option<ExecAlgorithmId>,
-    exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
+    exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
     exec_spawn_id: Option<ClientOrderId>,
     tags: Option<Vec<Ustr>>,
     init_id: Option<UUID4>,
@@ -232,22 +232,22 @@ impl OrderTestBuilder {
     }
 
     // ----------- LimitOffset ----------
-    pub fn limit_offset(&mut self, limit_offset: Price) -> &mut Self {
+    pub fn limit_offset(&mut self, limit_offset: Decimal) -> &mut Self {
         self.limit_offset = Some(limit_offset);
         self
     }
 
-    fn get_limit_offset(&self) -> Price {
+    fn get_limit_offset(&self) -> Decimal {
         self.limit_offset.expect("Limit offset not set")
     }
 
     // ----------- TrailingOffset ----------
-    pub fn trailing_offset(&mut self, trailing_offset: Price) -> &mut Self {
+    pub fn trailing_offset(&mut self, trailing_offset: Decimal) -> &mut Self {
         self.trailing_offset = Some(trailing_offset);
         self
     }
 
-    fn get_trailing_offset(&self) -> Price {
+    fn get_trailing_offset(&self) -> Decimal {
         self.trailing_offset.expect("Trailing offset not set")
     }
 
@@ -365,13 +365,13 @@ impl OrderTestBuilder {
     // ----------- ExecAlgorithmParams ----------
     pub fn exec_algorithm_params(
         &mut self,
-        exec_algorithm_params: HashMap<Ustr, Ustr>,
+        exec_algorithm_params: IndexMap<Ustr, Ustr>,
     ) -> &mut Self {
         self.exec_algorithm_params = Some(exec_algorithm_params);
         self
     }
 
-    fn get_exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
+    fn get_exec_algorithm_params(&self) -> Option<IndexMap<Ustr, Ustr>> {
         self.exec_algorithm_params.clone()
     }
 

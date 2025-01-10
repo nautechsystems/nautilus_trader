@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -2779,7 +2779,7 @@ class TestDataEngine:
         handler = []
         params = {}
         params["include_external_data"] = True
-        params["update_existing_subscriptions"] = False
+        params["update_subscriptions"] = False
         params["update_catalog"] = False
 
         request_id = UUID4()
@@ -2900,7 +2900,7 @@ class TestDataEngine:
         handler = []
         params = {}
         params["include_external_data"] = False
-        params["update_existing_subscriptions"] = False
+        params["update_subscriptions"] = False
         params["update_catalog"] = False
 
         request_id = UUID4()
@@ -2997,7 +2997,7 @@ class TestDataEngine:
         handler = []
         params = {}
         params["include_external_data"] = False
-        params["update_existing_subscriptions"] = False
+        params["update_subscriptions"] = False
         params["update_catalog"] = False
 
         request_id = UUID4()

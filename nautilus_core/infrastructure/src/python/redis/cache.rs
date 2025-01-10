@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 use bytes::Bytes;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
-    uuid::UUID4,
+    UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 use pyo3::{prelude::*, types::PyBytes};

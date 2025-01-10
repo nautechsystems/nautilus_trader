@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
+use nautilus_core::{AtomicTime, UnixNanos, UUID4};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
@@ -39,7 +39,8 @@ use nautilus_model::{
 };
 
 use crate::messages::{
-    BatchCancelOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
+    BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
+    SubmitOrderList,
 };
 
 pub struct ExecutionClient {
@@ -78,6 +79,10 @@ impl ExecutionClient {
     }
 
     pub fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()> {
+        todo!();
+    }
+
+    pub fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()> {
         todo!();
     }
 

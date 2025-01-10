@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,11 +22,11 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
 };
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny},
+    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -64,6 +64,7 @@ pub enum DatabaseQuery {
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, Option<ClientId>, bool),
+    AddOrderSnapshot(OrderSnapshot),
     AddPositionSnapshot(PositionSnapshot),
     AddAccount(AccountAny, bool),
     AddSignal(Signal),
@@ -518,6 +519,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
+    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrderSnapshot(snapshot.to_owned());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send query add_order_snapshot to database message handler: {e}"
+            )
+        })
+    }
+
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
@@ -684,6 +694,62 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                     log::error!("Failed to load custom data for '{data_type}': {e:?}");
                     if let Err(e) = tx.send(Vec::new()) {
                         log::error!("Failed to send empty custom data for '{data_type}': {e:?}");
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
+    }
+
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        let pool = self.pool.clone();
+        let client_order_id = client_order_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_order_snapshot(&pool, &client_order_id).await;
+            match result {
+                Ok(snapshot) => {
+                    if let Err(e) = tx.send(snapshot) {
+                        log::error!("Failed to send order snapshot {client_order_id}: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load order snapshot {client_order_id}: {e:?}");
+                    if let Err(e) = tx.send(None) {
+                        log::error!(
+                            "Failed to send None for order snapshot {client_order_id}: {e:?}"
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
+    }
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        let pool = self.pool.clone();
+        let position_id = position_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_position_snapshot(&pool, &position_id).await;
+            match result {
+                Ok(snapshot) => {
+                    if let Err(e) = tx.send(snapshot) {
+                        log::error!("Failed to send position snapshot {position_id}: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load position snapshot {position_id}: {e:?}");
+                    if let Err(e) = tx.send(None) {
+                        log::error!(
+                            "Failed to send None for position snapshot {position_id}: {e:?}"
+                        );
                     }
                 }
             }
@@ -876,6 +942,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                     .await
                 }
             },
+            DatabaseQuery::AddOrderSnapshot(snapshot) => {
+                DatabaseQueries::add_order_snapshot(pool, snapshot).await
+            }
             DatabaseQuery::AddPositionSnapshot(snapshot) => {
                 DatabaseQueries::add_position_snapshot(pool, snapshot).await
             }
@@ -898,7 +967,7 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
         };
 
         if let Err(e) = result {
-            log::error!("Error processing database query: {e:?}");
+            tracing::error!("Error on query: {e:?}");
         }
     }
 }

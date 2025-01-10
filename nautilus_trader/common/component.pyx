@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -555,6 +555,18 @@ cpdef void remove_instance_component_clocks(UUID4 instance_id):
     Condition.not_none(instance_id, "instance_id")
 
     _COMPONENT_CLOCKS.pop(instance_id, None)
+
+
+# Global backtest force stop flag
+_FORCE_STOP = False
+
+cpdef void set_backtest_force_stop(bint value):
+    global FORCE_STOP
+    FORCE_STOP = value
+
+
+cpdef bint is_backtest_force_stop():
+    return FORCE_STOP
 
 
 cdef class TestClock(Clock):
@@ -2596,7 +2608,14 @@ cdef class MessageBus:
         return subs_array
 
 
+cdef inline bint contains_wildcard(str topic_or_pattern):
+    return '?' in topic_or_pattern or '*' in topic_or_pattern
+
+
 cdef inline bint is_matching(str topic, str pattern):
+    if not contains_wildcard(topic) and not contains_wildcard(pattern):
+        return topic == pattern
+
     # Get length of string and wildcard pattern
     cdef int n = len(topic)
     cdef int m = len(pattern)

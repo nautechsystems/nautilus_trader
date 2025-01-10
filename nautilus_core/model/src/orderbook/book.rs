@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@
 use std::fmt::Display;
 
 use indexmap::IndexMap;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel};
@@ -266,13 +266,13 @@ impl OrderBook {
     /// Returns true if the book has any bid orders.
     #[must_use]
     pub fn has_bid(&self) -> bool {
-        self.bids.top().map_or(false, |top| !top.orders.is_empty())
+        self.bids.top().is_some_and(|top| !top.orders.is_empty())
     }
 
     /// Returns true if the book has any ask orders.
     #[must_use]
     pub fn has_ask(&self) -> bool {
-        self.asks.top().map_or(false, |top| !top.orders.is_empty())
+        self.asks.top().is_some_and(|top| !top.orders.is_empty())
     }
 
     /// Returns the best bid price if available.

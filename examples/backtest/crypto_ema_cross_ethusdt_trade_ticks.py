@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -57,9 +58,11 @@ if __name__ == "__main__":
     engine.add_venue(
         venue=BINANCE,
         oms_type=OmsType.NETTING,
+        book_type=BookType.L1_MBP,
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
+        trade_execution=True,  # Only use with L1_MBP book type or throttled book data
     )
 
     # Add instruments

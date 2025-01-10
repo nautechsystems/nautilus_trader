@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{python::to_pyvalue_err, uuid::UUID4};
+use nautilus_core::{python::to_pyvalue_err, UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,

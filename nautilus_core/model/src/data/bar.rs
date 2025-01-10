@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,13 +19,18 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
+    num::NonZeroUsize,
     str::FromStr,
 };
 
 use chrono::{DateTime, Datelike, Duration, TimeDelta, Timelike, Utc};
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::FAILED, nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{
+    correctness::{check_predicate_true, FAILED},
+    serialization::Serializable,
+    UnixNanos,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::GetTsInit;
@@ -45,11 +50,11 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     let spec = bar_type.spec();
 
     match spec.aggregation {
-        BarAggregation::Millisecond => TimeDelta::milliseconds(spec.step as i64),
-        BarAggregation::Second => TimeDelta::seconds(spec.step as i64),
-        BarAggregation::Minute => TimeDelta::minutes(spec.step as i64),
-        BarAggregation::Hour => TimeDelta::hours(spec.step as i64),
-        BarAggregation::Day => TimeDelta::days(spec.step as i64),
+        BarAggregation::Millisecond => TimeDelta::milliseconds(spec.step.get() as i64),
+        BarAggregation::Second => TimeDelta::seconds(spec.step.get() as i64),
+        BarAggregation::Minute => TimeDelta::minutes(spec.step.get() as i64),
+        BarAggregation::Hour => TimeDelta::hours(spec.step.get() as i64),
+        BarAggregation::Day => TimeDelta::days(spec.step.get() as i64),
         _ => panic!("Aggregation not time based"),
     }
 }
@@ -70,7 +75,7 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
 pub fn get_time_bar_start(now: DateTime<Utc>, bar_type: &BarType) -> DateTime<Utc> {
     let spec = bar_type.spec();
-    let step = spec.step;
+    let step = spec.step.get();
 
     match spec.aggregation {
         BarAggregation::Millisecond => {
@@ -118,7 +123,7 @@ pub fn get_time_bar_start(now: DateTime<Utc>, bar_type: &BarType) -> DateTime<Ut
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
-    pub step: usize,
+    pub step: NonZeroUsize,
     /// The type of bar aggregation.
     pub aggregation: BarAggregation,
     /// The price type to use for aggregation.
@@ -126,23 +131,48 @@ pub struct BarSpecification {
 }
 
 impl BarSpecification {
-    /// Creates a new [`BarSpecification`] instance.
-    #[must_use]
-    pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
-        Self {
+    /// Creates a new [`BarSpecification`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `step` is not positive (> 0).
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(
+        step: usize,
+        aggregation: BarAggregation,
+        price_type: PriceType,
+    ) -> anyhow::Result<Self> {
+        let step = NonZeroUsize::new(step)
+            .ok_or(anyhow::anyhow!("Invalid step: {step} (must be non-zero)"))?;
+        Ok(Self {
             step,
             aggregation,
             price_type,
-        }
+        })
+    }
+
+    /// Creates a new [`BarSpecification`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `step` is not positive (> 0).
+    #[must_use]
+    pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
+        Self::new_checked(step, aggregation, price_type).expect(FAILED)
     }
 
     pub fn timedelta(&self) -> TimeDelta {
         match self.aggregation {
-            BarAggregation::Millisecond => Duration::milliseconds(self.step as i64),
-            BarAggregation::Second => Duration::seconds(self.step as i64),
-            BarAggregation::Minute => Duration::minutes(self.step as i64),
-            BarAggregation::Hour => Duration::hours(self.step as i64),
-            BarAggregation::Day => Duration::days(self.step as i64),
+            BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),
+            BarAggregation::Second => Duration::seconds(self.step.get() as i64),
+            BarAggregation::Minute => Duration::minutes(self.step.get() as i64),
+            BarAggregation::Hour => Duration::hours(self.step.get() as i64),
+            BarAggregation::Day => Duration::days(self.step.get() as i64),
             _ => panic!(
                 "Timedelta not supported for aggregation type: {:?}",
                 self.aggregation
@@ -446,11 +476,7 @@ impl FromStr for BarType {
 
             Ok(Self::new_composite(
                 instrument_id,
-                BarSpecification {
-                    step,
-                    aggregation,
-                    price_type,
-                },
+                BarSpecification::new(step, aggregation, price_type),
                 aggregation_source,
                 composite_step,
                 composite_aggregation,
@@ -459,11 +485,7 @@ impl FromStr for BarType {
         } else {
             Ok(Self::Standard {
                 instrument_id,
-                spec: BarSpecification {
-                    step,
-                    aggregation,
-                    price_type,
-                },
+                spec: BarSpecification::new(step, aggregation, price_type),
                 aggregation_source,
             })
         }
@@ -557,7 +579,55 @@ pub struct Bar {
 }
 
 impl Bar {
+    /// Creates a new [`Bar`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `high` is not >= `low`.
+    /// - If `high` is not >= `close`.
+    /// - If `low` is not <= `close.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(high >= open, "high >= open")?;
+        check_predicate_true(high >= low, "high >= low")?;
+        check_predicate_true(high >= close, "high >= close")?;
+        check_predicate_true(low <= close, "low <= close")?;
+        check_predicate_true(low <= open, "low <= open")?;
+
+        Ok(Self {
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event,
+            ts_init,
+        })
+    }
+
     /// Creates a new [`Bar`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `high` is not >= `low`.
+    /// - If `high` is not >= `close`.
+    /// - If `low` is not <= `close.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
@@ -569,16 +639,8 @@ impl Bar {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        Self {
-            bar_type,
-            open,
-            high,
-            low,
-            close,
-            volume,
-            ts_event,
-            ts_init,
-        }
+        Self::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+            .expect(FAILED)
     }
 
     pub fn instrument_id(&self) -> InstrumentId {
@@ -646,6 +708,21 @@ mod tests {
     use crate::identifiers::{Symbol, Venue};
 
     #[rstest]
+    fn test_bar_specification_new_invalid() {
+        let result = BarSpecification::new_checked(0, BarAggregation::Tick, PriceType::Last);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid step: 0 (must be non-zero)")]
+    fn test_bar_specification_new_checked_with_invalid_step_panics() {
+        let aggregation = BarAggregation::Tick;
+        let price_type = PriceType::Last;
+
+        let _ = BarSpecification::new(0, aggregation, price_type);
+    }
+
+    #[rstest]
     #[case(BarAggregation::Millisecond, 1, TimeDelta::milliseconds(1))]
     #[case(BarAggregation::Millisecond, 10, TimeDelta::milliseconds(10))]
     #[case(BarAggregation::Second, 1, TimeDelta::seconds(1))]
@@ -665,11 +742,7 @@ mod tests {
     ) {
         let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
-            spec: BarSpecification {
-                step,
-                aggregation,
-                price_type: PriceType::Last,
-            },
+            spec: BarSpecification::new(step, aggregation, PriceType::Last),
             aggregation_source: AggregationSource::Internal,
         };
 
@@ -697,11 +770,7 @@ mod tests {
     ) {
         let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
-            spec: BarSpecification {
-                step,
-                aggregation,
-                price_type: PriceType::Last,
-            },
+            spec: BarSpecification::new(step, aggregation, PriceType::Last),
             aggregation_source: AggregationSource::Internal,
         };
 
@@ -791,11 +860,7 @@ mod tests {
     ) {
         let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
-            spec: BarSpecification {
-                step,
-                aggregation,
-                price_type: PriceType::Last,
-            },
+            spec: BarSpecification::new(step, aggregation, PriceType::Last),
             aggregation_source: AggregationSource::Internal,
         };
 
@@ -805,11 +870,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_spec_string_reprs() {
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
+        let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
         assert_eq!(bar_spec.to_string(), "1-MINUTE-BID");
         assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
     }
@@ -825,11 +886,7 @@ mod tests {
         );
         assert_eq!(
             bar_type.spec(),
-            BarSpecification {
-                step: 1,
-                aggregation: BarAggregation::Minute,
-                price_type: PriceType::Last,
-            }
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last)
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
         assert_eq!(bar_type, BarType::from(input));
@@ -847,11 +904,7 @@ mod tests {
         );
         assert_eq!(
             bar_type.spec(),
-            BarSpecification {
-                step: 2,
-                aggregation: BarAggregation::Minute,
-                price_type: PriceType::Last,
-            }
+            BarSpecification::new(2, BarAggregation::Minute, PriceType::Last,)
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::Internal);
         assert_eq!(bar_type, BarType::from(input));
@@ -863,11 +916,7 @@ mod tests {
         );
         assert_eq!(
             standard.spec(),
-            BarSpecification {
-                step: 2,
-                aggregation: BarAggregation::Minute,
-                price_type: PriceType::Last,
-            }
+            BarSpecification::new(2, BarAggregation::Minute, PriceType::Last,)
         );
         assert_eq!(standard.aggregation_source(), AggregationSource::Internal);
         assert!(standard.is_standard());
@@ -881,11 +930,7 @@ mod tests {
         );
         assert_eq!(
             composite.spec(),
-            BarSpecification {
-                step: 1,
-                aggregation: BarAggregation::Minute,
-                price_type: PriceType::Last,
-            }
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last,)
         );
         assert_eq!(composite.aggregation_source(), AggregationSource::External);
         assert_eq!(composite, BarType::from(composite_input));
@@ -1008,11 +1053,7 @@ mod tests {
             symbol: Symbol::new("GBP/USD"),
             venue: Venue::new("SIM"),
         };
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
+        let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
         let bar_type1 = BarType::Standard {
             instrument_id: instrument_id1,
             spec: bar_spec,
@@ -1044,16 +1085,8 @@ mod tests {
             symbol: Symbol::new("GBP/USD"),
             venue: Venue::new("SIM"),
         };
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec2 = BarSpecification {
-            step: 2,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
+        let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
+        let bar_spec2 = BarSpecification::new(2, BarAggregation::Minute, PriceType::Bid);
         let bar_type1 = BarType::Standard {
             instrument_id: instrument_id1,
             spec: bar_spec,
@@ -1087,16 +1120,62 @@ mod tests {
     }
 
     #[rstest]
+    fn test_bar_new() {
+        let bar_type = BarType::from("AAPL.XNAS-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from("100.0");
+        let high = Price::from("105.0");
+        let low = Price::from("95.0");
+        let close = Price::from("102.0");
+        let volume = Quantity::from("1000");
+        let ts_event = UnixNanos::from(1_000_000);
+        let ts_init = UnixNanos::from(2_000_000);
+
+        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open, open);
+        assert_eq!(bar.high, high);
+        assert_eq!(bar.low, low);
+        assert_eq!(bar.close, close);
+        assert_eq!(bar.volume, volume);
+        assert_eq!(bar.ts_event, ts_event);
+        assert_eq!(bar.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case("100.0", "90.0", "95.0", "92.0")] // high < open
+    #[case("100.0", "105.0", "110.0", "102.0")] // high < low
+    #[case("100.0", "105.0", "95.0", "110.0")] // high < close
+    #[case("100.0", "105.0", "95.0", "90.0")] // low > close
+    #[case("100.0", "110.0", "105.0", "108.0")] // low > open
+    #[case("100.0", "90.0", "110.0", "120.0")] // high < open, high < close, low > close
+    fn test_bar_new_checked_conditions(
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] close: &str,
+    ) {
+        let bar_type = BarType::from("AAPL.XNAS-1-MINUTE-LAST-INTERNAL");
+        let open = Price::from(open);
+        let high = Price::from(high);
+        let low = Price::from(low);
+        let close = Price::from(close);
+        let volume = Quantity::from("1000");
+        let ts_event = UnixNanos::from(1_000_000);
+        let ts_init = UnixNanos::from(2_000_000);
+
+        let result = Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {
             symbol: Symbol::new("AUDUSD"),
             venue: Venue::new("SIM"),
         };
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
+        let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid);
         let bar_type = BarType::Standard {
             instrument_id,
             spec: bar_spec,

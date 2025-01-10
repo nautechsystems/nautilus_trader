@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -65,7 +65,7 @@ impl PortfolioStatistic for SharpeRatio {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::UnixNanos;
 
     use super::*;
 

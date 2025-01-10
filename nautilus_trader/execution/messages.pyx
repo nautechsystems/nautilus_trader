@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -157,7 +157,7 @@ cdef class SubmitOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             order=order,
             position_id=PositionId(p) if p is not None else None,
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -294,7 +294,7 @@ cdef class SubmitOrderList(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             order_list=order_list,
             position_id=PositionId(p) if p is not None else None,
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -452,7 +452,7 @@ cdef class ModifyOrder(TradingCommand):
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
             trigger_price=Price.from_str_c(t) if t is not None else None,
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -590,7 +590,7 @@ cdef class CancelOrder(TradingCommand):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -711,7 +711,7 @@ cdef class CancelAllOrders(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             order_side=order_side_from_str(values["order_side"]),
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -840,7 +840,7 @@ cdef class BatchCancelOrders(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             cancels=[CancelOrder.from_dict_c(cancel) for cancel in values["cancels"]],
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -970,7 +970,7 @@ cdef class QueryOrder(TradingCommand):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            command_id=UUID4(values["command_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
         )
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,6 +33,7 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
@@ -156,6 +157,13 @@ cdef class OrderMatchingEngine:
         If the `reduce_only` execution instruction on orders will be honored.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
+    bar_adaptive_high_low_ordering : bool, default False
+        Determines whether the processing order of bar prices is adaptive based on a heuristic.
+        This setting is only relevant when `bar_execution` is True.
+        If False, bar prices are always processed in the fixed order: Open, High, Low, Close.
+        If True, the processing order adapts with the heuristic:
+        - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
+        - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
 
     """
 
@@ -171,14 +179,15 @@ cdef class OrderMatchingEngine:
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
-        bint bar_execution = True,
-        bint trade_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
+        bint bar_execution = True,
+        bint bar_adaptive_high_low_ordering = False,
+        bint trade_execution = False,
         # auction_match_algo = default_auction_match
     ) -> None:
         self._clock = clock
@@ -196,14 +205,16 @@ cdef class OrderMatchingEngine:
 
         self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
         self._instrument_close = None
-        self._bar_execution = bar_execution
-        self._trade_execution = trade_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._support_contingent_orders = support_contingent_orders
         self._use_position_ids = use_position_ids
         self._use_random_ids = use_random_ids
         self._use_reduce_only = use_reduce_only
+        self._bar_execution = bar_execution
+        self._bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
+        self._trade_execution = trade_execution
+
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._fee_model = fee_model
@@ -377,7 +388,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(delta, "delta")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(delta)}")
+            self._log.debug(f"Processing {delta!r}")
 
         self._book.apply_delta(delta)
 
@@ -406,7 +417,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(deltas, "deltas")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(deltas)}")
+            self._log.debug(f"Processing {deltas!r}")
 
         self._book.apply_deltas(deltas)
 
@@ -437,7 +448,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(tick, "tick")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(tick)}")
+            self._log.debug(f"Processing {tick!r}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_quote_tick(tick)
@@ -459,23 +470,28 @@ cdef class OrderMatchingEngine:
         Condition.not_none(tick, "tick")
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(tick)}")
+            self._log.debug(f"Processing {tick!r}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
 
-        self._core.set_last_raw(tick._mem.price.raw)
-
         cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
+        cdef int64_t price_raw = tick._mem.price.raw
+
+        self._core.set_last_raw(price_raw)
 
         if self._trade_execution:
             aggressor_side = tick.aggressor_side
-            if tick.aggressor_side == AggressorSide.BUYER:
-                self._core.set_ask_raw(tick._mem.price.raw)
-            elif tick.aggressor_side == AggressorSide.SELLER:
-                self._core.set_bid_raw(tick._mem.price.raw)
+            if aggressor_side == AggressorSide.BUYER:
+                self._core.set_ask_raw(price_raw)
+                if price_raw < self._core.bid_raw:
+                    self._core.set_bid_raw(price_raw)
+            elif aggressor_side == AggressorSide.SELLER:
+                self._core.set_bid_raw(price_raw)
+                if price_raw > self._core.ask_raw:
+                    self._core.set_ask_raw(price_raw)
             else:
-                aggressor_side_str = aggressor_side_to_str(tick.aggressor_side)
+                aggressor_side_str = aggressor_side_to_str(aggressor_side)
                 raise RuntimeError(  # pragma: no cover (design-time error)
                     f"invalid `AggressorSide` for trade execution, was {aggressor_side_str}",  # pragma: no cover
                 )
@@ -528,7 +544,7 @@ cdef class OrderMatchingEngine:
                 return
 
         if is_logging_initialized():
-            self._log.debug(f"Processing {repr(bar)}")
+            self._log.debug(f"Processing {bar!r}")
 
         cdef PriceType price_type = bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
@@ -626,10 +642,29 @@ cdef class OrderMatchingEngine:
         #         )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar):
-        cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
+        cdef double size_value = max(bar.volume.as_double() / 4.0, self.instrument.size_increment.as_double())
+        cdef Quantity size = Quantity(size_value, bar._mem.volume.precision)
 
-        # Create reusable tick
-        cdef TradeTick tick = TradeTick(
+        # Create base tick template
+        cdef TradeTick tick = self._create_base_trade_tick(bar, size)
+
+        # Process each price point
+        cdef bint process_high_first = (
+            not self._bar_adaptive_high_low_ordering
+            or abs(bar._mem.high.raw - bar._mem.open.raw) < abs(bar._mem.low.raw - bar._mem.open.raw)
+        )
+
+        self._process_trade_bar_open(bar, tick)
+        if process_high_first:
+            self._process_trade_bar_high(bar, tick)
+            self._process_trade_bar_low(bar, tick)
+        else:
+            self._process_trade_bar_low(bar, tick)
+            self._process_trade_bar_high(bar, tick)
+        self._process_trade_bar_close(bar, tick)
+
+    cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size):
+        return TradeTick(
             bar.bar_type.instrument_id,
             bar.open,
             size,
@@ -639,40 +674,43 @@ cdef class OrderMatchingEngine:
             bar.ts_event,
         )
 
-        # Open
-        if not self._core.is_last_initialized or bar._mem.open.raw != self._core.last_raw:  # Direct memory comparison
+    cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick):
+        if not self._core.is_last_initialized or bar._mem.open.raw != self._core.last_raw:
+            if is_logging_initialized():
+                self._log.debug(f"Updating with open {bar.open}")
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.open.raw)
 
-        cdef str trade_id_str  # Assigned below
-
-        # High
-        if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
-            tick._mem.price = bar._mem.high  # Direct memory assignment
-            tick._mem.aggressor_side = AggressorSide.BUYER  # Direct memory assignment
-            trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
+    cdef void _process_trade_bar_high(self, Bar bar, TradeTick tick):
+        if bar._mem.high.raw > self._core.last_raw:
+            if is_logging_initialized():
+                self._log.debug(f"Updating with high {bar.high}")
+            tick._mem.price = bar._mem.high
+            tick._mem.aggressor_side = AggressorSide.BUYER
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.high.raw)
 
-        # Low
-        if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
-            tick._mem.price = bar._mem.low  # Direct memory assignment
+    cdef void _process_trade_bar_low(self, Bar bar, TradeTick tick):
+        if bar._mem.low.raw < self._core.last_raw:
+            if is_logging_initialized():
+                self._log.debug(f"Updating with low {bar.low}")
+            tick._mem.price = bar._mem.low
             tick._mem.aggressor_side = AggressorSide.SELLER
-            trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.low.raw)
 
-        # Close
-        if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
-            tick._mem.price = bar._mem.close  # Direct memory assignment
+    cdef void _process_trade_bar_close(self, Bar bar, TradeTick tick):
+        if bar._mem.close.raw != self._core.last_raw:
+            if is_logging_initialized():
+                self._log.debug(f"Updating with close {bar.close}")
+            tick._mem.price = bar._mem.close
             tick._mem.aggressor_side = AggressorSide.BUYER if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELLER
-            trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.close.raw)
@@ -687,8 +725,29 @@ cdef class OrderMatchingEngine:
         cdef Quantity bid_size = Quantity(self._last_bid_bar.volume.as_double() / 4.0, self._last_bid_bar._mem.volume.precision)
         cdef Quantity ask_size = Quantity(self._last_ask_bar.volume.as_double() / 4.0, self._last_ask_bar._mem.volume.precision)
 
-        # Create reusable tick
-        cdef QuoteTick tick = QuoteTick(
+        # Create base tick template
+        cdef QuoteTick tick = self._create_base_quote_tick(bid_size, ask_size)
+
+        # Process each price point
+        cdef bint process_high_first = (
+            not self._bar_adaptive_high_low_ordering
+            or abs(self._last_bid_bar._mem.high.raw - self._last_bid_bar._mem.open.raw) < abs(self._last_bid_bar._mem.low.raw - self._last_bid_bar._mem.open.raw)
+        )
+
+        self._process_quote_bar_open(tick)
+        if process_high_first:
+            self._process_quote_bar_high(tick)
+            self._process_quote_bar_low(tick)
+        else:
+            self._process_quote_bar_low(tick)
+            self._process_quote_bar_high(tick)
+        self._process_quote_bar_close(tick)
+
+        self._last_bid_bar = None
+        self._last_ask_bar = None
+
+    cdef QuoteTick _create_base_quote_tick(self, Quantity bid_size, Quantity ask_size):
+        return QuoteTick(
             self._book.instrument_id,
             self._last_bid_bar.open,
             self._last_ask_bar.open,
@@ -698,32 +757,29 @@ cdef class OrderMatchingEngine:
             self._last_ask_bar.ts_init,
         )
 
-        # Open
+    cdef void _process_quote_bar_open(self, QuoteTick tick):
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        # High
-        tick._mem.bid_price = self._last_bid_bar._mem.high  # Direct memory assignment
-        tick._mem.ask_price = self._last_ask_bar._mem.high  # Direct memory assignment
+    cdef void _process_quote_bar_high(self, QuoteTick tick):
+        tick._mem.bid_price = self._last_bid_bar._mem.high
+        tick._mem.ask_price = self._last_ask_bar._mem.high
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        # Low
-        tick._mem.bid_price = self._last_bid_bar._mem.low  # Assigning memory directly
-        tick._mem.ask_price = self._last_ask_bar._mem.low  # Assigning memory directly
+    cdef void _process_quote_bar_low(self, QuoteTick tick):
+        tick._mem.bid_price = self._last_bid_bar._mem.low
+        tick._mem.ask_price = self._last_ask_bar._mem.low
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        # Close
-        tick._mem.bid_price = self._last_bid_bar._mem.close  # Assigning memory directly
-        tick._mem.ask_price = self._last_ask_bar._mem.close  # Assigning memory directly
+    cdef void _process_quote_bar_close(self, QuoteTick tick):
+        tick._mem.bid_price = self._last_bid_bar._mem.close
+        tick._mem.ask_price = self._last_ask_bar._mem.close
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-        self._last_bid_bar = None
-        self._last_ask_bar = None
-
-# -- TRADING COMMANDS -----------------------------------------------------------------------------
+    # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void process_order(self, Order order, AccountId account_id):
         if self._core.order_exists(order.client_order_id):
@@ -769,7 +825,7 @@ cdef class OrderMatchingEngine:
                 for client_order_id in order.linked_order_ids:
                     contingent_order = self.cache.order(client_order_id)
                     if contingent_order is None:
-                        raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
+                        raise RuntimeError(f"Cannot find contingent order for {client_order_id!r}")  # pragma: no cover
                     if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
                         if not order.is_closed_c() and contingent_order.is_closed_c():
                             self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
@@ -827,7 +883,7 @@ cdef class OrderMatchingEngine:
         ):
             self._generate_order_rejected(
                 order,
-                f"SHORT SELLING not permitted on a CASH account with position {position} and order {repr(order)}"
+                f"SHORT SELLING not permitted on a CASH account with position {position} and order {order!r}"
             )
             return  # Cannot short sell
 
@@ -880,7 +936,7 @@ cdef class OrderMatchingEngine:
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
-                reason=f"{repr(command.client_order_id)} not found",
+                reason=f"{command.client_order_id!r} not found",
             )
         else:
             self.update_order(
@@ -900,7 +956,7 @@ cdef class OrderMatchingEngine:
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
-                reason=f"{repr(command.client_order_id)} not found",
+                reason=f"{command.client_order_id!r} not found",
             )
         else:
             if order.is_inflight_c() or order.is_open_c():
@@ -1334,10 +1390,10 @@ cdef class OrderMatchingEngine:
         cdef Price_t bid
         cdef Price_t ask
 
-        if orderbook_has_bid(&self._book._mem) and not aggressor_side == AggressorSide.SELLER:
+        if orderbook_has_bid(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
             bid = orderbook_best_bid_price(&self._book._mem)
             self._core.set_bid_raw(bid.raw)
-        if orderbook_has_ask(&self._book._mem) and not aggressor_side == AggressorSide.BUYER:
+        if orderbook_has_ask(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
             ask = orderbook_best_ask_price(&self._book._mem)
             self._core.set_ask_raw(ask.raw)
 
@@ -1679,7 +1735,8 @@ cdef class OrderMatchingEngine:
         Apply the given list of fills to the given order. Optionally provide
         existing position details.
 
-        If the `fills` list is empty, then an error will be logged.
+        - If the `fills` list is empty, an error will be logged.
+        - Market orders will be rejected if no opposing orders are available to fulfill them.
 
         Parameters
         ----------
@@ -1725,15 +1782,24 @@ cdef class OrderMatchingEngine:
                 return  # Cannot fill full size - so kill/cancel
 
         if not fills:
-            self._log.error(
-                "Cannot fill order: no fills from book when fills were expected (check sizes in data)",
-            )
+            if order.status_c() == OrderStatus.SUBMITTED:
+                self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+            else:
+                self._log.error(
+                    "Cannot fill order: no fills from book when fills were expected (check data)",
+                )
             return  # No fills
 
         if self.oms_type == OmsType.NETTING:
             venue_position_id = None  # No position IDs generated by the venue
 
         if is_logging_initialized():
+            self._log.debug(
+                "Market: "
+                f"bid={self._book.best_bid_size()} @ {self._book.best_bid_price()}, "
+                f"ask={self._book.best_ask_size()} @ {self._book.best_ask_price()}, "
+                f"last={self._core.last}",
+            )
             self._log.debug(
                 f"Applying fills to {order}, "
                 f"venue_position_id={venue_position_id}, "
@@ -1796,6 +1862,8 @@ cdef class OrderMatchingEngine:
                 )
 
             if fill_qty._mem.raw == 0:
+                if len(fills) == 1 and order.status_c() == OrderStatus.SUBMITTED:
+                    self._generate_order_rejected(order, f"no market for {order.instrument_id}")
                 return  # Done
 
             self.fill_order(
@@ -1866,7 +1934,7 @@ cdef class OrderMatchingEngine:
             The order to fill.
         last_px : Price
             The fill price for the order.
-        last_qty : Price
+        last_qty : Quantity
             The fill quantity for the order.
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
@@ -1947,8 +2015,8 @@ cdef class OrderMatchingEngine:
                         strategy_id=child_order.strategy_id,
                     )
                     self._log.debug(
-                        f"Indexed {repr(order.position_id)} "
-                        f"for {repr(child_order.client_order_id)}",
+                        f"Indexed {order.position_id!r} "
+                        f"for {child_order.client_order_id!r}",
                     )
                 if not child_order.is_open_c() or (child_order.status_c() == OrderStatus.PENDING_UPDATE and child_order._previous_status == OrderStatus.SUBMITTED):
                     self.process_order(

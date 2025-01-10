@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use strum::Display;
 use ustr::Ustr;
@@ -26,7 +26,7 @@ use crate::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
@@ -145,6 +145,29 @@ impl OrderEventAny {
     }
 
     #[must_use]
+    pub fn venue_order_id(&self) -> Option<VenueOrderId> {
+        match self {
+            Self::Initialized(event) => event.venue_order_id(),
+            Self::Denied(event) => event.venue_order_id(),
+            Self::Emulated(event) => event.venue_order_id(),
+            Self::Released(event) => event.venue_order_id(),
+            Self::Submitted(event) => event.venue_order_id(),
+            Self::Accepted(event) => event.venue_order_id(),
+            Self::Rejected(event) => event.venue_order_id(),
+            Self::Canceled(event) => event.venue_order_id(),
+            Self::Expired(event) => event.venue_order_id(),
+            Self::Triggered(event) => event.venue_order_id(),
+            Self::PendingUpdate(event) => event.venue_order_id(),
+            Self::PendingCancel(event) => event.venue_order_id(),
+            Self::ModifyRejected(event) => event.venue_order_id(),
+            Self::CancelRejected(event) => event.venue_order_id(),
+            Self::Updated(event) => event.venue_order_id(),
+            Self::PartiallyFilled(event) => event.venue_order_id(),
+            Self::Filled(event) => event.venue_order_id(),
+        }
+    }
+
+    #[must_use]
     pub fn account_id(&self) -> Option<AccountId> {
         match self {
             Self::Initialized(event) => event.account_id(),
@@ -236,6 +259,7 @@ impl OrderEventAny {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> Option<Ustr> {
         match self {
             Self::Initialized(_) => None,

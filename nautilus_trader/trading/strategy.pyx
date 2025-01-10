@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -152,6 +152,7 @@ cdef class Strategy(Actor):
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
+        self.event_logging = config.event_logging
 
         # Public components
         self.clock = self._clock
@@ -1529,7 +1530,7 @@ cdef class Strategy(Actor):
 
         if type(event) in self._warning_events:
             self.log.warning(f"{RECV}{EVT} {event}")
-        else:
+        elif self.event_logging:
             self.log.info(f"{RECV}{EVT} {event}")
 
         cdef Order order

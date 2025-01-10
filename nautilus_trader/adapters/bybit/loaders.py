@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import json
-from os import PathLike
+from typing import TYPE_CHECKING
 from zipfile import ZipFile
 from zipfile import is_zipfile
 
@@ -22,6 +24,10 @@ import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.model.enums import RecordFlag
+
+
+if TYPE_CHECKING:
+    from os import PathLike
 
 
 class BybitOrderBookDeltaDataLoader:

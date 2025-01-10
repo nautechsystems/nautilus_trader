@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -97,6 +97,14 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class OrderBook(Data):
     """
     Provides an order book which can handle L1/L2/L3 granularity data.
+
+    Parameters
+    ----------
+    instrument_id : IntrumentId
+        The instrument ID for the order book.
+    book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
+        The order book type.
+
     """
 
     def __init__(
@@ -665,7 +673,7 @@ cdef class OrderBook(Data):
         if self._book_type != BookType.L1_MBP:
             raise RuntimeError(
                 "Invalid book operation: "
-                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+                f"cannot update with quote for {book_type_to_str(self.book_type)} book",
             )
 
         orderbook_update_quote_tick(&self._mem, &tick._mem)
@@ -673,8 +681,6 @@ cdef class OrderBook(Data):
     cpdef void update_trade_tick(self, TradeTick tick):
         """
         Update the order book with the given trade tick.
-
-        This operation is only valid for ``L1_MBP`` books maintaining a top level.
 
         Parameters
         ----------
@@ -690,7 +696,7 @@ cdef class OrderBook(Data):
         if self._book_type != BookType.L1_MBP:
             raise RuntimeError(
                 "Invalid book operation: "
-                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+                f"cannot update with trade for {book_type_to_str(self.book_type)} book",
             )
 
         orderbook_update_trade_tick(&self._mem, &tick._mem)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ use nautilus_common::{
     msgbus::MessageBus,
     throttler::Throttler,
 };
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
 use nautilus_model::{
     accounts::{Account, AccountAny},
@@ -1078,7 +1078,7 @@ mod tests {
         },
         throttler::RateLimit,
     };
-    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+    use nautilus_core::{UnixNanos, UUID4};
     use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
     use nautilus_model::{
         accounts::{

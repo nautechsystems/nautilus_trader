@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -469,6 +469,14 @@ class TestMessageBus:
         ["data.quotes.BINANCE", "data.*.BINANCE", True],
         ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", True],
         ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", True],
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH???", False],
+        ["data.trades.BINANCE.ETHUSD", "data.*.BINANCE.ETH???", True],
+        # We don't support [seq] style pattern
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[HC]USDT", False],
+        # We don't support [!seq] style pattern
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[!ABC]USDT", False],
+        # We don't support [^seq] style pattern
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[^ABC]USDT", False],
     ],
 )
 def test_is_matching_given_various_topic_pattern_combos(topic, pattern, expected):

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,8 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{UnixNanos, UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -33,6 +34,10 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+/// Represents an event where an order has been denied by the Nautilus system.
+///
+/// This could be due an unsupported feature, a risk limit exceedance, or for
+/// any other reason that an otherwise valid order is not able to be submitted.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
@@ -42,13 +47,21 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderDenied {
+    /// The trader ID associated with the event.
     pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
     pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
+    /// The reason the order was denied.
     pub reason: Ustr,
+    /// The unique identifier for the event.
     pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -200,11 +213,11 @@ impl OrderEvent for OrderDenied {
         None
     }
 
-    fn limit_offset(&self) -> Option<Price> {
+    fn limit_offset(&self) -> Option<Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Price> {
+    fn trailing_offset(&self) -> Option<Decimal> {
         None
     }
 

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.16.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -34,7 +34,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.core.datetime import unix_nanos_to_str
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarType
@@ -133,17 +133,21 @@ class TestHistoricalAggStrategy(Strategy):
             f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
         )
 
-        self.subscribe_bars(bar_type_1)
-        self.subscribe_bars(bar_type_2)
-        self.subscribe_bars(bar_type_3)
-
         self.request_aggregated_bars(
             [bar_type_1, bar_type_2, bar_type_3],
             start=start_historical_bars,
             end=end_historical_bars,
-            update_existing_subscriptions=True,
+            update_subscriptions=True,
             include_external_data=False,
         )
+
+        self.user_log("request_aggregated_bars done")
+
+        self.subscribe_bars(bar_type_1)
+        self.subscribe_bars(bar_type_2)
+        self.subscribe_bars(bar_type_3)
+
+        self.user_log("subscribe_bars done")
 
         #### for testing indicators with bars
         # self.register_indicator_for_bars(external_bar_type, self.external_sma)
@@ -161,16 +165,16 @@ class TestHistoricalAggStrategy(Strategy):
         # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
         # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
 
-        # self.subscribe_bars(bar_type_1)
-        # self.subscribe_bars(bar_type_2)
-
         # self.request_aggregated_bars(
         #     [bar_type_1, bar_type_2],
         #     start=start_historical_bars,
         #     end=end_historical_bars,
-        #     update_existing_subscriptions=True,
+        #     update_subscriptions=True,
         #     include_external_data=False,
         # )
+
+        # self.subscribe_bars(bar_type_1)
+        # self.subscribe_bars(bar_type_2)
 
         ######### for testing trades
         # utc_now = self._clock.utc_now()
@@ -184,27 +188,29 @@ class TestHistoricalAggStrategy(Strategy):
         # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
         # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
 
-        # self.subscribe_bars(bar_type_1)
-        # self.subscribe_bars(bar_type_2)
-
         # self.request_aggregated_bars(
         #     [bar_type_1, bar_type_2],
         #     start=start_historical_bars,
         #     end=end_historical_bars,
-        #     update_existing_subscriptions=True,
+        #     update_subscriptions=True,
         #     include_external_data=False,
         # )
 
+        # self.subscribe_bars(bar_type_1)
+        # self.subscribe_bars(bar_type_2)
+
     def on_historical_data(self, data):
         if type(data) is Bar:
-            self.user_log(f"historical bar ts_init = {unix_nanos_to_str(data.ts_init)}")
+            self.user_log(
+                f"historical bar ts_init = {unix_nanos_to_iso8601(data.ts_init)}, {data.ts_init}",
+            )
             self.user_log(data)
 
             # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
             # self.user_log(f"{self.composite_sma.value=}, {self.composite_sma.initialized=}")
 
     def on_bar(self, bar):
-        self.user_log(f"bar ts_init = {unix_nanos_to_str(bar.ts_init)}")
+        self.user_log(f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, {bar.ts_init}")
         self.user_log(bar)
 
         # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
@@ -219,6 +225,13 @@ class TestHistoricalAggStrategy(Strategy):
 
 # %%
 # BacktestEngineConfig
+tested_market_data = "bars"  # or "quotes" or "trades"
+
+historical_start_delay = 10 if tested_market_data == "bars" else 2
+historical_end_delay = 1 if tested_market_data == "bars" else 0
+
+backtest_start = "2024-07-01T23:55" if tested_market_data == "bars" else "2024-07-02T00:00"
+backtest_end = "2024-07-02T00:10" if tested_market_data == "bars" else "2024-07-02T00:02"
 
 strategies = [
     ImportableStrategyConfig(
@@ -226,12 +239,8 @@ strategies = [
         config_path=TestHistoricalAggConfig.fully_qualified_name(),
         config={
             "symbol_id": InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
-            # for bars
-            "historical_start_delay": 10,
-            "historical_end_delay": 1,
-            # for quotes
-            # "historical_start_delay": 2,
-            # "historical_end_delay": 0,
+            "historical_start_delay": historical_start_delay,
+            "historical_end_delay": historical_end_delay,
         },
     ),
 ]
@@ -242,7 +251,7 @@ logging = LoggingConfig(
     log_level="WARN",
     log_level_file="WARN",
     log_directory=".",
-    log_file_format=None,  # 'json' or None
+    log_file_format=None,  # "json" or None
     log_file_name="databento_option_greeks",
     clear_log_file=True,
 )
@@ -309,12 +318,8 @@ configs = [
         data=data,
         venues=venues,
         chunk_size=None,  # use None when loading custom data
-        # for bars
-        start="2024-07-01T23:55",
-        end="2024-07-02T00:10",
-        # for quotes or trades
-        # start="2024-07-02T00:00",
-        # end="2024-07-02T00:02",
+        start=backtest_start,
+        end=backtest_end,
     ),
 ]
 
