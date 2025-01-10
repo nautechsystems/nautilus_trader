@@ -51,13 +51,6 @@
 #define SCALAR FIXED_SCALAR
 #endif
 
-#if !defined(HIGH_PRECISION)
-/**
- * The maximum valid money amount which can be represented.
- */
-#define MONEY_MAX 9223372036.0
-#endif
-
 #if defined(HIGH_PRECISION)
 /**
  * The maximum valid money amount which can be represented.
@@ -66,10 +59,7 @@
 #endif
 
 #if !defined(HIGH_PRECISION)
-/**
- * The minimum valid money amount which can be represented.
- */
-#define MONEY_MIN -9223372036.0
+#define MONEY_MAX 9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
@@ -80,36 +70,40 @@
 #endif
 
 #if !defined(HIGH_PRECISION)
-/**
- * The maximum valid price value which can be represented.
- */
-#define PRICE_MAX 9223372036.0
+#define MONEY_MIN -9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
+/**
+ * The maximum valid price value which can be represented.
+ */
 #define PRICE_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
-/**
- * The minimum valid price value which can be represented.
- */
-#define PRICE_MIN -9223372036.0
+#define PRICE_MAX 9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
+/**
+ * The minimum valid price value which can be represented.
+ */
 #define PRICE_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
-/**
- * The maximum valid quantity value which can be represented.
- */
-#define QUANTITY_MAX 18446744073.0
+#define PRICE_MIN -9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
+/**
+ * The maximum valid quantity value which can be represented.
+ */
 #define QUANTITY_MAX 34028236692093.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+#define QUANTITY_MAX 18446744073.0
 #endif
 
 /**
@@ -903,12 +897,12 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
-#if !defined(HIGH_PRECISION)
-typedef int64_t PriceRaw;
-#endif
-
 #if defined(HIGH_PRECISION)
 typedef int128_t PriceRaw;
+#endif
+
+#if !defined(HIGH_PRECISION)
+typedef int64_t PriceRaw;
 #endif
 
 /**
@@ -935,12 +929,12 @@ typedef struct Price_t {
     uint8_t precision;
 } Price_t;
 
-#if !defined(HIGH_PRECISION)
-typedef uint64_t QuantityRaw;
-#endif
-
 #if defined(HIGH_PRECISION)
 typedef uint128_t QuantityRaw;
+#endif
+
+#if !defined(HIGH_PRECISION)
+typedef uint64_t QuantityRaw;
 #endif
 
 /**

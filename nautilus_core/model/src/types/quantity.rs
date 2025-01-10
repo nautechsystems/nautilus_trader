@@ -39,18 +39,18 @@ use super::fixed::{
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
 /// The maximum valid quantity value which can be represented.
-#[cfg(not(feature = "high_precision"))]
-pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 #[cfg(feature = "high_precision")]
 pub const QUANTITY_MAX: f64 = 34_028_236_692_093.0;
+#[cfg(not(feature = "high_precision"))]
+pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
-#[cfg(not(feature = "high_precision"))]
-pub type QuantityRaw = u64;
 #[cfg(feature = "high_precision")]
 pub type QuantityRaw = u128;
+#[cfg(not(feature = "high_precision"))]
+pub type QuantityRaw = u64;
 
 #[cfg(not(feature = "high_precision"))]
 pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {

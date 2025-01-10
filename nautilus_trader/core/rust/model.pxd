@@ -36,42 +36,40 @@ cdef extern from "../includes/model.h":
     IF not HIGH_PRECISION:
         const double SCALAR # = FIXED_SCALAR
 
-    IF not HIGH_PRECISION:
-        # The maximum valid money amount which can be represented.
-        const double MONEY_MAX # = 9223372036.0
-
     IF HIGH_PRECISION:
         # The maximum valid money amount which can be represented.
         const double MONEY_MAX # = 17014118346046.0
 
     IF not HIGH_PRECISION:
-        # The minimum valid money amount which can be represented.
-        const double MONEY_MIN # = -9223372036.0
+        const double MONEY_MAX # = 9223372036.0
 
     IF HIGH_PRECISION:
         # The minimum valid money amount which can be represented.
         const double MONEY_MIN # = -17014118346046.0
 
     IF not HIGH_PRECISION:
-        # The maximum valid price value which can be represented.
-        const double PRICE_MAX # = 9223372036.0
+        const double MONEY_MIN # = -9223372036.0
 
     IF HIGH_PRECISION:
+        # The maximum valid price value which can be represented.
         const double PRICE_MAX # = 17014118346046.0
 
     IF not HIGH_PRECISION:
-        # The minimum valid price value which can be represented.
-        const double PRICE_MIN # = -9223372036.0
+        const double PRICE_MAX # = 9223372036.0
 
     IF HIGH_PRECISION:
+        # The minimum valid price value which can be represented.
         const double PRICE_MIN # = -17014118346046.0
 
     IF not HIGH_PRECISION:
-        # The maximum valid quantity value which can be represented.
-        const double QUANTITY_MAX # = 18446744073.0
+        const double PRICE_MIN # = -9223372036.0
 
     IF HIGH_PRECISION:
+        # The maximum valid quantity value which can be represented.
         const double QUANTITY_MAX # = 34028236692093.0
+
+    IF not HIGH_PRECISION:
+        const double QUANTITY_MAX # = 18446744073.0
 
     # The minimum valid quantity value which can be represented.
     const double QUANTITY_MIN # = 0.0
@@ -496,11 +494,11 @@ cdef extern from "../includes/model.h":
         # The instruments trading venue.
         Venue_t venue;
 
-    IF not HIGH_PRECISION:
-        ctypedef int64_t PriceRaw;
-
     IF HIGH_PRECISION:
         ctypedef int128_t PriceRaw;
+
+    IF not HIGH_PRECISION:
+        ctypedef int64_t PriceRaw;
 
     # Represents a price in a market.
     #
@@ -519,11 +517,11 @@ cdef extern from "../includes/model.h":
         # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
-    IF not HIGH_PRECISION:
-        ctypedef uint64_t QuantityRaw;
-
     IF HIGH_PRECISION:
         ctypedef uint128_t QuantityRaw;
+
+    IF not HIGH_PRECISION:
+        ctypedef uint64_t QuantityRaw;
 
     # Represents a quantity with a non-negative value.
     #
