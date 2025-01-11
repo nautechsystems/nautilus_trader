@@ -46,6 +46,7 @@ from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
@@ -1770,7 +1771,7 @@ cdef class OrderMatchingEngine:
         cdef:
             Price fill_px
             Quantity fill_qty
-            uint64_t total_size_raw = 0
+            QuantityRaw total_size_raw = 0
         if order.time_in_force == TimeInForce.FOK:
             # Check FOK requirement
             for fill in fills:
