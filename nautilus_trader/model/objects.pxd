@@ -206,14 +206,14 @@ cdef class MarginBalance:
     cpdef dict to_dict(self)
 
 
-cdef inline Price_t price_raw_new(PriceRaw raw, uint8_t precision):
+cdef inline Price_t price_new(PriceRaw raw, uint8_t precision):
     cdef Price_t price
     price.raw = raw
     price.precision = precision
     return price
 
 
-cdef inline Quantity_t quantity_raw_new(QuantityRaw raw, uint8_t precision):
+cdef inline Quantity_t quantity_new(QuantityRaw raw, uint8_t precision):
     cdef Quantity_t qty
     qty.raw = raw
     qty.precision = precision

@@ -147,8 +147,8 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport price_raw_new
-from nautilus_trader.model.objects cimport quantity_raw_new
+from nautilus_trader.model.objects cimport price_new
+from nautilus_trader.model.objects cimport quantity_new
 
 
 cdef inline BookOrder order_from_mem_c(BookOrder_t mem):
@@ -1005,11 +1005,11 @@ cdef class Bar(Data):
                     ),
                     state[4],
                 ),
-                price_raw_new(state[5], price_prec),
-                price_raw_new(state[6], price_prec),
-                price_raw_new(state[7], price_prec),
-                price_raw_new(state[8], price_prec),
-                quantity_raw_new(state[10], size_prec),
+                price_new(state[5], price_prec),
+                price_new(state[6], price_prec),
+                price_new(state[7], price_prec),
+                price_new(state[8], price_prec),
+                quantity_new(state[10], size_prec),
                 state[12],
                 state[13],
             )
@@ -1032,11 +1032,11 @@ cdef class Bar(Data):
                     state[6],
                     state[7]
                 ),
-                price_raw_new(state[8], price_prec),
-                price_raw_new(state[9], price_prec),
-                price_raw_new(state[10], price_prec),
-                price_raw_new(state[11], price_prec),
-                quantity_raw_new(state[13], size_prec),
+                price_new(state[8], price_prec),
+                price_new(state[9], price_prec),
+                price_new(state[10], price_prec),
+                price_new(state[11], price_prec),
+                quantity_new(state[13], size_prec),
                 state[15],
                 state[16],
             )
@@ -1169,11 +1169,11 @@ cdef class Bar(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef Price_t open_price = price_raw_new(open, price_prec)
-        cdef Price_t high_price = price_raw_new(high, price_prec)
-        cdef Price_t low_price = price_raw_new(low, price_prec)
-        cdef Price_t close_price = price_raw_new(close, price_prec)
-        cdef Quantity_t volume_qty = quantity_raw_new(volume, size_prec)
+        cdef Price_t open_price = price_new(open, price_prec)
+        cdef Price_t high_price = price_new(high, price_prec)
+        cdef Price_t low_price = price_new(low, price_prec)
+        cdef Price_t close_price = price_new(close, price_prec)
+        cdef Quantity_t volume_qty = quantity_new(volume, size_prec)
         cdef Bar bar = Bar.__new__(Bar)
         bar._mem = bar_new(
             bar_type._mem,
@@ -1219,11 +1219,11 @@ cdef class Bar(Data):
             Quantity_t volume_qty
             Bar bar
         for i in range(count):
-            open_price = price_raw_new(opens[i], price_prec)
-            high_price = price_raw_new(highs[i], price_prec)
-            low_price = price_raw_new(lows[i], price_prec)
-            close_price = price_raw_new(closes[i], price_prec)
-            volume_qty = quantity_raw_new(volumes[i], size_prec)
+            open_price = price_new(opens[i], price_prec)
+            high_price = price_new(highs[i], price_prec)
+            low_price = price_new(lows[i], price_prec)
+            close_price = price_new(closes[i], price_prec)
+            volume_qty = quantity_new(volumes[i], size_prec)
             bar = Bar.__new__(Bar)
             bar._mem = bar_new(
                 bar_type._mem,
@@ -1637,8 +1637,8 @@ cdef class BookOrder:
         )
 
     def __setstate__(self, state):
-        cdef Price_t price = price_raw_new(state[1], state[2])
-        cdef Quantity_t size = quantity_raw_new(state[3], state[4])
+        cdef Price_t price = price_new(state[1], state[2])
+        cdef Quantity_t size = quantity_new(state[3], state[4])
         self._mem = book_order_new(
             state[0],
             price,
@@ -1664,8 +1664,8 @@ cdef class BookOrder:
         uint8_t size_prec,
         uint64_t order_id,
     ):
-        cdef Price_t price = price_raw_new(price_raw, price_prec)
-        cdef Quantity_t size = quantity_raw_new(size_raw, size_prec)
+        cdef Price_t price = price_new(price_raw, price_prec)
+        cdef Quantity_t size = quantity_new(size_raw, size_prec)
         cdef BookOrder order = BookOrder.__new__(BookOrder)
         order._mem = book_order_new(
             side,
@@ -1884,8 +1884,8 @@ cdef class OrderBookDelta(Data):
         # Placeholder for now
         cdef BookOrder_t book_order = order._mem if order is not None else book_order_new(
             OrderSide.NO_ORDER_SIDE,
-            price_raw_new(0, 0),
-            quantity_raw_new(0, 0),
+            price_new(0, 0),
+            quantity_new(0, 0),
             0,
         )
 
@@ -1920,8 +1920,8 @@ cdef class OrderBookDelta(Data):
 
     def __setstate__(self, state):
         cdef BookAction action = state[1]
-        cdef Price_t price = price_raw_new(state[3], state[4])
-        cdef Quantity_t size = quantity_raw_new(state[5], state[6])
+        cdef Price_t price = price_new(state[3], state[4])
+        cdef Quantity_t size = quantity_new(state[5], state[6])
 
         if action == BookAction.ADD or action == BookAction.UPDATE:
             Condition.positive_int(size.raw, "size")
@@ -2111,8 +2111,8 @@ cdef class OrderBookDelta(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef Price_t price = price_raw_new(price_raw, price_prec)
-        cdef Quantity_t size = quantity_raw_new(size_raw, size_prec)
+        cdef Price_t price = price_new(price_raw, price_prec)
+        cdef Quantity_t size = quantity_new(size_raw, size_prec)
         cdef BookOrder_t book_order = book_order_new(
             side,
             price,
@@ -3659,10 +3659,10 @@ cdef class QuoteTick(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        cdef Price_t bid_price = price_raw_new(state[1], state[3])
-        cdef Price_t ask_price = price_raw_new(state[2], state[4])
-        cdef Quantity_t bid_size = quantity_raw_new(state[5], state[7])
-        cdef Quantity_t ask_size = quantity_raw_new(state[6], state[8])
+        cdef Price_t bid_price = price_new(state[1], state[3])
+        cdef Price_t ask_price = price_new(state[2], state[4])
+        cdef Quantity_t bid_size = quantity_new(state[5], state[7])
+        cdef Quantity_t ask_size = quantity_new(state[6], state[8])
         self._mem = quote_tick_new(
             instrument_id._mem,
             bid_price,
@@ -3825,10 +3825,10 @@ cdef class QuoteTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef Price_t bid_price = price_raw_new(bid_price_raw, bid_price_prec)
-        cdef Price_t ask_price = price_raw_new(ask_price_raw, ask_price_prec)
-        cdef Quantity_t bid_size = quantity_raw_new(bid_size_raw, bid_size_prec)
-        cdef Quantity_t ask_size = quantity_raw_new(ask_size_raw, ask_size_prec)
+        cdef Price_t bid_price = price_new(bid_price_raw, bid_price_prec)
+        cdef Price_t ask_price = price_new(ask_price_raw, ask_price_prec)
+        cdef Quantity_t bid_size = quantity_new(bid_size_raw, bid_size_prec)
+        cdef Quantity_t ask_size = quantity_new(ask_size_raw, ask_size_prec)
         cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
         quote._mem = quote_tick_new(
             instrument_id._mem,
@@ -3867,10 +3867,10 @@ cdef class QuoteTick(Data):
             cdef Quantity_t ask_size
             QuoteTick quote
         for i in range(count):
-            bid_price = price_raw_new(bid_prices_raw[i], price_prec)
-            ask_price = price_raw_new(ask_prices_raw[i], price_prec)
-            bid_size = quantity_raw_new(bid_sizes_raw[i], size_prec)
-            ask_size = quantity_raw_new(ask_sizes_raw[i], size_prec)
+            bid_price = price_new(bid_prices_raw[i], price_prec)
+            ask_price = price_new(ask_prices_raw[i], price_prec)
+            bid_size = quantity_new(bid_sizes_raw[i], size_prec)
+            ask_size = quantity_new(ask_sizes_raw[i], size_prec)
 
             quote = QuoteTick.__new__(QuoteTick)
             quote._mem = quote_tick_new(
@@ -4273,8 +4273,8 @@ cdef class TradeTick(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        cdef Price_t price = price_raw_new(state[1], state[2])
-        cdef Quantity_t size = quantity_raw_new(state[3], state[4])
+        cdef Price_t price = price_new(state[1], state[2])
+        cdef Quantity_t size = quantity_new(state[3], state[4])
         Condition.positive_int(size.raw, "size")
 
         self._mem = trade_tick_new(
@@ -4412,8 +4412,8 @@ cdef class TradeTick(Data):
     ):
         Condition.positive_int(size_raw, "size_raw")
 
-        cdef Price_t price = price_raw_new(price_raw, price_prec)
-        cdef Quantity_t size = quantity_raw_new(size_raw, size_prec)
+        cdef Price_t price = price_new(price_raw, price_prec)
+        cdef Quantity_t size = quantity_new(size_raw, size_prec)
 
         cdef TradeTick trade = TradeTick.__new__(TradeTick)
         trade._mem = trade_tick_new(
@@ -4453,8 +4453,8 @@ cdef class TradeTick(Data):
             TradeId trade_id
             TradeTick trade
         for i in range(count):
-            price = price_raw_new(prices_raw[i], price_prec)
-            size = quantity_raw_new(sizes_raw[i], size_prec)
+            price = price_new(prices_raw[i], price_prec)
+            size = quantity_new(sizes_raw[i], size_prec)
             Condition.positive_int(size.raw, "size")
             aggressor_side = <AggressorSide>aggressor_sides[i]
             trade_id = TradeId(trade_ids[i])
