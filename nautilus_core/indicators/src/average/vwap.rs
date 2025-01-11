@@ -166,7 +166,6 @@ mod tests {
         assert_eq!(indicator_vwap.value, 1.000_242_857_142_857);
     }
 
-    #[ignore = "High precision issue"]
     #[rstest]
     fn test_handle_bar(
         mut indicator_vwap: VolumeWeightedAveragePrice,

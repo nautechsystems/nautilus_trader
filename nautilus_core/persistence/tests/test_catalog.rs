@@ -330,7 +330,7 @@ fn test_bar_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[ignore = "High precision issue"]
+#[ignore] // TODO: Remove file after asserts
 #[rstest]
 fn test_catalog_serialization_json_round_trip() {
     // Setup
@@ -348,12 +348,11 @@ fn test_catalog_serialization_json_round_trip() {
     let quote_ticks: Vec<Data> = query_result.collect();
     let mut quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
-    // fix bid and ask size
     for data in quote_ticks.iter_mut() {
-        data.bid_size = Quantity::new(data.bid_size.raw as f64, data.bid_size.precision);
-        data.ask_size = Quantity::new(data.ask_size.raw as f64, data.ask_size.precision);
-        data.bid_price = Price::new(data.bid_price.raw as f64, data.bid_price.precision);
-        data.ask_price = Price::new(data.ask_price.raw as f64, data.bid_price.precision);
+        data.bid_price = Price::from_raw(data.bid_price.raw, data.bid_price.precision);
+        data.ask_price = Price::from_raw(data.ask_price.raw, data.bid_price.precision);
+        data.bid_size = Quantity::from_raw(data.bid_size.raw, data.bid_size.precision);
+        data.ask_size = Quantity::from_raw(data.ask_size.raw, data.ask_size.precision);
     }
 
     // Write to JSON using catalog

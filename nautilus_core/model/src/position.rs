@@ -593,7 +593,6 @@ mod tests {
         position.apply(&fill2.into());
     }
 
-    #[ignore = "High precision issue"]
     #[rstest]
     fn test_position_filled_with_buy_order(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
@@ -648,7 +647,6 @@ mod tests {
         );
     }
 
-    #[ignore = "High precision issue"]
     #[rstest]
     fn test_position_filled_with_sell_order(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
@@ -704,7 +702,6 @@ mod tests {
         );
     }
 
-    #[ignore = "High precision issue"]
     #[rstest]
     fn test_position_partial_fills_with_buy_order(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
@@ -749,7 +746,6 @@ mod tests {
         );
     }
 
-    #[ignore = "High precision issue"]
     #[rstest]
     fn test_position_partial_fills_with_two_sell_orders(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
