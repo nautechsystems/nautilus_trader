@@ -40,7 +40,7 @@ cdef class Quantity:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef QuantityRaw raw_uint128_c(self)
+    cdef QuantityRaw raw_uint_c(self)
     cdef double as_f64_c(self)
 
     cdef Quantity add(self, Quantity other)
@@ -89,7 +89,7 @@ cdef class Price:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef PriceRaw raw_int128_c(self)
+    cdef PriceRaw raw_int_c(self)
     cdef double as_f64_c(self)
 
     cdef Price add(self, Price other)
@@ -130,7 +130,7 @@ cdef class Money:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef MoneyRaw raw_int128_c(self)
+    cdef MoneyRaw raw_int_c(self)
     cdef double as_f64_c(self)
 
     @staticmethod

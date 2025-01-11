@@ -305,7 +305,7 @@ cdef class Quantity:
         if self._mem.precision == 0:
             self._mem.precision = other.precision
 
-    cdef QuantityRaw raw_uint128_c(self):
+    cdef QuantityRaw raw_uint_c(self):
         return self._mem.raw
 
     cdef double as_f64_c(self):
@@ -785,7 +785,7 @@ cdef class Price:
     cdef void sub_assign(self, Price other):
         self._mem.raw -= other._mem.raw
 
-    cdef PriceRaw raw_int128_c(self):
+    cdef PriceRaw raw_int_c(self):
         return self._mem.raw
 
     cdef double as_f64_c(self):
@@ -1147,7 +1147,7 @@ cdef class Money:
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         self._mem.raw -= other._mem.raw
 
-    cdef MoneyRaw raw_int128_c(self):
+    cdef MoneyRaw raw_int_c(self):
         return self._mem.raw
 
     cdef double as_f64_c(self):
@@ -1588,10 +1588,10 @@ cdef class AccountBalance:
     ) -> None:
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
-        Condition.is_true(total.raw_int128_c() >= 0, "`total` amount was negative")
-        Condition.is_true(locked.raw_int128_c() >= 0, "`locked` amount was negative")
-        Condition.is_true(free.raw_int128_c() >= 0, "`free` amount was negative")
-        Condition.is_true(total.raw_int128_c() - locked.raw_int128_c() == free.raw_int128_c(), "`total` - `locked` != `free` amount")
+        Condition.is_true(total.raw_int_c() >= 0, "`total` amount was negative")
+        Condition.is_true(locked.raw_int_c() >= 0, "`locked` amount was negative")
+        Condition.is_true(free.raw_int_c() >= 0, "`free` amount was negative")
+        Condition.is_true(total.raw_int_c() - locked.raw_int_c() == free.raw_int_c(), "`total` - `locked` != `free` amount")
 
         self.total = total
         self.locked = locked
@@ -1688,8 +1688,8 @@ cdef class MarginBalance:
         InstrumentId instrument_id = None,
     ) -> None:
         Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
-        Condition.is_true(initial.raw_int128_c() >= 0, "initial margin was negative")
-        Condition.is_true(maintenance.raw_int128_c() >= 0, "maintenance margin was negative")
+        Condition.is_true(initial.raw_int_c() >= 0, "initial margin was negative")
+        Condition.is_true(maintenance.raw_int_c() >= 0, "maintenance margin was negative")
 
         self.initial = initial
         self.maintenance = maintenance

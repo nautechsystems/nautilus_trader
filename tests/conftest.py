@@ -36,7 +36,7 @@ def bypass_logging() -> None:
     """
     init_logging(
         level_stdout=LogLevel.DEBUG,
-        bypass=False,  # Set this to False to see logging in tests
+        bypass=True,  # Set this to False to see logging in tests
     )
     # Uncomment below for tracing logs from Rust
     # from nautilus_trader.core import nautilus_pyo3
