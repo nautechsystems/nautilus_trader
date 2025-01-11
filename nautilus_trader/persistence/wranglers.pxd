@@ -33,19 +33,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 cdef class OrderBookDeltaDataWrangler:
     cdef readonly Instrument instrument
 
-    cpdef OrderBookDelta _build_delta_from_raw(
-        self,
-        BookAction action,
-        OrderSide side,
-        PriceRaw price_raw,
-        QuantityRaw size_raw,
-        uint64_t order_id,
-        uint8_t flags,
-        uint64_t sequence,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    )
-
     cpdef OrderBookDelta _build_delta(
         self,
         BookAction action,
@@ -63,16 +50,6 @@ cdef class OrderBookDeltaDataWrangler:
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument
 
-    cpdef QuoteTick _build_tick_from_raw(
-        self,
-        PriceRaw bid_price_raw,
-        PriceRaw ask_price_raw,
-        QuantityRaw bid_size_raw,
-        QuantityRaw ask_size_raw,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    )
-
     cpdef QuoteTick _build_tick(
         self,
         double bid_price,
@@ -87,16 +64,6 @@ cdef class QuoteTickDataWrangler:
 cdef class TradeTickDataWrangler:
     cdef readonly Instrument instrument
     cdef readonly processed_data
-
-    cpdef TradeTick _build_tick_from_raw(
-        self,
-        PriceRaw price_raw,
-        QuantityRaw size_raw,
-        AggressorSide aggressor_side,
-        str trade_id,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    )
 
     cpdef TradeTick _build_tick(
         self,

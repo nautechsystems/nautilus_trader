@@ -35,6 +35,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport DEPTH10_LEN
+from nautilus_trader.core.rust.model cimport SCALAR
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Bar_t
@@ -1193,11 +1194,11 @@ cdef class Bar(Data):
         BarType bar_type,
         uint8_t price_prec,
         uint8_t size_prec,
-        PriceRaw[:] opens,
-        PriceRaw[:] highs,
-        PriceRaw[:] lows,
-        PriceRaw[:] closes,
-        QuantityRaw[:] volumes,
+        double[:] opens,
+        double[:] highs,
+        double[:] lows,
+        double[:] closes,
+        double[:] volumes,
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
@@ -1212,26 +1213,26 @@ cdef class Bar(Data):
 
         cdef:
             int i
-            Price_t open_price
-            Price_t high_price
-            Price_t low_price
-            Price_t close_price
-            Quantity_t volume_qty
+            Price open_price
+            Price high_price
+            Price low_price
+            Price close_price
+            Quantity volume_qty
             Bar bar
         for i in range(count):
-            open_price = price_new(opens[i], price_prec)
-            high_price = price_new(highs[i], price_prec)
-            low_price = price_new(lows[i], price_prec)
-            close_price = price_new(closes[i], price_prec)
-            volume_qty = quantity_new(volumes[i], size_prec)
+            open_price = Price(opens[i], price_prec)
+            high_price = Price(highs[i], price_prec)
+            low_price = Price(lows[i], price_prec)
+            close_price = Price(closes[i], price_prec)
+            volume_qty = Quantity(volumes[i], size_prec)
             bar = Bar.__new__(Bar)
             bar._mem = bar_new(
                 bar_type._mem,
-                open_price,
-                high_price,
-                low_price,
-                close_price,
-                volume_qty,
+                open_price._mem,
+                high_price._mem,
+                low_price._mem,
+                close_price._mem,
+                volume_qty._mem,
                 ts_events[i],
                 ts_inits[i],
             )
@@ -1244,11 +1245,11 @@ cdef class Bar(Data):
         BarType bar_type,
         uint8_t price_prec,
         uint8_t size_prec,
-        PriceRaw[:] opens,
-        PriceRaw[:] highs,
-        PriceRaw[:] lows,
-        PriceRaw[:] closes,
-        QuantityRaw[:] volumes,
+        double[:] opens,
+        double[:] highs,
+        double[:] lows,
+        double[:] closes,
+        double[:] volumes,
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ) -> list[Bar]:
@@ -3846,10 +3847,10 @@ cdef class QuoteTick(Data):
         InstrumentId instrument_id,
         uint8_t price_prec,
         uint8_t size_prec,
-        PriceRaw[:] bid_prices_raw,
-        PriceRaw[:] ask_prices_raw,
-        QuantityRaw[:] bid_sizes_raw,
-        QuantityRaw[:] ask_sizes_raw,
+        double[:] bid_prices_raw,
+        double[:] ask_prices_raw,
+        double[:] bid_sizes_raw,
+        double[:] ask_sizes_raw,
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
@@ -3861,24 +3862,24 @@ cdef class QuoteTick(Data):
 
         cdef:
             int i
-            cdef Price_t bid_price
-            cdef Price_t ask_price
-            cdef Quantity_t bid_size
-            cdef Quantity_t ask_size
+            cdef Price bid_price
+            cdef Price ask_price
+            cdef Quantity bid_size
+            cdef Quantity ask_size
             QuoteTick quote
         for i in range(count):
-            bid_price = price_new(bid_prices_raw[i], price_prec)
-            ask_price = price_new(ask_prices_raw[i], price_prec)
-            bid_size = quantity_new(bid_sizes_raw[i], size_prec)
-            ask_size = quantity_new(ask_sizes_raw[i], size_prec)
+            bid_price = Price(bid_prices_raw[i], price_prec)
+            ask_price = Price(ask_prices_raw[i], price_prec)
+            bid_size = Quantity(bid_sizes_raw[i], size_prec)
+            ask_size = Quantity(ask_sizes_raw[i], size_prec)
 
             quote = QuoteTick.__new__(QuoteTick)
             quote._mem = quote_tick_new(
                 instrument_id._mem,
-                bid_price,
-                ask_price,
-                bid_size,
-                ask_size,
+                bid_price._mem,
+                ask_price._mem,
+                bid_size._mem,
+                ask_size._mem,
                 ts_events[i],
                 ts_inits[i],
             )
@@ -4432,8 +4433,8 @@ cdef class TradeTick(Data):
         InstrumentId instrument_id,
         uint8_t price_prec,
         uint8_t size_prec,
-        PriceRaw[:] prices_raw,
-        QuantityRaw[:] sizes_raw,
+        double[:] prices_raw,
+        double[:] sizes_raw,
         uint8_t[:] aggressor_sides,
         list[str] trade_ids,
         uint64_t[:] ts_events,
@@ -4447,22 +4448,22 @@ cdef class TradeTick(Data):
 
         cdef:
             int i
-            Price_t price
-            Quantity_t size
+            Price price
+            Quantity size
             AggressorSide aggressor_side
             TradeId trade_id
             TradeTick trade
         for i in range(count):
-            price = price_new(prices_raw[i], price_prec)
-            size = quantity_new(sizes_raw[i], size_prec)
+            price = Price(prices_raw[i], price_prec)
+            size = Quantity(sizes_raw[i], size_prec)
             Condition.positive_int(size.raw, "size")
             aggressor_side = <AggressorSide>aggressor_sides[i]
             trade_id = TradeId(trade_ids[i])
             trade = TradeTick.__new__(TradeTick)
             trade._mem = trade_tick_new(
                 instrument_id._mem,
-                price,
-                size,
+                price._mem,
+                size._mem,
                 aggressor_side,
                 trade_id._mem,
                 ts_events[i],
@@ -4477,8 +4478,8 @@ cdef class TradeTick(Data):
         InstrumentId instrument_id,
         uint8_t price_prec,
         uint8_t size_prec,
-        PriceRaw[:] prices_raw,
-        QuantityRaw[:] sizes_raw,
+        double[:] prices_raw,
+        double[:] sizes_raw,
         uint8_t[:] aggressor_sides,
         list[str] trade_ids,
         uint64_t[:] ts_events,
