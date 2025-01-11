@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 
 ### Documentation Updates
 None
