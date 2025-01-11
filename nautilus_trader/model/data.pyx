@@ -148,6 +148,8 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.objects cimport price_raw_new
+from nautilus_trader.model.objects cimport quantity_raw_new
 
 
 cdef inline BookOrder order_from_mem_c(BookOrder_t mem):
@@ -3647,16 +3649,16 @@ cdef class QuoteTick(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        cdef Price bid_price = Price.from_raw_c(state[1], state[3])
-        cdef Price ask_price = Price.from_raw_c(state[2], state[4])
-        cdef Quantity bid_size = Quantity.from_raw_c(state[5], state[7])
-        cdef Quantity ask_size = Quantity.from_raw_c(state[6], state[8])
+        cdef Price_t bid_price = price_raw_new(state[1], state[3])
+        cdef Price_t ask_price = price_raw_new(state[2], state[4])
+        cdef Quantity_t bid_size = quantity_raw_new(state[5], state[7])
+        cdef Quantity_t ask_size = quantity_raw_new(state[6], state[8])
         self._mem = quote_tick_new(
             instrument_id._mem,
-            bid_price._mem,
-            ask_price._mem,
-            bid_size._mem,
-            ask_size._mem,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
             state[9],
             state[10],
         )
@@ -3813,29 +3815,17 @@ cdef class QuoteTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef Price_t bid_price_mem
-        bid_price_mem.raw = bid_price_raw
-        bid_price_mem.precision = bid_price_prec
-
-        cdef Price_t ask_price_mem
-        ask_price_mem.raw = ask_price_raw
-        ask_price_mem.precision = ask_price_prec
-
-        cdef Quantity_t bid_size_mem
-        bid_size_mem.raw = bid_size_raw
-        bid_size_mem.precision = bid_size_prec
-
-        cdef Quantity_t ask_size_mem
-        ask_size_mem.raw = ask_size_raw
-        ask_size_mem.precision = ask_size_prec
-
+        cdef Price_t bid_price = price_raw_new(bid_price_raw, bid_price_prec)
+        cdef Price_t ask_price = price_raw_new(ask_price_raw, ask_price_prec)
+        cdef Quantity_t bid_size = quantity_raw_new(bid_size_raw, bid_size_prec)
+        cdef Quantity_t ask_size = quantity_raw_new(ask_size_raw, ask_size_prec)
         cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
         quote._mem = quote_tick_new(
             instrument_id._mem,
-            bid_price_mem,
-            ask_price_mem,
-            bid_size_mem,
-            ask_size_mem,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
             ts_event,
             ts_init,
         )
@@ -3861,28 +3851,24 @@ cdef class QuoteTick(Data):
 
         cdef:
             int i
-            cdef Price_t bid_price_mem
-            cdef Price_t ask_price_mem
-            cdef Quantity_t bid_size_mem
-            cdef Quantity_t ask_size_mem
+            cdef Price_t bid_price
+            cdef Price_t ask_price
+            cdef Quantity_t bid_size
+            cdef Quantity_t ask_size
             QuoteTick quote
         for i in range(count):
-            bid_price_mem.raw = bid_prices_raw[i]
-            bid_price_mem.precision = price_prec
-            ask_price_mem.raw = ask_prices_raw[i]
-            ask_price_mem.precision = price_prec
-            bid_size_mem.raw = bid_sizes_raw[i]
-            bid_size_mem.precision = size_prec
-            ask_size_mem.raw = ask_sizes_raw[i]
-            ask_size_mem.precision = size_prec
+            bid_price = price_raw_new(bid_prices_raw[i], price_prec)
+            ask_price = price_raw_new(ask_prices_raw[i], price_prec)
+            bid_size = quantity_raw_new(bid_sizes_raw[i], size_prec)
+            ask_size = quantity_raw_new(ask_sizes_raw[i], size_prec)
 
             quote = QuoteTick.__new__(QuoteTick)
             quote._mem = quote_tick_new(
                 instrument_id._mem,
-                bid_price_mem,
-                ask_price_mem,
-                bid_size_mem,
-                ask_size_mem,
+                bid_price,
+                ask_price,
+                bid_size,
+                ask_size,
                 ts_events[i],
                 ts_inits[i],
             )
@@ -4254,10 +4240,8 @@ cdef class TradeTick(Data):
 
         self._mem = trade_tick_new(
             instrument_id._mem,
-            price._mem.raw,
-            price._mem.precision,
-            size._mem.raw,
-            size._mem.precision,
+            price._mem,
+            size._mem,
             aggressor_side,
             trade_id._mem,
             ts_event,
@@ -4282,12 +4266,13 @@ cdef class TradeTick(Data):
         Condition.positive_int(size_raw, "state[3] (size_raw)")
 
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        cdef Price_t price = price_raw_new(state[1], state[2])
+        cdef Quantity_t size = quantity_raw_new(state[3], state[4])
+
         self._mem = trade_tick_new(
             instrument_id._mem,
-            state[1],
-            state[2],
-            size_raw,
-            state[4],
+            price,
+            size,
             state[5],
             TradeId(state[6])._mem,
             state[7],
@@ -4418,13 +4403,15 @@ cdef class TradeTick(Data):
         uint64_t ts_init,
     ):
         Condition.positive_int(size_raw, "size_raw")
+
+        cdef Price_t price = price_raw_new(price_raw, price_prec)
+        cdef Quantity_t size = quantity_raw_new(size_raw, size_prec)
+
         cdef TradeTick trade = TradeTick.__new__(TradeTick)
         trade._mem = trade_tick_new(
             instrument_id._mem,
-            price_raw,
-            price_prec,
-            size_raw,
-            size_prec,
+            price,
+            size,
             aggressor_side,
             trade_id._mem,
             ts_event,
@@ -4452,22 +4439,22 @@ cdef class TradeTick(Data):
 
         cdef:
             int i
-            uint128_t size_raw
+            Price_t price
+            Quantity_t size
             AggressorSide aggressor_side
             TradeId trade_id
             TradeTick trade
         for i in range(count):
-            size_raw = sizes_raw[i]
-            Condition.positive_int(size_raw, "size_raw")
+            price = price_raw_new(prices_raw[i], price_prec)
+            size = quantity_raw_new(sizes_raw[i], size_prec)
+            Condition.positive_int(size.raw, "size")
             aggressor_side = <AggressorSide>aggressor_sides[i]
             trade_id = TradeId(trade_ids[i])
             trade = TradeTick.__new__(TradeTick)
             trade._mem = trade_tick_new(
                 instrument_id._mem,
-                prices_raw[i],
-                price_prec,
-                size_raw,
-                size_prec,
+                price,
+                size,
                 aggressor_side,
                 trade_id._mem,
                 ts_events[i],

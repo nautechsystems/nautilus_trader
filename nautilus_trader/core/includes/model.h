@@ -1981,10 +1981,8 @@ uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
 const char *quote_tick_to_cstr(const struct QuoteTick_t *quote);
 
 struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
-                                  PriceRaw price_raw,
-                                  uint8_t price_prec,
-                                  QuantityRaw size_raw,
-                                  uint8_t size_prec,
+                                  struct Price_t price,
+                                  struct Quantity_t size,
                                   enum AggressorSide aggressor_side,
                                   struct TradeId_t trade_id,
                                   uint64_t ts_event,

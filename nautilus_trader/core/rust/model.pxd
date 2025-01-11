@@ -1188,10 +1188,8 @@ cdef extern from "../includes/model.h":
     const char *quote_tick_to_cstr(const QuoteTick_t *quote);
 
     TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
-                               PriceRaw price_raw,
-                               uint8_t price_prec,
-                               QuantityRaw size_raw,
-                               uint8_t size_prec,
+                               Price_t price,
+                               Quantity_t size,
                                AggressorSide aggressor_side,
                                TradeId_t trade_id,
                                uint64_t ts_event,

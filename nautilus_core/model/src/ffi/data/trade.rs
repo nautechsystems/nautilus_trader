@@ -25,20 +25,15 @@ use crate::{
     data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{
-        price::{Price, PriceRaw},
-        quantity::{Quantity, QuantityRaw},
-    },
+    types::{Price, Quantity},
 };
 
 #[no_mangle]
 #[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn trade_tick_new(
     instrument_id: InstrumentId,
-    price_raw: PriceRaw,
-    price_prec: u8,
-    size_raw: QuantityRaw,
-    size_prec: u8,
+    price: Price,
+    size: Quantity,
     aggressor_side: AggressorSide,
     trade_id: TradeId,
     ts_event: u64,
@@ -46,8 +41,8 @@ pub extern "C" fn trade_tick_new(
 ) -> TradeTick {
     TradeTick::new(
         instrument_id,
-        Price::from_raw(price_raw, price_prec),
-        Quantity::from_raw(size_raw, size_prec),
+        price,
+        size,
         aggressor_side,
         trade_id,
         ts_event.into(),
