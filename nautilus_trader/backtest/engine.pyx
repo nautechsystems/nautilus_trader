@@ -1080,7 +1080,7 @@ cdef class BacktestEngine:
         else:
             end = pd.to_datetime(end, utc=True)
             end_ns = end.value
-        Condition.is_true(start_ns < end_ns, "start was >= end")
+        Condition.is_true(start_ns <= end_ns, "start was > end")
         Condition.not_empty(self._data, "data")
 
         # Set clocks
