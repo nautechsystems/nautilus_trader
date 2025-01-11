@@ -1140,12 +1140,10 @@ cdef extern from "../includes/model.h":
 
     const uint32_t *orderbook_depth10_ask_counts_array(const OrderBookDepth10_t *depth);
 
-    BookOrder_t book_order_from_raw(OrderSide order_side,
-                                    PriceRaw price_raw,
-                                    uint8_t price_prec,
-                                    QuantityRaw size_raw,
-                                    uint8_t size_prec,
-                                    uint64_t order_id);
+    BookOrder_t book_order_new(OrderSide order_side,
+                               Price_t price,
+                               Quantity_t size,
+                               uint64_t order_id);
 
     uint8_t book_order_eq(const BookOrder_t *lhs, const BookOrder_t *rhs);
 

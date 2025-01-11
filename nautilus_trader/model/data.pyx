@@ -84,8 +84,8 @@ from nautilus_trader.core.rust.model cimport bar_type_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_debug_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_eq
 from nautilus_trader.core.rust.model cimport book_order_exposure
-from nautilus_trader.core.rust.model cimport book_order_from_raw
 from nautilus_trader.core.rust.model cimport book_order_hash
+from nautilus_trader.core.rust.model cimport book_order_new
 from nautilus_trader.core.rust.model cimport book_order_signed_size
 from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport int128_t
@@ -1619,12 +1619,10 @@ cdef class BookOrder:
         Quantity size not None,
         uint64_t order_id,
     ) -> None:
-        self._mem = book_order_from_raw(
+        self._mem = book_order_new(
             side,
-            price._mem.raw,
-            price._mem.precision,
-            size._mem.raw,
-            size._mem.precision,
+            price._mem,
+            size._mem,
             order_id,
         )
 
@@ -1633,18 +1631,18 @@ cdef class BookOrder:
             self._mem.side,
             self._mem.price.raw,
             self._mem.price.precision,
-            self._mem.size.raw ,
+            self._mem.size.raw,
             self._mem.size.precision,
             self._mem.order_id,
         )
 
     def __setstate__(self, state):
-        self._mem = book_order_from_raw(
+        cdef Price_t price = price_raw_new(state[1], state[2])
+        cdef Quantity_t size = quantity_raw_new(state[3], state[4])
+        self._mem = book_order_new(
             state[0],
-            state[1],
-            state[2],
-            state[3],
-            state[4],
+            price,
+            size,
             state[5],
         )
 
@@ -1666,13 +1664,13 @@ cdef class BookOrder:
         uint8_t size_prec,
         uint64_t order_id,
     ):
+        cdef Price_t price = price_raw_new(price_raw, price_prec)
+        cdef Quantity_t size = quantity_raw_new(size_raw, size_prec)
         cdef BookOrder order = BookOrder.__new__(BookOrder)
-        order._mem = book_order_from_raw(
+        order._mem = book_order_new(
             side,
-            price_raw,
-            price_prec,
-            size_raw,
-            size_prec,
+            price,
+            size,
             order_id,
         )
         return order
@@ -1884,18 +1882,15 @@ cdef class OrderBookDelta(Data):
         uint64_t ts_init,
     ) -> None:
         # Placeholder for now
-        cdef BookOrder_t book_order = order._mem if order is not None else book_order_from_raw(
+        cdef BookOrder_t book_order = order._mem if order is not None else book_order_new(
             OrderSide.NO_ORDER_SIDE,
-            0,
-            0,
-            0,
-            0,
+            price_raw_new(0, 0),
+            quantity_raw_new(0, 0),
             0,
         )
 
-        cdef uint128_t size_raw = book_order.size.raw
         if action == BookAction.ADD or action == BookAction.UPDATE:
-            Condition.positive_int(size_raw, "size_raw")
+            Condition.positive_int(book_order.size.raw, "size")
 
         self._mem = orderbook_delta_new(
             instrument_id._mem,
@@ -1925,17 +1920,17 @@ cdef class OrderBookDelta(Data):
 
     def __setstate__(self, state):
         cdef BookAction action = state[1]
-        cdef uint128_t size_raw = state[5]
+        cdef Price_t price = price_raw_new(state[3], state[4])
+        cdef Quantity_t size = quantity_raw_new(state[5], state[6])
+
         if action == BookAction.ADD or action == BookAction.UPDATE:
-            Condition.positive_int(size_raw, "size_raw")
+            Condition.positive_int(size.raw, "size")
 
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        cdef BookOrder_t book_order = book_order_from_raw(
+        cdef BookOrder_t book_order = book_order_new(
             state[2],
-            state[3],
-            state[4],
-            size_raw,
-            state[6],
+            price,
+            size,
             state[7],
         )
         self._mem = orderbook_delta_new(
@@ -2116,12 +2111,12 @@ cdef class OrderBookDelta(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef BookOrder_t order_mem = book_order_from_raw(
+        cdef Price_t price = price_raw_new(price_raw, price_prec)
+        cdef Quantity_t size = quantity_raw_new(size_raw, size_prec)
+        cdef BookOrder_t book_order = book_order_new(
             side,
-            price_raw,
-            price_prec,
-            size_raw,
-            size_prec,
+            price,
+            size,
             order_id,
         )
 
@@ -2132,7 +2127,7 @@ cdef class OrderBookDelta(Data):
         delta._mem = orderbook_delta_new(
             instrument_id._mem,
             action,
-            order_mem,
+            book_order,
             flags,
             sequence,
             ts_event,

@@ -1927,12 +1927,10 @@ const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10
 
 const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
 
-struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
-                                       PriceRaw price_raw,
-                                       uint8_t price_prec,
-                                       QuantityRaw size_raw,
-                                       uint8_t size_prec,
-                                       uint64_t order_id);
+struct BookOrder_t book_order_new(enum OrderSide order_side,
+                                  struct Price_t price,
+                                  struct Quantity_t size,
+                                  uint64_t order_id);
 
 uint8_t book_order_eq(const struct BookOrder_t *lhs, const struct BookOrder_t *rhs);
 

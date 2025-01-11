@@ -20,6 +20,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport int128_t
+from nautilus_trader.core.rust.model cimport uint128_t
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -35,8 +37,8 @@ cdef class OrderBookDeltaDataWrangler:
         self,
         BookAction action,
         OrderSide side,
-        int64_t price_raw,
-        uint64_t size_raw,
+        int128_t price_raw,
+        uint128_t size_raw,
         uint64_t order_id,
         uint8_t flags,
         uint64_t sequence,
@@ -63,10 +65,10 @@ cdef class QuoteTickDataWrangler:
 
     cpdef QuoteTick _build_tick_from_raw(
         self,
-        int64_t bid_price_raw,
-        int64_t ask_price_raw,
-        uint64_t bid_size_raw,
-        uint64_t ask_size_raw,
+        int128_t bid_price_raw,
+        int128_t ask_price_raw,
+        uint128_t bid_size_raw,
+        uint128_t ask_size_raw,
         uint64_t ts_event,
         uint64_t ts_init,
     )
@@ -88,8 +90,8 @@ cdef class TradeTickDataWrangler:
 
     cpdef TradeTick _build_tick_from_raw(
         self,
-        int64_t price_raw,
-        uint64_t size_raw,
+        int128_t price_raw,
+        uint128_t size_raw,
         AggressorSide aggressor_side,
         str trade_id,
         uint64_t ts_event,
