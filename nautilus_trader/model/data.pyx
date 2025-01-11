@@ -54,7 +54,6 @@ from nautilus_trader.core.rust.model cimport RecordFlag
 from nautilus_trader.core.rust.model cimport bar_eq
 from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
-from nautilus_trader.core.rust.model cimport bar_new_from_raw
 from nautilus_trader.core.rust.model cimport bar_specification_eq
 from nautilus_trader.core.rust.model cimport bar_specification_ge
 from nautilus_trader.core.rust.model cimport bar_specification_gt
@@ -987,10 +986,16 @@ cdef class Bar(Data):
         )
 
     def __setstate__(self, state):
+        cdef InstrumentId instrument_id
+        cdef uint8_t price_prec
+        cdef uint8_t size_prec
+
         if len(state) == 14:
             instrument_id = InstrumentId.from_str_c(state[0])
+            price_prec = state[9]
+            size_prec = state[11]
 
-            self._mem = bar_new_from_raw(
+            self._mem = bar_new(
                 bar_type_new(
                     instrument_id._mem,
                     bar_specification_new(
@@ -1000,20 +1005,20 @@ cdef class Bar(Data):
                     ),
                     state[4],
                 ),
-                state[5],
-                state[6],
-                state[7],
-                state[8],
-                state[9],
-                state[10],
-                state[11],
+                price_raw_new(state[5], price_prec),
+                price_raw_new(state[6], price_prec),
+                price_raw_new(state[7], price_prec),
+                price_raw_new(state[8], price_prec),
+                quantity_raw_new(state[10], size_prec),
                 state[12],
                 state[13],
             )
         else:
             instrument_id = InstrumentId.from_str_c(state[0])
+            price_prec = state[12]
+            size_prec = state[14]
 
-            self._mem = bar_new_from_raw(
+            self._mem = bar_new(
                 bar_type_new_composite(
                     instrument_id._mem,
                     bar_specification_new(
@@ -1027,13 +1032,11 @@ cdef class Bar(Data):
                     state[6],
                     state[7]
                 ),
-                state[8],
-                state[9],
-                state[10],
-                state[11],
-                state[12],
-                state[13],
-                state[14],
+                price_raw_new(state[8], price_prec),
+                price_raw_new(state[9], price_prec),
+                price_raw_new(state[10], price_prec),
+                price_raw_new(state[11], price_prec),
+                quantity_raw_new(state[13], size_prec),
                 state[15],
                 state[16],
             )
@@ -1166,19 +1169,23 @@ cdef class Bar(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        cdef Price_t open_price = price_raw_new(open, price_prec)
+        cdef Price_t high_price = price_raw_new(high, price_prec)
+        cdef Price_t low_price = price_raw_new(low, price_prec)
+        cdef Price_t close_price = price_raw_new(close, price_prec)
+        cdef Quantity_t volume_qty = quantity_raw_new(volume, size_prec)
         cdef Bar bar = Bar.__new__(Bar)
-        bar._mem = bar_new_from_raw(
+        bar._mem = bar_new(
             bar_type._mem,
-            open,
-            high,
-            low,
-            close,
-            price_prec,
-            volume,
-            size_prec,
+            open_price,
+            high_price,
+            low_price,
+            close_price,
+            volume_qty,
             ts_event,
             ts_init,
         )
+
         return bar
 
     @staticmethod
@@ -1186,11 +1193,11 @@ cdef class Bar(Data):
         BarType bar_type,
         uint8_t price_prec,
         uint8_t size_prec,
-        int64_t[:] opens,
-        int64_t[:] highs,
-        int64_t[:] lows,
-        int64_t[:] closes,
-        uint64_t[:] volumes,
+        int128_t[:] opens,
+        int128_t[:] highs,
+        int128_t[:] lows,
+        int128_t[:] closes,
+        uint128_t[:] volumes,
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
@@ -1205,18 +1212,26 @@ cdef class Bar(Data):
 
         cdef:
             int i
+            Price_t open_price
+            Price_t high_price
+            Price_t low_price
+            Price_t close_price
+            Quantity_t volume_qty
             Bar bar
         for i in range(count):
+            open_price = price_raw_new(opens[i], price_prec)
+            high_price = price_raw_new(highs[i], price_prec)
+            low_price = price_raw_new(lows[i], price_prec)
+            close_price = price_raw_new(closes[i], price_prec)
+            volume_qty = quantity_raw_new(volumes[i], size_prec)
             bar = Bar.__new__(Bar)
-            bar._mem = bar_new_from_raw(
+            bar._mem = bar_new(
                 bar_type._mem,
-                opens[i],
-                highs[i],
-                lows[i],
-                closes[i],
-                price_prec,
-                volumes[i],
-                size_prec,
+                open_price,
+                high_price,
+                low_price,
+                close_price,
+                volume_qty,
                 ts_events[i],
                 ts_inits[i],
             )
@@ -1229,11 +1244,11 @@ cdef class Bar(Data):
         BarType bar_type,
         uint8_t price_prec,
         uint8_t size_prec,
-        int64_t[:] opens,
-        int64_t[:] highs,
-        int64_t[:] lows,
-        int64_t[:] closes,
-        uint64_t[:] volumes,
+        int128_t[:] opens,
+        int128_t[:] highs,
+        int128_t[:] lows,
+        int128_t[:] closes,
+        uint128_t[:] volumes,
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ) -> list[Bar]:
@@ -1290,12 +1305,12 @@ cdef class Bar(Data):
     @staticmethod
     def from_raw(
         BarType bar_type,
-        int64_t open,
-        int64_t high,
-        int64_t low,
-        int64_t close,
+        int128_t open,
+        int128_t high,
+        int128_t low,
+        int128_t close,
         uint8_t price_prec,
-        uint64_t volume,
+        uint128_t volume,
         uint8_t size_prec,
         uint64_t ts_event,
         uint64_t ts_init,

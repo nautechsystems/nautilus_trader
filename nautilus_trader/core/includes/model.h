@@ -1846,17 +1846,6 @@ struct Bar_t bar_new(struct BarType_t bar_type,
                      uint64_t ts_event,
                      uint64_t ts_init);
 
-struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
-                              PriceRaw open,
-                              PriceRaw high,
-                              PriceRaw low,
-                              PriceRaw close,
-                              uint8_t price_prec,
-                              QuantityRaw volume,
-                              uint8_t size_prec,
-                              uint64_t ts_event,
-                              uint64_t ts_init);
-
 uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);

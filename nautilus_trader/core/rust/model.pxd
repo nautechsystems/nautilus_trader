@@ -1066,17 +1066,6 @@ cdef extern from "../includes/model.h":
                   uint64_t ts_event,
                   uint64_t ts_init);
 
-    Bar_t bar_new_from_raw(BarType_t bar_type,
-                           PriceRaw open,
-                           PriceRaw high,
-                           PriceRaw low,
-                           PriceRaw close,
-                           uint8_t price_prec,
-                           QuantityRaw volume,
-                           uint8_t size_prec,
-                           uint64_t ts_event,
-                           uint64_t ts_init);
-
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
     uint64_t bar_hash(const Bar_t *bar);

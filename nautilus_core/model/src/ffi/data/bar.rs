@@ -29,10 +29,7 @@ use crate::{
     data::bar::{Bar, BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{
-        price::{Price, PriceRaw},
-        quantity::{Quantity, QuantityRaw},
-    },
+    types::{Price, Quantity},
 };
 
 #[no_mangle]
@@ -236,32 +233,6 @@ pub extern "C" fn bar_new(
         low,
         close,
         volume,
-        ts_event,
-        ts_init,
-    }
-}
-
-#[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn bar_new_from_raw(
-    bar_type: BarType,
-    open: PriceRaw,
-    high: PriceRaw,
-    low: PriceRaw,
-    close: PriceRaw,
-    price_prec: u8,
-    volume: QuantityRaw,
-    size_prec: u8,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> Bar {
-    Bar {
-        bar_type,
-        open: Price::from_raw(open, price_prec),
-        high: Price::from_raw(high, price_prec),
-        low: Price::from_raw(low, price_prec),
-        close: Price::from_raw(close, price_prec),
-        volume: Quantity::from_raw(volume, size_prec),
         ts_event,
         ts_init,
     }
