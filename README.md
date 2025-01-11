@@ -40,7 +40,7 @@ highest level, with the aim of supporting Python-native, mission-critical, tradi
 and live deployment workloads.
 
 The platform is also universal and asset-class-agnostic — with any REST, WebSocket or FIX API able to be integrated via modular
-adapters. It supports high-frequency trading operations across a wide range of asset classes and instrument types
+adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
 ## Features
@@ -330,7 +330,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 > [!TIP]
 >
-> Running `make build-debug` to compile after changes to Rust or Cython code is currently the most efficient workflow when developing.
+> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
 
 ## Examples
 
@@ -389,7 +389,7 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 
 > [!TIP]
 >
-> Rust tests will only pass when run via `cargo-nextest`.
+> Run Rust tests with `make cargo-test`, as they only pass via **cargo-nextest**.
 
 ## Contributing
 

@@ -15,7 +15,7 @@ highest level, with the aim of supporting Python-native, mission-critical, tradi
 and live deployment workloads.
 
 The platform is also universal and asset-class-agnostic — with any REST, WebSocket or FIX API able to be integrated via modular
-adapters. It supports high-frequency trading operations across a wide range of asset classes and instrument types
+adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
 ## Features
