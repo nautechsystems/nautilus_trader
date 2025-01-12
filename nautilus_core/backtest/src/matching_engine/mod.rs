@@ -909,7 +909,19 @@ impl OrderMatchingEngine {
                 total_size = total_size.add(*fill_qty);
             }
 
-            if order.leaves_qty() > total_size {}
+            if order.leaves_qty() > total_size {
+                // cannot fill full size, so we reject the order if only initialized
+                // and we cancel it if it is already accepted
+                if order.is_active_local() {
+                    self.generate_order_rejected(
+                        order,
+                        "Fill or kill order cannot be filled at full amount".into(),
+                    );
+                } else {
+                    self.cancel_order(order, None);
+                }
+                return;
+            }
         }
 
         if fills.is_empty() {
@@ -1099,7 +1111,29 @@ impl OrderMatchingEngine {
 
     // -- EVENT HANDLING -----------------------------------------------------
 
-    fn accept_order(&mut self, order: &OrderAny) {
+    fn accept_order(&mut self, order: &mut OrderAny) {
+        if order.is_closed() {
+            // Temporary guard to prevent invalid processing
+            return;
+        }
+        if order.status() != OrderStatus::Accepted {
+            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+            self.generate_order_accepted(order, venue_order_id);
+
+            if (order.order_type() == OrderType::TrailingStopLimit
+                || order.order_type() == OrderType::TrailingStopMarket)
+                && order.trigger_price().is_none()
+            {
+                match order.order_type() {
+                    OrderType::TrailingStopLimit => self
+                        .update_trailing_stop_limit(&TrailingStopLimitOrder::from(order.clone())),
+                    OrderType::TrailingStopMarket => self
+                        .update_trailing_stop_market(&TrailingStopMarketOrder::from(order.clone())),
+                    _ => {}
+                }
+            }
+        }
+
         let _ = self.core.add_order(order.to_owned().into());
     }
 

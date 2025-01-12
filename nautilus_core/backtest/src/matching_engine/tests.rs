@@ -31,7 +31,7 @@ use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{
         AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
-        OrderType,
+        OrderType, TimeInForce,
     },
     events::{
         order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
@@ -752,6 +752,67 @@ fn test_matching_core_bid_ask_initialized(
 }
 
 #[rstest]
+fn test_matching_engine_not_enough_quantity_filled_fok_order(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    mut msgbus: MessageBus,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    // create FOK market order with quantity 2 which wont be enough to fill the order
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .time_in_force(TimeInForce::Fok)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut market_order, account_id);
+
+    // We need to test that one Order rejected event was generated
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first_message = saved_messages.first().unwrap();
+    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    let order_rejected = match first_message {
+        OrderEventAny::Rejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(
+        order_rejected.reason,
+        Ustr::from("Fill or kill order cannot be filled at full amount")
+    );
+}
+
+#[rstest]
 fn test_matching_engine_valid_market_buy(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: ShareableMessageHandler,
@@ -759,12 +820,10 @@ fn test_matching_engine_valid_market_buy(
     account_id: AccountId,
     time: AtomicTime,
 ) {
-    // Register saving message handler to exec engine endpoint
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
         order_event_handler.clone(),
     );
-
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
         Rc::new(RefCell::new(msgbus)),
