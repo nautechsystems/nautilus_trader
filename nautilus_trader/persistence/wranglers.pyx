@@ -417,9 +417,9 @@ cdef class QuoteTickDataWrangler:
 
         # Add default volume if not present
         if "volume" not in bid_data:
-            bid_data.loc[:, "volume"] = float(default_volume * 4.0) / SCALAR if is_raw else 1.0
+            bid_data.loc[:, "volume"] = float(default_volume * 4.0) / (SCALAR if is_raw else 1.0)
         if "volume" not in ask_data:
-            ask_data.loc[:, "volume"] = float(default_volume * 4.0) / SCALAR if is_raw else 1.0
+            ask_data.loc[:, "volume"] = float(default_volume * 4.0) / (SCALAR if is_raw else 1.0)
 
         # Standardize and preprocess data
         bid_data = preprocess_bar_data(bid_data, is_raw)
