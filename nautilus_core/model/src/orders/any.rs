@@ -735,6 +735,35 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn is_aggressive(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_aggressive(),
+            Self::LimitIfTouched(order) => order.is_aggressive(),
+            Self::Market(order) => order.is_aggressive(),
+            Self::MarketIfTouched(order) => order.is_aggressive(),
+            Self::MarketToLimit(order) => order.is_aggressive(),
+            Self::StopLimit(order) => order.is_aggressive(),
+            Self::StopMarket(order) => order.is_aggressive(),
+            Self::TrailingStopLimit(order) => order.is_aggressive(),
+            Self::TrailingStopMarket(order) => order.is_aggressive(),
+        }
+    }
+
+    pub fn is_passive(&self) -> bool {
+        match self {
+            OrderAny::Limit(order) => order.is_passive(),
+            OrderAny::LimitIfTouched(order) => order.is_passive(),
+            OrderAny::Market(order) => order.is_passive(),
+            OrderAny::MarketIfTouched(order) => order.is_passive(),
+            OrderAny::MarketToLimit(order) => order.is_passive(),
+            OrderAny::StopLimit(order) => order.is_passive(),
+            OrderAny::StopMarket(order) => order.is_passive(),
+            OrderAny::TrailingStopLimit(order) => order.is_passive(),
+            OrderAny::TrailingStopMarket(order) => order.is_passive(),
+        }
+    }
+
+    #[must_use]
     pub fn price(&self) -> Option<Price> {
         match self {
             Self::Limit(order) => Some(order.price),
@@ -1016,6 +1045,20 @@ impl OrderAny {
             Self::StopMarket(order) => order.is_quote_quantity = is_quote_quantity,
             Self::TrailingStopLimit(order) => order.is_quote_quantity = is_quote_quantity,
             Self::TrailingStopMarket(order) => order.is_quote_quantity = is_quote_quantity,
+        }
+    }
+
+    pub fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
+        match self {
+            Self::Limit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::LimitIfTouched(order) => order.liquidity_side = Some(liquidity_side),
+            Self::Market(order) => order.liquidity_side = Some(liquidity_side),
+            Self::MarketIfTouched(order) => order.liquidity_side = Some(liquidity_side),
+            Self::MarketToLimit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::StopLimit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::StopMarket(order) => order.liquidity_side = Some(liquidity_side),
+            Self::TrailingStopLimit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::TrailingStopMarket(order) => order.liquidity_side = Some(liquidity_side),
         }
     }
 }

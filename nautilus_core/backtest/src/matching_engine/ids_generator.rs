@@ -63,7 +63,7 @@ impl IdsGenerator {
         self.execution_count = 0;
     }
 
-    fn get_venue_order_id(&mut self, order: &OrderAny) -> anyhow::Result<VenueOrderId> {
+    pub fn get_venue_order_id(&mut self, order: &OrderAny) -> anyhow::Result<VenueOrderId> {
         // check existing on order
         if let Some(venue_order_id) = order.venue_order_id() {
             return Ok(venue_order_id);
@@ -83,7 +83,11 @@ impl IdsGenerator {
         Ok(venue_order_id)
     }
 
-    fn get_position_id(&mut self, order: &OrderAny, generate: Option<bool>) -> Option<PositionId> {
+    pub fn get_position_id(
+        &mut self,
+        order: &OrderAny,
+        generate: Option<bool>,
+    ) -> Option<PositionId> {
         let generate = generate.unwrap_or(true);
         if self.oms_type == OmsType::Hedging {
             {
