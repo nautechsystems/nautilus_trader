@@ -15,7 +15,7 @@
 
 //! Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 //!
-//! Handles up to 9 decimals of precision.
+//! Handles up to 16 decimals of precision.
 
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -60,7 +60,7 @@ impl Currency {
     /// This function returns an error:
     /// - If `code` is not a valid string.
     /// - If `name` is not a valid string.
-    /// - If `precision` is invalid outside the valid representable range [0, 9].
+    /// - If `precision` is invalid outside the valid representable range [0, 16].
     ///
     /// # Notes
     ///

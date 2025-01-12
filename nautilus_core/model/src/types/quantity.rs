@@ -102,8 +102,8 @@ impl Quantity {
     /// # Errors
     ///
     /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [0, 18_446_744_073].
-    /// - If `precision` is invalid outside the representable range [0, 9].
+    /// - If `value` is invalid outside the representable range [0, 34_028_236_692_093].
+    /// - If `precision` is invalid outside the representable range [0, 16].
     ///
     /// # Notes
     ///

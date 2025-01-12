@@ -74,8 +74,7 @@ impl Money {
     /// # Errors
     ///
     /// This function returns an error:
-    /// - If `amount` is invalid outside the representable range [-9_223_372_036, 9_223_372_036].
-    /// - If `precision` is invalid outside the representable range [0, 9].
+    /// - If `amount` is invalid outside the representable range [-17_014_118_346_046, 17_014_118_346_046].
     ///
     /// # Notes
     ///
