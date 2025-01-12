@@ -37,12 +37,11 @@ use crate::{
 
 /// Represents a deliverable futures contract instrument, with crypto assets as underlying and for settlement.
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct CryptoFuture {
     /// The instrument ID for the instrument.
     pub id: InstrumentId,

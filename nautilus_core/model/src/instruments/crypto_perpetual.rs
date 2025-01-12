@@ -38,12 +38,11 @@ use crate::{
 
 /// Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct CryptoPerpetual {
     /// The instrument ID for the instrument.
     pub id: InstrumentId,

@@ -42,8 +42,7 @@ iai = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
-default = ["trivial_copy", "high_precision"]
-trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
+default = ["high_precision"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",

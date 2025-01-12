@@ -981,7 +981,7 @@ cdef extern from "../includes/model.h":
 
 
     IF HIGH_PRECISION:
-        # The width in bytes for fixed-point value types in 128-bit high-precision mode.
+        # The width in bytes for fixed-point value types in 128-bit high_precision mode.
         extern const int32_t PRECISION_BYTES;
 
     IF not HIGH_PRECISION:

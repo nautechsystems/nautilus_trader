@@ -82,7 +82,7 @@ def preprocess_bar_data(data: pd.DataFrame, is_raw: bool):
     # Drop rows with NaN values in critical columns
     data = data.dropna(subset=BAR_COLUMNS)
 
-    # Scale data if raw (we have to do this now to accommodate high-precision mode)
+    # Scale data if raw (we have to do this now to accommodate high_precision mode)
     if is_raw:
         data[list(BAR_COLUMNS)] = data[list(BAR_COLUMNS)] / SCALAR
 

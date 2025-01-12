@@ -37,12 +37,11 @@ use crate::{
 
 /// Represents a generic deliverable futures contract instrument.
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct FuturesContract {
     /// The instrument ID.
     pub id: InstrumentId,

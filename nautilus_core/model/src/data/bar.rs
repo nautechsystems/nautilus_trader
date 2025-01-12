@@ -115,12 +115,13 @@ pub fn get_time_bar_start(now: DateTime<Utc>, bar_type: &BarType) -> DateTime<Ut
 /// Represents a bar aggregation specification including a step, aggregation
 /// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, Builder)]
+#[derive(
+    Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, Builder,
+)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
     pub step: NonZeroUsize,
