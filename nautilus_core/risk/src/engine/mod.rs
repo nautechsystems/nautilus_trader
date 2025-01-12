@@ -36,11 +36,11 @@ use nautilus_model::{
     orders::{OrderAny, OrderList},
     types::{Currency, Money, Price, Quantity},
 };
+use nautilus_portfolio::Portfolio;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use ustr::Ustr;
 
 pub mod config;
-// pub mod tests;
 
 type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
 type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
@@ -49,9 +49,7 @@ pub struct RiskEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
-    // Counters
-    // command_count: u64,
-    // event_count: u64,
+    portfolio: Portfolio,
     pub throttled_submit_order: Throttler<SubmitOrder, SubmitOrderFn>,
     pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn>,
     max_notional_per_order: HashMap<InstrumentId, Decimal>,
@@ -62,7 +60,7 @@ pub struct RiskEngine {
 impl RiskEngine {
     pub fn new(
         config: RiskEngineConfig,
-        // portfolio: PortfolioFacade TODO: fix after portfolio implementation
+        portfolio: Portfolio,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
@@ -85,6 +83,7 @@ impl RiskEngine {
             clock,
             cache,
             msgbus,
+            portfolio,
             throttled_submit_order,
             throttled_modify_order,
             max_notional_per_order: HashMap::new(),
@@ -501,27 +500,18 @@ impl RiskEngine {
             }
             TradingState::Reducing => {
                 if let Some(quantity) = command.quantity {
-                    if quantity > order.quantity() {
-                        // TODO: Complete this after implementing portfolio
-                        // if order.is_buy() && self.portfolio.is_net_long(instrument.id()) {
-                        //     self.reject_modify_order(
-                        //         order.clone(),
-                        //         &format!(
-                        //             "TradingState is REDUCING and update will increase exposure {}",
-                        //             instrument.id()
-                        //         ),
-                        //     );
-                        //     return; // Denied
-                        // } else if order.is_sell() && self.portfolio.is_net_short(instrument.id()) {
-                        //     self.reject_modify_order(
-                        //         order.clone(),
-                        //         &format!(
-                        //             "TradingState is REDUCING and update will increase exposure {}",
-                        //             instrument.id()
-                        //         ),
-                        //     );
-                        //     return; // Denied
-                        // }
+                    if quantity > order.quantity()
+                        && ((order.is_buy() && self.portfolio.is_net_long(&instrument.id()))
+                            || (order.is_sell() && self.portfolio.is_net_short(&instrument.id())))
+                    {
+                        self.reject_modify_order(
+                            order,
+                            &format!(
+                                "TradingState is REDUCING and update will increase exposure {}",
+                                instrument.id()
+                            ),
+                        );
+                        return; // Denied
                     }
                 }
             }
@@ -992,7 +982,7 @@ impl RiskEngine {
 
     // -- EGRESS ----------------------------------------------------------------------------------
 
-    fn execution_gateway(&self, _instrument: InstrumentAny, command: TradingCommand) {
+    fn execution_gateway(&self, instrument: InstrumentAny, command: TradingCommand) {
         match self.trading_state {
             TradingState::Halted => match command {
                 TradingCommand::SubmitOrder(submit_order) => {
@@ -1005,31 +995,48 @@ impl RiskEngine {
             },
             TradingState::Reducing => match command {
                 TradingCommand::SubmitOrder(submit_order) => {
-                    let _order = submit_order.order;
-                    // if order.is_buy() && self.portfolio.is_net_long(instrument.id()) {
-                    //     self.deny_order(order, &format!("BUY when TradingState::REDUCING and LONG {}", instrument.id()));
-                    //     return;
-                    // }
-                    // else if order.is_sell() && self.portfolio.is_net_short(instrument.id()) {
-                    //     self.deny_order(order, &format!("SELL when TradingState::REDUCING and SHORT {}", instrument.id()));
-                    //     return;
-                    // }
-                    todo!("Pending portfolio implementation");
-                    // return;
+                    let order = submit_order.order;
+                    if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
+                        self.deny_order(
+                            order,
+                            &format!(
+                                "BUY when TradingState::REDUCING and LONG {}",
+                                instrument.id()
+                            ),
+                        );
+                    } else if order.is_sell() && self.portfolio.is_net_short(&instrument.id()) {
+                        self.deny_order(
+                            order,
+                            &format!(
+                                "SELL when TradingState::REDUCING and SHORT {}",
+                                instrument.id()
+                            ),
+                        );
+                        return;
+                    }
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
                     let order_list = submit_order_list.order_list;
-                    for _order in order_list.orders {
-                        // if order.is_buy() && self.portfolio.is_net_long(instrument.id()) {
-                        //     self.deny_order_list(order_list, &format!("BUY when TradingState::REDUCING and LONG {}", instrument.id()));
-                        //     return;
-                        // }
-                        // else if order.is_sell() && self.portfolio.is_net_short(instrument.id()) {
-                        //     self.deny_order_list(order_list, &format!("SELL when TradingState::REDUCING and SHORT {}", instrument.id()));
-                        //     return;
-                        // }
-                        todo!("Pending portfolio implementation");
-                        // return;
+                    for order in &order_list.orders {
+                        if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
+                            self.deny_order_list(
+                                order_list,
+                                &format!(
+                                    "BUY when TradingState::REDUCING and LONG {}",
+                                    instrument.id()
+                                ),
+                            );
+                            return;
+                        } else if order.is_sell() && self.portfolio.is_net_short(&instrument.id()) {
+                            self.deny_order_list(
+                                order_list,
+                                &format!(
+                                    "SELL when TradingState::REDUCING and SHORT {}",
+                                    instrument.id()
+                                ),
+                            );
+                            return;
+                        }
                     }
                 }
                 _ => {}
@@ -1088,8 +1095,8 @@ mod tests {
         data::{stubs::quote_audusd, QuoteTick},
         enums::{AccountType, OrderSide, OrderType, TradingState},
         events::{
-            account::stubs::cash_account_state_million_usd, AccountState, OrderDenied,
-            OrderEventAny, OrderEventType,
+            account::stubs::cash_account_state_million_usd, AccountState, OrderAccepted,
+            OrderDenied, OrderEventAny, OrderEventType, OrderSubmitted,
         },
         identifiers::{
             stubs::{
@@ -1106,6 +1113,7 @@ mod tests {
         orders::{OrderAny, OrderList, OrderTestBuilder},
         types::{AccountBalance, Money, Price, Quantity},
     };
+    use nautilus_portfolio::Portfolio;
     use rstest::{fixture, rstest};
     use rust_decimal::{prelude::FromPrimitive, Decimal};
     use ustr::Ustr;
@@ -1281,7 +1289,8 @@ mod tests {
             max_notional_per_order: HashMap::new(),
         });
         let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
-        RiskEngine::new(config, clock, cache, msgbus)
+        let portfolio = Portfolio::new(msgbus.clone(), cache.clone(), clock.clone());
+        RiskEngine::new(config, portfolio, clock, cache, msgbus)
     }
 
     // Tests
@@ -1535,6 +1544,7 @@ mod tests {
         let mut risk_engine =
             get_risk_engine(Rc::new(RefCell::new(msgbus)), None, None, None, true);
 
+        // TODO: Limit -> Market
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
@@ -1569,10 +1579,129 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_reduce_only_order_when_position_already_closed_then_denies() {}
+    fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
+        mut msgbus: MessageBus,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_audusd: InstrumentAny,
+        venue_order_id: VenueOrderId,
+        process_order_event_handler: ShareableMessageHandler,
+        execute_order_event_handler: ShareableMessageHandler,
+    ) {
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process,
+            process_order_event_handler,
+        );
+
+        msgbus.register(
+            msgbus.switchboard.exec_engine_execute,
+            execute_order_event_handler.clone(),
+        );
+
+        let mut risk_engine =
+            get_risk_engine(Rc::new(RefCell::new(msgbus)), None, None, None, true);
+
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000"))
+            .build();
+
+        let _order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1000"))
+            .reduce_only(true)
+            .build();
+
+        let _order3 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1000"))
+            .reduce_only(true)
+            .build();
+
+        let submit_order1 = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            client_order_id,
+            venue_order_id,
+            order1.clone(),
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order1.clone()));
+        // process the order
+        // risk_engine.process(TestEventStubs::order_submitted(order1));
+
+        // look for existing fixture to replace it
+        let event = OrderEventAny::Submitted(OrderSubmitted::new(
+            order1.trader_id(),
+            order1.strategy_id(),
+            order1.instrument_id(),
+            order1.client_order_id(),
+            order1.account_id().unwrap_or_default(),
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        ));
+
+        // look for existing fixture to replace it
+        let accepted_event = OrderEventAny::Accepted(OrderAccepted::new(
+            order1.trader_id(),
+            order1.strategy_id(),
+            order1.instrument_id(),
+            order1.client_order_id(),
+            order1.venue_order_id().unwrap_or_default(),
+            order1.account_id().unwrap_or_default(),
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+            risk_engine.clock.borrow().timestamp_ns(),
+            false,
+        ));
+
+        // let order_filt
+        // let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+        //     order1.trader_id(),
+        //     order1.strategy_id(),
+        //     order1.instrument_id(),
+        //     order1.client_order_id(),
+        //     order1.venue_order_id().unwrap_or_default(),
+        //     order1.account_id().unwrap_or_default(),
+        //     UUID4::new(),
+        //     risk_engine.clock.borrow().timestamp_ns(),
+        //     risk_engine.clock.borrow().timestamp_ns(),
+        // ));
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
+        risk_engine.process(event);
+        risk_engine.process(accepted_event);
+        // risk_engine.process(order_filled_event);
+        // risk_engine.process(TestEventStubs::order_submitted(order1));
+        // risk_engine.process(TestEventStubs::order_accepted(order1));
+        // risk_engine.process(TestEventStubs::order_filled(order1, instrument_audusd));
+
+        let saved_execute_messages =
+            get_execute_order_event_handler_messages(execute_order_event_handler);
+        assert_eq!(saved_execute_messages.len(), 1);
+        assert_eq!(
+            saved_execute_messages.first().unwrap().instrument_id(),
+            instrument_audusd.id()
+        );
+        // todo!()
+    }
 
     #[rstest]
-    fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies() {}
+    fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies() {
+        todo!()
+    }
 
     #[rstest]
     fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_denies(
@@ -2407,6 +2536,7 @@ mod tests {
         )
         .unwrap();
 
+        // TODO
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
         let saved_process_messages =
             get_process_order_event_handler_messages(process_order_event_handler);
@@ -2848,11 +2978,15 @@ mod tests {
 
     // TODO: After portfolio
     #[rstest]
-    fn test_submit_order_when_reducing_and_buy_order_adds_then_denies() {}
+    fn test_submit_order_when_reducing_and_buy_order_adds_then_denies() {
+        // TODO
+    }
 
     // TODO: After portfolio
     #[rstest]
-    fn test_submit_order_when_reducing_and_sell_order_adds_then_denies() {}
+    fn test_submit_order_when_reducing_and_sell_order_adds_then_denies() {
+        // TODO
+    }
 
     #[rstest]
     fn test_submit_order_when_trading_halted_then_denies_order(
@@ -3086,11 +3220,15 @@ mod tests {
 
     // TODO: After portfolio
     #[rstest]
-    fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders() {}
+    fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders() {
+        // TODO
+    }
 
     // TODO: After portfolio
     #[rstest]
-    fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders() {}
+    fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders() {
+        // TODO
+    }
 
     // SUBMIT BRACKET ORDER TESTS
     #[rstest]

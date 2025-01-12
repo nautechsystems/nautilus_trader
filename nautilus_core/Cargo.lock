@@ -3340,6 +3340,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-execution",
  "nautilus-model",
+ "nautilus-portfolio",
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",

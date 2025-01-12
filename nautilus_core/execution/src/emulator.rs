@@ -419,10 +419,9 @@ impl OrderEmulator {
         // todo: fix unwrap
         self.check_monitoring(command.strategy_id, command.position_id.unwrap());
 
-        for order in command.order_list.orders {
+        for order in &command.order_list.orders {
             if let Some(parent_order_id) = order.parent_order_id() {
                 let cache = self.cache.borrow();
-                // check this error handling style: todo
                 let parent_order = cache.order(&parent_order_id).ok_or_else(|| {
                     anyhow::anyhow!("Parent order for {} not found", order.client_order_id())
                 })?;
