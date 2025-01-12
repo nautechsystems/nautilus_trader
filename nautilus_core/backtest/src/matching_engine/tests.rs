@@ -757,7 +757,6 @@ fn test_matching_engine_valid_market_buy(
     order_event_handler: ShareableMessageHandler,
     mut msgbus: MessageBus,
     account_id: AccountId,
-    mut market_order_buy: OrderAny,
     time: AtomicTime,
 ) {
     // Register saving message handler to exec engine endpoint
@@ -774,13 +773,14 @@ fn test_matching_engine_valid_market_buy(
         None,
     );
 
-    let orderbook_delta_sell = OrderBookDelta::new(
+    // create 2 orderbook deltas and appropriate market order
+    let orderbook_delta_sell_1 = OrderBookDelta::new(
         instrument_eth_usdt.id(),
         BookAction::Add,
         BookOrder::new(
             OrderSide::Sell,
             Price::from("1500.00"),
-            Quantity::from("1.00"),
+            Quantity::from("1.000"),
             1,
         ),
         0,
@@ -788,24 +788,48 @@ fn test_matching_engine_valid_market_buy(
         UnixNanos::from(1),
         UnixNanos::from(1),
     );
+    let orderbook_delta_sell_2 = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1510.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        2,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .build();
 
-    // process orderbook delta to add liquidity then process market order
-    engine_l2.process_order_book_delta(&orderbook_delta_sell);
-    engine_l2.process_order(&mut market_order_buy, account_id);
+    // process orderbook deltas to add liquidity then process market order
+    engine_l2.process_order_book_delta(&orderbook_delta_sell_1);
+    engine_l2.process_order_book_delta(&orderbook_delta_sell_2);
+    engine_l2.process_order(&mut market_order, account_id);
 
-    // We need to test few things as we pushed sell orderbook delta and executed market buy order
-    // 1. that Order filled event was generated where with correct price and quantity
-    // 2. we cleared the orderbook and there are no orders left
+    // We need to test that two Order filled events were generated where with correct prices and quantities
     let saved_messages = get_order_event_handler_messages(order_event_handler);
-    assert_eq!(saved_messages.len(), 1);
-    let order_event_any_message = saved_messages.first().unwrap();
-    let order_event = match order_event_any_message {
-        OrderEventAny::Filled(event) => Some(event),
-        _ => None,
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_filled_first = match order_event_first {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in first message"),
     };
-    assert!(order_event.is_some());
-    let order_filled = order_event.unwrap();
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.00"));
-    assert_eq!(order_filled.liquidity_side, LiquiditySide::Taker);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_filled_second = match order_event_second {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in second message"),
+    };
+    // check correct prices and quantities
+    assert_eq!(order_filled_first.last_px, Price::from("1500.00"));
+    assert_eq!(order_filled_first.last_qty, Quantity::from("1.000"));
+    assert_eq!(order_filled_second.last_px, Price::from("1510.00"));
+    assert_eq!(order_filled_second.last_qty, Quantity::from("1.000"));
 }

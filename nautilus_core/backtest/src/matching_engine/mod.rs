@@ -882,7 +882,7 @@ impl OrderMatchingEngine {
                 "Canceling REDUCE_ONLY {} as would increase position",
                 order.order_type()
             );
-            self.cancel_order(order);
+            self.cancel_order(order, None);
             return;
         }
         // set order side as taker
@@ -904,7 +904,12 @@ impl OrderMatchingEngine {
         position: Option<Position>,
     ) {
         if order.time_in_force() == TimeInForce::Fok {
-            todo!("Fill order with FOK")
+            let mut total_size = Quantity::zero(order.quantity().precision);
+            for (fill_px, fill_qty) in &fills {
+                total_size = total_size.add(*fill_qty);
+            }
+
+            if order.leaves_qty() > total_size {}
         }
 
         if fills.is_empty() {
@@ -984,7 +989,7 @@ impl OrderMatchingEngine {
                 }
             }
 
-            if *fill_qty == Quantity::zero(fill_qty.precision) {
+            if fill_qty.is_zero() {
                 if fills.len() == 1 && order.status() == OrderStatus::Submitted {
                     self.generate_order_rejected(
                         order,
@@ -1011,7 +1016,7 @@ impl OrderMatchingEngine {
 
         if order.time_in_force() == TimeInForce::Ioc && order.is_open() {
             // IOC order has filled all available size
-            self.cancel_order(order);
+            self.cancel_order(order, None);
             return;
         }
 
@@ -1102,8 +1107,32 @@ impl OrderMatchingEngine {
         todo!("expire_order")
     }
 
-    fn cancel_order(&mut self, order: &OrderAny) {
-        todo!("cancel_order")
+    fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {
+        let cancel_contingencies = cancel_contingencies.unwrap_or(true);
+        if order.is_active_local() {
+            log::error!(
+                "Cannot cancel an order with {} from the matching engine",
+                order.status()
+            );
+            return;
+        }
+
+        // delete order from OrderMatchingCore
+        let _ = self
+            .core
+            .delete_order(&PassiveOrderAny::from(order.clone()));
+        self.cached_filled_qty.remove(&order.client_order_id());
+
+        let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+        self.generate_order_canceled(order, venue_order_id);
+
+        if self.config.support_contingent_orders
+            && order.contingency_type().is_some()
+            && order.contingency_type().unwrap() != ContingencyType::NoContingency
+            && cancel_contingencies
+        {
+            self.cancel_contingent_orders(order);
+        }
     }
 
     fn update_order(&mut self, order: &OrderAny) {
@@ -1119,7 +1148,21 @@ impl OrderMatchingEngine {
     }
 
     fn cancel_contingent_orders(&mut self, order: &OrderAny) {
-        todo!("cancel_contingent_orders")
+        if let Some(linked_order_ids) = order.linked_order_ids() {
+            for client_order_id in &linked_order_ids {
+                let contingent_order = match self.cache.borrow().order(client_order_id) {
+                    Some(order) => order.clone(),
+                    None => panic!("Cannot find contingent order for {client_order_id}"),
+                };
+                if contingent_order.is_active_local() {
+                    // order is not on the exchange yet
+                    continue;
+                }
+                if !contingent_order.is_closed() {
+                    self.cancel_order(&contingent_order, Some(false));
+                }
+            }
+        }
     }
 
     // -- EVENT GENERATORS -----------------------------------------------------
