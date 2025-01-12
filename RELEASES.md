@@ -9,7 +9,7 @@ None
 None
 
 ### Internal Improvements
-None
+- Ported market order filling for OrderMatchingEngine in Rust (#2202), thanks @filipmacek
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
