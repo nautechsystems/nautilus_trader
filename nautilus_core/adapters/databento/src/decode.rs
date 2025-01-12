@@ -31,8 +31,10 @@ use nautilus_model::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
     types::{
-        fixed::SCALAR, price::decode_raw_price_i64, quantity::decode_raw_quantity_u64, Currency,
-        Price, Quantity,
+        fixed::{FIXED_HIGH_PRECISION, FIXED_PRECISION, SCALAR},
+        price::decode_raw_price_i64,
+        quantity::{decode_raw_quantity_u64, QuantityRaw},
+        Currency, Price, Quantity,
     },
 };
 use ustr::Ustr;
@@ -41,6 +43,8 @@ use super::{
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
     types::{DatabentoImbalance, DatabentoStatistics},
 };
+
+const DATABENTO_FIXED_SCALAR: f64 = 1_000_000_000.0;
 
 // SAFETY: Known valid value
 const STEP_ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
@@ -226,7 +230,7 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => Price::from(format!("{}", value as f64 / SCALAR)),
+        _ => Price::from(format!("{}", value as f64 / DATABENTO_FIXED_SCALAR)),
     }
 }
 
@@ -254,8 +258,9 @@ pub fn decode_multiplier(value: i64) -> Quantity {
     match value {
         0 | i64::MAX => Quantity::from(1),
         value => {
-            let scaled_value = std::cmp::max(value as u64, SCALAR as u64);
-            Quantity::from_raw(decode_raw_quantity_u64(scaled_value), 0)
+            let scaled_value = value as QuantityRaw
+                * (10 as QuantityRaw).pow((FIXED_HIGH_PRECISION - FIXED_PRECISION) as u32);
+            Quantity::from_raw(std::cmp::max(scaled_value, SCALAR as QuantityRaw), 0)
         }
     }
 }
@@ -1300,7 +1305,7 @@ mod tests {
     #[rstest]
     #[case(0, 2, Price::new(0.01, 2))] // Default for 0
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
-    #[case(1000000, 2, Price::from_raw(1000000, 2))] // Arbitrary valid price
+    #[case(1000000, 2, Price::from_raw(10000000000000, 2))] // Arbitrary valid price
     fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
         let actual = decode_price_increment(value, precision);
         assert_eq!(actual, expected);

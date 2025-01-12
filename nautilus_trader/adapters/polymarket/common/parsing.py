@@ -93,7 +93,7 @@ def parse_instrument(
     raw_symbol = Symbol(get_polymarket_token_id(instrument_id))
     description = market_info["question"]
     price_increment = Price.from_str(str(market_info["minimum_tick_size"]))
-    min_quantity = Quantity.from_int(market_info["minimum_order_size"])
+    min_quantity = Quantity.from_int(int(market_info["minimum_order_size"]))
     # size_increment can be 0.01 or 0.001 (precision 2 or 3). Need to determine a reliable solution
     # trades are reported with USDC.e increments though - so we use that here
     size_increment = Quantity.from_str("0.000001")

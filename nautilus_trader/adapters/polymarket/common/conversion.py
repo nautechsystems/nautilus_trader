@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model import FIXED_PRECISION
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.objects import Money
 
@@ -31,4 +32,9 @@ def usdce_from_units(units: int) -> Money:
     Money
 
     """
-    return Money.from_raw(units * 1_000, USDC_POS)
+    if FIXED_PRECISION == 16:  # High precision
+        factor = 10_000_000_000
+    else:
+        factor = 1_000
+
+    return Money.from_raw(int(units * factor), USDC_POS)

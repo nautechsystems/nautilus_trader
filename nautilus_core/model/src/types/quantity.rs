@@ -64,6 +64,7 @@ pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Resul
 
 #[cfg(feature = "high_precision")]
 pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
+    // TODO: Currently specific to the databento crate and should probably be moved?
     value as QuantityRaw * (10 as QuantityRaw).pow(PRECISION as u32)
 }
 
