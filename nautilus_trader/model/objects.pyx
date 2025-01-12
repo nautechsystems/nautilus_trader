@@ -37,6 +37,8 @@ from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
 from nautilus_trader.core.rust.model cimport PRECISION
 from nautilus_trader.core.rust.model cimport PRECISION as RUST_FIXED_PRECISION
+from nautilus_trader.core.rust.model cimport PRECISION_BYTES
+from nautilus_trader.core.rust.model cimport PRECISION_BYTES as RUST_PRECISION_BYTES
 from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
 from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
 from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
@@ -73,6 +75,7 @@ MONEY_MIN = RUST_MONEY_MIN
 
 FIXED_PRECISION = RUST_FIXED_PRECISION
 FIXED_SCALAR = RUST_FIXED_SCALAR
+FIXED_PRECISION_BYTES = RUST_PRECISION_BYTES
 
 
 @cython.auto_pickle(True)

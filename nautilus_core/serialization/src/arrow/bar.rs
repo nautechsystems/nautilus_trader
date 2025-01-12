@@ -23,12 +23,12 @@ use arrow::{
 };
 use nautilus_model::{
     data::{Bar, BarType},
-    types::{Price, Quantity},
+    types::{fixed::PRECISION_BYTES, Price, Quantity},
 };
 
 use super::{
     extract_column, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, PRECISION_BYTES,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{
     get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,

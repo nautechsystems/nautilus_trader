@@ -23,6 +23,16 @@ pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_HIGH_PRECISION: u8 = 16;
 
 #[cfg(feature = "high_precision")]
+/// The width in bytes for fixed-point value types in 128-bit high-precision mode.
+#[no_mangle]
+pub static PRECISION_BYTES: i32 = 16;
+
+#[cfg(not(feature = "high_precision"))]
+/// The width in bytes for fixed-point value types in 64-bit precision mode.
+#[no_mangle]
+pub static PRECISION_BYTES: i32 = 8;
+
+#[cfg(feature = "high_precision")]
 pub const PRECISION: u8 = FIXED_HIGH_PRECISION;
 #[cfg(not(feature = "high_precision"))]
 pub const PRECISION: u8 = FIXED_PRECISION;

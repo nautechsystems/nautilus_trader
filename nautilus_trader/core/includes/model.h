@@ -1747,6 +1747,20 @@ typedef struct Money_t {
 
 
 
+#if defined(HIGH_PRECISION)
+/**
+ * The width in bytes for fixed-point value types in 128-bit high-precision mode.
+ */
+extern const int32_t PRECISION_BYTES;
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The width in bytes for fixed-point value types in 64-bit precision mode.
+ */
+extern const int32_t PRECISION_BYTES;
+#endif
+
 /**
  * The maximum raw price integer value.
  */

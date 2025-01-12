@@ -24,12 +24,12 @@ use arrow::{
 use nautilus_model::{
     data::QuoteTick,
     identifiers::InstrumentId,
-    types::{Price, Quantity},
+    types::{fixed::PRECISION_BYTES, Price, Quantity},
 };
 
 use super::{
     extract_column, get_raw_price, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, PRECISION_BYTES,
+    KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 

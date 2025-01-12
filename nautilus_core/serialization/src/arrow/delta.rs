@@ -25,7 +25,7 @@ use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
-    types::{Price, Quantity},
+    types::{fixed::PRECISION_BYTES, Price, Quantity},
 };
 
 use super::{
@@ -34,7 +34,7 @@ use super::{
 };
 use crate::arrow::{
     get_raw_price, get_raw_quantity, ArrowSchemaProvider, Data, DecodeFromRecordBatch,
-    EncodeToRecordBatch, PRECISION_BYTES,
+    EncodeToRecordBatch,
 };
 
 impl ArrowSchemaProvider for OrderBookDelta {
