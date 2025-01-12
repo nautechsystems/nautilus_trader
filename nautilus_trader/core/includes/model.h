@@ -1747,6 +1747,16 @@ typedef struct Money_t {
 
 
 
+/**
+ * The maximum raw price integer value.
+ */
+extern const PriceRaw PRICE_RAW_MAX;
+
+/**
+ * The minimum raw price integer value.
+ */
+extern const PriceRaw PRICE_RAW_MIN;
+
 struct Data_t data_clone(const struct Data_t *data);
 
 void interned_string_stats(void);

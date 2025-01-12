@@ -18,8 +18,6 @@ from operator import itemgetter
 
 import pandas as pd
 
-from libc.stdint cimport INT64_MAX
-from libc.stdint cimport INT64_MIN
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -27,6 +25,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookOrder_t
@@ -621,7 +621,7 @@ cdef class OrderBook(Data):
         cdef Price_t price
         price.precision = price_prec
         if is_aggressive:
-            price.raw = INT64_MAX if order.side == OrderSide.BUY else INT64_MIN  # TODO! Handle high-precision
+            price.raw = PRICE_RAW_MAX if order.side == OrderSide.BUY else PRICE_RAW_MIN
         else:
             order_price = order.price
             price.raw = order_price._mem.raw

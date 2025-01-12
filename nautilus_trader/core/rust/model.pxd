@@ -980,6 +980,12 @@ cdef extern from "../includes/model.h":
 
 
 
+    # The maximum raw price integer value.
+    extern const PriceRaw PRICE_RAW_MAX;
+
+    # The minimum raw price integer value.
+    extern const PriceRaw PRICE_RAW_MIN;
+
     Data_t data_clone(const Data_t *data);
 
     void interned_string_stats();

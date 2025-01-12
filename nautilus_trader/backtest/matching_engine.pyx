@@ -789,7 +789,7 @@ cdef class OrderMatchingEngine:
         # Index identifiers
         self._account_ids[order.trader_id] = account_id
 
-        cdef uint64_t
+        cdef uint64_t now_ns
         if self._instrument_has_expiration:
             now_ns = self._clock.timestamp_ns()
             if now_ns < self.instrument.activation_ns:
@@ -1784,7 +1784,7 @@ cdef class OrderMatchingEngine:
 
         if not fills:
             if order.status_c() == OrderStatus.SUBMITTED:
-                self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+                self._generate_order_rejected(order, f"no market with no fills for {order.instrument_id}")
             else:
                 self._log.error(
                     "Cannot fill order: no fills from book when fills were expected (check data)",

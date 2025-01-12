@@ -41,6 +41,20 @@ use super::fixed::{
 #[cfg(not(feature = "high_precision"))]
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
+#[cfg(feature = "high_precision")]
+pub type PriceRaw = i128;
+
+#[cfg(not(feature = "high_precision"))]
+pub type PriceRaw = i64;
+
+/// The maximum raw price integer value.
+#[no_mangle]
+pub static PRICE_RAW_MAX: PriceRaw = PriceRaw::MAX;
+
+/// The minimum raw price integer value.
+#[no_mangle]
+pub static PRICE_RAW_MIN: PriceRaw = PriceRaw::MIN;
+
 /// The sentinel value for an unset or null price.
 pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
 
@@ -64,12 +78,6 @@ pub const ERROR_PRICE: Price = Price {
     raw: 0,
     precision: 255,
 };
-
-#[cfg(feature = "high_precision")]
-pub type PriceRaw = i128;
-
-#[cfg(not(feature = "high_precision"))]
-pub type PriceRaw = i64;
 
 #[cfg(not(feature = "high_precision"))]
 pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
