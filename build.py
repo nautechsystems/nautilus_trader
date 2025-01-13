@@ -29,11 +29,13 @@ PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
-PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true") == "true"
+PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
-COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true") == "true"
+COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
-PYO3_ONLY = os.getenv("PYO3_ONLY", "") != ""
+PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
+# If high_precision mode is enabled (value types use 128-bit integers, rather than 64-bit)
+HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
 
 if PROFILE_MODE:
     # For subsequent debugging, the C source needs to be in the same tree as
@@ -99,11 +101,17 @@ def _build_rust_libs() -> None:
 
         build_options = " --release" if BUILD_MODE == "release" else ""
 
+        if HIGH_PRECISION:
+            features = ["--all-features"]
+        else:
+            # Enable features needed for main build, but not high_precision
+            features = ["--no-default-features", "--features", "ffi,python,extension-module"]
+
         cmd_args = [
             "cargo",
             "build",
             *build_options.split(),
-            "--all-features",
+            *features,
         ]
 
         if RUST_TOOLCHAIN == "nightly":
@@ -372,6 +380,7 @@ if __name__ == "__main__":
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
+    print(f"HIGH_PRECISION={HIGH_PRECISION}")
     print(f"CC={os.environ['CC']}") if "CC" in os.environ else None
     print(f"CXX={os.environ['CXX']}") if "CXX" in os.environ else None
     print(f"LDSHARED={os.environ['LDSHARED']}") if "LDSHARED" in os.environ else None

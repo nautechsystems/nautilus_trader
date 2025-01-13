@@ -18,6 +18,9 @@
 //! This module provides constants and functions that enforce a fixed-point precision strategy,
 //! ensuring consistent precision and scaling across various types and calculations.
 
+/// Indicates if high_precision mode is enabled.
+pub const HIGH_PRECISION: bool = cfg!(feature = "high_precision");
+
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_HIGH_PRECISION: u8 = 16;
