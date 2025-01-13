@@ -13,6 +13,7 @@ None
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
+- Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 
 ### Documentation Updates
 None
