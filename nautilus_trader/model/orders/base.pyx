@@ -27,7 +27,6 @@ from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
-from nautilus_trader.core.rust.model cimport int128_t
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -1067,7 +1066,7 @@ cdef class Order:
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
-        cdef int128_t raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+        cdef QuantityRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
         if raw_leaves_qty < 0:
             raise ValueError(
                 f"invalid order.leaves_qty: was {raw_leaves_qty / 1e9}, "

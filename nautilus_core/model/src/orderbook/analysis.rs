@@ -99,7 +99,7 @@ pub fn get_avg_px_qty_for_exposure(
         let level_exposure = price * level.size_raw() as f64;
         let exposure_this_level =
             level_exposure.min(target_exposure.raw as f64 - cumulative_exposure);
-        let size_this_level = (exposure_this_level / price).floor() as u128;
+        let size_this_level = (exposure_this_level / price).floor() as QuantityRaw;
 
         cumulative_exposure += price * size_this_level as f64;
         cumulative_size_raw += size_this_level;

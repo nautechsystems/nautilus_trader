@@ -42,7 +42,7 @@ iai = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
-default = ["high_precision"]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",

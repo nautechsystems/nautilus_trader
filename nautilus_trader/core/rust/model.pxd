@@ -3,11 +3,9 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t, int32_t, int64_t
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
-DEF HIGH_PRECISION = True  # or False
+DEF HIGH_PRECISION = False  # or True
 
 cdef extern from "../includes/model.h":
-    ctypedef unsigned long long uint128_t
-    ctypedef long long int128_t
 
     const uintptr_t DEPTH10_LEN # = 10
 
@@ -75,7 +73,7 @@ cdef extern from "../includes/model.h":
     const double QUANTITY_MIN # = 0.0
 
     # An account type provided by a trading venue or broker.
-    cpdef enum AccountType:
+    cdef enum AccountType:
         # An account with unleveraged cash assets only.
         CASH # = 1,
         # An account which facilitates trading on margin, using account assets as collateral.
@@ -84,14 +82,14 @@ cdef extern from "../includes/model.h":
         BETTING # = 3,
 
     # An aggregation source for derived data.
-    cpdef enum AggregationSource:
+    cdef enum AggregationSource:
         # The data is externally aggregated (outside the Nautilus system boundary).
         EXTERNAL # = 1,
         # The data is internally aggregated (inside the Nautilus system boundary).
         INTERNAL # = 2,
 
     # The side for the aggressing order of a trade in a market.
-    cpdef enum AggressorSide:
+    cdef enum AggressorSide:
         # There was no specific aggressor for the trade.
         NO_AGGRESSOR # = 0,
         # The BUY order was the aggressor for the trade.
@@ -100,7 +98,7 @@ cdef extern from "../includes/model.h":
         SELLER # = 2,
 
     # A broad financial market asset class.
-    cpdef enum AssetClass:
+    cdef enum AssetClass:
         # Foreign exchange (FOREX) assets.
         FX # = 1,
         # Equity / stock assets.
@@ -117,7 +115,7 @@ cdef extern from "../includes/model.h":
         ALTERNATIVE # = 7,
 
     # The type of order book action for an order book event.
-    cpdef enum BookAction:
+    cdef enum BookAction:
         # An order is added to the book.
         ADD # = 1,
         # An existing order in the book is updated/modified.
@@ -128,7 +126,7 @@ cdef extern from "../includes/model.h":
         CLEAR # = 4,
 
     # The order book type, representing the type of levels granularity and delta updating heuristics.
-    cpdef enum BookType:
+    cdef enum BookType:
         # Top-of-book best bid/ask, one level per side.
         L1_MBP # = 1,
         # Market by price, one order per level (aggregated).
@@ -139,7 +137,7 @@ cdef extern from "../includes/model.h":
     # The order contigency type which specifies the behavior of linked orders.
     #
     # [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
-    cpdef enum ContingencyType:
+    cdef enum ContingencyType:
         # Not a contingent order.
         NO_CONTINGENCY # = 0,
         # One-Cancels-the-Other.
@@ -150,7 +148,7 @@ cdef extern from "../includes/model.h":
         OUO # = 3,
 
     # The broad currency type.
-    cpdef enum CurrencyType:
+    cdef enum CurrencyType:
         # A type of cryptocurrency or crypto token.
         CRYPTO # = 1,
         # A type of currency issued by governments which is not backed by a commodity.
@@ -159,7 +157,7 @@ cdef extern from "../includes/model.h":
         COMMODITY_BACKED # = 3,
 
     # The instrument class.
-    cpdef enum InstrumentClass:
+    cdef enum InstrumentClass:
         # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
         SPOT # = 1,
         # A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
@@ -186,14 +184,14 @@ cdef extern from "../includes/model.h":
         BINARY_OPTION # = 12,
 
     # The type of event for an instrument close.
-    cpdef enum InstrumentCloseType:
+    cdef enum InstrumentCloseType:
         # When the market session ended.
         END_OF_SESSION # = 1,
         # When the instrument expiration was reached.
         CONTRACT_EXPIRED # = 2,
 
     # The liqudity side for a trade.
-    cpdef enum LiquiditySide:
+    cdef enum LiquiditySide:
         # No liquidity side specified.
         NO_LIQUIDITY_SIDE # = 0,
         # The order passively provided liqudity to the market to complete the trade (made a market).
@@ -202,7 +200,7 @@ cdef extern from "../includes/model.h":
         TAKER # = 2,
 
     # The status of an individual market on a trading venue.
-    cpdef enum MarketStatus:
+    cdef enum MarketStatus:
         # The instrument is trading.
         OPEN # = 1,
         # The instrument is in a pre-open period.
@@ -216,7 +214,7 @@ cdef extern from "../includes/model.h":
         NOT_AVAILABLE # = 6,
 
     # An action affecting the status of an individual market on a trading venue.
-    cpdef enum MarketStatusAction:
+    cdef enum MarketStatusAction:
         # No change.
         NONE # = 0,
         # The instrument is in a pre-open period.
@@ -251,7 +249,7 @@ cdef extern from "../includes/model.h":
         NOT_AVAILABLE_FOR_TRADING # = 15,
 
     # The order management system (OMS) type for a trading venue or trading strategy.
-    cpdef enum OmsType:
+    cdef enum OmsType:
         # There is no specific type of order management specified (will defer to the venue OMS).
         UNSPECIFIED # = 0,
         # The netting type where there is one position per instrument.
@@ -262,14 +260,14 @@ cdef extern from "../includes/model.h":
         HEDGING # = 2,
 
     # The kind of options contract.
-    cpdef enum OptionKind:
+    cdef enum OptionKind:
         # A Call option gives the holder the right, but not the obligation, to buy an underlying asset at a specified strike price within a specified period of time.
         CALL # = 1,
         # A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
         PUT # = 2,
 
     # The order side for a specific order, or action related to orders.
-    cpdef enum OrderSide:
+    cdef enum OrderSide:
         # No order side is specified.
         NO_ORDER_SIDE # = 0,
         # The order is a BUY.
@@ -297,7 +295,7 @@ cdef extern from "../includes/model.h":
     #  - `CANCELED`
     #  - `EXPIRED`
     #  - `FILLED`
-    cpdef enum OrderStatus:
+    cdef enum OrderStatus:
         # The order is initialized (instantiated) within the Nautilus system.
         INITIALIZED # = 1,
         # The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
@@ -328,7 +326,7 @@ cdef extern from "../includes/model.h":
         FILLED # = 14,
 
     # The type of order.
-    cpdef enum OrderType:
+    cdef enum OrderType:
         # A market order to buy or sell at the best available price in the current market.
         MARKET # = 1,
         # A limit order to buy or sell at a specific price or better.
@@ -349,7 +347,7 @@ cdef extern from "../includes/model.h":
         TRAILING_STOP_LIMIT # = 9,
 
     # The market side for a specific position, or action related to positions.
-    cpdef enum PositionSide:
+    cdef enum PositionSide:
         # No position side is specified (only valid in the context of a filter for actions involving positions).
         NO_POSITION_SIDE # = 0,
         # A neural/flat position, where no position is currently held in the market.
@@ -360,7 +358,7 @@ cdef extern from "../includes/model.h":
         SHORT # = 3,
 
     # The type of price for an instrument in a market.
-    cpdef enum PriceType:
+    cdef enum PriceType:
         # A quoted order price where a buyer is willing to buy a quantity of an instrument.
         BID # = 1,
         # A quoted order price where a seller is willing to sell a quantity of an instrument.
@@ -371,7 +369,7 @@ cdef extern from "../includes/model.h":
         LAST # = 4,
 
     # A record flag bit field, indicating event end and data information.
-    cpdef enum RecordFlag:
+    cdef enum RecordFlag:
         # Last message in the book event or packet from the venue for a given `instrument_id`.
         F_LAST # = (1 << 7),
         # Top-of-book message, not an individual order.
@@ -386,7 +384,7 @@ cdef extern from "../includes/model.h":
         RESERVED_1 # = (1 << 2),
 
     # The 'Time in Force' instruction for an order.
-    cpdef enum TimeInForce:
+    cdef enum TimeInForce:
         # Good-Till-Canceled (GTC) - the order remains active until canceled.
         GTC # = 1,
         # Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
@@ -403,7 +401,7 @@ cdef extern from "../includes/model.h":
         AT_THE_CLOSE # = 7,
 
     # The trading state for a node.
-    cpdef enum TradingState:
+    cdef enum TradingState:
         # Normal trading operations.
         ACTIVE # = 1,
         # Trading is completely halted, no new order commands will be emitted.
@@ -412,7 +410,7 @@ cdef extern from "../includes/model.h":
         REDUCING # = 3,
 
     # The trailing offset type for an order type which specifies a trailing stop/trigger or limit price.
-    cpdef enum TrailingOffsetType:
+    cdef enum TrailingOffsetType:
         # No trailing offset type is specified (invalid for trailing type orders).
         NO_TRAILING_OFFSET # = 0,
         # The trailing offset is based on a market price.
@@ -425,7 +423,7 @@ cdef extern from "../includes/model.h":
         PRICE_TIER # = 4,
 
     # The trigger type for the stop/trigger price of an order.
-    cpdef enum TriggerType:
+    cdef enum TriggerType:
         # No trigger type is specified (invalid for orders with a trigger).
         NO_TRIGGER # = 0,
         # The default trigger type set by the trading venue.
@@ -666,7 +664,7 @@ cdef extern from "../includes/model.h":
 
     # Represents a bar type including the instrument ID, bar specification and
     # aggregation source.
-    cpdef enum BarType_t_Tag:
+    cdef enum BarType_t_Tag:
         STANDARD,
         COMPOSITE,
 
@@ -720,7 +718,7 @@ cdef extern from "../includes/model.h":
     #
     # Not recommended for storing large amounts of data, as the largest variant is significantly
     # larger (10x) than the smallest.
-    cpdef enum Data_t_Tag:
+    cdef enum Data_t_Tag:
         DELTA,
         DELTAS,
         DEPTH10,

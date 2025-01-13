@@ -105,7 +105,7 @@ def _build_rust_libs() -> None:
             features = ["--all-features"]
         else:
             # Enable features needed for main build, but not high_precision
-            features = ["--no-default-features", "--features", "ffi,python,extension-module"]
+            features = ["--features", "ffi,python,extension-module"]
 
         cmd_args = [
             "cargo",

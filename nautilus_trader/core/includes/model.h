@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <Python.h>
 
-#define HIGH_PRECISION
-
 #ifdef __SIZEOF_INT128__
     typedef __uint128_t uint128_t;
     typedef __int128_t int128_t;

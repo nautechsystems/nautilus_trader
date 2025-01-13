@@ -24,7 +24,7 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{check_in_range_inclusive_f64, check_positive_u128, FAILED},
+    correctness::{check_in_range_inclusive_f64, check_positive_u128, check_positive_u64, FAILED},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
@@ -32,7 +32,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
 use super::fixed::{
-    check_fixed_precision, f64_to_fixed_u128, fixed_u128_to_f64, PRECISION, SCALAR,
+    check_fixed_precision, f64_to_fixed_u128, f64_to_fixed_u64, fixed_u128_to_f64,
+    fixed_u64_to_f64, PRECISION, SCALAR,
 };
 
 /// The sentinel value for an unset or null quantity.
@@ -113,10 +114,12 @@ impl Quantity {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
         check_fixed_precision(precision)?;
 
-        Ok(Self {
-            raw: f64_to_fixed_u128(value, precision),
-            precision,
-        })
+        #[cfg(feature = "high_precision")]
+        let raw = f64_to_fixed_u128(value, precision);
+        #[cfg(not(feature = "high_precision"))]
+        let raw = f64_to_fixed_u64(value, precision);
+
+        Ok(Self { raw, precision })
     }
 
     /// Creates a new [`Quantity`] instance.
@@ -167,8 +170,14 @@ impl Quantity {
 
     /// Returns the value of this instance as an `f64`.
     #[must_use]
+    #[cfg(feature = "high_precision")]
     pub fn as_f64(&self) -> f64 {
         fixed_u128_to_f64(self.raw)
+    }
+
+    #[cfg(not(feature = "high_precision"))]
+    pub fn as_f64(&self) -> f64 {
+        fixed_u64_to_f64(self.raw)
     }
 
     /// Returns the value of this instance as a `Decimal`.
