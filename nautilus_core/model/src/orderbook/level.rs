@@ -126,7 +126,7 @@ impl BookLevel {
     pub fn exposure_raw(&self) -> QuantityRaw {
         self.orders
             .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as QuantityRaw) // TODO: Define general type alias names??
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as QuantityRaw)
             .sum()
     }
 
