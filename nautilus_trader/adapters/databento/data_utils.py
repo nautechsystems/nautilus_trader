@@ -204,8 +204,8 @@ def databento_data(
     }
 
     if schema == "definition":
-        del result["data"]
-        del result["data_file"]
+        del result["databento_data_file"]
+        del result["databento_data"]
 
     if to_catalog and schema != "definition":
         catalog_data = save_data_to_catalog(
