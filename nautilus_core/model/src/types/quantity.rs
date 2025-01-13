@@ -39,17 +39,12 @@ use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 
 #[cfg(feature = "high_precision")]
 pub type QuantityRaw = u128;
-
 #[cfg(not(feature = "high_precision"))]
 pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
 #[no_mangle]
 pub static QUANTITY_RAW_MAX: QuantityRaw = QuantityRaw::MAX;
-
-pub fn quantity_raw_from_f64(value: f64) -> QuantityRaw {
-    (value * SCALAR) as QuantityRaw
-}
 
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
@@ -505,7 +500,6 @@ mod tests {
         let value = 0.00812;
         let qty = Quantity::new(value, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, quantity_raw_from_f64(value));
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -533,10 +527,9 @@ mod tests {
 
     #[rstest]
     fn test_from_i64() {
-        let value = 100_000;
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, quantity_raw_from_f64(value as f64));
+        assert_eq!(qty.raw, Quantity::from("100000").raw);
         assert_eq!(qty.precision, 0);
     }
 
@@ -550,7 +543,7 @@ mod tests {
     fn test_with_minimum_positive_value() {
         let value = 0.000_000_001;
         let qty = Quantity::new(value, 9);
-        assert_eq!(qty.raw, quantity_raw_from_f64(value));
+        assert_eq!(qty.raw, Quantity::from("0.000000001").raw);
         assert_eq!(qty.as_decimal(), dec!(0.000000001));
         assert_eq!(qty.to_string(), "0.000000001");
     }

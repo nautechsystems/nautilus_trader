@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, PRECISION, SCALAR};
+use super::fixed::{check_fixed_precision, PRECISION};
 #[cfg(feature = "high_precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high_precision"))]
@@ -43,7 +43,6 @@ use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
 #[cfg(feature = "high_precision")]
 pub type PriceRaw = i128;
-
 #[cfg(not(feature = "high_precision"))]
 pub type PriceRaw = i64;
 
@@ -54,10 +53,6 @@ pub static PRICE_RAW_MAX: PriceRaw = PriceRaw::MAX;
 /// The minimum raw price integer value.
 #[no_mangle]
 pub static PRICE_RAW_MIN: PriceRaw = PriceRaw::MIN;
-
-pub fn price_raw_from_f64(value: f64) -> PriceRaw {
-    (value * SCALAR) as PriceRaw
-}
 
 /// The sentinel value for an unset or null price.
 pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
