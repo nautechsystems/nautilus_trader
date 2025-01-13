@@ -33,7 +33,7 @@ use nautilus_model::{
     types::{
         fixed::{FIXED_HIGH_PRECISION, FIXED_PRECISION, SCALAR},
         price::decode_raw_price_i64,
-        quantity::{decode_raw_quantity_u64, QuantityRaw},
+        quantity::QuantityRaw,
         Currency, Price, Quantity,
     },
 };
@@ -223,6 +223,12 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
     };
 
     Ok(Some(Ustr::from(value_str)))
+}
+
+/// Decodes quantity from the given value. Databento quantities are always whole units so we
+/// can just use [`SCALAR`].
+pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
+    value * SCALAR as u64
 }
 
 /// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
@@ -1305,7 +1311,7 @@ mod tests {
     #[rstest]
     #[case(0, 2, Price::new(0.01, 2))] // Default for 0
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
-    #[case(1000000, 2, Price::from_raw(10000000000000, 2))] // Arbitrary valid price
+    #[case(1 * SCALAR as i64, 2, Price::from_raw(1 * SCALAR as i64, 2))] // Arbitrary valid price
     fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
         let actual = decode_price_increment(value, precision);
         assert_eq!(actual, expected);

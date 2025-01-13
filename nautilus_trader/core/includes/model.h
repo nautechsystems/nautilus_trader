@@ -1769,6 +1769,11 @@ extern const PriceRaw PRICE_RAW_MAX;
  */
 extern const PriceRaw PRICE_RAW_MIN;
 
+/**
+ * The maximum raw quantity integer value.
+ */
+extern const QuantityRaw QUANTITY_RAW_MAX;
+
 struct Data_t data_clone(const struct Data_t *data);
 
 void interned_string_stats(void);

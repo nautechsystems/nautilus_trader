@@ -32,7 +32,6 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use crate::types::fixed::fixed_i128_to_f64;
 #[cfg(not(feature = "high_precision"))]
 use crate::types::fixed::fixed_i64_to_f64;
-
 use crate::types::price::{Price, PriceRaw};
 
 #[pymethods]

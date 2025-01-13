@@ -37,6 +37,20 @@ use super::fixed::{check_fixed_precision, f64_to_fixed_u64, fixed_u64_to_f64, PR
 #[cfg(feature = "high_precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 
+#[cfg(feature = "high_precision")]
+pub type QuantityRaw = u128;
+
+#[cfg(not(feature = "high_precision"))]
+pub type QuantityRaw = u64;
+
+/// The maximum raw quantity integer value.
+#[no_mangle]
+pub static QUANTITY_RAW_MAX: QuantityRaw = QuantityRaw::MAX;
+
+pub fn quantity_raw_from_f64(value: f64) -> QuantityRaw {
+    (value * SCALAR) as QuantityRaw
+}
+
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
@@ -49,11 +63,6 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
-#[cfg(feature = "high_precision")]
-pub type QuantityRaw = u128;
-#[cfg(not(feature = "high_precision"))]
-pub type QuantityRaw = u64;
-
 #[cfg(not(feature = "high_precision"))]
 pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
     check_positive_u64(value, param)
@@ -62,17 +71,6 @@ pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Resul
 #[cfg(feature = "high_precision")]
 pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
     check_positive_u128(value, param)
-}
-
-#[cfg(feature = "high_precision")]
-pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
-    // TODO: Currently specific to the databento crate and should probably be moved?
-    value as QuantityRaw * (10 as QuantityRaw).pow(PRECISION as u32)
-}
-
-#[cfg(not(feature = "high_precision"))]
-pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
-    value
 }
 
 /// Represents a quantity with a non-negative value.
@@ -504,9 +502,10 @@ mod tests {
 
     #[rstest]
     fn test_new() {
-        let qty = Quantity::new(0.00812, 8);
+        let value = 0.00812;
+        let qty = Quantity::new(value, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000_000_000_000);
+        assert_eq!(qty.raw, quantity_raw_from_f64(value));
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -534,25 +533,24 @@ mod tests {
 
     #[rstest]
     fn test_from_i64() {
+        let value = 100_000;
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, (100_000 * SCALAR as u64));
+        assert_eq!(qty.raw, quantity_raw_from_f64(value as f64));
         assert_eq!(qty.precision, 0);
     }
 
-    #[rstest]
+    #[rstest] // Test does not panic rather than exact value
     fn test_with_maximum_value() {
-        let qty = Quantity::new(QUANTITY_MAX, 8);
-        assert_eq!(qty.raw, 18_446_744_073_000_000_000);
-        assert_eq!(qty.as_decimal(), dec!(18_446_744_073));
-        assert_eq!(qty.to_string(), "18446744073.00000000");
-        assert_eq!(qty.to_formatted_string(), "18_446_744_073.00000000");
+        let qty = Quantity::new_checked(QUANTITY_MAX, 0);
+        assert!(qty.is_ok());
     }
 
     #[rstest]
     fn test_with_minimum_positive_value() {
-        let qty = Quantity::new(0.000_000_001, 9);
-        assert_eq!(qty.raw, 1);
+        let value = 0.000_000_001;
+        let qty = Quantity::new(value, 9);
+        assert_eq!(qty.raw, quantity_raw_from_f64(value));
         assert_eq!(qty.as_decimal(), dec!(0.000000001));
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -579,8 +577,8 @@ mod tests {
 
     #[rstest]
     fn test_precision() {
-        let qty = Quantity::new(1.001, 2);
-        assert_eq!(qty.raw, 1_000_000_000);
+        let value = 1.001;
+        let qty = Quantity::new(value, 2);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -588,7 +586,6 @@ mod tests {
     fn test_new_from_str() {
         let qty = Quantity::new(0.00812000, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");

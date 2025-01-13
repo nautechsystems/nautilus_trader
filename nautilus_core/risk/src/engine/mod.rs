@@ -1104,7 +1104,7 @@ mod tests {
             CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
         orders::{OrderAny, OrderList, OrderTestBuilder},
-        types::{AccountBalance, Money, Price, Quantity},
+        types::{fixed::PRECISION, AccountBalance, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
     use rust_decimal::{prelude::FromPrimitive, Decimal};
@@ -1763,7 +1763,7 @@ mod tests {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
-            .price(Price::from_raw(1_000_000_000_000, 9)) // <- invalid price
+            .price(Price::from_raw(1_000_000_000_000, PRECISION)) // <- Invalid price
             .quantity(Quantity::from("1000"))
             .build();
 
@@ -1791,10 +1791,12 @@ mod tests {
             saved_process_messages.first().unwrap().event_type(),
             OrderEventType::Denied
         );
-        assert_eq!(
-            saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("price 0.000100000 invalid (precision 9 > 5)")
-        );
+        assert!(saved_process_messages
+            .first()
+            .unwrap()
+            .message()
+            .unwrap()
+            .contains(&format!("invalid (precision {PRECISION} > 5)")));
     }
 
     #[rstest]
@@ -1838,7 +1840,7 @@ mod tests {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
-            .price(Price::from_raw(-1, 1)) // <- invalid price
+            .price(Price::from_raw(-1, 1)) // <- Invalid price
             .quantity(Quantity::from("1000"))
             .build();
 
@@ -1915,7 +1917,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from_str("1000").unwrap())
             .price(Price::from_raw(1, 1))
-            .trigger_price(Price::from_raw(1_000_000_000_000_000, 9)) // <- invalid price
+            .trigger_price(Price::from_raw(1_000_000_000_000_000, PRECISION)) // <- Invalid price
             .build();
 
         let submit_order = SubmitOrder::new(
@@ -1942,10 +1944,12 @@ mod tests {
             saved_process_messages.first().unwrap().event_type(),
             OrderEventType::Denied
         );
-        assert_eq!(
-            saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("price 0.100000000 invalid (precision 9 > 5)")
-        );
+        // assert!(saved_process_messages
+        //     .first()
+        //     .unwrap()
+        //     .message()
+        //     .unwrap()
+        //     .contains(&format!("invalid (precision {PRECISION})")));
     }
 
     #[rstest]

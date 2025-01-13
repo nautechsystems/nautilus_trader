@@ -291,10 +291,9 @@ mod tests {
 
         let fixed_size_binary = format!("FixedSizeBinary({PRECISION_BYTES})");
         expected_map.insert("bid_price".to_string(), fixed_size_binary.clone());
-        expected_map.insert("ask_price".to_string(), fixed_size_binary);
-
-        expected_map.insert("bid_size".to_string(), "FixedSizeBinary(16)".to_string());
-        expected_map.insert("ask_size".to_string(), "FixedSizeBinary(16)".to_string());
+        expected_map.insert("ask_price".to_string(), fixed_size_binary.clone());
+        expected_map.insert("bid_size".to_string(), fixed_size_binary.clone());
+        expected_map.insert("ask_size".to_string(), fixed_size_binary);
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(arrow_schema, expected_map);
