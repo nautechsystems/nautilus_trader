@@ -28,10 +28,12 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{
-    fixed::fixed_i128_to_f64,
-    price::{Price, PriceRaw},
-};
+#[cfg(feature = "high_precision")]
+use crate::types::fixed::fixed_i128_to_f64;
+#[cfg(not(feature = "high_precision"))]
+use crate::types::fixed::fixed_i64_to_f64;
+
+use crate::types::price::{Price, PriceRaw};
 
 #[pymethods]
 impl Price {
@@ -369,18 +371,16 @@ impl Price {
         self.is_positive()
     }
 
-    #[cfg(not(feature = "high_precision"))]
-    #[pyo3(name = "as_double")]
-    fn py_as_double(&self) -> f64 {
-        use crate::types::fixed::fixed_i64_to_f64;
-
-        fixed_i64_to_f64(self.raw)
-    }
-
     #[cfg(feature = "high_precision")]
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
         fixed_i128_to_f64(self.raw)
+    }
+
+    #[cfg(not(feature = "high_precision"))]
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
+        fixed_i64_to_f64(self.raw)
     }
 
     #[pyo3(name = "as_decimal")]

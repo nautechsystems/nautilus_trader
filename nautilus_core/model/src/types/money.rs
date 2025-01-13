@@ -28,7 +28,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION};
+use super::fixed::PRECISION;
+#[cfg(feature = "high_precision")]
+use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high_precision"))]
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use crate::types::Currency;

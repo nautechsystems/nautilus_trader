@@ -29,17 +29,21 @@ fn main() {
 
         let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-        // Generate C headers
-        let mut config_c = cbindgen::Config::from_file("cbindgen.toml")
-            .expect("unable to find cbindgen.toml configuration file");
-
         #[cfg(feature = "high_precision")]
         {
+            // Generate C headers
+            let mut config_c = cbindgen::Config::from_file("cbindgen.toml")
+                .expect("unable to find cbindgen.toml configuration file");
             if let Some(mut includes) = config_c.after_includes {
                 includes.insert_str(0, "\n#define HIGH_PRECISION\n");
                 config_c.after_includes = Some(includes);
             }
         }
+
+        #[cfg(not(feature = "high_precision"))]
+        // Generate C headers
+        let config_c = cbindgen::Config::from_file("cbindgen.toml")
+            .expect("unable to find cbindgen.toml configuration file");
 
         let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/model.h");
         cbindgen::generate_with_config(&crate_dir, config_c)
@@ -95,7 +99,7 @@ fn main() {
 
         // Recreate the file and dump the processed contents to it
         let mut dst = File::create(cython_path).expect("`File::create` failed");
-        dst.write_all(data.as_bytes())
+        dst.write_all(new_data.as_bytes())
             .expect("I/O error on `dist.write`");
     }
 }

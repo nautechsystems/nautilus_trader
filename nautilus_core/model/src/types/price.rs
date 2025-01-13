@@ -35,11 +35,12 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{
-    check_fixed_precision, f64_to_fixed_i128, fixed_i128_to_f64, PRECISION, SCALAR,
-};
+#[cfg(feature = "high_precision")]
+use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high_precision"))]
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+
+use super::fixed::{check_fixed_precision, PRECISION};
 
 #[cfg(feature = "high_precision")]
 pub type PriceRaw = i128;
@@ -139,7 +140,7 @@ impl Price {
     pub fn max(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self {
-            raw: (PRICE_MAX * SCALAR) as PriceRaw,
+            raw: PRICE_RAW_MAX,
             precision,
         }
     }
@@ -154,7 +155,7 @@ impl Price {
     pub fn min(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self {
-            raw: (PRICE_MIN * SCALAR) as PriceRaw,
+            raw: PRICE_RAW_MIN,
             precision,
         }
     }

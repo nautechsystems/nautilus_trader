@@ -23,18 +23,19 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(feature = "high_precision")]
+use nautilus_core::check_positive_u128;
 use nautilus_core::{
-    correctness::{check_in_range_inclusive_f64, check_positive_u128, check_positive_u64, FAILED},
+    correctness::{check_in_range_inclusive_f64, check_positive_u64, FAILED},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{
-    check_fixed_precision, f64_to_fixed_u128, f64_to_fixed_u64, fixed_u128_to_f64,
-    fixed_u64_to_f64, PRECISION, SCALAR,
-};
+use super::fixed::{check_fixed_precision, f64_to_fixed_u64, fixed_u64_to_f64, PRECISION, SCALAR};
+#[cfg(feature = "high_precision")]
+use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
@@ -535,7 +536,7 @@ mod tests {
     fn test_from_i64() {
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 100_000_000_000_000_000_000_000);
+        assert_eq!(qty.raw, (100_000 * SCALAR as u64));
         assert_eq!(qty.precision, 0);
     }
 
