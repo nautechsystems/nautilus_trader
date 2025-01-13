@@ -20,8 +20,11 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.rust.model cimport Currency_t
 from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport Money_t
+from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport Quantity_t
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -37,7 +40,7 @@ cdef class Quantity:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef uint64_t raw_uint64_c(self)
+    cdef QuantityRaw raw_uint_c(self)
     cdef double as_f64_c(self)
 
     cdef Quantity add(self, Quantity other)
@@ -52,13 +55,13 @@ cdef class Quantity:
     cdef bint _compare(a, b, int op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw)
+    cdef double raw_to_f64_c(QuantityRaw raw)
 
     @staticmethod
     cdef Quantity from_mem_c(Quantity_t mem)
 
     @staticmethod
-    cdef Quantity from_raw_c(uint64_t raw, uint8_t precision)
+    cdef Quantity from_raw_c(QuantityRaw raw, uint8_t precision)
 
     @staticmethod
     cdef Quantity zero_c(uint8_t precision)
@@ -67,7 +70,7 @@ cdef class Quantity:
     cdef Quantity from_str_c(str value)
 
     @staticmethod
-    cdef Quantity from_int_c(int value)
+    cdef Quantity from_int_c(QuantityRaw value)
 
     cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
@@ -86,7 +89,7 @@ cdef class Price:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef int64_t raw_int64_c(self)
+    cdef PriceRaw raw_int_c(self)
     cdef double as_f64_c(self)
 
     cdef Price add(self, Price other)
@@ -101,19 +104,19 @@ cdef class Price:
     cdef bint _compare(a, b, int op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw)
+    cdef double raw_to_f64_c(PriceRaw raw)
 
     @staticmethod
     cdef Price from_mem_c(Price_t mem)
 
     @staticmethod
-    cdef Price from_raw_c(int64_t raw, uint8_t precision)
+    cdef Price from_raw_c(PriceRaw raw, uint8_t precision)
 
     @staticmethod
     cdef Price from_str_c(str value)
 
     @staticmethod
-    cdef Price from_int_c(int value)
+    cdef Price from_int_c(PriceRaw value)
 
     cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
@@ -127,14 +130,14 @@ cdef class Money:
     cdef bint is_zero(self)
     cdef bint is_negative(self)
     cdef bint is_positive(self)
-    cdef int64_t raw_int64_c(self)
+    cdef MoneyRaw raw_int_c(self)
     cdef double as_f64_c(self)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw)
+    cdef double raw_to_f64_c(MoneyRaw raw)
 
     @staticmethod
-    cdef Money from_raw_c(uint64_t raw, Currency currency)
+    cdef Money from_raw_c(MoneyRaw raw, Currency currency)
 
     @staticmethod
     cdef Money from_str_c(str value)
@@ -201,3 +204,17 @@ cdef class MarginBalance:
     @staticmethod
     cdef MarginBalance from_dict_c(dict values)
     cpdef dict to_dict(self)
+
+
+cdef inline Price_t price_new(PriceRaw raw, uint8_t precision):
+    cdef Price_t price
+    price.raw = raw
+    price.precision = precision
+    return price
+
+
+cdef inline Quantity_t quantity_new(QuantityRaw raw, uint8_t precision):
+    cdef Quantity_t qty
+    qty.raw = raw
+    qty.precision = precision
+    return qty

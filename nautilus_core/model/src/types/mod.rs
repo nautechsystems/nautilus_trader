@@ -29,5 +29,8 @@ pub mod stubs;
 pub use balance::{AccountBalance, MarginBalance};
 pub use currency::Currency;
 pub use money::{Money, MONEY_MAX, MONEY_MIN};
-pub use price::{Price, ERROR_PRICE, PRICE_ERROR, PRICE_MAX, PRICE_MIN, PRICE_UNDEF};
+pub use price::{
+    Price, ERROR_PRICE, PRICE_ERROR, PRICE_MAX, PRICE_MIN, PRICE_RAW_MAX, PRICE_RAW_MIN,
+    PRICE_UNDEF,
+};
 pub use quantity::{Quantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_UNDEF};

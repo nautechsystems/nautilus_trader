@@ -754,7 +754,7 @@ class TestBacktestWithAddedBars:
     def test_dump_pickled_data(self):
         # Arrange, Act, Assert
         pickled = self.engine.dump_pickled_data()
-        assert 5_060_606 <= len(pickled) <= 5_060_654
+        assert 5_060_606 <= len(pickled) <= 6_205_205
 
     def test_load_pickled_data(self):
         # Arrange

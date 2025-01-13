@@ -39,12 +39,11 @@ pub const DEPTH10_LEN: usize = 10;
 /// Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
 /// its specialized structure and limited depth use case.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OrderBookDepth10 {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,

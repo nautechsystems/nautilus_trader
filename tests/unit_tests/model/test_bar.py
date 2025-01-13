@@ -19,6 +19,7 @@ from datetime import timedelta
 import pytest
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
@@ -615,14 +616,19 @@ class TestBar:
 
     def test_from_raw_returns_expected_bar(self):
         # Arrange
+        open_price = 1.06210
+        high_price = 1.06355
+        low_price = 1.06205
+        close_price = 1.06320
+
         raw_bar = [
             BarType.from_str("EUR/USD.IDEALPRO-5-MINUTE-MID-EXTERNAL"),
-            1062100000,
-            1063550000,
-            1062050000,
-            1063200000,
+            convert_to_raw_int(open_price, 5),
+            convert_to_raw_int(high_price, 5),
+            convert_to_raw_int(low_price, 5),
+            convert_to_raw_int(close_price, 5),
             5,
-            0,
+            convert_to_raw_int(100_000, 0),
             0,
             1672012800000000000,
             1672013100300000000,
@@ -638,7 +644,7 @@ class TestBar:
             Price.from_str("1.06355"),
             Price.from_str("1.06205"),
             Price.from_str("1.06320"),
-            Quantity.from_str("0"),
+            Quantity.from_int(100_000),
             1672012800000000000,
             1672013100300000000,
         )

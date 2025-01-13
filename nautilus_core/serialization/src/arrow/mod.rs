@@ -33,7 +33,13 @@ use arrow::{
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
-use nautilus_model::data::{Bar, Data, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
+use nautilus_model::{
+    data::{
+        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        trade::TradeTick, Data,
+    },
+    types::{price::PriceRaw, quantity::QuantityRaw},
+};
 use pyo3::prelude::*;
 
 // Define metadata key constants constants
@@ -66,6 +72,16 @@ pub enum EncodingError {
     InvalidColumnType(&'static str, usize, DataType, DataType),
     #[error("Arrow error: {0}")]
     ArrowError(#[from] arrow::error::ArrowError),
+}
+
+#[inline]
+fn get_raw_price(bytes: &[u8]) -> PriceRaw {
+    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+}
+
+#[inline]
+fn get_raw_quantity(bytes: &[u8]) -> QuantityRaw {
+    QuantityRaw::from_le_bytes(bytes.try_into().unwrap())
 }
 
 pub trait ArrowSchemaProvider {

@@ -1763,7 +1763,7 @@ mod tests {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
-            .price(Price::from_raw(999999999, 9)) // <- invalid price
+            .price(Price::from_raw(1_000_000_000_000, 9)) // <- invalid price
             .quantity(Quantity::from("1000"))
             .build();
 
@@ -1793,7 +1793,7 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("price 0.999999999 invalid (precision 9 > 5)")
+            Ustr::from("price 0.000100000 invalid (precision 9 > 5)")
         );
     }
 
@@ -1915,7 +1915,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from_str("1000").unwrap())
             .price(Price::from_raw(1, 1))
-            .trigger_price(Price::from_raw(999999999, 9)) // <- invalid price
+            .trigger_price(Price::from_raw(1_000_000_000_000_000, 9)) // <- invalid price
             .build();
 
         let submit_order = SubmitOrder::new(
@@ -1944,7 +1944,7 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("price 0.999999999 invalid (precision 9 > 5)")
+            Ustr::from("price 0.100000000 invalid (precision 9 > 5)")
         );
     }
 

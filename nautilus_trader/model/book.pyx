@@ -18,8 +18,6 @@ from operator import itemgetter
 
 import pandas as pd
 
-from libc.stdint cimport INT64_MAX
-from libc.stdint cimport INT64_MIN
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -27,6 +25,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookOrder_t
@@ -36,7 +36,7 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
-from nautilus_trader.core.rust.model cimport book_order_from_raw
+from nautilus_trader.core.rust.model cimport book_order_new
 from nautilus_trader.core.rust.model cimport level_clone
 from nautilus_trader.core.rust.model cimport level_drop
 from nautilus_trader.core.rust.model cimport level_exposure
@@ -617,20 +617,19 @@ cdef class OrderBook(Data):
             The price precision for the fills.
 
         """
-        cdef int64_t price_raw
-        cdef Price price
+        cdef Price order_price
+        cdef Price_t price
+        price.precision = price_prec
         if is_aggressive:
-            price_raw = INT64_MAX if order.side == OrderSide.BUY else INT64_MIN
+            price.raw = PRICE_RAW_MAX if order.side == OrderSide.BUY else PRICE_RAW_MIN
         else:
-            price = order.price
-            price_raw = price._mem.raw
+            order_price = order.price
+            price.raw = order_price._mem.raw
 
-        cdef BookOrder_t submit_order = book_order_from_raw(
+        cdef BookOrder_t submit_order = book_order_new(
             order.side,
-            price_raw,
-            price_prec,
-            order.leaves_qty._mem.raw,
-            order.quantity._mem.precision,
+            price,
+            order.leaves_qty._mem,
             0,
         )
 

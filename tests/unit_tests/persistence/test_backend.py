@@ -41,6 +41,7 @@ def test_backend_session_order_book_deltas() -> None:
     assert is_ascending
 
 
+# @pytest.mark.skip(reason="Data written with precision off by 2?")
 def test_backend_session_quotes() -> None:
     # Arrange
     data_path = TEST_DATA_DIR / "nautilus" / "quotes.parquet"

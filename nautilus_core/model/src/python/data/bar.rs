@@ -38,7 +38,10 @@ use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
-    types::{Price, Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::{Quantity, QuantityRaw},
+    },
 };
 
 #[pymethods]
@@ -173,23 +176,23 @@ impl Bar {
 
         let open_py: Bound<'_, PyAny> = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
-        let open_raw: i64 = open_py.getattr("raw")?.extract()?;
+        let open_raw: PriceRaw = open_py.getattr("raw")?.extract()?;
         let open = Price::from_raw(open_raw, price_prec);
 
         let high_py: Bound<'_, PyAny> = obj.getattr("high")?;
-        let high_raw: i64 = high_py.getattr("raw")?.extract()?;
+        let high_raw: PriceRaw = high_py.getattr("raw")?.extract()?;
         let high = Price::from_raw(high_raw, price_prec);
 
         let low_py: Bound<'_, PyAny> = obj.getattr("low")?;
-        let low_raw: i64 = low_py.getattr("raw")?.extract()?;
+        let low_raw: PriceRaw = low_py.getattr("raw")?.extract()?;
         let low = Price::from_raw(low_raw, price_prec);
 
         let close_py: Bound<'_, PyAny> = obj.getattr("close")?;
-        let close_raw: i64 = close_py.getattr("raw")?.extract()?;
+        let close_raw: PriceRaw = close_py.getattr("raw")?.extract()?;
         let close = Price::from_raw(close_raw, price_prec);
 
         let volume_py: Bound<'_, PyAny> = obj.getattr("volume")?;
-        let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
+        let volume_raw: QuantityRaw = volume_py.getattr("raw")?.extract()?;
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
         let volume = Quantity::from_raw(volume_raw, volume_prec);
 

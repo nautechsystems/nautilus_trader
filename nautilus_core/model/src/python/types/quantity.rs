@@ -27,7 +27,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::Quantity;
+use crate::types::{quantity::QuantityRaw, Quantity};
 
 #[pymethods]
 impl Quantity {
@@ -38,7 +38,7 @@ impl Quantity {
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
         let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
-        self.raw = py_tuple.get_item(0)?.extract::<u64>()?;
+        self.raw = py_tuple.get_item(0)?.extract::<QuantityRaw>()?;
         self.precision = py_tuple.get_item(1)?.extract::<u8>()?;
         Ok(())
     }
@@ -321,7 +321,7 @@ impl Quantity {
     }
 
     #[getter]
-    fn raw(&self) -> u64 {
+    fn raw(&self) -> QuantityRaw {
         self.raw
     }
 
@@ -332,7 +332,7 @@ impl Quantity {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: u64, precision: u8) -> Self {
+    fn py_from_raw(raw: QuantityRaw, precision: u8) -> Self {
         Self::from_raw(raw, precision)
     }
 

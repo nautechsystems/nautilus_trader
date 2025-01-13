@@ -282,11 +282,11 @@ class TestOrderBook:
         assert len(book.asks()) == 1
         assert (
             repr(book.bids())
-            == "[BookLevel(price=10.0, orders=[BookOrder(side=BUY, price=10.0, size=5, order_id=10000000000)])]"
+            == "[BookLevel(price=10.0, orders=[BookOrder(side=BUY, price=10.0, size=5, order_id=100000000000000000)])]"
         )
         assert (
             repr(book.asks())
-            == "[BookLevel(price=11.0, orders=[BookOrder(side=SELL, price=11.0, size=6, order_id=11000000000)])]"
+            == "[BookLevel(price=11.0, orders=[BookOrder(side=SELL, price=11.0, size=6, order_id=110000000000000000)])]"
         )
         bid_level = book.bids()[0]
         ask_level = book.asks()[0]

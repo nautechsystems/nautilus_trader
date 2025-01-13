@@ -165,6 +165,10 @@ def ed25519_signature(private_key: bytes, data: str) -> str: ...
 # Model
 ###################################################################################################
 
+HIGH_PRECISION: Final[bool]
+FIXED_SCALAR: Final[float]
+FIXED_PRECISION: Final[int]
+
 class DataType:
     def __init__(self, type_name: str, metadata: dict[str, str] | None = None) -> None: ...
     @property
