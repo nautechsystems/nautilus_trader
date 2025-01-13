@@ -19,6 +19,7 @@ from decimal import Decimal
 from nautilus_trader.model.enums import order_status_to_str
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport SCALAR
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -1066,10 +1067,12 @@ cdef class Order:
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
-        cdef QuantityRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+
+        # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
+        cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
         if raw_leaves_qty < 0:
             raise ValueError(
-                f"invalid order.leaves_qty: was {raw_leaves_qty / 1e9}, "
+                f"invalid order.leaves_qty: was {raw_leaves_qty / SCALAR}, "
                 f"order.quantity={self.quantity}, "
                 f"order.filled_qty={self.filled_qty}, "
                 f"fill.last_qty={fill.last_qty}, "

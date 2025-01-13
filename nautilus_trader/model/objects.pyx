@@ -36,14 +36,14 @@ from nautilus_trader.core.rust.core cimport precision_from_cstr
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
 from nautilus_trader.core.rust.model cimport PRECISION
-from nautilus_trader.core.rust.model cimport PRECISION as RUST_FIXED_PRECISION
+from nautilus_trader.core.rust.model cimport PRECISION as RUST_PRECISION
 from nautilus_trader.core.rust.model cimport PRECISION_BYTES
 from nautilus_trader.core.rust.model cimport PRECISION_BYTES as RUST_PRECISION_BYTES
 from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
 from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
 from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
-from nautilus_trader.core.rust.model cimport SCALAR as RUST_FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport SCALAR as RUST_SCALAR
 from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
@@ -74,8 +74,8 @@ MONEY_MAX = RUST_MONEY_MAX
 MONEY_MIN = RUST_MONEY_MIN
 
 HIGH_PRECISION = PRECISION == 16
-FIXED_PRECISION = RUST_FIXED_PRECISION
-FIXED_SCALAR = RUST_FIXED_SCALAR
+FIXED_PRECISION = RUST_PRECISION
+FIXED_SCALAR = RUST_SCALAR
 FIXED_PRECISION_BYTES = RUST_PRECISION_BYTES
 
 
@@ -237,7 +237,7 @@ cdef class Quantity:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self._mem.raw / RUST_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -313,11 +313,11 @@ cdef class Quantity:
         return self._mem.raw
 
     cdef double as_f64_c(self):
-        return self._mem.raw / RUST_FIXED_SCALAR
+        return self._mem.raw / RUST_SCALAR
 
     @staticmethod
     cdef double raw_to_f64_c(QuantityRaw raw):
-        return raw / RUST_FIXED_SCALAR
+        return raw / RUST_SCALAR
 
     @staticmethod
     def raw_to_f64(raw) -> float:
@@ -675,7 +675,7 @@ cdef class Price:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self._mem.raw / RUST_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -740,7 +740,7 @@ cdef class Price:
 
     @staticmethod
     cdef double raw_to_f64_c(QuantityRaw raw):
-        return raw / RUST_FIXED_SCALAR
+        return raw / RUST_SCALAR
 
     @staticmethod
     cdef Price from_str_c(str value):
@@ -793,7 +793,7 @@ cdef class Price:
         return self._mem.raw
 
     cdef double as_f64_c(self):
-        return self._mem.raw / RUST_FIXED_SCALAR
+        return self._mem.raw / RUST_SCALAR
 
     @staticmethod
     def from_raw(raw: int, uint8_t precision) -> Price:
@@ -1066,10 +1066,10 @@ cdef class Money:
         return hash((self._mem.raw, self.currency_code_c()))
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f} {self.currency_code_c()}"
+        return f"{self._mem.raw / RUST_SCALAR:.{self._mem.currency.precision}f} {self.currency_code_c()}"
 
     def __repr__(self) -> str:
-        cdef str amount = f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
+        cdef str amount = f"{self._mem.raw / RUST_SCALAR:.{self._mem.currency.precision}f}"
         return f"{type(self).__name__}({amount}, {self.currency_code_c()})"
 
     @property
@@ -1098,7 +1098,7 @@ cdef class Money:
 
     @staticmethod
     cdef double raw_to_f64_c(MoneyRaw raw):
-        return raw / RUST_FIXED_SCALAR
+        return raw / RUST_SCALAR
 
     @staticmethod
     cdef Money from_raw_c(MoneyRaw raw, Currency currency):
@@ -1155,7 +1155,7 @@ cdef class Money:
         return self._mem.raw
 
     cdef double as_f64_c(self):
-        return self._mem.raw / RUST_FIXED_SCALAR
+        return self._mem.raw / RUST_SCALAR
 
     @staticmethod
     def from_raw(raw: int, Currency currency) -> Money:

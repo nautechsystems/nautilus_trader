@@ -16,6 +16,7 @@
 import pickle
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -157,12 +158,12 @@ class TestQuoteTick:
         # Arrange, Act
         quote = QuoteTick.from_raw(
             AUDUSD_SIM.id,
-            10000000000000000,
-            10000100000000000,
+            convert_to_raw_int(1.00000, 5),
+            convert_to_raw_int(1.00001, 5),
             5,
             5,
-            10000000000000000,
-            20000000000000000,
+            convert_to_raw_int(1, 0),
+            convert_to_raw_int(2, 0),
             0,
             0,
             1,
@@ -381,9 +382,9 @@ class TestTradeTick:
 
         trade = TradeTick.from_raw(
             AUDUSD_SIM.id,
-            10000100000000000,
+            convert_to_raw_int(1.00001, 5),
             5,
-            100000000000000000000,
+            convert_to_raw_int(10_000, 0),
             0,
             AggressorSide.BUYER,
             trade_id,
