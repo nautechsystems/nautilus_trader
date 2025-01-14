@@ -70,7 +70,7 @@ impl DatabentoLiveClient {
         // Continue to process messages until channel is hung up
         while let Some(msg) = msg_rx.recv().await {
             tracing::trace!("Received message: {msg:?}");
-            let result = match msg {
+            match msg {
                 LiveMessage::Data(data) => Python::with_gil(|py| {
                     let py_obj = data_to_pycapsule(py, data);
                     call_python(py, &callback, py_obj)
@@ -101,8 +101,6 @@ impl DatabentoLiveClient {
                     return Err(to_pyruntime_err(e));
                 }
             };
-
-            result?;
         }
 
         msg_rx.close();
@@ -116,12 +114,10 @@ impl DatabentoLiveClient {
     }
 }
 
-fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
-    callback.call1(py, (py_obj,)).map_err(|e| {
+fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+    if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
-        e
-    })?;
-    Ok(())
+    }
 }
 
 #[pymethods]
