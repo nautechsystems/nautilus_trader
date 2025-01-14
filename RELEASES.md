@@ -9,7 +9,9 @@ Released on TBD (UTC).
 - Renamed `event_logging` config option to `log_events`
 
 ### Internal Improvements
-- Ported market order filling for OrderMatchingEngine in Rust (#2202), thanks @filipmacek
+- Ported market order filling for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
+- Ported limit order filling for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
+- Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
