@@ -3,10 +3,10 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
 
 ### Breaking Changes
-None
+- Renamed `event_logging` config option to `log_events`
 
 ### Internal Improvements
 - Ported market order filling for OrderMatchingEngine in Rust (#2202), thanks @filipmacek
@@ -14,6 +14,7 @@ None
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
+- Fixed databento helper function (#2208), thanks @faysou
 
 ### Documentation Updates
 None

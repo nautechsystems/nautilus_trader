@@ -33,10 +33,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT
 from nautilus_trader.common.component cimport RECV
-from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport MessageBus
@@ -147,12 +145,13 @@ cdef class Strategy(Actor):
         self.order_id_tag = str(config.order_id_tag)
 
         # Configuration
+        self._log_events = config.log_events
+        self._log_commands = config.log_commands
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
-        self.event_logging = config.event_logging
 
         # Public components
         self.clock = self._clock
@@ -294,6 +293,8 @@ cdef class Strategy(Actor):
             cancel_order_handler=self.cancel_order,
             modify_order_handler=self.modify_order,
             debug=False,  # Set True for debugging
+            log_events=self._log_events,
+            log_commands=self._log_commands,
         )
 
         # Required subscriptions
@@ -1530,7 +1531,7 @@ cdef class Strategy(Actor):
 
         if type(event) in self._warning_events:
             self.log.warning(f"{RECV}{EVT} {event}")
-        elif self.event_logging:
+        elif self._log_events:
             self.log.info(f"{RECV}{EVT} {event}")
 
         cdef Order order

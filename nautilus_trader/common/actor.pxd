@@ -51,6 +51,8 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class Actor(Component):
     cdef object _executor
+    cdef bint _log_events
+    cdef bint _log_commands
     cdef set[type] _warning_events
     cdef dict[UUID4, object] _pending_requests
     cdef set[type] _pyo3_conversion_types
