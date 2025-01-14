@@ -25,7 +25,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport CMD
-from nautilus_trader.common.component cimport EVT
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
@@ -118,6 +117,8 @@ cdef class ExecAlgorithm(Actor):
             self.id = config.exec_algorithm_id or ExecAlgorithmId(type(self).__name__)
 
         # Configuration
+        self._log_events = config.log_events
+        self._log_commands = config.log_commands
         self.config = config
 
         self._exec_spawn_ids: dict[ClientOrderId, int] = {}
@@ -253,7 +254,8 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(command, "command")
 
-        self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
+        if self._log_commands:
+            self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
 
         if self._fsm.state != ComponentState.RUNNING:
             return
@@ -1460,16 +1462,16 @@ cdef class ExecAlgorithm(Actor):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_emulator_command(self, TradingCommand command):
-        if is_logging_initialized():
+        if self._log_commands and is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
-        if is_logging_initialized():
+        if self._log_commands and is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cdef void _send_exec_command(self, TradingCommand command):
-        if is_logging_initialized():
+        if self._log_commands and is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

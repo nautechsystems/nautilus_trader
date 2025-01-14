@@ -51,6 +51,8 @@ cdef class OrderManager:
 
     cdef readonly bint active_local
     cdef readonly bint debug
+    cdef readonly bint log_events
+    cdef readonly bint log_commands
 
     cdef dict _submit_order_commands
     cdef object _submit_order_handler
