@@ -228,7 +228,7 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 /// Decodes quantity from the given value. Databento quantities are always whole units so we
 /// can just use [`SCALAR`].
 pub fn decode_raw_quantity_u64(value: u64) -> QuantityRaw {
-    value * SCALAR as u64
+    value * SCALAR as QuantityRaw
 }
 
 /// Decodes a minimum price increment from the given value, expressed in units of 1e-9.

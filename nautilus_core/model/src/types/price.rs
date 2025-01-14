@@ -39,7 +39,7 @@ use super::fixed::{check_fixed_precision, PRECISION};
 #[cfg(feature = "high_precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high_precision"))]
-use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
 #[cfg(feature = "high_precision")]
 pub type PriceRaw = i128;
