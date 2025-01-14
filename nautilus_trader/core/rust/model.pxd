@@ -4,6 +4,7 @@ from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t, int32
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 DEF HIGH_PRECISION = False  # or True
+cdef bint HIGH_PRECISION_MODE
 
 cdef extern from "../includes/model.h":
 
@@ -23,10 +24,14 @@ cdef extern from "../includes/model.h":
     IF not HIGH_PRECISION:
         const uint8_t PRECISION # = FIXED_PRECISION
 
-    # The scalar value corresponding to the maximum precision (10^PRECISION).
+    # The scalar value corresponding to the maximum precision (10^FIXED_PRECISION).
     const double FIXED_SCALAR # = 1000000000.0
 
+    # The scalar value corresponding to the maximum precision (10^FIXED_HIGH_PRECISION).
     const double FIXED_HIGH_PRECISION_SCALAR # = 10000000000000000.0
+
+    # The scalar representing the difference between high and low precision.
+    const double PRECISION_DIFF_SCALAR # = 10000000.0
 
     IF HIGH_PRECISION:
         const double SCALAR # = FIXED_HIGH_PRECISION_SCALAR

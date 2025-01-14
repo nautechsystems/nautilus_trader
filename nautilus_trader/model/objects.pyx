@@ -33,6 +33,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport precision_from_cstr
+from nautilus_trader.core.rust.model cimport HIGH_PRECISION_MODE as RUST_HIGH_PRECISION_MODE
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
 from nautilus_trader.core.rust.model cimport PRECISION
@@ -73,7 +74,7 @@ PRICE_MIN = RUST_PRICE_MIN
 MONEY_MAX = RUST_MONEY_MAX
 MONEY_MIN = RUST_MONEY_MIN
 
-HIGH_PRECISION = PRECISION == 16
+HIGH_PRECISION = RUST_HIGH_PRECISION_MODE
 FIXED_PRECISION = RUST_PRECISION
 FIXED_SCALAR = RUST_SCALAR
 FIXED_PRECISION_BYTES = RUST_PRECISION_BYTES

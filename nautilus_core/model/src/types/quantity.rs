@@ -207,8 +207,26 @@ impl From<&Quantity> for f64 {
     }
 }
 
+impl From<i32> for Quantity {
+    fn from(value: i32) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
 impl From<i64> for Quantity {
     fn from(value: i64) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
+impl From<u32> for Quantity {
+    fn from(value: u32) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
+impl From<u64> for Quantity {
+    fn from(value: u64) -> Self {
         Self::new(value as f64, 0)
     }
 }

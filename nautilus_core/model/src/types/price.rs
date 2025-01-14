@@ -78,24 +78,23 @@ pub const ERROR_PRICE: Price = Price {
     precision: 255,
 };
 
+#[cfg(feature = "high_precision")]
+pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_i128(value, param)
+}
+
 #[cfg(not(feature = "high_precision"))]
 pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
     check_positive_i64(value, param)
 }
 
 #[cfg(feature = "high_precision")]
-pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_i128(value, param)
-}
-
-#[cfg(feature = "high_precision")]
 /// The raw i64 price has already been scaled by FIXED_PRECISION. Further scale
 /// it by the difference to FIXED_HIGH_PRECISION to make it high precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    use super::fixed::FIXED_PRECISION;
-    use crate::types::fixed::FIXED_HIGH_PRECISION;
+    use super::fixed::PRECISION_DIFF_SCALAR;
 
-    value as PriceRaw * (10 as PriceRaw).pow((FIXED_HIGH_PRECISION - FIXED_PRECISION) as u32)
+    value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
 }
 
 #[cfg(not(feature = "high_precision"))]
@@ -210,44 +209,6 @@ impl Price {
     }
 }
 
-#[cfg(not(feature = "high_precision"))]
-impl Price {
-    /// Creates a new [`Price`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [-9_223_372_036, 9_223_372_036].
-    /// - If `precision` is invalid outside the representable range [0, 9].
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
-        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
-        check_fixed_precision(precision)?;
-
-        Ok(Self {
-            raw: f64_to_fixed_i64(value, precision),
-            precision,
-        })
-    }
-
-    /// Returns the value of this instance as an `f64`.
-    #[must_use]
-    pub fn as_f64(&self) -> f64 {
-        fixed_i64_to_f64(self.raw)
-    }
-
-    /// Returns the value of this instance as a `Decimal`.
-    #[must_use]
-    pub fn as_decimal(&self) -> Decimal {
-        // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
-        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
-    }
-}
-
 #[cfg(feature = "high_precision")]
 impl Price {
     /// Creates a new [`Price`] instance with correctness checking.
@@ -283,6 +244,44 @@ impl Price {
         // Scale down the raw value to match the precision
         let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
         #[allow(clippy::useless_conversion)]
+        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
+    }
+}
+
+#[cfg(not(feature = "high_precision"))]
+impl Price {
+    /// Creates a new [`Price`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `value` is invalid outside the representable range [-9_223_372_036, 9_223_372_036].
+    /// - If `precision` is invalid outside the representable range [0, 9].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
+        check_fixed_precision(precision)?;
+
+        Ok(Self {
+            raw: f64_to_fixed_i64(value, precision),
+            precision,
+        })
+    }
+
+    /// Returns the value of this instance as an `f64`.
+    #[must_use]
+    pub fn as_f64(&self) -> f64 {
+        fixed_i64_to_f64(self.raw)
+    }
+
+    /// Returns the value of this instance as a `Decimal`.
+    #[must_use]
+    pub fn as_decimal(&self) -> Decimal {
+        // Scale down the raw value to match the precision
+        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
     }
 }

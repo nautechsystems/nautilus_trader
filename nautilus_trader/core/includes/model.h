@@ -35,11 +35,19 @@
 #endif
 
 /**
- * The scalar value corresponding to the maximum precision (10^PRECISION).
+ * The scalar value corresponding to the maximum precision (10^FIXED_PRECISION).
  */
 #define FIXED_SCALAR 1000000000.0
 
+/**
+ * The scalar value corresponding to the maximum precision (10^FIXED_HIGH_PRECISION).
+ */
 #define FIXED_HIGH_PRECISION_SCALAR 10000000000000000.0
+
+/**
+ * The scalar representing the difference between high and low precision.
+ */
+#define PRECISION_DIFF_SCALAR 10000000.0
 
 #if defined(HIGH_PRECISION)
 #define SCALAR FIXED_HIGH_PRECISION_SCALAR

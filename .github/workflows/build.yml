@@ -3,8 +3,8 @@ name: build
 on:
   push:
     branches: [master, nightly, develop]
-  # pull_request:  # TODO: Pause CI for now
-  #   branches: [develop]
+  pull_request:
+    branches: [develop]
 
 jobs:
   pre-commit:
