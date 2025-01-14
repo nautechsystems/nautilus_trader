@@ -756,24 +756,6 @@ impl RiskEngine {
                     }
                 }
 
-                // match cum_notional_buy.as_mut() {
-                //     Some(cum_notional_buy_val) => {
-                //         // Use checked_add to safely handle potential overflow
-                //         cum_notional_buy_val.raw = cum_notional_buy_val.raw.checked_add(-order_balance_impact.raw)
-                //             .ok_or_else(|| {
-                //                 log::error!("Cumulative notional calculation overflow");
-                //                 "Cumulative notional calculation overflow"
-                //             })
-                //             .unwrap_or(cum_notional_buy_val.raw); // Keep old value on overflow
-                //     }
-                //     None => {
-                //         cum_notional_buy = Some(Money::from_raw(
-                //             -order_balance_impact.raw,
-                //             order_balance_impact.currency,
-                //         ));
-                //     }
-                // }
-
                 if self.config.debug {
                     log::debug!("Cumulative notional BUY: {:?}", cum_notional_buy);
                 }
@@ -1292,7 +1274,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn xbtusd_low_notional() -> InstrumentAny {
+    pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             InstrumentId::from("BTCUSDT.BITMEX"),
             Symbol::from("XBTUSD"),
@@ -2691,7 +2673,7 @@ mod tests {
         client_id_binance: ClientId,
         trader_id: TraderId,
         client_order_id: ClientOrderId,
-        xbtusd_low_notional: InstrumentAny,
+        instrument_xbtusd_with_high_size_precision: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
         execute_order_event_handler: ShareableMessageHandler,
@@ -2709,7 +2691,7 @@ mod tests {
         );
 
         simple_cache
-            .add_instrument(xbtusd_low_notional.clone())
+            .add_instrument(instrument_xbtusd_with_high_size_precision.clone())
             .unwrap();
 
         simple_cache
@@ -2719,7 +2701,7 @@ mod tests {
             .unwrap();
 
         let quote = QuoteTick::new(
-            xbtusd_low_notional.id(),
+            instrument_xbtusd_with_high_size_precision.id(),
             Price::from("0.075000"),
             Price::from("0.075005"),
             Quantity::from("50000"),
@@ -2739,7 +2721,7 @@ mod tests {
         );
 
         let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(xbtusd_low_notional.id())
+            .instrument_id(instrument_xbtusd_with_high_size_precision.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from_str("0.9").unwrap())
             .build();
@@ -2748,7 +2730,7 @@ mod tests {
             trader_id,
             client_id_binance,
             strategy_id_ema_cross,
-            xbtusd_low_notional.id(),
+            instrument_xbtusd_with_high_size_precision.id(),
             client_order_id,
             venue_order_id,
             order,
@@ -3494,31 +3476,30 @@ mod tests {
         .unwrap();
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-        // risk_engine.set_trading_state(TradingState::Reducing);
+        risk_engine.set_trading_state(TradingState::Reducing);
 
-        // let order2 = OrderTestBuilder::new(OrderType::Market)
-        //     .instrument_id(instrument_xbtusd_bitmex.id())
-        //     .side(OrderSide::Sell)
-        //     .quantity(Quantity::from_str("100").unwrap())
-        //     .build();
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_xbtusd_bitmex.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from_str("100").unwrap())
+            .build();
 
-        // let submit_order2 = SubmitOrder::new(
-        //     trader_id,
-        //     client_id_binance,
-        //     strategy_id_ema_cross,
-        //     instrument_xbtusd_bitmex.id(),
-        //     client_order_id,
-        //     venue_order_id,
-        //     order2,
-        //     None,
-        //     None,
-        //     UUID4::new(),
-        //     risk_engine.clock.borrow().timestamp_ns(),
-        // )
-        // .unwrap();
+        let submit_order2 = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            instrument_xbtusd_bitmex.id(),
+            client_order_id,
+            venue_order_id,
+            order2,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
 
-        // risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
         let saved_execute_messages =
             get_execute_order_event_handler_messages(execute_order_event_handler);
         assert_eq!(saved_execute_messages.len(), 1);
@@ -4118,7 +4099,7 @@ mod tests {
         // risk_engine.execute(TradingCommand::SubmitOrderList(submit_bracket));
 
         // Get messages and test
-        // After completing todo on L1081
+        // TODO: complete fn execution_gateway
         // let saved_process_messages =
         //     get_process_order_event_handler_messages(process_order_event_handler);
         // assert_eq!(saved_process_messages.len(), 0);
