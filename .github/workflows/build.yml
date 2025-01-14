@@ -308,8 +308,7 @@ jobs:
           pip install "$(ls dist/*.whl)"
 
       - name: Run tests
-        run: |
-          pytest --ignore=tests/performance_tests --new-first --failed-first
+        run: pytest --ignore=tests/performance_tests
 
       - name: Set release output
         if: github.event_name == 'push'
@@ -495,8 +494,7 @@ jobs:
           pip install "$(ls dist/*.whl)"
 
       - name: Run tests
-        run: |
-          pytest --ignore=tests/performance_tests --new-first --failed-first
+        run: pytest --ignore=tests/performance_tests
 
       - name: Set release output
         if: github.event_name == 'push'
@@ -628,7 +626,7 @@ jobs:
       - name: Run tests
         run: |
           poetry install --with test --all-extras
-          poetry run pytest --ignore=tests/performance_tests --new-first --failed-first
+          poetry run pytest --ignore=tests/performance_tests
         env:
           PARALLEL_BUILD: false
 
