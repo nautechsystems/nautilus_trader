@@ -4128,4 +4128,4 @@ polymarket = ["py-clob-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "d7b95e792ccc8aee87a85efa904e6aae6dabc4ecc542d6c5785f230fd7580bff"
+content-hash = "e85328239edb5f8c471a643b16535ef0dc18da4fa1cf366635a1962f2afceaab"
