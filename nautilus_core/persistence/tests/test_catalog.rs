@@ -16,12 +16,9 @@
 use std::path::PathBuf;
 
 use nautilus_core::ffi::cvec::CVec;
-use nautilus_model::{
-    data::{
-        is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
-        TradeTick,
-    },
-    types::{Price, Quantity},
+use nautilus_model::data::{
+    is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
+    TradeTick,
 };
 use nautilus_persistence::{
     backend::{
@@ -31,7 +28,7 @@ use nautilus_persistence::{
     python::backend::session::NautilusDataType,
 };
 use nautilus_serialization::arrow::ArrowSchemaProvider;
-use nautilus_test_kit::common::get_test_data_file_path;
+use nautilus_test_kit::common::get_nautilus_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
@@ -76,10 +73,7 @@ fn catalog_query_mem_leak_test() {
     mem_leak_test(
         pyo3::prepare_freethreaded_python,
         |_args| {
-            #[cfg(feature = "high_precision")]
-            let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-            #[cfg(not(feature = "high_precision"))]
-            let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+            let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
             let expected_length = 9500;
             let catalog = DataBackendSession::new(1_000_000);
@@ -123,10 +117,7 @@ fn catalog_query_mem_leak_test() {
 #[rstest]
 
 fn test_quote_tick_cvec_interface() {
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
     let expected_length = 9500;
     let mut catalog = DataBackendSession::new(1000);
@@ -159,10 +150,7 @@ fn test_quote_tick_cvec_interface() {
 fn test_quote_tick_python_control_flow() {
     pyo3::prepare_freethreaded_python();
 
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
     let expected_length = 9500;
     let catalog = DataBackendSession::new(1_000_000);
@@ -203,10 +191,7 @@ fn test_quote_tick_python_control_flow() {
 fn test_order_book_delta_query() {
     let expected_length = 1077;
 
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/deltas.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/deltas.parquet");
+    let file_path = get_nautilus_test_data_file_path("deltas.parquet");
 
     let mut catalog = DataBackendSession::new(1_000);
     catalog
@@ -223,41 +208,37 @@ fn test_order_book_delta_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-// TODO: Need test data for both precision modes
-// #[rstest]
-// fn test_order_book_delta_query_py() {
-//     pyo3::prepare_freethreaded_python();
-//
-//     let file_path = get_test_data_file_path("nautilus/deltas.parquet");
-//     let catalog = DataBackendSession::new(2_000);
-//     Python::with_gil(|py| {
-//         let pycatalog: Py<PyAny> = catalog.into_py(py);
-//         pycatalog
-//             .call_method1(
-//                 py,
-//                 "add_file",
-//                 (
-//                     NautilusDataType::OrderBookDelta,
-//                     "order_book_deltas",
-//                     file_path.as_str(),
-//                 ),
-//             )
-//             .unwrap();
-//         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
-//         let chunk = result.call_method0(py, "__next__").unwrap();
-//         let capsule: &Bound<'_, PyCapsule> = chunk.downcast_bound(py).unwrap();
-//         let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
-//         assert_eq!(cvec.len, 1077);
-//     });
-// }
+#[rstest]
+fn test_order_book_delta_query_py() {
+    pyo3::prepare_freethreaded_python();
+
+    let file_path = get_nautilus_test_data_file_path("deltas.parquet");
+    let catalog = DataBackendSession::new(2_000);
+    Python::with_gil(|py| {
+        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        pycatalog
+            .call_method1(
+                py,
+                "add_file",
+                (
+                    NautilusDataType::OrderBookDelta,
+                    "order_book_deltas",
+                    file_path.as_str(),
+                ),
+            )
+            .unwrap();
+        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+        let chunk = result.call_method0(py, "__next__").unwrap();
+        let capsule: &Bound<'_, PyCapsule> = chunk.downcast_bound(py).unwrap();
+        let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+        assert_eq!(cvec.len, 1077);
+    });
+}
 
 #[rstest]
 fn test_quote_tick_query() {
     let expected_length = 9_500;
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
@@ -278,10 +259,7 @@ fn test_quote_tick_query() {
 
 #[rstest]
 fn test_quote_tick_query_with_filter() {
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes-3-groups-filter-query.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes-3-groups-filter-query.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes-3-groups-filter-query.parquet");
 
     let mut catalog = DataBackendSession::new(10);
     catalog
@@ -300,16 +278,8 @@ fn test_quote_tick_query_with_filter() {
 fn test_quote_tick_multiple_query() {
     let expected_length = 9_600;
     let mut catalog = DataBackendSession::new(5_000);
-
-    #[cfg(feature = "high_precision")]
-    let file_path_quotes = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(feature = "high_precision")]
-    let file_path_trades = get_test_data_file_path("nautilus/trades.parquet");
-
-    #[cfg(not(feature = "high_precision"))]
-    let file_path_quotes = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path_trades = get_test_data_file_path("nautilus/64-bit/trades.parquet");
+    let file_path_quotes = get_nautilus_test_data_file_path("quotes.parquet");
+    let file_path_trades = get_nautilus_test_data_file_path("trades.parquet");
 
     catalog
         .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None)
@@ -327,11 +297,7 @@ fn test_quote_tick_multiple_query() {
 #[rstest]
 fn test_trade_tick_query() {
     let expected_length = 100;
-
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/trades.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/trades.parquet");
+    let file_path = get_nautilus_test_data_file_path("trades.parquet");
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
@@ -353,11 +319,7 @@ fn test_trade_tick_query() {
 #[rstest]
 fn test_bar_query() {
     let expected_length = 10;
-
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/bars.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/bars.parquet");
+    let file_path = get_nautilus_test_data_file_path("bars.parquet");
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
@@ -385,10 +347,7 @@ fn test_catalog_serialization_json_round_trip() {
     let catalog = ParquetDataCatalog::new(temp_dir.as_path().to_path_buf(), Some(1000));
 
     // Read original data from parquet
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
     let mut session = DataBackendSession::new(1000);
     session
@@ -423,10 +382,7 @@ fn test_datafusion_parquet_round_trip() {
     use pretty_assertions::assert_eq;
 
     // Read original data from parquet
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
     let mut session = DataBackendSession::new(1000);
     session
@@ -484,10 +440,7 @@ fn test_catalog_export_functionality() {
     let mut catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None);
 
     // Read input file path and determine data type
-    #[cfg(feature = "high_precision")]
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    #[cfg(not(feature = "high_precision"))]
-    let file_path = get_test_data_file_path("nautilus/64-bit/quotes.parquet");
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
 
     let result = catalog
         .query_file::<QuoteTick>(PathBuf::from(file_path), None, None, None)
