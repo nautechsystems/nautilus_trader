@@ -249,7 +249,7 @@ async fn handle_python_stream<S>(
                     if let Some(data) = parse_tardis_ws_message(msg, info) {
                         Python::with_gil(|py| {
                             let py_obj = data_to_pycapsule(py, data);
-                            let _ = call_python(py, &callback, py_obj);
+                            call_python(py, &callback, py_obj);
                         });
                     }
                 }
@@ -262,10 +262,8 @@ async fn handle_python_stream<S>(
     }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
-    callback.call1(py, (py_obj,)).map_err(|e| {
+fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+    if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
-        e
-    })?;
-    Ok(())
+    }
 }

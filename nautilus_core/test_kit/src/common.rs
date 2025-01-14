@@ -29,6 +29,7 @@ pub fn get_test_data_file_path(path: &str) -> String {
 }
 
 #[must_use]
+#[allow(unused_mut)]
 pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
     let mut path = get_test_data_path().join("nautilus");
 

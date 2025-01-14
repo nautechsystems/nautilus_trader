@@ -184,6 +184,7 @@ impl From<Bar> for Data {
 #[no_mangle]
 #[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn data_clone(data: &Data) -> Data {
+    // Dummy function for cbindgen to export types
     data.clone()
 }
 

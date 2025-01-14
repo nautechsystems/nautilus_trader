@@ -31,7 +31,7 @@ use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{
         AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
-        OrderType,
+        OrderType, TimeInForce,
     },
     events::{
         order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
@@ -82,7 +82,7 @@ pub fn market_order_buy(instrument_eth_usdt: InstrumentAny) -> OrderAny {
     OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
+        .quantity(Quantity::from("1.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .build()
 }
@@ -122,7 +122,7 @@ pub fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
     OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
-        .quantity(Quantity::from("1"))
+        .quantity(Quantity::from("1.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
         .build()
 }
@@ -219,7 +219,7 @@ fn test_process_order_when_instrument_already_expired(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    market_order_buy: OrderAny,
+    mut market_order_buy: OrderAny,
 ) {
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
 
@@ -233,7 +233,7 @@ fn test_process_order_when_instrument_already_expired(
     let mut engine =
         get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
 
-    engine.process_order(&market_order_buy, account_id);
+    engine.process_order(&mut market_order_buy, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -252,7 +252,7 @@ fn test_process_order_when_instrument_not_active(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    market_order_buy: OrderAny,
+    mut market_order_buy: OrderAny,
 ) {
     let activation = UnixNanos::from(
         Utc.with_ymd_and_hms(2222, 4, 8, 0, 0, 0)
@@ -279,7 +279,7 @@ fn test_process_order_when_instrument_not_active(
     let mut engine =
         get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
 
-    engine.process_order(&market_order_buy, account_id);
+    engine.process_order(&mut market_order_buy, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -299,13 +299,19 @@ fn test_process_order_when_invalid_quantity_precision(
     account_id: AccountId,
     time: AtomicTime,
     instrument_eth_usdt: InstrumentAny,
-    market_order_buy: OrderAny,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
         order_event_handler.clone(),
     );
+
+    // Create market order with invalid quantity precision 0 for eth/usdt precision of 3
+    let mut market_order_invalid_precision = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .build();
 
     // Create engine and process order
     let mut engine = get_order_matching_engine(
@@ -316,7 +322,7 @@ fn test_process_order_when_invalid_quantity_precision(
         None,
     );
 
-    engine.process_order(&market_order_buy, account_id);
+    engine.process_order(&mut market_order_invalid_precision, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -352,14 +358,14 @@ fn test_process_order_when_invalid_price_precision(
         None,
     );
 
-    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_es.id())
         .side(OrderSide::Sell)
         .price(Price::from("100.12333")) // <- wrong price precision for es futures contract (which is 2)
         .quantity(Quantity::from("1"))
         .build();
 
-    engine.process_order(&limit_order, account_id);
+    engine.process_order(&mut limit_order, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -394,14 +400,14 @@ fn test_process_order_when_invalid_trigger_price_precision(
         None,
         None,
     );
-    let stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
         .instrument_id(instrument_es.id())
         .side(OrderSide::Sell)
         .trigger_price(Price::from("100.12333")) // <- wrong trigger price precision for es futures contract (which is 2)
         .quantity(Quantity::from("1"))
         .build();
 
-    engine.process_order(&stop_order, account_id);
+    engine.process_order(&mut stop_order, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -421,7 +427,6 @@ fn test_process_order_when_shorting_equity_without_margin_account(
     account_id: AccountId,
     time: AtomicTime,
     equity_aapl: Equity,
-    market_order_sell: OrderAny,
 ) {
     let instrument = InstrumentAny::Equity(equity_aapl);
     // Register saving message handler to exec engine endpoint
@@ -430,11 +435,17 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         order_event_handler.clone(),
     );
 
+    let mut market_order_sell = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .build();
+
     // Create engine and process order
     let mut engine =
         get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
 
-    engine.process_order(&market_order_sell, account_id);
+    engine.process_order(&mut market_order_sell, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -445,8 +456,8 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         first_message.message().unwrap(),
         Ustr::from(
             "Short selling not permitted on a CASH account with position None and \
-            order MarketOrder(SELL 1 ETHUSDT-PERP.BINANCE @ MARKET GTC, status=INITIALIZED, \
-            client_order_id=O-19700101-000000-001-001-2, venue_order_id=None, position_id=None, \
+            order MarketOrder(SELL 1 AAPL.XNAS @ MARKET GTC, status=INITIALIZED, \
+            client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, \
             exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
         )
     );
@@ -474,14 +485,14 @@ fn test_process_order_when_invalid_reduce_only(
         None,
         Some(engine_config),
     );
-    let market_order_reduce = OrderTestBuilder::new(OrderType::Market)
+    let mut market_order_reduce = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1.000"))
         .reduce_only(true)
         .build();
 
-    engine.process_order(&market_order_reduce, account_id);
+    engine.process_order(&mut market_order_reduce, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -546,7 +557,7 @@ fn test_process_order_when_invalid_contingent_orders(
         .parent_order_id(entry_client_order_id)
         .build();
     // Make it Accepted
-    let accepted_stop_order = TestOrderStubs::make_accepted_order(&stop_order);
+    let mut accepted_stop_order = TestOrderStubs::make_accepted_order(&stop_order);
 
     // 1. Save entry order in the cache as it will be loaded by the matching engine
     // 2. Send the stop loss order which has parent of entry order
@@ -555,7 +566,7 @@ fn test_process_order_when_invalid_contingent_orders(
         .borrow_mut()
         .add_order(entry_order.clone(), None, None, false)
         .unwrap();
-    engine.process_order(&accepted_stop_order, account_id);
+    engine.process_order(&mut accepted_stop_order, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -624,7 +635,7 @@ fn test_process_order_when_closed_linked_order(
         .unwrap();
 
     // Make take profit order Accepted
-    let accepted_take_profit = TestOrderStubs::make_accepted_order(&take_profit_order);
+    let mut accepted_take_profit = TestOrderStubs::make_accepted_order(&take_profit_order);
 
     // 1. Save stop loss order in cache which is rejected and closed is set to true
     // 2. Send the take profit order which has linked the stop loss order
@@ -634,7 +645,7 @@ fn test_process_order_when_closed_linked_order(
         .add_order(stop_loss_order.clone(), None, None, false)
         .unwrap();
     let stop_loss_closed_after = stop_loss_order.is_closed();
-    engine.process_order(&accepted_take_profit, account_id);
+    engine.process_order(&mut accepted_take_profit, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -653,9 +664,9 @@ fn test_process_market_order_no_market_rejected(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    instrument_es: InstrumentAny,
-    market_order_buy: OrderAny,
-    market_order_sell: OrderAny,
+    instrument_eth_usdt: InstrumentAny,
+    mut market_order_buy: OrderAny,
+    mut market_order_sell: OrderAny,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -665,15 +676,15 @@ fn test_process_market_order_no_market_rejected(
 
     // Create engine and process order
     let mut engine = get_order_matching_engine(
-        instrument_es,
+        instrument_eth_usdt,
         Rc::new(RefCell::new(msgbus)),
         None,
         None,
         None,
     );
 
-    engine.process_order(&market_order_buy, account_id);
-    engine.process_order(&market_order_sell, account_id);
+    engine.process_order(&mut market_order_buy, account_id);
+    engine.process_order(&mut market_order_sell, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -738,4 +749,146 @@ fn test_matching_core_bid_ask_initialized(
     assert!(engine_l2.core.is_bid_initialized);
     assert_eq!(engine_l2.core.ask, Some(Price::from("101")));
     assert!(engine_l2.core.is_ask_initialized);
+}
+
+#[rstest]
+fn test_matching_engine_not_enough_quantity_filled_fok_order(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    mut msgbus: MessageBus,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    // create FOK market order with quantity 2 which wont be enough to fill the order
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .time_in_force(TimeInForce::Fok)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut market_order, account_id);
+
+    // We need to test that one Order rejected event was generated
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first_message = saved_messages.first().unwrap();
+    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    let order_rejected = match first_message {
+        OrderEventAny::Rejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(
+        order_rejected.reason,
+        Ustr::from("Fill or kill order cannot be filled at full amount")
+    );
+}
+
+#[rstest]
+fn test_matching_engine_valid_market_buy(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    mut msgbus: MessageBus,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // create 2 orderbook deltas and appropriate market order
+    let orderbook_delta_sell_1 = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let orderbook_delta_sell_2 = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1510.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        2,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .build();
+
+    // process orderbook deltas to add liquidity then process market order
+    engine_l2.process_order_book_delta(&orderbook_delta_sell_1);
+    engine_l2.process_order_book_delta(&orderbook_delta_sell_2);
+    engine_l2.process_order(&mut market_order, account_id);
+
+    // We need to test that two Order filled events were generated where with correct prices and quantities
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_filled_first = match order_event_first {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in first message"),
+    };
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_filled_second = match order_event_second {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in second message"),
+    };
+    // check correct prices and quantities
+    assert_eq!(order_filled_first.last_px, Price::from("1500.00"));
+    assert_eq!(order_filled_first.last_qty, Quantity::from("1.000"));
+    assert_eq!(order_filled_second.last_px, Price::from("1510.00"));
+    assert_eq!(order_filled_second.last_qty, Quantity::from("1.000"));
 }

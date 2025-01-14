@@ -130,6 +130,8 @@ cdef class Actor(Component):
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
         # Configuration
+        self._log_events = config.log_events
+        self._log_commands = config.log_commands
         self.config = config
 
         self.trader_id = None  # Initialized when registered
@@ -3290,7 +3292,7 @@ cdef class Actor(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command):
-        if is_logging_initialized():
+        if self._log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 

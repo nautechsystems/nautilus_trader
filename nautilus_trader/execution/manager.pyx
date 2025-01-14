@@ -19,7 +19,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT
-from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
@@ -101,6 +100,8 @@ cdef class OrderManager:
         cancel_order_handler: Callable[[Order], None] = None,
         modify_order_handler: Callable[[Order, Quantity], None] = None,
         bint debug = False,
+        bint log_events = True,
+        bint log_commands = True,
     ):
         Condition.valid_string(component_name, "component_name")
         Condition.callable_or_none(submit_order_handler, "submit_order_handler")
@@ -114,6 +115,8 @@ cdef class OrderManager:
 
         self.active_local = active_local
         self.debug = debug
+        self.log_events = log_events
+        self.log_commands = log_commands
         self._submit_order_handler = submit_order_handler
         self._cancel_order_handler = cancel_order_handler
         self._modify_order_handler = modify_order_handler
@@ -554,7 +557,7 @@ cdef class OrderManager:
     cpdef void send_emulator_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
-        if is_logging_initialized():
+        if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
@@ -562,34 +565,34 @@ cdef class OrderManager:
         Condition.not_none(command, "command")
         Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
 
-        if is_logging_initialized():
+        if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint=f"{exec_algorithm_id}.execute", msg=command)
 
     cpdef void send_risk_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
-        if is_logging_initialized():
+        if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cpdef void send_exec_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
-        if is_logging_initialized():
+        if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cpdef void send_risk_event(self, OrderEvent event):
         Condition.not_none(event, "event")
 
-        if is_logging_initialized():
+        if self.log_events and is_logging_initialized():
             self._log.info(f"{EVT}{SENT} {event}")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.process", msg=event)
 
     cpdef void send_exec_event(self, OrderEvent event):
         Condition.not_none(event, "event")
 
-        if is_logging_initialized():
+        if self.log_events and is_logging_initialized():
             self._log.info(f"{EVT}{SENT} {event}")  # pragma: no cover (no logging in tests)
         self._msgbus.send(endpoint="ExecEngine.process", msg=event)
