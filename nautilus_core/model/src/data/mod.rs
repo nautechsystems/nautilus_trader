@@ -180,6 +180,7 @@ impl From<Bar> for Data {
 
 #[no_mangle]
 pub extern "C" fn data_clone(data: &Data) -> Data {
+    // Dummy function for cbindgen to export types
     data.clone()
 }
 
