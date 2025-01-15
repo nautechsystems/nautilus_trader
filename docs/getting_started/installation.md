@@ -226,19 +226,23 @@ Performance benchmarks comparing the modes are pending.
 
 The precision mode is controlled by:
 
-- The `HIGH_PRECISION` environment variable during compilation
-- The corresponding Rust feature flag `high-precision`
+- The `HIGH_PRECISION` environment variable during compilation.
+- The corresponding Rust feature flag `high-precision`.
+
+#### High-precision mode (default)
 
 ```bash
-# High-precision mode (default)
 export HIGH_PRECISION=true
-make install
-
-# Low-precision mode
-export HIGH_PRECISION=false
-make install
+make install-debug
 ```
 
-info:::
+#### Low-precision mode
+
+```bash
+export HIGH_PRECISION=false
+make install-debug
+```
+
+:::info
 See the [Value Types](../concepts/overview.md#value-types) guide for more details.
 :::
