@@ -408,7 +408,7 @@ This will build the `nautilus_trader` package with **high-precision** mode enabl
 cargo run --bin to_parquet trades.json
 ```
 
-This will creates a `trades.parquet` file with new schema.
+This will create a `trades.parquet` file with new schema.
 
 ### Best Practices
 
