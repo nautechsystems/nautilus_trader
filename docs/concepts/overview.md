@@ -208,3 +208,32 @@ The following order types are available (when possible on a venue):
 - `LIMIT_IF_TOUCHED`
 - `TRAILING_STOP_MARKET`
 - `TRAILING_STOP_LIMIT`
+
+## Value Types
+
+The following value types are backed by either 128-bit or 64-bit raw integer values, depending on the
+[precision mode](../getting_started/installation.md#precision-mode) used during compilation.
+
+- `Price`
+- `Quantity`
+- `Money`
+
+### High-precision mode
+
+When the `high-precision` feature flag is *enabled* (default), values use the specification:
+
+| Type         | Raw backing | Max precision | Min value           | Max value          |
+|:-------------|:------------|:--------------|:--------------------|:-------------------|
+| `Price`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
+| `Money`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
+| `Quantity`   | `u128`      | 16            | 0                   | 34,028,236,692,093 |
+
+### Low-precision mode
+
+When the `high-precision` feature flag is *disabled*, values use the specification:
+
+| Type         | Raw backing | Max precision | Min value           | Max value          |
+|:-------------|:------------|:--------------|:--------------------|:-------------------|
+| `Price`      | `i64`       | 9             | -9,223,372,036      | 9,223,372,036      |
+| `Money`      | `i64`       | 9             | -9,223,372,036      | 9,223,372,036      |
+| `Quantity`   | `u64`       | 9             | 0                   | 18,446,744,073     |
