@@ -21,6 +21,9 @@ import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.model import convert_to_raw_int
+from nautilus_trader.model.objects import MONEY_MAX
+from nautilus_trader.model.objects import MONEY_MIN
 
 
 AUD = Currency.from_str("AUD")
@@ -47,12 +50,12 @@ class TestMoney:
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Money(9_223_372_036 + 1, currency=USD)
+            Money(MONEY_MAX + 1, currency=USD)
 
     def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Money(-9_223_372_036 - 1, currency=USD)
+            Money(MONEY_MIN - 1, currency=USD)
 
     @pytest.mark.parametrize(
         ("value", "expected"),
@@ -86,21 +89,24 @@ class TestMoney:
 
     def test_as_double_returns_expected_result(self) -> None:
         # Arrange, Act
-        money = Money(1, USD)
+        amount = 1.0
+        money = Money(amount, USD)
 
         # Assert
-        assert money.as_double() == 1.0
-        assert money.raw == 1_000_000_000
+        assert money.as_double() == amount
+        assert money.raw == convert_to_raw_int(amount, USD.precision)
         assert str(money) == "1.00 USD"
 
     def test_initialized_with_many_decimals_rounds_to_currency_precision(self) -> None:
         # Arrange, Act
-        result1 = Money(1000.333, USD)
-        result2 = Money(5005.556666, USD)
+        amount1 = 1000.333
+        amount2 = 5005.556666
+        result1 = Money(amount1, USD)
+        result2 = Money(amount2, USD)
 
         # Assert
-        assert result1.raw == 1_000_330_000_000
-        assert result2.raw == 5_005_560_000_000
+        assert result1.raw == convert_to_raw_int(amount1, USD.precision)
+        assert result2.raw == convert_to_raw_int(amount2, USD.precision)
         assert str(result1) == "1000.33 USD"
         assert str(result2) == "5005.56 USD"
         assert result1.to_formatted_str() == "1_000.33 USD"
@@ -159,8 +165,8 @@ class TestMoney:
         ("value", "currency", "expected"),
         [
             [0, USDT, Money(0, USDT)],
-            [1_000_000_000, USD, Money(1.00, USD)],
-            [10_000_000_000, AUD, Money(10.00, AUD)],
+            [convert_to_raw_int(1, USD.precision), USD, Money(1.00, USD)],
+            [convert_to_raw_int(10, AUD.precision), AUD, Money(10.00, AUD)],
         ],
     )
     def test_from_raw_given_valid_values_returns_expected_result(

@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use crate::{
     data::order::{BookOrder, OrderId},
     orderbook::{BookIntegrityError, BookPrice},
-    types::fixed::FIXED_SCALAR,
+    types::{fixed::SCALAR, quantity::QuantityRaw},
 };
 
 /// Represents a discrete price level in an order book.
@@ -102,7 +102,7 @@ impl BookLevel {
 
     /// Returns the total size of all orders at this price level as raw integer units.
     #[must_use]
-    pub fn size_raw(&self) -> u64 {
+    pub fn size_raw(&self) -> QuantityRaw {
         self.orders.values().map(|o| o.size.raw).sum()
     }
 
@@ -123,10 +123,10 @@ impl BookLevel {
 
     /// Returns the total exposure (price * size) of all orders at this price level as raw integer units.
     #[must_use]
-    pub fn exposure_raw(&self) -> u64 {
+    pub fn exposure_raw(&self) -> QuantityRaw {
         self.orders
             .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64)
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as QuantityRaw)
             .sum()
     }
 
@@ -240,7 +240,7 @@ mod tests {
         data::order::BookOrder,
         enums::OrderSide,
         orderbook::{BookLevel, BookPrice},
-        types::{Price, Quantity},
+        types::{fixed::SCALAR, quantity::QuantityRaw, Price, Quantity},
     };
 
     #[rstest]
@@ -358,13 +358,13 @@ mod tests {
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 1);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(20), 2);
 
-        level.add(order1.clone());
-        level.add(order2.clone());
+        level.add(order1);
+        level.add(order2);
 
         // Update order1 size
         let updated_order1 =
             BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(15), 1);
-        level.update(updated_order1.clone());
+        level.update(updated_order1);
 
         let orders = level.get_orders();
         assert_eq!(orders.len(), 2);
@@ -511,7 +511,7 @@ mod tests {
             Quantity::from(10),
             u64::MAX,
         );
-        level.add(order.clone());
+        level.add(order);
 
         assert_eq!(level.len(), 1);
         assert_eq!(level.first().unwrap(), &order);
@@ -545,7 +545,7 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.size_raw(), 30_000_000_000);
+        assert_eq!(level.size_raw(), (30.0 * SCALAR).round() as QuantityRaw);
     }
 
     #[rstest]
@@ -578,6 +578,6 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.exposure_raw(), 60_000_000_000);
+        assert_eq!(level.exposure_raw(), (60.0 * SCALAR).round() as QuantityRaw);
     }
 }

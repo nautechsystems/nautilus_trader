@@ -21,6 +21,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Price
@@ -177,15 +178,15 @@ cdef class MatchingCore:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cdef void set_bid_raw(self, int64_t bid_raw):
+    cdef void set_bid_raw(self, PriceRaw bid_raw):
         self.is_bid_initialized = True
         self.bid_raw = bid_raw
 
-    cdef void set_ask_raw(self, int64_t ask_raw):
+    cdef void set_ask_raw(self, PriceRaw ask_raw):
         self.is_ask_initialized = True
         self.ask_raw = ask_raw
 
-    cdef void set_last_raw(self, int64_t last_raw):
+    cdef void set_last_raw(self, PriceRaw last_raw):
         self.is_last_initialized = True
         self.last_raw = last_raw
 

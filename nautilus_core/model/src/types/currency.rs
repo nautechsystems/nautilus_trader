@@ -15,7 +15,7 @@
 
 //! Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 //!
-//! Handles up to 9 decimals of precision.
+//! Handles up to 16 decimals of precision.
 
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -60,7 +60,7 @@ impl Currency {
     /// This function returns an error:
     /// - If `code` is not a valid string.
     /// - If `name` is not a valid string.
-    /// - If `precision` is invalid outside the valid representable range [0, 9].
+    /// - If `precision` is invalid outside the valid representable range [0, 16].
     ///
     /// # Notes
     ///
@@ -274,11 +274,12 @@ mod tests {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
     }
 
+    #[cfg(feature = "high-precision")] // TODO: Add test for 64-bit precision
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision() {
-        // Precision out of range for fixed
-        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
+        // Precision greater than maximum
+        let _ = Currency::new("USD", 19, 840, "United States dollar", CurrencyType::Fiat);
     }
 
     #[rstest]

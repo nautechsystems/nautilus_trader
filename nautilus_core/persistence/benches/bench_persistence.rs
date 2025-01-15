@@ -24,7 +24,8 @@ fn single_stream_bench(c: &mut Criterion) {
     group.sample_size(10);
     let chunk_size = 5000;
     // about 10 M records
-    let file_path = "../../bench_data/quotes_0005.parquet";
+    // let file_path = "../../bench_data/quotes_0005.parquet";
+    let file_path = "../../bench_data/quotes_0005_high_precision.parquet";
 
     group.bench_function("persistence v2", |b| {
         b.iter_batched_ref(

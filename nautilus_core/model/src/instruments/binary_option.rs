@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_positive_u64, FAILED},
+    correctness::{check_equal_u8, FAILED},
     UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -27,17 +27,21 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        currency::Currency,
+        money::Money,
+        price::{check_positive_price, Price},
+        quantity::{check_positive_quantity, Quantity},
+    },
 };
 
 /// Represents a generic binary option instrument.
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BinaryOption {
     /// The instrument ID.
     pub id: InstrumentId,
@@ -134,8 +138,8 @@ impl BinaryOption {
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
+        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_quantity(size_increment.raw, stringify!(size_increment.raw))?;
 
         Ok(Self {
             id,
