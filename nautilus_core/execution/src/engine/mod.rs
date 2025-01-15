@@ -20,10 +20,6 @@
 //! includes sending commands to, and receiving events from, the trading venue
 //! endpoints via its registered execution clients.
 
-// Under development
-// #![allow(dead_code)]
-// #![allow(unused_variables)]
-
 pub mod config;
 
 use std::{
