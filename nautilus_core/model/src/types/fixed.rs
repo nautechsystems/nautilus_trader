@@ -20,25 +20,25 @@
 
 /// Indicates if high_precision mode is enabled.
 #[no_mangle]
-pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high_precision") as u8;
+pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_HIGH_PRECISION: u8 = 16;
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 /// The width in bytes for fixed-point value types in 128-bit high_precision mode.
 #[no_mangle]
 pub static PRECISION_BYTES: i32 = 16;
 
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 /// The width in bytes for fixed-point value types in 64-bit precision mode.
 #[no_mangle]
 pub static PRECISION_BYTES: i32 = 8;
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const PRECISION: u8 = FIXED_HIGH_PRECISION;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const PRECISION: u8 = FIXED_PRECISION;
 
 /// The scalar value corresponding to the maximum precision (10^FIXED_PRECISION).
@@ -50,9 +50,9 @@ pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**
 /// The scalar representing the difference between high and low precision.
 pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0;
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const SCALAR: f64 = FIXED_HIGH_PRECISION_SCALAR;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const SCALAR: f64 = FIXED_SCALAR;
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
@@ -160,7 +160,7 @@ pub fn fixed_u128_to_f64(value: u128) -> f64 {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -332,7 +332,7 @@ mod tests {
     }
 }
 
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

@@ -50,7 +50,7 @@ extension-module = [
 ffi = ["cbindgen", "nautilus-core/ffi"]
 python = ["pyo3", "nautilus-core/python"]
 stubs = ["rstest"]
-high_precision = []
+high-precision = []
 
 [[bench]]
 name = "bench_book_iai"

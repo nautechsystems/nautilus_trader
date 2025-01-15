@@ -186,7 +186,7 @@ mod tests {
         types::{Price, Quantity},
     };
 
-    #[cfg(feature = "high_precision")] // TODO: Add 64-bit precision version of test
+    #[cfg(feature = "high-precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
     #[should_panic(expected = "invalid u128 for 'size.raw' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {

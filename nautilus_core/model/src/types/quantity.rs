@@ -23,9 +23,9 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 use nautilus_core::correctness::check_positive_u128;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 use nautilus_core::correctness::check_positive_u64;
 use nautilus_core::{
     correctness::{check_in_range_inclusive_f64, FAILED},
@@ -36,14 +36,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, PRECISION, SCALAR};
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub type QuantityRaw = u128;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
@@ -54,20 +54,20 @@ pub static QUANTITY_RAW_MAX: QuantityRaw = QuantityRaw::MAX;
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
 /// The maximum valid quantity value which can be represented.
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const QUANTITY_MAX: f64 = 34_028_236_692_093.0;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
     check_positive_u64(value, param)
 }
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
     check_positive_u128(value, param)
 }
@@ -112,9 +112,9 @@ impl Quantity {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
         check_fixed_precision(precision)?;
 
-        #[cfg(feature = "high_precision")]
+        #[cfg(feature = "high-precision")]
         let raw = f64_to_fixed_u128(value, precision);
-        #[cfg(not(feature = "high_precision"))]
+        #[cfg(not(feature = "high-precision"))]
         let raw = f64_to_fixed_u64(value, precision);
 
         Ok(Self { raw, precision })
@@ -168,12 +168,12 @@ impl Quantity {
 
     /// Returns the value of this instance as an `f64`.
     #[must_use]
-    #[cfg(feature = "high_precision")]
+    #[cfg(feature = "high-precision")]
     pub fn as_f64(&self) -> f64 {
         fixed_u128_to_f64(self.raw)
     }
 
-    #[cfg(not(feature = "high_precision"))]
+    #[cfg(not(feature = "high-precision"))]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -478,7 +478,7 @@ pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

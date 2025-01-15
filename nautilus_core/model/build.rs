@@ -36,7 +36,7 @@ fn main() {
         let mut config_c = cbindgen::Config::from_file("cbindgen.toml")
             .expect("unable to find cbindgen.toml configuration file");
 
-        #[cfg(feature = "high_precision")]
+        #[cfg(feature = "high-precision")]
         {
             if let Some(mut includes) = config_c.after_includes {
                 includes.insert_str(0, "\n#define HIGH_PRECISION\n");
@@ -53,9 +53,9 @@ fn main() {
         let mut config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
             .expect("unable to find cbindgen_cython.toml configuration file");
 
-        #[cfg(feature = "high_precision")]
+        #[cfg(feature = "high-precision")]
         let flag = Some("\nDEF HIGH_PRECISION = True  # or False".to_string());
-        #[cfg(not(feature = "high_precision"))]
+        #[cfg(not(feature = "high-precision"))]
         let flag = Some("\nDEF HIGH_PRECISION = False  # or True".to_string());
 
         // Activate Cython high precision flag based on feature flags passed to Rust build
@@ -75,7 +75,7 @@ fn main() {
         // Run the replace operation in memory
         let mut data = data.replace("cdef enum", "cpdef enum");
 
-        #[cfg(feature = "high_precision")]
+        #[cfg(feature = "high-precision")]
         {
             let lines: Vec<&str> = data.lines().collect();
 

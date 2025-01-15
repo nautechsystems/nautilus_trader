@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn book_order_new(
     order_side: OrderSide,
     price: Price,

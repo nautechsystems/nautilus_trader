@@ -19,14 +19,14 @@ use crate::types::quantity::{Quantity, QuantityRaw};
 
 // TODO: Document panic
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
     // SAFETY: Assumes `value` and `precision` are properly validated
     Quantity::new(value, precision)
 }
 
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_from_raw(raw: QuantityRaw, precision: u8) -> Quantity {
     Quantity::from_raw(raw, precision)
 }
@@ -37,25 +37,25 @@ pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
 }
 
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
     a.add_assign(b);
 }
 
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
     a.add_assign(b);
 }
 
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
     a.sub_assign(b);
 }
 
 #[no_mangle]
-#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
     a.sub_assign(b);
 }

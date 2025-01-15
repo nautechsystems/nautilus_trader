@@ -9,7 +9,7 @@ after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;
 # after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;\n    typedef __int128_t int128_t;\n#else\n#    error \"128-bit integer not supported on this platform\"\n#endif"
 
 [defines]
-"feature = high_precision" = "HIGH_PRECISION"
+"feature = high-precision" = "HIGH_PRECISION"
 
 [enum]
 rename_variants = "ScreamingSnakeCase"

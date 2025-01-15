@@ -29,27 +29,27 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
 use super::fixed::PRECISION;
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use crate::types::Currency;
 
 /// The maximum valid money amount which can be represented.
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const MONEY_MAX: f64 = 17_014_118_346_046.0;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
 
 /// The minimum valid money amount which can be represented.
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const MONEY_MIN: f64 = -17_014_118_346_046.0;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub type MoneyRaw = i128;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub type MoneyRaw = i64;
 
 /// Represents an amount of money in a specified currency denomination.
@@ -84,9 +84,9 @@ impl Money {
     pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
-        #[cfg(not(feature = "high_precision"))]
+        #[cfg(not(feature = "high-precision"))]
         let raw = f64_to_fixed_i64(amount, currency.precision);
-        #[cfg(feature = "high_precision")]
+        #[cfg(feature = "high-precision")]
         let raw = f64_to_fixed_i128(amount, currency.precision);
 
         Ok(Self { raw, currency })
@@ -116,12 +116,12 @@ impl Money {
 
     /// Returns the value of this instance as an `f64`.
     #[must_use]
-    #[cfg(not(feature = "high_precision"))]
+    #[cfg(not(feature = "high-precision"))]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
 
-    #[cfg(feature = "high_precision")]
+    #[cfg(feature = "high-precision")]
     pub fn as_f64(&self) -> f64 {
         fixed_i128_to_f64(self.raw)
     }
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg(feature = "high_precision")]
+    #[cfg(feature = "high-precision")]
     fn test_money_min_max_values() {
         let min_money = Money::new(MONEY_MIN, Currency::USD());
         let max_money = Money::new(MONEY_MAX, Currency::USD());
@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg(not(feature = "high_precision"))]
+    #[cfg(not(feature = "high-precision"))]
     fn test_money_min_max_values() {
         let min_money = Money::new(MONEY_MIN, Currency::USD());
         let max_money = Money::new(MONEY_MAX, Currency::USD());

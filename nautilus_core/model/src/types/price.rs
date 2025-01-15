@@ -23,9 +23,9 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 use nautilus_core::correctness::check_positive_i128;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 use nautilus_core::correctness::check_positive_i64;
 use nautilus_core::{
     correctness::{check_in_range_inclusive_f64, FAILED},
@@ -36,14 +36,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, PRECISION};
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION_DIFF_SCALAR};
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub type PriceRaw = i128;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
@@ -61,15 +61,15 @@ pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
 pub const PRICE_ERROR: PriceRaw = PriceRaw::MIN;
 
 /// The maximum valid price value which can be represented.
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const PRICE_MAX: f64 = 17_014_118_346_046.0;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 
 /// The minimum valid price value which can be represented.
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub const PRICE_MIN: f64 = -17_014_118_346_046.0;
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
 /// The sentinel `Price` representing errors (this will be removed when Cython is gone).
@@ -78,24 +78,24 @@ pub const ERROR_PRICE: Price = Price {
     precision: 255,
 };
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
     check_positive_i128(value, param)
 }
 
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
     check_positive_i64(value, param)
 }
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 /// The raw i64 price has already been scaled by FIXED_PRECISION. Further scale
 /// it by the difference to FIXED_HIGH_PRECISION to make it high precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
 }
 
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     value
 }
@@ -207,7 +207,7 @@ impl Price {
     }
 }
 
-#[cfg(feature = "high_precision")]
+#[cfg(feature = "high-precision")]
 impl Price {
     /// Creates a new [`Price`] instance with correctness checking.
     ///
@@ -246,7 +246,7 @@ impl Price {
     }
 }
 
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 impl Price {
     /// Creates a new [`Price`] instance with correctness checking.
     ///
@@ -503,7 +503,7 @@ impl<'de> Deserialize<'de> for Price {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(not(feature = "high_precision"))]
+#[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

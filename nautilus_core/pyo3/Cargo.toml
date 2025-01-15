@@ -49,4 +49,4 @@ ffi = [
   "nautilus-model/ffi",
   "nautilus-persistence/ffi",
 ]
-high_precision = ["nautilus-model/high_precision", "nautilus-serialization/high_precision"]
+high-precision = ["nautilus-model/high-precision", "nautilus-serialization/high-precision"]

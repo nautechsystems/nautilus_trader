@@ -34,7 +34,7 @@ PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
 PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
-# If high_precision mode is enabled (value types use 128-bit integers, rather than 64-bit)
+# If high-precision mode is enabled (value types use 128-bit integers, rather than 64-bit)
 HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
 
 if PROFILE_MODE:

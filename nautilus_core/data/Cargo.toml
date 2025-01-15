@@ -50,4 +50,4 @@ python = [
   "nautilus-model/python",
 ]
 clock_v2 = ["nautilus-common/clock_v2"]
-high_precision = ["nautilus-model/high_precision"]
+high-precision = ["nautilus-model/high-precision"]
