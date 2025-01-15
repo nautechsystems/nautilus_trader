@@ -30,6 +30,9 @@ ustr = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
+nautilus-portfolio = { path = "../portfolio" }
+nautilus-data = { path = "../data" }
+nautilus-risk = { path = "../risk" }
 
 [features]
 default = ["ffi", "python"]
