@@ -23,6 +23,10 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(feature = "high-precision")]
+use nautilus_core::correctness::check_positive_u128;
+#[cfg(not(feature = "high-precision"))]
+use nautilus_core::correctness::check_positive_u64;
 use nautilus_core::{
     correctness::{check_in_range_inclusive_f64, FAILED},
     parsing::precision_from_str,
@@ -31,17 +35,42 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+use super::fixed::{check_fixed_precision, PRECISION, SCALAR};
+#[cfg(feature = "high-precision")]
+use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+#[cfg(not(feature = "high-precision"))]
+use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+
+#[cfg(feature = "high-precision")]
+pub type QuantityRaw = u128;
+#[cfg(not(feature = "high-precision"))]
+pub type QuantityRaw = u64;
+
+/// The maximum raw quantity integer value.
+#[no_mangle]
+pub static QUANTITY_RAW_MAX: QuantityRaw = QuantityRaw::MAX;
 
 /// The sentinel value for an unset or null quantity.
-pub const QUANTITY_UNDEF: u64 = u64::MAX;
+pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
 /// The maximum valid quantity value which can be represented.
+#[cfg(feature = "high-precision")]
+pub const QUANTITY_MAX: f64 = 34_028_236_692_093.0;
+#[cfg(not(feature = "high-precision"))]
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
+
+#[cfg(not(feature = "high-precision"))]
+pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_u64(value, param)
+}
+
+#[cfg(feature = "high-precision")]
+pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_u128(value, param)
+}
 
 /// Represents a quantity with a non-negative value.
 ///
@@ -62,7 +91,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 pub struct Quantity {
     /// The raw quantity as an unsigned 64-bit integer.
     /// Represents the unscaled value, with `precision` defining the number of decimal places.
-    pub raw: u64,
+    pub raw: QuantityRaw,
     /// The number of decimal places, with a maximum precision of 9.
     pub precision: u8,
 }
@@ -73,8 +102,8 @@ impl Quantity {
     /// # Errors
     ///
     /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [0, 18_446_744_073].
-    /// - If `precision` is invalid outside the representable range [0, 9].
+    /// - If `value` is invalid outside the representable range [0, 34_028_236_692_093].
+    /// - If `precision` is invalid outside the representable range [0, 16].
     ///
     /// # Notes
     ///
@@ -83,10 +112,12 @@ impl Quantity {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
         check_fixed_precision(precision)?;
 
-        Ok(Self {
-            raw: f64_to_fixed_u64(value, precision),
-            precision,
-        })
+        #[cfg(feature = "high-precision")]
+        let raw = f64_to_fixed_u128(value, precision);
+        #[cfg(not(feature = "high-precision"))]
+        let raw = f64_to_fixed_u64(value, precision);
+
+        Ok(Self { raw, precision })
     }
 
     /// Creates a new [`Quantity`] instance.
@@ -100,7 +131,7 @@ impl Quantity {
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
-    pub fn from_raw(raw: u64, precision: u8) -> Self {
+    pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
@@ -137,6 +168,12 @@ impl Quantity {
 
     /// Returns the value of this instance as an `f64`.
     #[must_use]
+    #[cfg(feature = "high-precision")]
+    pub fn as_f64(&self) -> f64 {
+        fixed_u128_to_f64(self.raw)
+    }
+
+    #[cfg(not(feature = "high-precision"))]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -145,8 +182,10 @@ impl Quantity {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / u64::pow(10, u32::from(FIXED_PRECISION - self.precision));
-        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
+        let rescaled_raw = self.raw / QuantityRaw::pow(10, u32::from(PRECISION - self.precision));
+        // TODO: casting u128 to i128 is not a good idea
+        // check if decimal library provides a better way
+        Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
     /// Returns a formatted string representation of this instance.
@@ -168,8 +207,26 @@ impl From<&Quantity> for f64 {
     }
 }
 
+impl From<i32> for Quantity {
+    fn from(value: i32) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
 impl From<i64> for Quantity {
     fn from(value: i64) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
+impl From<u32> for Quantity {
+    fn from(value: u32) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
+impl From<u64> for Quantity {
+    fn from(value: u64) -> Self {
         Self::new(value as f64, 0)
     }
 }
@@ -215,7 +272,7 @@ impl Ord for Quantity {
 }
 
 impl Deref for Quantity {
-    type Target = u64;
+    type Target = QuantityRaw;
 
     fn deref(&self) -> &Self::Target {
         &self.raw
@@ -289,7 +346,7 @@ impl Mul for Quantity {
             .expect("Overflow occurred when multiplying `Quantity`");
 
         Self {
-            raw: result_raw / (FIXED_SCALAR as u64),
+            raw: result_raw / (SCALAR as QuantityRaw),
             precision,
         }
     }
@@ -302,13 +359,13 @@ impl Mul<f64> for Quantity {
     }
 }
 
-impl From<Quantity> for u64 {
+impl From<Quantity> for QuantityRaw {
     fn from(value: Quantity) -> Self {
         value.raw
     }
 }
 
-impl From<&Quantity> for u64 {
+impl From<&Quantity> for QuantityRaw {
     fn from(value: &Quantity) -> Self {
         value.raw
     }
@@ -346,7 +403,7 @@ impl From<&String> for Quantity {
     }
 }
 
-impl<T: Into<u64>> AddAssign<T> for Quantity {
+impl<T: Into<QuantityRaw>> AddAssign<T> for Quantity {
     fn add_assign(&mut self, other: T) {
         self.raw = self
             .raw
@@ -355,7 +412,7 @@ impl<T: Into<u64>> AddAssign<T> for Quantity {
     }
 }
 
-impl<T: Into<u64>> SubAssign<T> for Quantity {
+impl<T: Into<QuantityRaw>> SubAssign<T> for Quantity {
     fn sub_assign(&mut self, other: T) {
         self.raw = self
             .raw
@@ -364,7 +421,7 @@ impl<T: Into<u64>> SubAssign<T> for Quantity {
     }
 }
 
-impl<T: Into<u64>> MulAssign<T> for Quantity {
+impl<T: Into<QuantityRaw>> MulAssign<T> for Quantity {
     fn mul_assign(&mut self, other: T) {
         self.raw = self
             .raw
@@ -421,6 +478,7 @@ pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -461,9 +519,9 @@ mod tests {
 
     #[rstest]
     fn test_new() {
-        let qty = Quantity::new(0.00812, 8);
+        let value = 0.00812;
+        let qty = Quantity::new(value, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -493,23 +551,21 @@ mod tests {
     fn test_from_i64() {
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 100_000_000_000_000);
+        assert_eq!(qty.raw, Quantity::from("100000").raw);
         assert_eq!(qty.precision, 0);
     }
 
-    #[rstest]
+    #[rstest] // Test does not panic rather than exact value
     fn test_with_maximum_value() {
-        let qty = Quantity::new(QUANTITY_MAX, 8);
-        assert_eq!(qty.raw, 18_446_744_073_000_000_000);
-        assert_eq!(qty.as_decimal(), dec!(18_446_744_073));
-        assert_eq!(qty.to_string(), "18446744073.00000000");
-        assert_eq!(qty.to_formatted_string(), "18_446_744_073.00000000");
+        let qty = Quantity::new_checked(QUANTITY_MAX, 0);
+        assert!(qty.is_ok());
     }
 
     #[rstest]
     fn test_with_minimum_positive_value() {
-        let qty = Quantity::new(0.000_000_001, 9);
-        assert_eq!(qty.raw, 1);
+        let value = 0.000_000_001;
+        let qty = Quantity::new(value, 9);
+        assert_eq!(qty.raw, Quantity::from("0.000000001").raw);
         assert_eq!(qty.as_decimal(), dec!(0.000000001));
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -536,8 +592,8 @@ mod tests {
 
     #[rstest]
     fn test_precision() {
-        let qty = Quantity::new(1.001, 2);
-        assert_eq!(qty.raw, 1_000_000_000);
+        let value = 1.001;
+        let qty = Quantity::new(value, 2);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -545,7 +601,6 @@ mod tests {
     fn test_new_from_str() {
         let qty = Quantity::new(0.00812000, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");

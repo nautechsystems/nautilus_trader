@@ -19,7 +19,6 @@ to help ensure software correctness.
 """
 
 from cpython.object cimport PyCallable_Check
-from libc.stdint cimport int64_t
 
 
 cdef class Condition:
@@ -597,13 +596,13 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void positive_int(int64_t value, str param, ex_type = None):
+    cdef void positive_int(value: int, str param, ex_type = None):
         """
         Check the integer value is a positive integer (> 0).
 
         Parameters
         ----------
-        value : int64_t
+        value : int
             The value to check.
         param : str
             The name of the values parameter.
@@ -655,13 +654,13 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_negative_int(int64_t value, str param, ex_type = None):
+    cdef void not_negative_int(value: int, str param, ex_type = None):
         """
         Check the integer value is not negative (< 0).
 
         Parameters
         ----------
-        value : int64_t
+        value : int
             The value to check.
         param : str
             The name of the values parameter.
@@ -728,9 +727,9 @@ cdef class Condition:
 
     @staticmethod
     cdef void in_range_int(
-        int64_t value,
-        int64_t start,
-        int64_t end,
+        value,
+        start,
+        end,
         str param,
         ex_type = None,
     ):
@@ -739,11 +738,11 @@ cdef class Condition:
 
         Parameters
         ----------
-        value : int64_t
+        value : int
             The value to check.
-        start : int64_t
+        start : int
             The start of the range.
-        end : int64_t
+        end : int
             The end of the range.
         param : str
             The name of the values parameter.
@@ -1201,13 +1200,13 @@ class PyCondition:
         Condition.positive(value, param, ex_type)
 
     @staticmethod
-    def positive_int(int64_t value, str param, ex_type = None):
+    def positive_int(value: int, str param, ex_type = None):
         """
         Check the integer value is a positive integer (> 0).
 
         Parameters
         ----------
-        value : int64_t
+        value : int
             The value to check.
         param : str
             The name of the value parameter.
@@ -1245,13 +1244,13 @@ class PyCondition:
         Condition.not_negative(value, param, ex_type)
 
     @staticmethod
-    def not_negative_int(int64_t value, str param, ex_type = None):
+    def not_negative_int(value: int, str param, ex_type = None):
         """
         Check the integer value is not negative (< 0).
 
         Parameters
         ----------
-        value : int64_t
+        value : int
             The value to check.
         param : str
             The name of the value parameter.
@@ -1293,17 +1292,17 @@ class PyCondition:
         Condition.in_range(value, start, end, param, ex_type)
 
     @staticmethod
-    def in_range_int(int64_t value, int64_t start, int64_t end, param, ex_type = None):
+    def in_range_int(value: int, start: int, end: int, param, ex_type = None):
         """
         Check the integer value is within the specified range (inclusive).
 
         Parameters
         ----------
-        value : int64_t
+        value : int
             The value to check.
-        start : int64_t
+        start : int
             The start of the range.
-        end : int64_t
+        end : int
             The end of the range.
         param : str
             The name of the value parameter.

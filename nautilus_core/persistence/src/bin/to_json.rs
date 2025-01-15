@@ -16,10 +16,10 @@
 use std::path::PathBuf;
 
 use datafusion::parquet::file::reader::{FileReader, SerializedFileReader};
-use nautilus_model::data::Data;
-use nautilus_model::data::{to_variant, Bar, OrderBookDelta, QuoteTick, TradeTick};
-use nautilus_persistence::backend::session::DataBackendSession;
-use nautilus_persistence::python::backend::session::NautilusDataType;
+use nautilus_model::data::{to_variant, Bar, Data, OrderBookDelta, QuoteTick, TradeTick};
+use nautilus_persistence::{
+    backend::session::DataBackendSession, python::backend::session::NautilusDataType,
+};
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
 use serde_json::to_writer_pretty;
 

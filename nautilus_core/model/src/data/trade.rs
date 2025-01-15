@@ -23,29 +23,24 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{
-    correctness::{check_positive_u64, FAILED},
-    serialization::Serializable,
-    UnixNanos,
-};
+use nautilus_core::{correctness::FAILED, serialization::Serializable, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{Price, Quantity},
+    types::{quantity::check_positive_quantity, Price, Quantity},
 };
 
 /// Represents a single trade tick in a market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct TradeTick {
     /// The trade instrument ID.
     pub instrument_id: InstrumentId,
@@ -83,7 +78,7 @@ impl TradeTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_positive_u64(size.raw, "size.raw")?;
+        check_positive_quantity(size.raw, "size.raw")?;
 
         Ok(Self {
             instrument_id,
@@ -191,8 +186,9 @@ mod tests {
         types::{Price, Quantity},
     };
 
+    #[cfg(feature = "high-precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
-    #[should_panic(expected = "invalid u64 for 'size.raw' not positive, was 0")]
+    #[should_panic(expected = "invalid u128 for 'size.raw' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");

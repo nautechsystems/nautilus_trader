@@ -15,17 +15,19 @@
 
 use std::ops::{AddAssign, SubAssign};
 
-use crate::types::{Currency, Money};
+use crate::types::{money::MoneyRaw, Currency, Money};
 
 // TODO: Document panic
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
     // SAFETY: Assumes `amount` is properly validated
     Money::new(amount, currency)
 }
 
 #[no_mangle]
-pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn money_from_raw(raw: MoneyRaw, currency: Currency) -> Money {
     Money::from_raw(raw, currency)
 }
 
@@ -35,11 +37,13 @@ pub extern "C" fn money_as_f64(money: &Money) -> f64 {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn money_add_assign(mut a: Money, b: Money) {
     a.add_assign(b);
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
     a.sub_assign(b);
 }
