@@ -81,10 +81,10 @@ jobs:
       - name: Run pre-commit
         continue-on-error: true
         run: |
-          pre-commit run --all-files
+          pre-commit run --all-files || echo "PRECOMMIT_FAILED=true" > $GITHUB_ENV
 
       - name: Add PR comment on failure
-        if: failure() && github.event_name == 'pull_request'
+        if: env.PRECOMMIT_FAILED == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
             })
 
       - name: Fail job if pre-commit failed
-        if: failure()
+        if: env.PRECOMMIT_FAILED == 'true'
         run: |
           echo "Pre-commit checks failed, exiting"
           exit 1
