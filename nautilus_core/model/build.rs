@@ -73,9 +73,7 @@ fn main() {
             .expect("invalid UTF-8 in stream");
 
         // Run the replace operation in memory
-        let mut data = data
-            .replace("cdef enum", "cpdef enum")
-            .replace("const bool", "const bint");
+        let mut data = data.replace("cdef enum", "cpdef enum");
 
         #[cfg(feature = "high_precision")]
         {

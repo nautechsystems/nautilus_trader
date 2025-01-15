@@ -9,7 +9,7 @@
     typedef __uint128_t uint128_t;
     typedef __int128_t int128_t;
 #else
-#    error "128-bit integer not supported on this platform"
+
 #endif
 
 #define DEPTH10_LEN 10
