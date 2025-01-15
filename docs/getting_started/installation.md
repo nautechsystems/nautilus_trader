@@ -203,3 +203,42 @@ To manage the Redis container:
 :::tip
 We recommend using [Redis Insight](https://redis.io/insight/) as a GUI to visualize and debug Redis data efficiently.
 :::
+
+## Precision mode
+
+NautilusTrader supports two precision modes which determine the bit-width of value types like `Price`, `Quantity`, and `Money`.
+
+- **high-precision**: 128-bit integers with up to 16 decimals of precision, and a larger value range.
+- **low-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
+
+:::note
+High-precision mode is not available on Windows due to lack of 128-bit integer support in the Microsoft Visual C++ compiler. Windows users must use low-precision mode.
+:::
+
+The tradeoff is slightly higher performance for low-precision (~3-5% for backtests),
+but with a reduced maximum precision and value range.
+
+:::note
+Performance benchmarks comparing the modes are pending.
+:::
+
+### Build configuration
+
+The precision mode is controlled by:
+
+- The `HIGH_PRECISION` environment variable during compilation
+- The corresponding Rust feature flag `high-precision`
+
+```bash
+# High-precision mode (default)
+export HIGH_PRECISION=true
+make install
+
+# Low-precision mode
+export HIGH_PRECISION=false
+make install
+```
+
+info:::
+See the [Value Types](../concepts/overview.md#value-types) guide for more details.
+:::

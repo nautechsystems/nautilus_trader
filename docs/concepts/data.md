@@ -383,24 +383,28 @@ Converts JSON back to Parquet format:
 The following example migration process uses trades data.
 
 1. Convert from old schema to JSON:
-
-    cargo run --bin to_json trades.parquet
-    # Creates trades.json and trades.metadata.json
+```bash
+cargo run --bin to_json trades.parquet
+# Creates trades.json and trades.metadata.json
+```
 
 2. Switch to new schema version:
+```bash
+git checkout <new-version>
+```
 
-    git checkout <new-version>
-
-or change precision mode
-
-    export HIGH_PRECISION=true
-    make install
-    # Build nautilus_trader package with high_precision mode enabled
+or change precision mode:
+```bash
+export HIGH_PRECISION=true
+make install
+# Build nautilus_trader package with high-precision mode enabled
+```
 
 3. Convert back to Parquet
-
-    cargo run --bin to_parquet trades.json
-    # Creates trades.parquet with new schema
+```bash
+cargo run --bin to_parquet trades.json
+# Creates trades.parquet with new schema
+```
 
 ### Best Practices
 
