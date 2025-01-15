@@ -1439,7 +1439,7 @@ impl OrderMatchingEngine {
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
-    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+    fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
         let ts_now = self.clock.get_time_ns();
         let account_id = order
             .account_id()
@@ -1458,6 +1458,8 @@ impl OrderMatchingEngine {
         ));
         let msgbus = self.msgbus.as_ref().borrow();
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+
+        order.apply(event).expect("Failed to apply order event");
     }
 
     #[allow(clippy::too_many_arguments)]
