@@ -37,7 +37,7 @@ use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, PRECISION};
 #[cfg(feature = "high_precision")]
-use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
+use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION_DIFF_SCALAR};
 #[cfg(not(feature = "high_precision"))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
@@ -92,8 +92,6 @@ pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> 
 /// The raw i64 price has already been scaled by FIXED_PRECISION. Further scale
 /// it by the difference to FIXED_HIGH_PRECISION to make it high precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    use super::fixed::PRECISION_DIFF_SCALAR;
-
     value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
 }
 
