@@ -220,7 +220,7 @@ The following value types are backed by either 128-bit or 64-bit raw integer val
 
 ### High-precision mode
 
-When the `high-precision` feature flag is *enabled* (default), values use the specification:
+When the `high-precision` feature flag is **enabled** (default), values use the specification:
 
 | Type         | Raw backing | Max precision | Min value           | Max value          |
 |:-------------|:------------|:--------------|:--------------------|:-------------------|
@@ -230,7 +230,7 @@ When the `high-precision` feature flag is *enabled* (default), values use the sp
 
 ### Low-precision mode
 
-When the `high-precision` feature flag is *disabled*, values use the specification:
+When the `high-precision` feature flag is **disabled**, values use the specification:
 
 | Type         | Raw backing | Max precision | Min value           | Max value          |
 |:-------------|:------------|:--------------|:--------------------|:-------------------|

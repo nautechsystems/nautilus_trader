@@ -346,7 +346,7 @@ NautilusTrader defines an internal data format specified in the `nautilus_model`
 These models are serialized into Arrow record batches and written to Parquet files.
 Nautilus backtesting is most efficient when using these Nautilus-format Parquet files.
 
-However, migrating the data model between schema changes or to custom schemas can be challenging.
+However, migrating the data model between [precision modes](../getting_started/installation.md#precision-mode) and schema changes can be challenging.
 This guide explains how to handle data migrations using our utility tools.
 
 ### Migration tools
@@ -380,15 +380,17 @@ Converts JSON back to Parquet format:
 
 ### Migration Process
 
-The following example migration process uses trades data.
+The following example migration process uses trades data. All commands should be run from
+the root of the `nautilus_persistence` crate directory.
 
-1. Convert from old schema to JSON:
+**1. Convert from old schema to JSON**:
 ```bash
 cargo run --bin to_json trades.parquet
-# Creates trades.json and trades.metadata.json
 ```
 
-2. Switch to new schema version:
+This will create `trades.json` and `trades.metadata.json` files.
+
+**2. Switch to new schema version**:
 ```bash
 git checkout <new-version>
 ```
@@ -396,18 +398,20 @@ git checkout <new-version>
 or change precision mode:
 ```bash
 export HIGH_PRECISION=true
-make install
-# Build nautilus_trader package with high-precision mode enabled
+make install-debug
 ```
 
-3. Convert back to Parquet
+This will build the `nautilus_trader` package with **high-precision** mode enabled.
+
+**3. Convert back to Parquet**:
 ```bash
 cargo run --bin to_parquet trades.json
-# Creates trades.parquet with new schema
 ```
+
+This will creates a `trades.parquet` file with new schema.
 
 ### Best Practices
 
-- Always test migrations with a small dataset first
-- Maintain backups of original files
-- Verify data integrity after migration
+- Always test migrations with a small dataset first.
+- Maintain backups of original files.
+- Verify data integrity after migration.
