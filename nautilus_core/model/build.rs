@@ -16,7 +16,7 @@
 #[cfg(feature = "ffi")]
 use std::env;
 
-// Allows for build script to accommodate high_precision
+// Allows for build script to accommodate the high-precision feature
 #[allow(clippy::expect_used)]
 #[allow(unused_assignments)]
 #[allow(unused_mut)]
