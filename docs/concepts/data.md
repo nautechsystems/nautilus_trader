@@ -339,3 +339,71 @@ data_config = BacktestDataConfig(
 
 This configuration object can then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
 See the [Backtest (high-level API)](../getting_started/backtest_high_level.md) tutorial for further details.
+
+## Data migrations
+
+NautilusTrader defines an internal data format specified in the `nautilus_model` crate.
+These models are serialized into Arrow record batches and written to Parquet files.
+Nautilus backtesting is most efficient when using these Nautilus-format Parquet files.
+
+However, migrating the data model between schema changes or to custom schemas can be challenging.
+This guide explains how to handle data migrations using our utility tools.
+
+### Migration tools
+
+The `nautilus_persistence` crate provides two key utilities:
+
+#### `to_json`
+
+Converts Parquet files to JSON while preserving metadata:
+
+- Creates two files:
+
+  - `<input>.json`: Contains the deserialized data
+  - `<input>.metadata.json`: Contains schema metadata and row group configuration
+
+- Automatically detects data type from filename:
+
+  - `OrderBookDelta` (contains "deltas" or "order_book_delta")
+  - `QuoteTick` (contains "quotes" or "quote_tick")
+  - `TradeTick` (contains "trades" or "trade_tick")
+  - `Bar` (contains "bars")
+
+#### `to_parquet`
+
+Converts JSON back to Parquet format:
+
+- Reads both the data JSON and metadata JSON files
+- Preserves row group sizes from original metadata
+- Uses ZSTD compression
+- Creates `<input>.parquet`
+
+### Migration Process
+
+The following example migration process uses trades data.
+
+1. Convert from old schema to JSON:
+
+    cargo run --bin to_json trades.parquet
+    # Creates trades.json and trades.metadata.json
+
+2. Switch to new schema version:
+
+    git checkout <new-version>
+
+or change precision mode
+
+    export HIGH_PRECISION=true
+    make install
+    # Build nautilus_trader package with high_precision mode enabled
+
+3. Convert back to Parquet
+
+    cargo run --bin to_parquet trades.json
+    # Creates trades.parquet with new schema
+
+### Best Practices
+
+- Always test migrations with a small dataset first
+- Maintain backups of original files
+- Verify data integrity after migration
