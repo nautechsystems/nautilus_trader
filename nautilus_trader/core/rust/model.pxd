@@ -4,7 +4,6 @@ from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t, int32
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 DEF HIGH_PRECISION = False  # or True
-cdef bint HIGH_PRECISION_MODE
 
 cdef extern from "../includes/model.h":
 
@@ -982,6 +981,9 @@ cdef extern from "../includes/model.h":
     const Price_t ERROR_PRICE # = <Price_t>{ 0, 255 }
 
 
+
+    # Indicates if high_precision mode is enabled.
+    extern const uint8_t HIGH_PRECISION_MODE;
 
     IF HIGH_PRECISION:
         # The width in bytes for fixed-point value types in 128-bit high_precision mode.

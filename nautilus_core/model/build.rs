@@ -54,13 +54,9 @@ fn main() {
             .expect("unable to find cbindgen_cython.toml configuration file");
 
         #[cfg(feature = "high_precision")]
-        let flag = Some(
-            "\nDEF HIGH_PRECISION = True  # or False\ncdef bint HIGH_PRECISION_MODE".to_string(),
-        );
+        let flag = Some("\nDEF HIGH_PRECISION = True  # or False".to_string());
         #[cfg(not(feature = "high_precision"))]
-        let flag = Some(
-            "\nDEF HIGH_PRECISION = False  # or True\ncdef bint HIGH_PRECISION_MODE".to_string(),
-        );
+        let flag = Some("\nDEF HIGH_PRECISION = False  # or True".to_string());
 
         // Activate Cython high precision flag based on feature flags passed to Rust build
         config_cython.after_includes = flag;
@@ -77,7 +73,9 @@ fn main() {
             .expect("invalid UTF-8 in stream");
 
         // Run the replace operation in memory
-        let mut data = data.replace("cdef enum", "cpdef enum");
+        let mut data = data
+            .replace("cdef enum", "cpdef enum")
+            .replace("const bool", "const bint");
 
         #[cfg(feature = "high_precision")]
         {

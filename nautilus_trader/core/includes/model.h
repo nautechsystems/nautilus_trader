@@ -1753,6 +1753,11 @@ typedef struct Money_t {
 
 
 
+/**
+ * Indicates if high_precision mode is enabled.
+ */
+extern const uint8_t HIGH_PRECISION_MODE;
+
 #if defined(HIGH_PRECISION)
 /**
  * The width in bytes for fixed-point value types in 128-bit high_precision mode.

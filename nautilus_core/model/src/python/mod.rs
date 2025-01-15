@@ -34,7 +34,7 @@ pub mod types;
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types
-    m.add("HIGH_PRECISION", crate::types::fixed::HIGH_PRECISION)?;
+    m.add("HIGH_PRECISION", crate::types::fixed::HIGH_PRECISION_MODE)?;
     m.add("FIXED_SCALAR", crate::types::fixed::FIXED_SCALAR)?;
     m.add("FIXED_PRECISION", crate::types::fixed::FIXED_PRECISION)?;
     m.add_class::<crate::types::currency::Currency>()?;

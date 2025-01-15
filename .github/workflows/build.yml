@@ -524,6 +524,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: [pre-commit]
     env:
+      HIGH_PRECISION: false
       BUILD_MODE: debug # Not building wheels, so debug is fine
       RUST_BACKTRACE: 1
       # > --------------------------------------------------

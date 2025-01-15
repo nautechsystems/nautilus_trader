@@ -19,7 +19,8 @@
 //! ensuring consistent precision and scaling across various types and calculations.
 
 /// Indicates if high_precision mode is enabled.
-pub const HIGH_PRECISION: bool = cfg!(feature = "high_precision");
+#[no_mangle]
+pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high_precision") as u8;
 
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
