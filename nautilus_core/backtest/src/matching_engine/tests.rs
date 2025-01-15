@@ -892,3 +892,206 @@ fn test_matching_engine_valid_market_buy(
     assert_eq!(order_filled_second.last_px, Price::from("1510.00"));
     assert_eq!(order_filled_second.last_qty, Quantity::from("1.000"));
 }
+
+#[rstest]
+fn test_process_limit_post_only_order_that_would_be_a_taker(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    // Register saving message handler to exec engine endpoint
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // add liquidity to the orderbook
+    let orderbook_delta_sell = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    // Create a post-only limit buy order with price above 1500.00
+    // that would match the existing sell order and be a taker
+    let mut post_only_limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1501.00"))
+        .quantity(Quantity::from("1.000"))
+        .post_only(true)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut post_only_limit_order, account_id);
+
+    // test that one Order rejected event was generated
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first_message = saved_messages.first().unwrap();
+    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    let order_rejected = match first_message {
+        OrderEventAny::Rejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(
+        order_rejected.reason,
+        Ustr::from("POST_ONLY LIMIT BUY order limit px of 1501.00 would have been a TAKER: bid=None, ask=1500.00")
+    );
+}
+
+#[rstest]
+fn test_process_limit_order_not_matched_and_canceled_fok_order(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    // Register saving message handler to exec engine endpoint
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // add liquidity to the orderbook
+    let orderbook_delta_sell = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    // create limit order which is bellow currently supplied liquidity and ask
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Fok)
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    // check we have received OrderAccepted and then OrderCanceled event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_rejected = match order_event_second {
+        OrderEventAny::Canceled(order_canceled) => order_canceled,
+        _ => panic!("Expected OrderCanceled event in second message"),
+    };
+    assert_eq!(order_rejected.client_order_id, client_order_id);
+}
+
+#[rstest]
+fn test_process_limit_order_matched_immediate_fill(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    // Register saving message handler to exec engine endpoint
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // add liquidity to the orderbook
+    let orderbook_delta_sell = OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1501.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    // check we have received first OrderAccepted and then OrderFilled event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_filled = match order_event_second {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in second message"),
+    };
+    assert_eq!(order_filled.client_order_id, client_order_id);
+    assert_eq!(order_filled.last_px, Price::from("1500.00"));
+    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+}
