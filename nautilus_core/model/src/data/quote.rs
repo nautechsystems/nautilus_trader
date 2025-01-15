@@ -35,18 +35,17 @@ use super::GetTsInit;
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
-    types::{fixed::FIXED_PRECISION, Price, Quantity},
+    types::{fixed::PRECISION, Price, Quantity},
 };
 
 /// Represents a single quote tick in a market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
@@ -171,7 +170,7 @@ impl QuoteTick {
             PriceType::Ask => self.ask_price,
             PriceType::Mid => Price::from_raw(
                 (self.bid_price.raw + self.ask_price.raw) / 2,
-                cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
+                cmp::min(self.bid_price.precision + 1, PRECISION),
             ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
@@ -185,7 +184,7 @@ impl QuoteTick {
             PriceType::Ask => self.ask_size,
             PriceType::Mid => Quantity::from_raw(
                 (self.bid_size.raw + self.ask_size.raw) / 2,
-                cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
+                cmp::min(self.bid_size.precision + 1, PRECISION),
             ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
@@ -287,16 +286,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PriceType::Bid, 10_000_000_000_000)]
-    #[case(PriceType::Ask, 10_001_000_000_000)]
-    #[case(PriceType::Mid, 10_000_500_000_000)]
+    #[case(PriceType::Bid, Price::from("10000.0000"))]
+    #[case(PriceType::Ask, Price::from("10001.0000"))]
+    #[case(PriceType::Mid, Price::from("10000.5000"))]
     fn test_extract_price(
         #[case] input: PriceType,
-        #[case] expected: i64,
+        #[case] expected: Price,
         quote_ethusdt_binance: QuoteTick,
     ) {
         let quote = quote_ethusdt_binance;
-        let result = quote.extract_price(input).raw;
+        let result = quote.extract_price(input);
         assert_eq!(result, expected);
     }
 

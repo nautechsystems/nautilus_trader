@@ -15,17 +15,19 @@
 
 use std::ops::{AddAssign, SubAssign};
 
-use crate::types::Price;
+use crate::types::price::{Price, PriceRaw};
 
 // TODO: Document panic
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
     // SAFETY: Assumes `value` and `precision` are properly validated
     Price::new(value, precision)
 }
 
 #[no_mangle]
-pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn price_from_raw(raw: PriceRaw, precision: u8) -> Price {
     Price::from_raw(raw, precision)
 }
 
@@ -35,11 +37,13 @@ pub extern "C" fn price_as_f64(price: &Price) -> f64 {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn price_add_assign(mut a: Price, b: Price) {
     a.add_assign(b);
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
     a.sub_assign(b);
 }

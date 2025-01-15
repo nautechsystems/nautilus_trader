@@ -53,7 +53,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 NANOSECONDS_IN_SECOND = 1_000_000_000
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-ETHUSDT_BITMEX = TestInstrumentProvider.ethusd_bitmex()
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBarBuilder:
@@ -684,7 +684,7 @@ class TestTickBarAggregator:
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
         handler = []
-        instrument = ETHUSDT_BITMEX
+        instrument = ETHUSDT_BINANCE
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
@@ -693,7 +693,7 @@ class TestTickBarAggregator:
             handler.append,
         )
 
-        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:10000])
 
@@ -708,14 +708,14 @@ class TestTickBarAggregator:
         assert last_bar.high == Price.from_str("425.25")
         assert last_bar.low == Price.from_str("424.51")
         assert last_bar.close == Price.from_str("425.15")
-        assert last_bar.volume == Quantity.from_int(3142)
+        assert last_bar.volume == Quantity.from_str("3141.91117")
 
     def test_run_bars_through_aggregator_results_in_expected_bars(self):
         handler = []
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BITMEX.id, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = TickBarAggregator(
-            ETHUSDT_BITMEX,
+            ETHUSDT_BINANCE,
             bar_type,
             handler.append,
         )
@@ -1224,7 +1224,7 @@ class TestVolumeBarAggregator:
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
         handler = []
-        instrument = ETHUSDT_BITMEX
+        instrument = ETHUSDT_BINANCE
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
@@ -1233,7 +1233,7 @@ class TestVolumeBarAggregator:
             handler.append,
         )
 
-        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:10000])
 
@@ -1253,9 +1253,9 @@ class TestVolumeBarAggregator:
     def test_run_bars_through_aggregator_results_in_expected_bars(self):
         handler = []
         bar_spec = BarSpecification(30, BarAggregation.VOLUME, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BITMEX.id, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = VolumeBarAggregator(
-            ETHUSDT_BITMEX,
+            ETHUSDT_BINANCE,
             bar_type,
             handler.append,
         )
@@ -1617,14 +1617,14 @@ class TestTestValueBarAggregator:
         # Arrange
         handler = []
         bar_spec = BarSpecification(10000, BarAggregation.VALUE, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BITMEX.id, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = ValueBarAggregator(
-            ETHUSDT_BITMEX,
+            ETHUSDT_BINANCE,
             bar_type,
             handler.append,
         )
 
-        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:1000])
 
@@ -1634,19 +1634,19 @@ class TestTestValueBarAggregator:
 
         # Assert
         last_bar = handler[-1]
-        assert len(handler) == 109
+        assert len(handler) == 112
         assert last_bar.open == Price.from_str("423.19")
         assert last_bar.high == Price.from_str("423.25")
         assert last_bar.low == Price.from_str("423.19")
         assert last_bar.close == Price.from_str("423.25")
-        assert last_bar.volume == Quantity.from_int(24)
+        assert last_bar.volume == Quantity.from_str("23.62824")
 
     def test_run_bars_through_aggregator_results_in_expected_bars(self):
         handler = []
         bar_spec = BarSpecification(3000, BarAggregation.VALUE, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BITMEX.id, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = ValueBarAggregator(
-            ETHUSDT_BITMEX,
+            ETHUSDT_BINANCE,
             bar_type,
             handler.append,
         )

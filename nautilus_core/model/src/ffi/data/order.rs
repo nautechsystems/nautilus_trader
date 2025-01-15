@@ -28,20 +28,14 @@ use crate::{
 };
 
 #[no_mangle]
-pub extern "C" fn book_order_from_raw(
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn book_order_new(
     order_side: OrderSide,
-    price_raw: i64,
-    price_prec: u8,
-    size_raw: u64,
-    size_prec: u8,
+    price: Price,
+    size: Quantity,
     order_id: u64,
 ) -> BookOrder {
-    BookOrder::new(
-        order_side,
-        Price::from_raw(price_raw, price_prec),
-        Quantity::from_raw(size_raw, size_prec),
-        order_id,
-    )
+    BookOrder::new(order_side, price, size, order_id)
 }
 
 #[no_mangle]

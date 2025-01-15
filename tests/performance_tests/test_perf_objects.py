@@ -115,9 +115,9 @@ def test_create_trade_tick_from_raw(benchmark):
     def create_trade_tick():
         TradeTick.from_raw(
             audusd_sim.id,
-            1000000000,
+            10000000000000000,
             5,
-            1000000000,
+            10000000000000000,
             0,
             AggressorSide.BUYER,
             TradeId("123458"),

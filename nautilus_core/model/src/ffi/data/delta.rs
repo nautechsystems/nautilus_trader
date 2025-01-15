@@ -27,6 +27,7 @@ use crate::{
 };
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_delta_new(
     instrument_id: InstrumentId,
     action: BookAction,

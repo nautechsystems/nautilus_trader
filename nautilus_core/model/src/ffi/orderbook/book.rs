@@ -98,6 +98,7 @@ pub extern "C" fn orderbook_count(book: &OrderBook_API) -> u64 {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_add(
     book: &mut OrderBook_API,
     order: BookOrder,
@@ -109,6 +110,7 @@ pub extern "C" fn orderbook_add(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_update(
     book: &mut OrderBook_API,
     order: BookOrder,
@@ -120,6 +122,7 @@ pub extern "C" fn orderbook_update(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_delete(
     book: &mut OrderBook_API,
     order: BookOrder,
@@ -192,24 +195,28 @@ pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
     book.best_bid_price()
         .expect("Error: No bid orders for best bid price")
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
     book.best_ask_price()
         .expect("Error: No ask orders for best ask price")
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
     book.best_bid_size()
         .expect("Error: No bid orders for best bid size")
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
     book.best_ask_size()
         .expect("Error: No ask orders for best ask size")
@@ -228,6 +235,7 @@ pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_avg_px_for_quantity(
     book: &mut OrderBook_API,
     qty: Quantity,
@@ -237,6 +245,7 @@ pub extern "C" fn orderbook_get_avg_px_for_quantity(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_quantity_for_price(
     book: &mut OrderBook_API,
     price: Price,
@@ -268,6 +277,7 @@ pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, trade: &
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrder) -> CVec {
     book.simulate_fills(&order).into()
 }

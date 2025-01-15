@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.objects import HIGH_PRECISION
 from nautilus_trader.model.objects import Money
 
 
@@ -31,4 +32,9 @@ def usdce_from_units(units: int) -> Money:
     Money
 
     """
-    return Money.from_raw(units * 1_000, USDC_POS)
+    if HIGH_PRECISION:
+        factor = 10_000_000_000
+    else:
+        factor = 1_000
+
+    return Money.from_raw(int(units * factor), USDC_POS)

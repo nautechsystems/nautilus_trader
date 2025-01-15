@@ -19,6 +19,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
@@ -29,9 +30,9 @@ cdef class MatchingCore:
     cdef InstrumentId _instrument_id
     cdef Price _price_increment
     cdef uint8_t _price_precision
-    cdef readonly int64_t bid_raw
-    cdef readonly int64_t ask_raw
-    cdef readonly int64_t last_raw
+    cdef readonly PriceRaw bid_raw
+    cdef readonly PriceRaw ask_raw
+    cdef readonly PriceRaw last_raw
     cdef readonly bint is_bid_initialized
     cdef readonly bint is_ask_initialized
     cdef readonly bint is_last_initialized
@@ -54,9 +55,9 @@ cdef class MatchingCore:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cdef void set_bid_raw(self, int64_t bid_raw)
-    cdef void set_ask_raw(self, int64_t ask_raw)
-    cdef void set_last_raw(self, int64_t last_raw)
+    cdef void set_bid_raw(self, PriceRaw bid_raw)
+    cdef void set_ask_raw(self, PriceRaw ask_raw)
+    cdef void set_last_raw(self, PriceRaw last_raw)
 
     cpdef void reset(self)
     cpdef void add_order(self, Order order)

@@ -3360,6 +3360,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-test-kit",
  "parquet",
+ "pretty_assertions",
  "pyo3",
  "rstest",
  "thiserror 2.0.11",

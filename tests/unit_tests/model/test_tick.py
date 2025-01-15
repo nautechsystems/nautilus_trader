@@ -16,6 +16,7 @@
 import pickle
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -36,7 +37,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestQuoteTick:
     def test_pickling_instrument_id_round_trip(self):
         pickled = pickle.dumps(AUDUSD_SIM.id)
-        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301
 
         assert unpickled == AUDUSD_SIM.id
 
@@ -48,6 +49,7 @@ class TestQuoteTick:
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
+        # Act
         quote = QuoteTick(
             instrument_id=instrument_id,
             bid_price=Price.from_str("1.00000"),
@@ -58,7 +60,7 @@ class TestQuoteTick:
             ts_init=4,
         )
 
-        # Act, Assert
+        # Assert
         assert isinstance(hash(quote), int)
         assert str(quote) == "AUD/USD.SIM,1.00000,1.00001,1,1,3"
         assert repr(quote) == "QuoteTick(AUD/USD.SIM,1.00000,1.00001,1,1,3)"
@@ -156,12 +158,12 @@ class TestQuoteTick:
         # Arrange, Act
         quote = QuoteTick.from_raw(
             AUDUSD_SIM.id,
-            1000000000,
-            1000010000,
+            convert_to_raw_int(1.00000, 5),
+            convert_to_raw_int(1.00001, 5),
             5,
             5,
-            1000000000,
-            2000000000,
+            convert_to_raw_int(1, 0),
+            convert_to_raw_int(2, 0),
             0,
             0,
             1,
@@ -236,7 +238,7 @@ class TestQuoteTick:
 
         # Act
         pickled = pickle.dumps(quote)
-        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301
 
         # Assert
         assert quote == unpickled
@@ -380,9 +382,9 @@ class TestTradeTick:
 
         trade = TradeTick.from_raw(
             AUDUSD_SIM.id,
-            1000010000,
+            convert_to_raw_int(1.00001, 5),
             5,
-            10000000000000,
+            convert_to_raw_int(10_000, 0),
             0,
             AggressorSide.BUYER,
             trade_id,

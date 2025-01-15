@@ -5,6 +5,10 @@ includes = []
 sys_includes = ["stdint.h", "Python.h"]
 no_includes = true
 tab_width = 4
+after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;\n    typedef __int128_t int128_t;\n#endif"
+
+[defines]
+"feature = high-precision" = "HIGH_PRECISION"
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
@@ -16,6 +20,9 @@ exclude = [
 ]
 
 [export.rename]
+"u128" = "uint128_t"
+"i128" = "int128_t"
+"i32" = "int32_t"
 "bool" = "uint8_t"
 "Ustr" = "char*"
 "AccountId" = "AccountId_t"

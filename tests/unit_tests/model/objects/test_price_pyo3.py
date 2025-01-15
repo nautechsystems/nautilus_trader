@@ -20,6 +20,10 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import Price
+from nautilus_trader.model import convert_to_raw_int
+from nautilus_trader.model.objects import FIXED_PRECISION
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
 
 
 class TestPrice:
@@ -41,24 +45,24 @@ class TestPrice:
     def test_instantiate_with_precision_over_maximum_raises_overflow_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Price(1.0, precision=10)
+            Price(1.0, precision=FIXED_PRECISION + 1)
 
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Price(9_223_372_036 + 1, precision=0)
+            Price(PRICE_MAX + 1, precision=0)
 
     def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            Price(-9_223_372_036 - 1, precision=0)
+            Price(PRICE_MIN - 1, precision=0)
 
     def test_instantiate_base_decimal_from_int(self):
         # Arrange, Act
         result = Price(1, precision=1)
 
         # Assert
-        assert result.raw == 1_000_000_000
+        assert result.raw == 10**FIXED_PRECISION
         assert str(result) == "1.0"
 
     def test_instantiate_base_decimal_from_float(self):
@@ -66,7 +70,8 @@ class TestPrice:
         result = Price(1.12300, precision=5)
 
         # Assert
-        assert result.raw == 1_123_000_000
+        expected_raw = int(1.123 * (10**FIXED_PRECISION))
+        assert result.raw == expected_raw
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
@@ -606,8 +611,13 @@ class TestPrice:
         assert result == expected
 
     def test_from_raw_returns_expected_price(self):
-        # Arrange, Act
-        price1 = Price.from_raw(1000000000000, 3)
+        # Arrange
+        value = 1000
+        precision = 3
+
+        # Act
+        raw_value = convert_to_raw_int(value, precision)
+        price1 = Price.from_raw(raw_value, precision)
         price2 = Price(1000, 3)
 
         # Assert

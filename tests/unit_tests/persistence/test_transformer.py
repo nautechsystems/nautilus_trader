@@ -25,6 +25,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.objects import FIXED_PRECISION_BYTES
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -112,12 +113,12 @@ def test_get_schema_map_with_unsupported_type() -> None:
             OrderBookDelta,
             {
                 "action": "UInt8",
-                "flags": "UInt8",
-                "order_id": "UInt64",
-                "price": "Int64",
-                "sequence": "UInt64",
                 "side": "UInt8",
-                "size": "UInt64",
+                "price": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "size": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "order_id": "UInt64",
+                "sequence": "UInt64",
+                "flags": "UInt8",
                 "ts_event": "UInt64",
                 "ts_init": "UInt64",
             },
@@ -125,10 +126,10 @@ def test_get_schema_map_with_unsupported_type() -> None:
         [
             QuoteTick,
             {
-                "bid_price": "Int64",
-                "ask_price": "Int64",
-                "bid_size": "UInt64",
-                "ask_size": "UInt64",
+                "bid_price": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "ask_price": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "bid_size": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "ask_size": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
                 "ts_event": "UInt64",
                 "ts_init": "UInt64",
             },
@@ -136,8 +137,8 @@ def test_get_schema_map_with_unsupported_type() -> None:
         [
             TradeTick,
             {
-                "price": "Int64",
-                "size": "UInt64",
+                "price": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "size": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
                 "aggressor_side": "UInt8",
                 "trade_id": "Utf8",
                 "ts_event": "UInt64",
@@ -147,11 +148,11 @@ def test_get_schema_map_with_unsupported_type() -> None:
         [
             Bar,
             {
-                "open": "Int64",
-                "high": "Int64",
-                "low": "Int64",
-                "close": "Int64",
-                "volume": "UInt64",
+                "open": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "high": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "low": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "close": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "volume": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
                 "ts_event": "UInt64",
                 "ts_init": "UInt64",
             },

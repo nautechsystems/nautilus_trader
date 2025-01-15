@@ -19,6 +19,7 @@ import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import CurrencyType
+from nautilus_trader.model.objects import FIXED_PRECISION
 
 
 AUD = Currency.from_str("AUD")
@@ -44,7 +45,7 @@ class TestCurrency:
         with pytest.raises(ValueError):
             Currency(
                 code="AUD",
-                precision=10,
+                precision=FIXED_PRECISION + 1,
                 iso4217=36,
                 name="Australian dollar",
                 currency_type=CurrencyType.FIAT,

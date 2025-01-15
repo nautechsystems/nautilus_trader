@@ -105,10 +105,8 @@ impl ParquetDataCatalog {
         });
 
         info!(
-            "Writing {} records of {} data to {:?}",
+            "Writing {} records of {type_name} data to {json_path:?}",
             data.len(),
-            type_name,
-            json_path
         );
 
         if write_metadata {

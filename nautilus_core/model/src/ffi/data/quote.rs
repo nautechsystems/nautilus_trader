@@ -28,25 +28,22 @@ use crate::{
 };
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quote_tick_new(
     instrument_id: InstrumentId,
-    bid_price_raw: i64,
-    ask_price_raw: i64,
-    bid_price_prec: u8,
-    ask_price_prec: u8,
-    bid_size_raw: u64,
-    ask_size_raw: u64,
-    bid_size_prec: u8,
-    ask_size_prec: u8,
+    bid_price: Price,
+    ask_price: Price,
+    bid_size: Quantity,
+    ask_size: Quantity,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
-        Price::from_raw(bid_price_raw, bid_price_prec),
-        Price::from_raw(ask_price_raw, ask_price_prec),
-        Quantity::from_raw(bid_size_raw, bid_size_prec),
-        Quantity::from_raw(ask_size_raw, ask_size_prec),
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
         ts_event,
         ts_init,
     )

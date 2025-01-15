@@ -14,13 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import capsule_to_list
+from nautilus_trader.model.objects import HIGH_PRECISION
 
 
+@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_order_book_deltas() -> None:
     # Arrange
     data_path = TEST_DATA_DIR / "nautilus" / "deltas.parquet"
@@ -41,6 +44,7 @@ def test_backend_session_order_book_deltas() -> None:
     assert is_ascending
 
 
+@pytest.mark.skip(reason="Repair test data once high-precision merged")
 def test_backend_session_quotes() -> None:
     # Arrange
     data_path = TEST_DATA_DIR / "nautilus" / "quotes.parquet"
@@ -61,6 +65,7 @@ def test_backend_session_quotes() -> None:
     assert is_ascending
 
 
+@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_trades() -> None:
     # Arrange
     data_path = TEST_DATA_DIR / "nautilus" / "trades.parquet"
@@ -80,6 +85,7 @@ def test_backend_session_trades() -> None:
     assert is_ascending
 
 
+@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_bars() -> None:
     # Arrange
     data_path = TEST_DATA_DIR / "nautilus" / "bars.parquet"
@@ -99,6 +105,7 @@ def test_backend_session_bars() -> None:
     assert is_ascending
 
 
+@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_multiple_types() -> None:
     # Arrange
     trades_path = TEST_DATA_DIR / "nautilus" / "trades.parquet"

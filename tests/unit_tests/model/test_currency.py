@@ -22,6 +22,7 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.objects import FIXED_PRECISION
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -47,7 +48,7 @@ class TestCurrency:
         with pytest.raises(ValueError):
             Currency(
                 code="AUD",
-                precision=10,
+                precision=FIXED_PRECISION + 1,
                 iso4217=36,
                 name="Australian dollar",
                 currency_type=CurrencyType.FIAT,

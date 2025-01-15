@@ -18,6 +18,7 @@ import pickle
 import pytest
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -153,12 +154,18 @@ def test_from_dict_returns_expected_order():
 
 
 def test_book_order_from_raw() -> None:
-    # Arrange, Act
+    # Arrange
+    price = 10.0
+    price_precision = 1
+    size = 5
+    size_precision = 0
+
+    # Act
     order = BookOrder.from_raw(
         side=OrderSide.BUY,
-        price_raw=10000000000,
+        price_raw=convert_to_raw_int(price, price_precision),
         price_prec=1,
-        size_raw=5000000000,
+        size_raw=convert_to_raw_int(size, size_precision),
         size_prec=0,
         order_id=1,
     )
@@ -173,14 +180,20 @@ def test_delta_fully_qualified_name() -> None:
 
 
 def test_delta_from_raw() -> None:
-    # Arrange, Act
+    # Arrange
+    price = 10.0
+    price_precision = 1
+    size = 5
+    size_precision = 0
+
+    # Act
     delta = OrderBookDelta.from_raw(
         instrument_id=AUDUSD,
         action=BookAction.ADD,
         side=OrderSide.BUY,
-        price_raw=10000000000,
+        price_raw=convert_to_raw_int(price, price_precision),
         price_prec=1,
-        size_raw=5000000000,
+        size_raw=convert_to_raw_int(size, size_precision),
         size_prec=0,
         order_id=1,
         flags=0,

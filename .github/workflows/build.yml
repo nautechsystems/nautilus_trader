@@ -81,10 +81,10 @@ jobs:
       - name: Run pre-commit
         continue-on-error: true
         run: |
-          pre-commit run --all-files
+          pre-commit run --all-files || echo "PRECOMMIT_FAILED=true" > $GITHUB_ENV
 
       - name: Add PR comment on failure
-        if: failure() && github.event_name == 'pull_request'
+        if: env.PRECOMMIT_FAILED == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -95,10 +95,184 @@ jobs:
             })
 
       - name: Fail job if pre-commit failed
-        if: failure()
+        if: env.PRECOMMIT_FAILED == 'true'
         run: |
           echo "Pre-commit checks failed, exiting"
           exit 1
+
+  build-linux-low-precision:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.12"]
+    defaults:
+      run:
+        shell: bash
+    name: build low-precision (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [pre-commit]
+    env:
+      BUILD_MODE: debug
+      HIGH_PRECISION: false
+      RUST_BACKTRACE: 1
+      # > --------------------------------------------------
+      # > sccache
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_IDLE_TIMEOUT: 0
+      SCCACHE_DIRECT: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang++"
+      # Incrementally compiled crates cannot be cached by sccache
+      # https://github.com/mozilla/sccache#rust
+      CARGO_INCREMENTAL: 0
+      # > --------------------------------------------------
+
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      # - name: Free disk space  # Continue to monitor
+      #   uses: jlumbroso/free-disk-space@main
+      #   with:
+      #     tool-cache: true
+      #     android: false
+      #     dotnet: false
+      #     haskell: false
+      #     large-packages: true
+      #     docker-images: true
+      #     swap-storage: true
+
+      - name: Install runner dependencies
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        run: |
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Get Python version
+        run: |
+          version=$(bash scripts/python-version.sh)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+
+      - name: Get Poetry version from poetry-version
+        run: |
+          version=$(cat poetry-version)
+          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
+
+      - name: Cached sccache
+        id: cached-sccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
+            sccache-${{ runner.os }}-${{ github.workflow }}-
+            sccache-${{ runner.os }}-
+
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Cached cargo
+        id: cached-cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Cache Python site-packages
+        id: cached-site-packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/lib/python${{ matrix.python-version }}/site-packages
+          key: ${{ runner.os }}-${{ matrix.python-version }}-site-packages
+          restore-keys: |
+            ${{ runner.os }}-site-packages-
+
+      - name: Cached test data
+        id: cached-testdata-large
+        uses: actions/cache@v4
+        with:
+          path: tests/test_data/large
+          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+          restore-keys: ${{ runner.os }}-large-files-
+
+      - name: Install Nautilus CLI and run init postgres
+        run: |
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Run nautilus_core tests
+        run: |
+          make cargo-test-low-precision
+
+      - name: Build Python wheel
+        run: |
+          poetry build --format wheel
+          ls -lh dist/
+
+      - name: Install Python wheel
+        run: |
+          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+          python -m pip install -r requirements-test.txt
+          pip install "$(ls dist/*.whl)"
+
+      - name: Run tests
+        run: pytest --ignore=tests/performance_tests
 
   build-linux:
     strategy:
@@ -525,6 +699,8 @@ jobs:
     needs: [pre-commit]
     env:
       BUILD_MODE: debug # Not building wheels, so debug is fine
+      HIGH_PRECISION: false
+      PARALLEL_BUILD: false
       RUST_BACKTRACE: 1
       # > --------------------------------------------------
       # > sccache
@@ -627,8 +803,6 @@ jobs:
         run: |
           poetry install --with test --all-extras
           poetry run pytest --ignore=tests/performance_tests
-        env:
-          PARALLEL_BUILD: false
 
   publish-wheels:
     name: publish-packages

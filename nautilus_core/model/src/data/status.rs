@@ -31,13 +31,12 @@ use crate::{enums::MarketStatusAction, identifiers::InstrumentId};
 
 /// Represents an event that indicates a change in an instrument market status.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct InstrumentStatus {
     /// The instrument ID for the status change.
     pub instrument_id: InstrumentId,

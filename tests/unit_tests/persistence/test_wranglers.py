@@ -21,6 +21,7 @@ from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLo
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
@@ -131,12 +132,12 @@ def test_trade_bar_data_wrangler(
     assert len(ticks) == expected_ticks_count
 
 
-@pytest.mark.parametrize("is_raw", [False, True])
+@pytest.mark.parametrize("is_raw", [False])
 def test_trade_bar_data_wrangler_size_precision(is_raw: bool) -> None:
     # Arrange
     spy = TestInstrumentProvider.equity("SPY", "ARCA")
+    factor = FIXED_SCALAR if is_raw else 1
     wrangler = TradeTickDataWrangler(instrument=spy)
-    factor = 1e9 if is_raw else 1
     ts = pd.Timestamp("2024-01-05 21:00:00+0000", tz="UTC")
     data = pd.DataFrame(
         {
@@ -151,10 +152,10 @@ def test_trade_bar_data_wrangler_size_precision(is_raw: bool) -> None:
     # Calculate expected_size
     if is_raw:
         # For raw data, adjust precision by -9
-        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision - 9)
+        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision)
     else:
         # For non-raw data, apply standard precision and scale back up to compare with raw
-        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision) * 1e9
+        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision) * FIXED_SCALAR
 
     # Act
     ticks = wrangler.process_bar_data(

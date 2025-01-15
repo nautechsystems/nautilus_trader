@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.wranglers import BarDataWrangler
@@ -526,7 +527,7 @@ class TestDataStubs:
                         "op": "update",
                         "order": BookOrder(
                             price=Price(row[side], precision=6),
-                            size=Quantity(1e9, precision=2),
+                            size=Quantity(FIXED_SCALAR, precision=2),
                             side=order_side,
                             order_id=0,
                         ),
