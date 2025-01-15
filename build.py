@@ -140,8 +140,6 @@ Options.fast_fail = True  # Abort the compilation on the first error occurred
 Options.annotate = ANNOTATION_MODE  # Create annotated HTML files for each .pyx
 if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
-Options.warning_errors = True  # Treat compiler warnings as errors
-Options.extra_warnings = True
 
 CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
@@ -151,8 +149,13 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILE_MODE,  # If we're debugging or profiling
     "linetrace": PROFILE_MODE,  # If we're debugging or profiling
     "warn.maybe_uninitialized": True,
-    "warn.deprecated.IF": False,
 }
+
+# TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
+if cython_compiler_version == "3.1.0a1":
+    Options.warning_errors = True  # Treat compiler warnings as errors
+    Options.extra_warnings = True
+    CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
 
 
 def _build_extensions() -> list[Extension]:
