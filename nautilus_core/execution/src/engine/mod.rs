@@ -1048,68 +1048,38 @@ impl ExecutionEngine {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    // use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc};
 
-    // use super::ExecutionEngine;
-    // use nautilus_common::{
-    //     cache::Cache, clock::TestClock, factories::OrderFactory, msgbus::MessageBus,
-    // };
-    // use nautilus_core::time::get_atomic_clock_static;
-    // use nautilus_data::engine::{config::DataEngineConfig, DataEngine};
-    // use nautilus_model::{
-    //     enums::{OrderSide, TimeInForce},
-    //     identifiers::{
-    //         stubs::{strategy_id_ema_cross, trader_id},
-    //         ClientOrderId, InstrumentId, OrderListId,
-    //     },
-    // };
-    // use nautilus_portfolio::Portfolio;
-    // // use na
-    // use nautilus_risk::RiskEngine;
-    // use rstest::{fixture, rstest};
-    // // use nautilus_risk::RiskEngine;
-    // // use nauti
+    use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
+    use rstest::fixture;
 
-    // #[fixture]
-    // fn msgbus() -> MessageBus {
-    //     MessageBus::default()
-    // }
+    use super::*;
 
-    // #[fixture]
-    // fn cache() -> Cache {
-    //     Cache::new(None, None)
-    // }
+    #[fixture]
+    fn msgbus() -> MessageBus {
+        MessageBus::default()
+    }
 
-    // #[fixture]
-    // fn clock() -> TestClock {
-    //     TestClock::new()
-    // }
+    #[fixture]
+    fn simple_cache() -> Cache {
+        Cache::new(None, None)
+    }
 
-    // // import order_factory fixture
+    #[fixture]
+    fn clock() -> TestClock {
+        TestClock::new()
+    }
 
-    // #[fixture]
-    // fn portfolio(msgbus: MessageBus, cache: Cache, clock: TestClock) -> Portfolio {
-    //     let msgbus = Rc::new(RefCell::new(msgbus));
-    //     let cache = Rc::new(RefCell::new(cache));
-    //     let clock = Rc::new(RefCell::new(clock));
-    //     Portfolio::new(msgbus, cache, clock)
-    // }
+    // Helpers
+    fn _get_exec_engine(
+        msgbus: Rc<RefCell<MessageBus>>,
+        cache: Rc<RefCell<Cache>>,
+        clock: Rc<RefCell<TestClock>>,
+        config: Option<ExecutionEngineConfig>,
+    ) -> ExecutionEngine {
+        let config = config.unwrap_or_default();
+        ExecutionEngine::new(clock, cache, msgbus, config)
+    }
 
-    // #[fixture]
-    // fn data_engine(msgbus: MessageBus, cache: Cache, clock: TestClock) -> DataEngine {
-    //     let msgbus = Rc::new(RefCell::new(msgbus));
-    //     let cache = Rc::new(RefCell::new(cache));
-    //     let clock = Rc::new(RefCell::new(clock));
-    //     let config = DataEngineConfig::default();
-    //     DataEngine::new(clock, cache, msgbus, Some(config))
-    // }
-
-    // #[fixture]
-    // fn risk_engine(portfolio: Portfolio, data_engine: DataEngine) {
-    //     let clock = Rc::new(RefCell::new(clock));
-    //     let portfolio = Rc::new(RefCell::new(portfolio));
-    //     let data_engine = Rc::new(RefCell::new(data_engine));
-    //     // risk_engine::new();
-    //     // RiskEngine::new(clock, portfolio, data_engine)
-    // }
+    // TODO: After Implementing ExecutionClient & Strategy
 }

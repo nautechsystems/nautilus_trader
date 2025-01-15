@@ -16,10 +16,10 @@
 use std::path::PathBuf;
 
 use datafusion::parquet::file::reader::{FileReader, SerializedFileReader};
-use nautilus_model::data::Data;
-use nautilus_model::data::{to_variant, Bar, OrderBookDelta, QuoteTick, TradeTick};
-use nautilus_persistence::backend::session::DataBackendSession;
-use nautilus_persistence::python::backend::session::NautilusDataType;
+use nautilus_model::data::{to_variant, Bar, Data, OrderBookDelta, QuoteTick, TradeTick};
+use nautilus_persistence::{
+    backend::session::DataBackendSession, python::backend::session::NautilusDataType,
+};
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
 use serde_json::to_writer_pretty;
 
@@ -85,8 +85,8 @@ where
     let stem = input_path.file_stem().unwrap().to_str().unwrap();
     let default = PathBuf::from(".");
     let parent = input_path.parent().unwrap_or(&default);
-    let json_path = parent.join(format!("{}.json", stem));
-    let metadata_path = parent.join(format!("{}.metadata.json", stem));
+    let json_path = parent.join(format!("{stem}.json"));
+    let metadata_path = parent.join(format!("{stem}.metadata.json"));
 
     // Read parquet metadata
     let parquet_file = std::fs::File::open(file_path)?;
