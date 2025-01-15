@@ -79,8 +79,8 @@ where
     let stem = json_path.file_stem().unwrap().to_str().unwrap();
     let parent_path = PathBuf::from(".");
     let parent = json_path.parent().unwrap_or(&parent_path);
-    let metadata_path = parent.join(format!("{}.metadata.json", stem));
-    let parquet_path = parent.join(format!("{}.parquet", stem));
+    let metadata_path = parent.join(format!("{stem}.metadata.json"));
+    let parquet_path = parent.join(format!("{stem}.parquet"));
 
     // Read JSON data
     let json_data = std::fs::read_to_string(json_path)?;

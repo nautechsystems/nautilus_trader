@@ -73,24 +73,24 @@ impl DatabentoLiveClient {
             match msg {
                 LiveMessage::Data(data) => Python::with_gil(|py| {
                     let py_obj = data_to_pycapsule(py, data);
-                    call_python(py, &callback, py_obj)
+                    call_python(py, &callback, py_obj);
                 }),
                 LiveMessage::Instrument(data) => Python::with_gil(|py| {
                     let py_obj =
                         instrument_any_to_pyobject(py, data).expect("Failed creating instrument");
-                    call_python(py, &callback, py_obj)
+                    call_python(py, &callback, py_obj);
                 }),
                 LiveMessage::Status(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
-                    call_python(py, &callback_pyo3, py_obj)
+                    call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Imbalance(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
-                    call_python(py, &callback_pyo3, py_obj)
+                    call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Statistics(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
-                    call_python(py, &callback_pyo3, py_obj)
+                    call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Close => {
                     // Graceful close
