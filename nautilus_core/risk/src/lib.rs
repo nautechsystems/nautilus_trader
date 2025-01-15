@@ -29,3 +29,6 @@
 
 pub mod engine;
 pub mod sizing;
+
+// Re-exports
+pub use engine::RiskEngine;

@@ -85,8 +85,8 @@ where
     let stem = input_path.file_stem().unwrap().to_str().unwrap();
     let default = PathBuf::from(".");
     let parent = input_path.parent().unwrap_or(&default);
-    let json_path = parent.join(format!("{}.json", stem));
-    let metadata_path = parent.join(format!("{}.metadata.json", stem));
+    let json_path = parent.join(format!("{stem}.json"));
+    let metadata_path = parent.join(format!("{stem}.metadata.json"));
 
     // Read parquet metadata
     let parquet_file = std::fs::File::open(file_path)?;

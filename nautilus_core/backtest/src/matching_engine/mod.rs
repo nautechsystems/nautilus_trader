@@ -1042,7 +1042,7 @@ impl OrderMatchingEngine {
         // set order side as taker
         order.set_liquidity_side(LiquiditySide::Taker);
         let fills = self.determine_market_price_and_volume(order);
-        self.apply_fills(order, fills, LiquiditySide::Taker, None, position)
+        self.apply_fills(order, fills, LiquiditySide::Taker, None, position);
     }
 
     fn fill_limit_order(&mut self, order: &OrderAny) {
@@ -1145,7 +1145,7 @@ impl OrderMatchingEngine {
                 self.generate_order_rejected(
                     order,
                     format!("No market for {}", order.instrument_id()).into(),
-                )
+                );
             } else {
                 log::error!("Cannot fill order: no fills from book when fills were expected (check size in data)");
                 return;
@@ -1159,28 +1159,23 @@ impl OrderMatchingEngine {
         let mut initial_market_to_limit_fill = false;
         for (mut fill_px, fill_qty) in &fills {
             // Validate price precision
-            if fill_px.precision != self.instrument.price_precision() {
-                panic!(
-                    "Invalid price precision for fill price {} when instrument price precision is {}.\
+            assert!(
+                (fill_px.precision == self.instrument.price_precision()),
+                "Invalid price precision for fill price {} when instrument price precision is {}.\
                      Check that the data price precision matches the {} instrument",
-                    fill_px.precision,
-                    self.instrument.price_precision(),
-                    self.instrument.id()
-
-
-                );
-            }
+                fill_px.precision,
+                self.instrument.price_precision(),
+                self.instrument.id()
+            );
 
             // Validate quantity precision
-            if fill_qty.precision != self.instrument.size_precision() {
-                panic!(
+            assert!((fill_qty.precision == self.instrument.size_precision()),
                     "Invalid quantity precision for fill quantity {} when instrument size precision is {}.\
                      Check that the data quantity precision matches the {} instrument",
                     fill_qty.precision,
                     self.instrument.size_precision(),
                     self.instrument.id()
                 );
-            }
 
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
@@ -1191,9 +1186,9 @@ impl OrderMatchingEngine {
 
             if self.book_type == BookType::L1_MBP && self.fill_model.is_slipped() {
                 if order.order_side() == OrderSide::Buy {
-                    fill_px = fill_px.add(self.instrument.price_increment())
+                    fill_px = fill_px.add(self.instrument.price_increment());
                 } else if order.order_side() == OrderSide::Sell {
-                    fill_px = fill_px.sub(self.instrument.price_increment())
+                    fill_px = fill_px.sub(self.instrument.price_increment());
                 } else {
                     panic!("Invalid order side {}", order.order_side())
                 }
@@ -1212,7 +1207,7 @@ impl OrderMatchingEngine {
                         let adjusted_fill_qty =
                             Quantity::from_raw(position.quantity.raw, fill_qty.precision);
 
-                        self.generate_order_updated(order, adjusted_fill_qty, None, None)
+                        self.generate_order_updated(order, adjusted_fill_qty, None, None);
                     }
                 }
             }
