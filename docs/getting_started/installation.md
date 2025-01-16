@@ -229,14 +229,14 @@ The precision mode is controlled by:
 - The `HIGH_PRECISION` environment variable during compilation.
 - The corresponding Rust feature flag `high-precision`.
 
-#### High-precision mode (default)
+#### High-precision mode (128-bit)
 
 ```bash
 export HIGH_PRECISION=true
 make install-debug
 ```
 
-#### Low-precision mode
+#### Low-precision mode (128-bit)
 
 ```bash
 export HIGH_PRECISION=false
