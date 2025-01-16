@@ -218,7 +218,7 @@ The following value types are backed by either 128-bit or 64-bit raw integer val
 - `Quantity`
 - `Money`
 
-### High-precision mode
+### High-precision mode (128-bit)
 
 When the `high-precision` feature flag is **enabled** (default), values use the specification:
 
@@ -228,7 +228,7 @@ When the `high-precision` feature flag is **enabled** (default), values use the 
 | `Money`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
 | `Quantity`   | `u128`      | 16            | 0                   | 34,028,236,692,093 |
 
-### Low-precision mode
+### Low-precision mode (64-bit)
 
 When the `high-precision` feature flag is **disabled**, values use the specification:
 
