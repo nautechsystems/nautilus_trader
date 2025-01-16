@@ -40,7 +40,7 @@ integration written for it, this then enables external publishing of messages.
 
 :::info
 Redis is currently supported for all serializable messages which are published externally.
-The minimum supported Redis version is 6.2 or higher (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
+The minimum supported Redis version is 6.2 (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
 :::
 
 Under the hood, when a backing database (or any other compatible technology) is configured,
