@@ -54,8 +54,8 @@ pub type MoneyRaw = i64;
 
 /// Represents an amount of money in a specified currency denomination.
 ///
-/// - `MONEY_MAX` = 9_223_372_036
-/// - `MONEY_MIN` = -9_223_372_036
+/// - `MONEY_MAX` = {MONEY_MAX}
+/// - `MONEY_MIN` = {MONEY_MIN}
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -63,7 +63,6 @@ pub type MoneyRaw = i64;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Money {
-    /// The raw monetary amount as a signed 64-bit integer.
     /// Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
     pub raw: MoneyRaw,
     /// The currency denomination associated with the monetary amount.
@@ -76,7 +75,7 @@ impl Money {
     /// # Errors
     ///
     /// This function returns an error:
-    /// - If `amount` is invalid outside the representable range [-17_014_118_346_046, 17_014_118_346_046].
+    /// - If `amount` is invalid outside the representable range [{MONEY_MIN}, {MONEY_MAX}].
     ///
     /// # Notes
     ///
@@ -84,10 +83,10 @@ impl Money {
     pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
-        #[cfg(not(feature = "high-precision"))]
-        let raw = f64_to_fixed_i64(amount, currency.precision);
         #[cfg(feature = "high-precision")]
         let raw = f64_to_fixed_i128(amount, currency.precision);
+        #[cfg(not(feature = "high-precision"))]
+        let raw = f64_to_fixed_i64(amount, currency.precision);
 
         Ok(Self { raw, currency })
     }
@@ -132,7 +131,7 @@ impl Money {
         // Scale down the raw value to match the precision
         let precision = self.currency.precision;
         let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(FIXED_PRECISION - precision));
-        #[allow(clippy::useless_conversion)]
+        #[allow(clippy::useless_conversion)] // Required for precision modes
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
 

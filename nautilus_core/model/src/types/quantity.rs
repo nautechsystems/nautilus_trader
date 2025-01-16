@@ -48,7 +48,7 @@ pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
 #[no_mangle]
-pub static QUANTITY_RAW_MAX: QuantityRaw = QuantityRaw::MAX;
+pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
 
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
@@ -78,9 +78,9 @@ pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Resul
 /// or 'shares' (instruments denominated in whole units) or a decimal value
 /// containing decimal places for instruments denominated in fractional units.
 ///
-/// Handles up to 9 decimals of precision.
+/// Handles up to {FIXED_PRECISION} decimals of precision.
 ///
-/// - `QUANTITY_MAX` = 18_446_744_073
+/// - `QUANTITY_MAX` = {QUANTITY_MAX}
 /// - `QUANTITY_MIN` = 0
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
@@ -89,10 +89,9 @@ pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Resul
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
-    /// The raw quantity as an unsigned 64-bit integer.
-    /// Represents the unscaled value, with `precision` defining the number of decimal places.
+    /// Represents the raw unscaled value, with `precision` defining the number of decimal places.
     pub raw: QuantityRaw,
-    /// The number of decimal places, with a maximum precision of 9.
+    /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
     pub precision: u8,
 }
 
@@ -102,8 +101,8 @@ impl Quantity {
     /// # Errors
     ///
     /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [0, 34_028_236_692_093].
-    /// - If `precision` is invalid outside the representable range [0, 16].
+    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -184,8 +183,10 @@ impl Quantity {
         // Scale down the raw value to match the precision
         let rescaled_raw =
             self.raw / QuantityRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
-        // TODO: casting u128 to i128 is not a good idea
-        // check if decimal library provides a better way
+        // SAFETY: The raw value is guaranteed to be within i128 range after scaling
+        // because our quantity constraints ensure the maximum raw value times the scaling
+        // factor cannot exceed i64::MAX (low-precision) or i128::MAX (high-precision).
+        #[allow(clippy::useless_conversion)] // Required for precision modes
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
