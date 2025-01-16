@@ -88,9 +88,9 @@ cdef class Quantity:
     or 'shares' (instruments denominated in whole units) or a decimal value
     containing decimal places for instruments denominated in fractional units.
 
-    Handles up to 9 decimals of precision.
+    Handles up to 16 decimals of precision (in high-precision mode).
 
-    - ``QUANTITY_MAX`` = 18_446_744_073
+    - ``QUANTITY_MAX`` = 34_028_236_692_093
     - ``QUANTITY_MIN`` = 0
 
     Parameters
@@ -104,11 +104,11 @@ cdef class Quantity:
     Raises
     ------
     ValueError
-        If `value` is greater than 18_446_744_073.
+        If `value` is greater than 34_028_236_692_093.
     ValueError
         If `value` is negative (< 0).
     ValueError
-        If `precision` is greater than 9.
+        If `precision` is greater than 16.
     OverflowError
         If `precision` is negative (< 0).
 
@@ -118,7 +118,10 @@ cdef class Quantity:
     """
 
     def __init__(self, double value, uint8_t precision) -> None:
-        Condition.is_true(precision <= FIXED_PRECISION, f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}")
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
         if isnan(value):
             raise ValueError(
                 f"invalid `value`, was {value:_}",
@@ -384,7 +387,7 @@ cdef class Quantity:
         Raises
         ------
         ValueError
-            If `precision` is greater than 9.
+            If `precision` is greater than 16.
         OverflowError
             If `precision` is negative (< 0).
 
@@ -400,7 +403,7 @@ cdef class Quantity:
         """
         Return a quantity from the given `raw` fixed-point integer and `precision`.
 
-        Handles up to 9 decimals of precision.
+        Handles up to 16 decimals of precision (in high-precision mode).
 
         Parameters
         ----------
@@ -417,7 +420,7 @@ cdef class Quantity:
         Raises
         ------
         ValueError
-            If `precision` is greater than 9.
+            If `precision` is greater than 16.
         OverflowError
             If `precision` is negative (< 0).
 
@@ -426,7 +429,10 @@ cdef class Quantity:
         Small `raw` values can produce a zero quantity depending on the `precision`.
 
         """
-        Condition.is_true(precision <= FIXED_PRECISION, f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}")
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
         return Quantity.from_raw_c(raw, precision)
 
     @staticmethod
@@ -434,7 +440,7 @@ cdef class Quantity:
         """
         Return a quantity parsed from the given string.
 
-        Handles up to 9 decimals of precision.
+        Handles up to 16 decimals of precision (in high-precision mode).
 
         Parameters
         ----------
@@ -448,7 +454,7 @@ cdef class Quantity:
         Raises
         ------
         ValueError
-            If inferred precision is greater than 9.
+            If inferred precision is greater than 16.
         OverflowError
             If inferred precision is negative (< 0).
 
@@ -526,10 +532,10 @@ cdef class Price:
     have negative values. For example, prices for options instruments can be
     negative under certain conditions.
 
-    Handles up to 9 decimals of precision.
+    Handles up to 16 decimals of precision (in high-precision mode).
 
-    - ``PRICE_MAX`` = 9_223_372_036
-    - ``PRICE_MIN`` = -9_223_372_036
+    - ``PRICE_MAX`` = 17_014_118_346_046
+    - ``PRICE_MIN`` = -17_014_118_346_046
 
     Parameters
     ----------
@@ -542,11 +548,11 @@ cdef class Price:
     Raises
     ------
     ValueError
-        If `value` is greater than 9_223_372_036.
+        If `value` is greater than 17_014_118_346_046.
     ValueError
-        If `value` is less than -9_223_372_036.
+        If `value` is less than -17_014_118_346_046.
     ValueError
-        If `precision` is greater than 9.
+        If `precision` is greater than 16.
     OverflowError
         If `precision` is negative (< 0).
 
@@ -556,7 +562,10 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision) -> None:
-        Condition.is_true(precision <= FIXED_PRECISION, f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}")
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
         if isnan(value):
             raise ValueError(
                 f"invalid `value`, was {value:_}",
@@ -800,7 +809,7 @@ cdef class Price:
         """
         Return a price from the given `raw` fixed-point integer and `precision`.
 
-        Handles up to 9 decimals of precision.
+        Handles up to 16 decimals of precision (in high-precision mode).
 
         Parameters
         ----------
@@ -817,7 +826,7 @@ cdef class Price:
         Raises
         ------
         ValueError
-            If `precision` is greater than 9.
+            If `precision` is greater than 16.
         OverflowError
             If `precision` is negative (< 0).
 
@@ -826,7 +835,10 @@ cdef class Price:
         Small `raw` values can produce a zero price depending on the `precision`.
 
         """
-        Condition.is_true(precision <= FIXED_PRECISION, f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}")
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
         return Price.from_raw_c(raw, precision)
 
     @staticmethod
@@ -834,7 +846,7 @@ cdef class Price:
         """
         Return a price parsed from the given string.
 
-        Handles up to 9 decimals of precision.
+        Handles up to 16 decimals of precision (in high-precision mode).
 
         Parameters
         ----------
@@ -853,7 +865,7 @@ cdef class Price:
         Raises
         ------
         ValueError
-            If inferred precision is greater than 9.
+            If inferred precision is greater than 16.
         OverflowError
             If inferred precision is negative (< 0).
 
@@ -921,8 +933,8 @@ cdef class Money:
     """
     Represents an amount of money in a specified currency denomination.
 
-    - ``MONEY_MAX`` = 9_223_372_036
-    - ``MONEY_MIN`` = -9_223_372_036
+    - ``MONEY_MAX`` = 17_014_118_346_046
+    - ``MONEY_MIN`` = -17_014_118_346_046
 
     Parameters
     ----------
@@ -934,9 +946,9 @@ cdef class Money:
     Raises
     ------
     ValueError
-        If `value` is greater than 9_223_372_036.
+        If `value` is greater than 17_014_118_346_046.
     ValueError
-        If `value` is less than -9_223_372_036.
+        If `value` is less than -17_014_118_346_046.
     """
 
     def __init__(self, value, Currency currency not None) -> None:
@@ -1203,7 +1215,7 @@ cdef class Money:
         Raises
         ------
         ValueError
-            If inferred currency precision is greater than 9.
+            If inferred currency precision is greater than 16.
         OverflowError
             If inferred currency precision is negative (< 0).
 
@@ -1256,7 +1268,7 @@ cdef class Currency:
     Represents a medium of exchange in a specified denomination with a fixed
     decimal precision.
 
-    Handles up to 9 decimals of precision.
+    Handles up to 16 decimals of precision (in high-precision mode).
 
     Parameters
     ----------
@@ -1278,7 +1290,7 @@ cdef class Currency:
     OverflowError
         If `precision` is negative (< 0).
     ValueError
-        If `precision` greater than 9.
+        If `precision` greater than 16.
     ValueError
         If `name` is not a valid string.
     """
@@ -1293,7 +1305,10 @@ cdef class Currency:
     ) -> None:
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
-        Condition.is_true(precision <= FIXED_PRECISION, f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}")
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
 
         self._mem = currency_from_py(
             pystr_to_cstr(code),
