@@ -57,7 +57,7 @@ click = "^8.1.8"
 fsspec = "^2024.12.0"
 msgspec = "^0.19.0"
 pandas = "^2.2.3"
-pyarrow = ">=18.1.0"
+pyarrow = ">=19.0.0"
 pytz = ">=2024.2.0"
 tqdm = "^4.67.1"
 uvloop = {version = "^0.21.0", markers = "sys_platform != 'win32'"}
@@ -73,7 +73,7 @@ bech32 = {version = "^1.2.0", optional = true}
 ecdsa = {version = "^0.19.0", optional = true}
 bip-utils = {version = "^2.9.3", optional = true}
 pycryptodome = {version = "^3.20.0", optional = true}
-py-clob-client = {version = "^0.18.0", optional = true}
+py-clob-client = {version = "^0.20.0", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
@@ -92,7 +92,7 @@ mypy = "^1.14.1"
 pandas-stubs = "^2.2.2"
 pre-commit = "^4.0.1"
 requests = "^2.32.3"  # Required for fsspec github FS
-ruff = "^0.9.1"
+ruff = "^0.9.2"
 types-pytz = "^2024.2"
 types-requests = "^2.32"
 types-toml = "^0.10.2"
