@@ -920,7 +920,7 @@ typedef int64_t PriceRaw;
  */
 typedef struct Price_t {
     /**
-     * Represents the raw unscaled value, with `precision` defining the number of decimal places.
+     * Represents the raw fixed-point value, with `precision` defining the number of decimal places.
      */
     PriceRaw raw;
     /**
@@ -951,7 +951,7 @@ typedef uint64_t QuantityRaw;
  */
 typedef struct Quantity_t {
     /**
-     * Represents the raw unscaled value, with `precision` defining the number of decimal places.
+     * Represents the raw fixed-point value, with `precision` defining the number of decimal places.
      */
     QuantityRaw raw;
     /**
@@ -1691,7 +1691,7 @@ typedef struct Currency_t {
      */
     uint8_t precision;
     /**
-     * The currency code (ISO 4217).
+     * The ISO 4217 currency code.
      */
     uint16_t iso4217;
     /**
@@ -1720,7 +1720,7 @@ typedef int64_t MoneyRaw;
  */
 typedef struct Money_t {
     /**
-     * Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
+     * Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
      */
     MoneyRaw raw;
     /**

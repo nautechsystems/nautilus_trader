@@ -508,7 +508,7 @@ cdef extern from "../includes/model.h":
     #  - `PRICE_MAX` = {PRICE_MAX}
     #  - `PRICE_MIN` = {PRICE_MIN}
     cdef struct Price_t:
-        # Represents the raw unscaled value, with `precision` defining the number of decimal places.
+        # Represents the raw fixed-point value, with `precision` defining the number of decimal places.
         PriceRaw raw;
         # The number of decimal places, with a maximum of {FIXED_PRECISION}.
         uint8_t precision;
@@ -530,7 +530,7 @@ cdef extern from "../includes/model.h":
     # - `QUANTITY_MAX` = {QUANTITY_MAX}
     # - `QUANTITY_MIN` = 0
     cdef struct Quantity_t:
-        # Represents the raw unscaled value, with `precision` defining the number of decimal places.
+        # Represents the raw fixed-point value, with `precision` defining the number of decimal places.
         QuantityRaw raw;
         # The number of decimal places, with a maximum of {FIXED_PRECISION}.
         uint8_t precision;
@@ -939,7 +939,7 @@ cdef extern from "../includes/model.h":
         char* code;
         # The currency decimal precision.
         uint8_t precision;
-        # The currency code (ISO 4217).
+        # The ISO 4217 currency code.
         uint16_t iso4217;
         # The full name of the currency.
         char* name;
@@ -957,7 +957,7 @@ cdef extern from "../includes/model.h":
     # - `MONEY_MAX` = {MONEY_MAX}
     # - `MONEY_MIN` = {MONEY_MIN}
     cdef struct Money_t:
-        # Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
+        # Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
         MoneyRaw raw;
         # The currency denomination associated with the monetary amount.
         Currency_t currency;

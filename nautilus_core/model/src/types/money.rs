@@ -63,7 +63,7 @@ pub type MoneyRaw = i64;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Money {
-    /// Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
+    /// Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
     pub raw: MoneyRaw,
     /// The currency denomination associated with the monetary amount.
     pub currency: Currency,

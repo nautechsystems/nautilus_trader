@@ -89,7 +89,7 @@ pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Resul
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
-    /// Represents the raw unscaled value, with `precision` defining the number of decimal places.
+    /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
     pub raw: QuantityRaw,
     /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
     pub precision: u8,
@@ -499,21 +499,21 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
         let _ = Quantity::new(1.0, 10);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
         let _ = Quantity::from_raw(1, 10);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
         let _ = Quantity::zero(10);
