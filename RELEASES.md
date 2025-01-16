@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `high-precision` mode for 128-bit integer backed value types, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) and [precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) docs (#2072), thanks @twitu
 - Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
 
 ### Breaking Changes

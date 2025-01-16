@@ -233,7 +233,7 @@ mod tests {
         array::{Array, FixedSizeBinaryArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
-    use nautilus_model::types::{fixed::SCALAR, price::PriceRaw, quantity::QuantityRaw};
+    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw};
     use rstest::rstest;
 
     use super::*;
@@ -315,11 +315,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_raw_price(price_values.value(0)),
-            (100.10 * SCALAR) as PriceRaw
+            (100.10 * FIXED_SCALAR) as PriceRaw
         );
         assert_eq!(
             get_raw_price(price_values.value(1)),
-            (100.50 * SCALAR) as PriceRaw
+            (100.50 * FIXED_SCALAR) as PriceRaw
         );
 
         let size_values = columns[1]
@@ -328,11 +328,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_raw_quantity(size_values.value(0)),
-            (1000.0 * SCALAR) as QuantityRaw
+            (1000.0 * FIXED_SCALAR) as QuantityRaw
         );
         assert_eq!(
             get_raw_quantity(size_values.value(1)),
-            (500.0 * SCALAR) as QuantityRaw
+            (500.0 * FIXED_SCALAR) as QuantityRaw
         );
 
         let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
@@ -344,11 +344,11 @@ mod tests {
         assert_eq!(size_values.len(), 2);
         assert_eq!(
             get_raw_quantity(size_values.value(0)),
-            (1000.0 * SCALAR) as QuantityRaw
+            (1000.0 * FIXED_SCALAR) as QuantityRaw
         );
         assert_eq!(
             get_raw_quantity(size_values.value(1)),
-            (500.0 * SCALAR) as QuantityRaw
+            (500.0 * FIXED_SCALAR) as QuantityRaw
         );
         assert_eq!(aggressor_side_values.len(), 2);
         assert_eq!(aggressor_side_values.value(0), 1);
@@ -375,8 +375,8 @@ mod tests {
         ]);
 
         let size = FixedSizeBinaryArray::from(vec![
-            &((1000.0 * SCALAR) as QuantityRaw).to_le_bytes(),
-            &((900.0 * SCALAR) as QuantityRaw).to_le_bytes(),
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+            &((900.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
         let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
         let trade_id = StringArray::from(vec!["1", "2"]);

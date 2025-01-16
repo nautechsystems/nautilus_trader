@@ -35,7 +35,7 @@ use super::GetTsInit;
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
-    types::{fixed::PRECISION, Price, Quantity},
+    types::{fixed::FIXED_PRECISION, Price, Quantity},
 };
 
 /// Represents a single quote tick in a market.
@@ -170,7 +170,7 @@ impl QuoteTick {
             PriceType::Ask => self.ask_price,
             PriceType::Mid => Price::from_raw(
                 (self.bid_price.raw + self.ask_price.raw) / 2,
-                cmp::min(self.bid_price.precision + 1, PRECISION),
+                cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
             ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
@@ -184,7 +184,7 @@ impl QuoteTick {
             PriceType::Ask => self.ask_size,
             PriceType::Mid => Quantity::from_raw(
                 (self.bid_size.raw + self.ask_size.raw) / 2,
-                cmp::min(self.bid_size.precision + 1, PRECISION),
+                cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
             ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }

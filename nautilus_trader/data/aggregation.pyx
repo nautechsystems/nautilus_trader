@@ -30,7 +30,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
-from nautilus_trader.core.rust.model cimport SCALAR
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -488,7 +488,7 @@ cdef class VolumeBarAggregator(BarAggregator):
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         cdef QuantityRaw raw_size_update = size._mem.raw
-        cdef QuantityRaw raw_step = <QuantityRaw>(self.bar_type.spec.step * <QuantityRaw>SCALAR)
+        cdef QuantityRaw raw_step = <QuantityRaw>(self.bar_type.spec.step * <QuantityRaw>FIXED_SCALAR)
         cdef QuantityRaw raw_size_diff = 0
 
         while raw_size_update > 0:  # While there is size to apply
@@ -518,7 +518,7 @@ cdef class VolumeBarAggregator(BarAggregator):
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         cdef QuantityRaw raw_volume_update = volume._mem.raw
-        cdef QuantityRaw raw_step = <QuantityRaw>(self.bar_type.spec.step * <QuantityRaw>SCALAR)
+        cdef QuantityRaw raw_step = <QuantityRaw>(self.bar_type.spec.step * <QuantityRaw>FIXED_SCALAR)
         cdef QuantityRaw raw_volume_diff = 0
 
         while raw_volume_update > 0:  # While there is volume to apply

@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use crate::{
     data::order::{BookOrder, OrderId},
     orderbook::{BookIntegrityError, BookPrice},
-    types::{fixed::SCALAR, quantity::QuantityRaw},
+    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
 /// Represents a discrete price level in an order book.
@@ -126,7 +126,7 @@ impl BookLevel {
     pub fn exposure_raw(&self) -> QuantityRaw {
         self.orders
             .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * SCALAR) as QuantityRaw)
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as QuantityRaw)
             .sum()
     }
 
@@ -240,7 +240,7 @@ mod tests {
         data::order::BookOrder,
         enums::OrderSide,
         orderbook::{BookLevel, BookPrice},
-        types::{fixed::SCALAR, quantity::QuantityRaw, Price, Quantity},
+        types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
     };
 
     #[rstest]
@@ -545,7 +545,10 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.size_raw(), (30.0 * SCALAR).round() as QuantityRaw);
+        assert_eq!(
+            level.size_raw(),
+            (30.0 * FIXED_SCALAR).round() as QuantityRaw
+        );
     }
 
     #[rstest]
@@ -578,6 +581,9 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.exposure_raw(), (60.0 * SCALAR).round() as QuantityRaw);
+        assert_eq!(
+            level.exposure_raw(),
+            (60.0 * FIXED_SCALAR).round() as QuantityRaw
+        );
     }
 }

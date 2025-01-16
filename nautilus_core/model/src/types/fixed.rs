@@ -22,38 +22,31 @@
 #[no_mangle]
 pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 
+#[cfg(feature = "high-precision")]
+/// The maximum fixed-point precision.
+pub const FIXED_PRECISION: u8 = 16;
+#[cfg(not(feature = "high-precision"))]
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
-pub const FIXED_HIGH_PRECISION: u8 = 16;
 
 #[cfg(feature = "high-precision")]
-/// The width in bytes for fixed-point value types in 128-bit high_precision mode.
+/// The width in bytes for fixed-point value types in high-precision mode (128-bit).
 #[no_mangle]
 pub static PRECISION_BYTES: i32 = 16;
-
 #[cfg(not(feature = "high-precision"))]
-/// The width in bytes for fixed-point value types in 64-bit precision mode.
+/// The width in bytes for fixed-point value types in low-precision mode (64-bit).
 #[no_mangle]
 pub static PRECISION_BYTES: i32 = 8;
 
 #[cfg(feature = "high-precision")]
-pub const PRECISION: u8 = FIXED_HIGH_PRECISION;
+/// The scalar value corresponding to the maximum precision (10^16).
+pub const FIXED_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_PRECISION
 #[cfg(not(feature = "high-precision"))]
-pub const PRECISION: u8 = FIXED_PRECISION;
+/// The scalar value corresponding to the maximum precision (10^9).
+pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
-/// The scalar value corresponding to the maximum precision (10^FIXED_PRECISION).
-pub const FIXED_SCALAR: f64 = 1_000_000_000.0;
-
-/// The scalar value corresponding to the maximum precision (10^FIXED_HIGH_PRECISION).
-pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
-
-/// The scalar representing the difference between high and low precision.
+/// The scalar representing the difference between high-precision and low-precision modes.
 pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0;
-
-#[cfg(feature = "high-precision")]
-pub const SCALAR: f64 = FIXED_HIGH_PRECISION_SCALAR;
-#[cfg(not(feature = "high-precision"))]
-pub const SCALAR: f64 = FIXED_SCALAR;
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
 ///
@@ -62,8 +55,8 @@ pub const SCALAR: f64 = FIXED_SCALAR;
 /// This function returns an error:
 /// - If `precision` exceeds `PRECISION`.
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
-    if precision > PRECISION {
-        anyhow::bail!("Condition failed: `precision` was greater than the maximum `PRECISION` ({PRECISION}), was {precision}")
+    if precision > FIXED_PRECISION {
+        anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}")
     }
     Ok(())
 }
@@ -91,11 +84,11 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
 /// - If `precision` exceeds `FIXED_PRECISION`.
 pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
     assert!(
-        precision <= FIXED_HIGH_PRECISION,
+        precision <= FIXED_PRECISION,
         "precision exceeded maximum 18"
     );
     let pow1 = 10_i128.pow(u32::from(precision));
-    let pow2 = 10_i128.pow(u32::from(FIXED_HIGH_PRECISION - precision));
+    let pow2 = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as i128;
     rounded * pow2
 }
@@ -120,15 +113,15 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 /// # Panics
 ///
 /// This function panics:
-/// - If `precision` exceeds `FIXED_HIGH_PRECISION`.
+/// - If `precision` exceeds `FIXED_PRECISION`.
 #[must_use]
 pub fn f64_to_fixed_u128(value: f64, precision: u8) -> u128 {
     assert!(
-        precision <= FIXED_HIGH_PRECISION,
+        precision <= FIXED_PRECISION,
         "precision exceeded maximum 18"
     );
     let pow1 = 10_u128.pow(u32::from(precision));
-    let pow2 = 10_u128.pow(u32::from(FIXED_HIGH_PRECISION - precision));
+    let pow2 = 10_u128.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as u128;
     rounded * pow2
 }
@@ -139,10 +132,10 @@ pub fn fixed_i64_to_f64(value: i64) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
 
-/// Converts a raw fixed-point `i64` value back to an `f64` value.
+/// Converts a raw fixed-point `i128` value back to an `f64` value.
 #[must_use]
 pub fn fixed_i128_to_f64(value: i128) -> f64 {
-    (value as f64) / FIXED_HIGH_PRECISION_SCALAR
+    (value as f64) / FIXED_SCALAR
 }
 
 /// Converts a raw fixed-point `u64` value back to an `f64` value.
@@ -154,7 +147,7 @@ pub fn fixed_u64_to_f64(value: u64) -> f64 {
 /// Converts a raw fixed-point `u128` value back to an `f64` value.
 #[must_use]
 pub fn fixed_u128_to_f64(value: u128) -> f64 {
-    (value as f64) / FIXED_HIGH_PRECISION_SCALAR
+    (value as f64) / FIXED_SCALAR
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -169,7 +162,7 @@ mod tests {
 
     #[rstest]
     #[case(0)]
-    #[case(FIXED_HIGH_PRECISION)]
+    #[case(FIXED_PRECISION)]
     fn test_valid_precision(#[case] precision: u8) {
         let result = check_fixed_precision(precision);
         assert!(result.is_ok());
@@ -177,7 +170,7 @@ mod tests {
 
     #[rstest]
     fn test_invalid_precision() {
-        let precision = FIXED_HIGH_PRECISION + 1;
+        let precision = FIXED_PRECISION + 1;
         let result = check_fixed_precision(precision);
         assert!(result.is_err());
     }
@@ -294,7 +287,7 @@ mod tests {
     fn test_fixed_i128_to_f64(
         #[values(1, -1, 2, -2, 10, -10, 100, -100, 1_000, -1_000, -10_000, -100_000)] value: i128,
     ) {
-        assert_eq!(fixed_i128_to_f64(value), value as f64 / SCALAR);
+        assert_eq!(fixed_i128_to_f64(value), value as f64 / FIXED_SCALAR);
     }
 
     #[rstest]
@@ -328,7 +321,7 @@ mod tests {
         value: u128,
     ) {
         let result = fixed_u128_to_f64(value);
-        assert_eq!(result, (value as f64) / SCALAR);
+        assert_eq!(result, (value as f64) / FIXED_SCALAR);
     }
 }
 
@@ -442,7 +435,7 @@ mod tests {
     fn test_fixed_i64_to_f64(
         #[values(1, -1, 2, -2, 10, -10, 100, -100, 1_000, -1_000)] value: i64,
     ) {
-        assert_eq!(fixed_i64_to_f64(value), value as f64 / SCALAR);
+        assert_eq!(fixed_i64_to_f64(value), value as f64 / FIXED_SCALAR);
     }
 
     #[rstest]
@@ -471,6 +464,6 @@ mod tests {
         value: u64,
     ) {
         let result = fixed_u64_to_f64(value);
-        assert_eq!(result, (value as f64) / SCALAR);
+        assert_eq!(result, (value as f64) / FIXED_SCALAR);
     }
 }
