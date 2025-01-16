@@ -59,9 +59,9 @@ with CPython C extension modules then able to offer a Python-native environment,
 
 There are three main use cases for this software package:
 
-- Backtesting trading systems with historical data (`backtest`)
-- Testing trading systems with real-time data and simulated execution (`sandbox`)
-- Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`)
+- Backtesting trading systems with historical data (`backtest`).
+- Testing trading systems with real-time data and simulated execution (`sandbox`).
+- Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`).
 
 The projects codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
 the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
