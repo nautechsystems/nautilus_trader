@@ -117,7 +117,7 @@ pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Price {
-    /// Represents the raw unscaled value, with `precision` defining the number of decimal places.
+    /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
     pub raw: PriceRaw,
     /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
     pub precision: u8,
@@ -482,35 +482,35 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
         let _ = Price::new(1.0, 10);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
         let _ = Price::from_raw(1, 10);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_max() {
         // Precision out of range for fixed
         let _ = Price::max(10);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_min() {
         // Precision out of range for fixed
         let _ = Price::min(10);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
         let _ = Price::zero(10);

@@ -45,7 +45,7 @@ pub struct Currency {
     pub code: Ustr,
     /// The currency decimal precision.
     pub precision: u8,
-    /// The currency code (ISO 4217).
+    /// The ISO 4217 currency code.
     pub iso4217: u16,
     /// The full name of the currency.
     pub name: Ustr,
@@ -275,12 +275,11 @@ mod tests {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
     }
 
-    #[cfg(feature = "high-precision")] // TODO: Add test for 64-bit precision
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision() {
         // Precision greater than maximum
-        let _ = Currency::new("USD", 19, 840, "United States dollar", CurrencyType::Fiat);
+        let _ = Currency::new("USD", 17, 840, "United States dollar", CurrencyType::Fiat);
     }
 
     #[rstest]

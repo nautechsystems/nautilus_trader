@@ -14,10 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use iai::black_box;
-use nautilus_model::types::fixed::f64_to_fixed_i64;
+use nautilus_model::types::fixed::{f64_to_fixed_i128, f64_to_fixed_i64};
 
-fn iai_fixed_precision_benchmark() -> i64 {
+fn iai_fixed_i64_precision_benchmark() -> i64 {
     f64_to_fixed_i64(black_box(-0.000_000_001), black_box(9))
+}
+
+fn iai_fixed_i128_precision_benchmark() -> i128 {
+    f64_to_fixed_i128(black_box(-0.000_000_001), black_box(9))
 }
 
 // i64 operations
@@ -79,5 +83,6 @@ iai::main!(
     bench_i128_sub,
     bench_i128_mul,
     bench_i128_div,
-    iai_fixed_precision_benchmark,
+    iai_fixed_i64_precision_benchmark,
+    iai_fixed_i128_precision_benchmark,
 );
