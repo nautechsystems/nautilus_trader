@@ -236,7 +236,7 @@ export HIGH_PRECISION=true
 make install-debug
 ```
 
-#### Low-precision mode (128-bit)
+#### Low-precision mode (64-bit)
 
 ```bash
 export HIGH_PRECISION=false
