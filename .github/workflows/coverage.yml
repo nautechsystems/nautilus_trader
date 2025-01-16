@@ -123,9 +123,10 @@ jobs:
       - name: Run tests with coverage
         run: make pytest-coverage
 
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v4
-        with:
-          # fail_ci_if_error: true  # leave commented until flakiness improves
-          token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
+      # TODO: Temporarily pause coverage report due pending test data repair
+      # - name: Upload coverage report
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     # fail_ci_if_error: true  # leave commented until flakiness improves
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+      #     verbose: true
