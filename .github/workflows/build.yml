@@ -80,8 +80,7 @@ jobs:
 
       - name: Run pre-commit
         continue-on-error: true
-        run: |
-          pre-commit run --all-files || echo "PRECOMMIT_FAILED=true" > $GITHUB_ENV
+        run: make pre-commit || echo "PRECOMMIT_FAILED=true" > $GITHUB_ENV
 
       - name: Add PR comment on failure
         if: env.PRECOMMIT_FAILED == 'true' && github.event_name == 'pull_request'

@@ -93,15 +93,15 @@ class MarketMaker(Strategy):
                 self.cancel_all_orders(self.instrument_id)
                 self._mid = Decimal(mid)
                 val = self._mid + self._adj
-                self.buy(price=val * Decimal(1.01))
-                self.sell(price=val * Decimal(0.99))
+                self.buy(price=val * Decimal("1.01"))
+                self.sell(price=val * Decimal("0.99"))
 
     def on_event(self, event: Event) -> None:
         if isinstance(event, PositionOpened | PositionChanged):
             signed_qty = event.quantity.as_decimal()
             if event.side == PositionSide.SHORT:
                 signed_qty = -signed_qty
-            self._adj = (signed_qty / self.max_size) * Decimal(0.01)
+            self._adj = (signed_qty / self.max_size) * Decimal("0.01")
         elif isinstance(event, PositionClosed):
             self._adj = Decimal(0)
 

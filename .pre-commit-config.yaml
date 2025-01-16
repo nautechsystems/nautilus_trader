@@ -57,7 +57,7 @@ repos:
         entry: cargo clippy
         language: system
         types: [rust]
-        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--", "-D", "warnings"]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all-features", "--", "-D", "warnings"]
         files: \.rs$
         pass_filenames: false
 
@@ -80,7 +80,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.9.1
     hooks:
       - id: ruff
         args: ["--fix"]
