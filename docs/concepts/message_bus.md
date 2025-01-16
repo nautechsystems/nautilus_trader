@@ -243,15 +243,15 @@ The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all
 to ensure a simple and predictable stream key that the consumer nodes can register for.
 
 ```python
-    message_bus=MessageBusConfig(
-        database=DatabaseConfig(timeout=2),
-        use_trader_id=False,
-        use_trader_prefix=False,
-        use_instance_id=False,
-        streams_prefix="binance",  # <---
-        stream_per_topic=False,
-        autotrim_mins=30,
-    ),
+message_bus=MessageBusConfig(
+    database=DatabaseConfig(timeout=2),
+    use_trader_id=False,
+    use_trader_prefix=False,
+    use_instance_id=False,
+    streams_prefix="binance",  # <---
+    stream_per_topic=False,
+    autotrim_mins=30,
+),
 ```
 
 #### Consumer node
@@ -263,11 +263,11 @@ Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. Th
 published onto the internal message bus from the external stream, to which the node has subscribed to the relevant topics.
 
 ```python
-    data_engine=LiveDataEngineConfig(
-        external_clients=[ClientId("BINANCE_EXT")],
-    ),
-    message_bus=MessageBusConfig(
-        database=DatabaseConfig(timeout=2),
-        external_streams=["binance"],  # <---
-    ),
+data_engine=LiveDataEngineConfig(
+    external_clients=[ClientId("BINANCE_EXT")],
+),
+message_bus=MessageBusConfig(
+    database=DatabaseConfig(timeout=2),
+    external_streams=["binance"],  # <---
+),
 ```
