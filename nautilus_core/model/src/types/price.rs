@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, FIXED_PRECISION};
+use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION_DIFF_SCALAR};
 #[cfg(not(feature = "high-precision"))]
@@ -48,11 +48,11 @@ pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
 #[no_mangle]
-pub static PRICE_RAW_MAX: PriceRaw = PriceRaw::MAX;
+pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
 #[no_mangle]
-pub static PRICE_RAW_MIN: PriceRaw = PriceRaw::MIN;
+pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
 
 /// The sentinel value for an unset or null price.
 pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
@@ -106,10 +106,10 @@ pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
 /// have negative values. For example, prices for options instruments can be
 /// negative under certain conditions.
 ///
-/// Handles up to 9 decimals of precision.
+/// Handles up to {FIXED_PRECISION} decimals of precision.
 ///
-///  - `PRICE_MAX` = 9_223_372_036
-///  - `PRICE_MIN` = -9_223_372_036
+///  - `PRICE_MAX` = {PRICE_MAX}
+///  - `PRICE_MIN` = {PRICE_MIN}
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -117,42 +117,34 @@ pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Price {
-    /// The raw price as a signed 64-bit integer.
-    /// Represents the unscaled value, with `precision` defining the number of decimal places.
+    /// Represents the raw unscaled value, with `precision` defining the number of decimal places.
     pub raw: PriceRaw,
-    /// The number of decimal places, with a maximum precision of 9.
+    /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
     pub precision: u8,
 }
 
 impl Price {
-    /// Creates a new [`Price`] instance with the maximum representable value with the given `precision`.
+    /// Creates a new [`Price`] instance with correctness checking.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
-    #[must_use]
-    pub fn max(precision: u8) -> Self {
-        check_fixed_precision(precision).expect(FAILED);
-        Self {
-            raw: PRICE_RAW_MAX,
-            precision,
-        }
-    }
+    /// This function returns an error:
+    /// - If `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
+    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
+        check_fixed_precision(precision)?;
 
-    /// Creates a new [`Price`] instance with the minimum representable value with the given `precision`.
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
-    #[must_use]
-    pub fn min(precision: u8) -> Self {
-        check_fixed_precision(precision).expect(FAILED);
-        Self {
-            raw: PRICE_RAW_MIN,
-            precision,
-        }
+        #[cfg(feature = "high-precision")]
+        let raw = f64_to_fixed_i128(value, precision);
+        #[cfg(not(feature = "high-precision"))]
+        let raw = f64_to_fixed_i64(value, precision);
+
+        Ok(Self { raw, precision })
     }
 
     /// Creates a new [`Price`] instance.
@@ -188,6 +180,36 @@ impl Price {
         Self { raw: 0, precision }
     }
 
+    /// Creates a new [`Price`] instance with the maximum representable value with the given `precision`.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    #[must_use]
+    pub fn max(precision: u8) -> Self {
+        check_fixed_precision(precision).expect(FAILED);
+        Self {
+            raw: PRICE_RAW_MAX,
+            precision,
+        }
+    }
+
+    /// Creates a new [`Price`] instance with the minimum representable value with the given `precision`.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    #[must_use]
+    pub fn min(precision: u8) -> Self {
+        check_fixed_precision(precision).expect(FAILED);
+        Self {
+            raw: PRICE_RAW_MIN,
+            precision,
+        }
+    }
+
     /// Returns `true` if the value of this instance is undefined.
     #[must_use]
     pub fn is_undefined(&self) -> bool {
@@ -200,78 +222,14 @@ impl Price {
         self.raw == 0
     }
 
-    /// Returns a formatted string representation of this instance.
-    #[must_use]
-    pub fn to_formatted_string(&self) -> String {
-        format!("{self}").separate_with_underscores()
-    }
-}
-
-#[cfg(feature = "high-precision")]
-impl Price {
-    /// Creates a new [`Price`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [-17_014_118_346_046, 17_014_118_346_046].
-    /// - If `precision` is invalid outside the representable range [0, 16].
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
-        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
-        check_fixed_precision(precision)?;
-
-        Ok(Self {
-            raw: f64_to_fixed_i128(value, precision),
-            precision,
-        })
-    }
-
     /// Returns the value of this instance as an `f64`.
     #[must_use]
+    #[cfg(feature = "high-precision")]
     pub fn as_f64(&self) -> f64 {
         fixed_i128_to_f64(self.raw)
     }
 
-    /// Returns the value of this instance as a `Decimal`.
-    #[must_use]
-    pub fn as_decimal(&self) -> Decimal {
-        // Scale down the raw value to match the precision
-        let rescaled_raw =
-            self.raw / PriceRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
-        #[allow(clippy::useless_conversion)]
-        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
-    }
-}
-
-#[cfg(not(feature = "high-precision"))]
-impl Price {
-    /// Creates a new [`Price`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [-9_223_372_036, 9_223_372_036].
-    /// - If `precision` is invalid outside the representable range [0, 9].
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
-        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
-        check_fixed_precision(precision)?;
-
-        Ok(Self {
-            raw: f64_to_fixed_i64(value, precision),
-            precision,
-        })
-    }
-
-    /// Returns the value of this instance as an `f64`.
-    #[must_use]
+    #[cfg(not(feature = "high-precision"))]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
@@ -282,7 +240,14 @@ impl Price {
         // Scale down the raw value to match the precision
         let rescaled_raw =
             self.raw / PriceRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
-        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
+        #[allow(clippy::unnecessary_cast)] // Required for precision modes
+        Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
+    }
+
+    /// Returns a formatted string representation of this instance.
+    #[must_use]
+    pub fn to_formatted_string(&self) -> String {
+        format!("{self}").separate_with_underscores()
     }
 }
 

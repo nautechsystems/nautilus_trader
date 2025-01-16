@@ -503,15 +503,14 @@ cdef extern from "../includes/model.h":
     # have negative values. For example, prices for options instruments can be
     # negative under certain conditions.
     #
-    # Handles up to 9 decimals of precision.
+    # Handles up to {FIXED_PRECISION} decimals of precision.
     #
-    #  - `PRICE_MAX` = 9_223_372_036
-    #  - `PRICE_MIN` = -9_223_372_036
+    #  - `PRICE_MAX` = {PRICE_MAX}
+    #  - `PRICE_MIN` = {PRICE_MIN}
     cdef struct Price_t:
-        # The raw price as a signed 64-bit integer.
-        # Represents the unscaled value, with `precision` defining the number of decimal places.
+        # Represents the raw unscaled value, with `precision` defining the number of decimal places.
         PriceRaw raw;
-        # The number of decimal places, with a maximum precision of 9.
+        # The number of decimal places, with a maximum of {FIXED_PRECISION}.
         uint8_t precision;
 
     IF HIGH_PRECISION:
@@ -526,15 +525,14 @@ cdef extern from "../includes/model.h":
     # or 'shares' (instruments denominated in whole units) or a decimal value
     # containing decimal places for instruments denominated in fractional units.
     #
-    # Handles up to 9 decimals of precision.
+    # Handles up to {FIXED_PRECISION} decimals of precision.
     #
-    # - `QUANTITY_MAX` = 18_446_744_073
+    # - `QUANTITY_MAX` = {QUANTITY_MAX}
     # - `QUANTITY_MIN` = 0
     cdef struct Quantity_t:
-        # The raw quantity as an unsigned 64-bit integer.
-        # Represents the unscaled value, with `precision` defining the number of decimal places.
+        # Represents the raw unscaled value, with `precision` defining the number of decimal places.
         QuantityRaw raw;
-        # The number of decimal places, with a maximum precision of 9.
+        # The number of decimal places, with a maximum of {FIXED_PRECISION}.
         uint8_t precision;
 
     # Represents an order in a book.
@@ -935,7 +933,7 @@ cdef extern from "../includes/model.h":
 
     # Represents a medium of exchange in a specified denomination with a fixed decimal precision.
     #
-    # Handles up to 9 decimals of precision.
+    # Handles up to {FIXED_PRECISION} decimals of precision.
     cdef struct Currency_t:
         # The currency code as an alpha-3 string (e.g., "USD", "EUR").
         char* code;
@@ -956,10 +954,9 @@ cdef extern from "../includes/model.h":
 
     # Represents an amount of money in a specified currency denomination.
     #
-    # - `MONEY_MAX` = 9_223_372_036
-    # - `MONEY_MIN` = -9_223_372_036
+    # - `MONEY_MAX` = {MONEY_MAX}
+    # - `MONEY_MIN` = {MONEY_MIN}
     cdef struct Money_t:
-        # The raw monetary amount as a signed 64-bit integer.
         # Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
         MoneyRaw raw;
         # The currency denomination associated with the monetary amount.

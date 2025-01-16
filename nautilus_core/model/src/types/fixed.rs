@@ -46,14 +46,14 @@ pub const FIXED_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_PRECISION
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
 /// The scalar representing the difference between high-precision and low-precision modes.
-pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0;
+pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10.0**(16-9)
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
 ///
 /// # Errors
 ///
 /// This function returns an error:
-/// - If `precision` exceeds `PRECISION`.
+/// - If `precision` exceeds [`FIXED_PRECISION`].
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     if precision > FIXED_PRECISION {
         anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}")
@@ -66,7 +66,7 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
 /// # Panics
 ///
 /// This function panics:
-/// - If `precision` exceeds `FIXED_PRECISION`.
+/// - If `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
@@ -81,7 +81,7 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
 /// # Panics
 ///
 /// This function panics:
-/// - If `precision` exceeds `FIXED_PRECISION`.
+/// - If `precision` exceeds [`FIXED_PRECISION`].
 pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
     assert!(
         precision <= FIXED_PRECISION,
@@ -98,7 +98,7 @@ pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
 /// # Panics
 ///
 /// This function panics:
-/// - If `precision` exceeds `FIXED_PRECISION`.
+/// - If `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
@@ -113,7 +113,7 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 /// # Panics
 ///
 /// This function panics:
-/// - If `precision` exceeds `FIXED_PRECISION`.
+/// - If `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_u128(value: f64, precision: u8) -> u128 {
     assert!(

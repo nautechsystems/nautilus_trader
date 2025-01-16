@@ -27,12 +27,13 @@ use nautilus_core::correctness::{check_valid_string, FAILED};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
-use super::fixed::check_fixed_precision;
+#[allow(unused_imports)] // FIXED_PRECISION used in docs
+use super::fixed::{check_fixed_precision, FIXED_PRECISION};
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 /// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 ///
-/// Handles up to 9 decimals of precision.
+/// Handles up to {FIXED_PRECISION} decimals of precision.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -60,7 +61,7 @@ impl Currency {
     /// This function returns an error:
     /// - If `code` is not a valid string.
     /// - If `name` is not a valid string.
-    /// - If `precision` is invalid outside the valid representable range [0, 16].
+    /// - If `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
