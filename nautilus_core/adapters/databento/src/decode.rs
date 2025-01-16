@@ -221,11 +221,13 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 }
 
 /// Decodes a price from the given value, expressed in units of 1e-9.
+#[must_use]
 pub fn decode_price(value: i64, precision: u8) -> Price {
     Price::from_raw(decode_raw_price_i64(value), precision)
 }
 
 /// Decodes a quantity from the given value, expressed in standard whole-number units.
+#[must_use]
 pub fn decode_quantity(value: u64) -> Quantity {
     Quantity::from(value)
 }

@@ -753,12 +753,10 @@ impl OrderMatchingEngine {
                     order.price().unwrap(),
                     self.core
                         .bid
-                        .map(|p| p.to_string())
-                        .unwrap_or_else(|| "None".to_string()),
+                        .map_or_else(|| "None".to_string(), |p| p.to_string()),
                     self.core
                         .ask
-                        .map(|p| p.to_string())
-                        .unwrap_or_else(|| "None".to_string())
+                        .map_or_else(|| "None".to_string(), |p| p.to_string())
                 )
                 .into(),
             );
@@ -777,7 +775,7 @@ impl OrderMatchingEngine {
             if order.liquidity_side().is_some()
                 && order.liquidity_side().unwrap() == LiquiditySide::NoLiquiditySide
             {
-                order.set_liquidity_side(LiquiditySide::Taker)
+                order.set_liquidity_side(LiquiditySide::Taker);
             }
             self.fill_limit_order(order);
         } else if order.time_in_force() == TimeInForce::Fok
