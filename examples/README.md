@@ -1,11 +1,11 @@
 # Examples
 
 The following code examples are organized by system environment context:
-- **Backtest**: Historical data with simulated venues
-- **Sandbox**: Real-time data with simulated venues
-- **Live**: Real-time data with live venues (paper trading or real accounts)
+- **Backtest**: Historical data with simulated venues.
+- **Sandbox**: Real-time data with simulated venues.
+- **Live**: Real-time data with live venues (paper trading or real accounts).
 
-Within each environment context directory, are scripts organized by integration.
+Scripts within each environment context directory are organized by integration.
 
 Ensure that the `nautilus_trader` package is either compiled from source or installed via pip before
 running the examples. See the [installation guide](https://nautilustrader.io/docs/latest/getting_started/installation)
