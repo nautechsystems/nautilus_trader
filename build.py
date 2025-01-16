@@ -20,6 +20,13 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
+# Platform constants
+IS_LINUX = platform.system() == "Linux"
+IS_MACOS = platform.system() == "Darwin"
+IS_WINDOWS = platform.system() == "Windows"
+IS_ARM64 = platform.machine() == "arm64"
+
+
 # The Rust toolchain to use for builds
 RUST_TOOLCHAIN = os.getenv("RUST_TOOLCHAIN", "stable")
 # The Cargo build mode
@@ -38,7 +45,7 @@ PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
 # Precision mode configuration
 # https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode
 HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
-if platform.system() == "Windows" and HIGH_PRECISION:
+if IS_WINDOWS and HIGH_PRECISION:
     print(
         "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\n"
         "Forcing low-precision (64-bit) mode",
@@ -60,23 +67,23 @@ else:
 
 USE_SCCACHE = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
 
-if platform.system() == "Linux":
+if IS_LINUX:
     # Use clang as the default compiler
     os.environ["CC"] = "sccache clang" if USE_SCCACHE else "clang"
     os.environ["CXX"] = "sccache clang++" if USE_SCCACHE else "clang++"
     os.environ["LDSHARED"] = "clang -shared"
 
-if platform.system() == "Darwin" and platform.machine() == "arm64":
+if IS_MACOS and IS_ARM64:
     os.environ["CFLAGS"] = "-arch arm64"
     os.environ["LDFLAGS"] = "-arch arm64 -w"
 
-if platform.system() == "Windows":
+if IS_WINDOWS:
     # Linker error 1181
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
     RUST_LIB_PFX = ""
     RUST_STATIC_LIB_EXT = "lib"
     RUST_DYLIB_EXT = "dll"
-elif platform.system() == "Darwin":
+elif IS_MACOS:
     RUST_LIB_PFX = "lib"
     RUST_STATIC_LIB_EXT = "a"
     RUST_DYLIB_EXT = "dylib"
@@ -181,14 +188,14 @@ def _build_extensions() -> list[Extension]:
     extra_compile_args = []
     extra_link_args = RUST_LIBS
 
-    if platform.system() != "Windows":
+    if not IS_WINDOWS:
         # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-unreachable-code")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
 
-    if platform.system() == "Windows":
+    if IS_WINDOWS:
         extra_link_args += [
             "AdvAPI32.Lib",
             "bcrypt.lib",
@@ -233,7 +240,7 @@ def _build_extensions() -> list[Extension]:
 
 def _build_distribution(extensions: list[Extension]) -> Distribution:
     nthreads = os.cpu_count() or 1
-    if platform.system() == "Windows":
+    if IS_WINDOWS:
         nthreads = min(nthreads, 60)
     print(f"nthreads={nthreads}")
 
@@ -324,9 +331,9 @@ def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
-            if platform.system() == "Linux":
+            if IS_LINUX:
                 strip_cmd = ["strip", "--strip-unneeded", so]
-            elif platform.system() == "Darwin":
+            elif IS_MACOS:
                 strip_cmd = ["strip", "-x", so]
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
@@ -363,7 +370,7 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if BUILD_MODE == "release" and platform.system() in ("Linux", "Darwin"):
+    if BUILD_MODE == "release" and (IS_LINUX or IS_MACOS):
         # Only strip symbols for release builds
         _strip_unneeded_symbols()
 
