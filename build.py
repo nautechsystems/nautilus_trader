@@ -391,6 +391,7 @@ if __name__ == "__main__":
     print(f"NumPy:  {np.__version__}")
 
     print(f"\nRUST_TOOLCHAIN={RUST_TOOLCHAIN}")
+    print(f"HIGH_PRECISION={HIGH_PRECISION}")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"BUILD_DIR={BUILD_DIR}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
@@ -398,7 +399,6 @@ if __name__ == "__main__":
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
-    print(f"HIGH_PRECISION={HIGH_PRECISION}")
     print(f"CC={os.environ['CC']}") if "CC" in os.environ else None
     print(f"CXX={os.environ['CXX']}") if "CXX" in os.environ else None
     print(f"LDSHARED={os.environ['LDSHARED']}") if "LDSHARED" in os.environ else None
