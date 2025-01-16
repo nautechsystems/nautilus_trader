@@ -34,8 +34,16 @@ PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
 PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
-# If high-precision mode is enabled (value types use 128-bit integers, rather than 64-bit)
+
+# Precision mode configuration
+# https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode
 HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
+if platform.system() == "Windows" and HIGH_PRECISION:
+    print(
+        "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\n"
+        "Forcing low-precision (64-bit) mode",
+    )
+    HIGH_PRECISION = False
 
 if PROFILE_MODE:
     # For subsequent debugging, the C source needs to be in the same tree as
