@@ -1,48 +1,79 @@
 version: '3.5'
 
+# Define services and configuration
 services:
   postgres:
+    # PostgreSQL database service
     container_name: nautilus-database
     image: postgres
     environment:
+      # PostgreSQL configuration variables (override with .env file)
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
       POSTGRES_DATABASE: nautilus
       PGDATA: /data/postgres
     volumes:
+      # Persistent storage for PostgreSQL data
       - nautilus-database:/data/postgres
     ports:
+      # Expose PostgreSQL on port 5432
       - "5432:5432"
     networks:
       - nautilus-network
     restart: unless-stopped
+    healthcheck:
+      # Health check for PostgreSQL service
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   pgadmin:
+    # pgAdmin for managing PostgreSQL
     container_name: nautilus-pgadmin
     image: dpage/pgadmin4
     environment:
+      # Default login credentials for pgAdmin
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@mail.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
     volumes:
+      # Persistent storage for pgAdmin settings
       - pgadmin:/root/.pgadmin
     ports:
+      # Expose pgAdmin on port 5051 (default to 80 inside the container)
       - "${PGADMIN_PORT:-5051}:80"
     networks:
       - nautilus-network
     restart: unless-stopped
+    healthcheck:
+      # Health check for pgAdmin service
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   redis:
+    # Redis in-memory data store
     container_name: nautilus-redis
     image: redis
     ports:
-      - 6379:6379
+      # Expose Redis on port 6379
+      - "6379:6379"
     restart: unless-stopped
     networks:
       - nautilus-network
+    healthcheck:
+      # Health check for Redis service
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
+# Define a custom Docker network
 networks:
   nautilus-network:
 
+# Define volumes for persistent data
 volumes:
   nautilus-database:
   pgadmin:
