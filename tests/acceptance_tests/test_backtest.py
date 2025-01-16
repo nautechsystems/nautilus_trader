@@ -430,7 +430,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         config = EMACrossTWAPConfig(
             instrument_id=self.btcusdt.id,
             bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-            trade_size=Decimal(0.01),
+            trade_size=Decimal("0.01"),
             fast_ema_period=10,
             slow_ema_period=20,
             twap_horizon_secs=10.0,
@@ -470,7 +470,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         config = EMACrossConfig(
             instrument_id=self.btcusdt.id,
             bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-BID-INTERNAL"),
-            trade_size=Decimal(0.001),
+            trade_size=Decimal("0.001"),
             fast_ema_period=10,
             slow_ema_period=20,
         )
