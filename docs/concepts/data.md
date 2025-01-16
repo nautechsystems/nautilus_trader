@@ -305,7 +305,7 @@ Rust Arrow schema implementations are available for the follow data types (enhan
 - `Bar`
 
 ### Reading data
-Any stored data can then we read back into memory:
+Any stored data can then be read back into memory:
 ```python
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 import pandas as pd
