@@ -35,7 +35,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport DEPTH10_LEN
-from nautilus_trader.core.rust.model cimport SCALAR
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Bar_t

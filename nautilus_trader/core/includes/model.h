@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define HIGH_PRECISION
+
 #ifdef __SIZEOF_INT128__
     typedef __uint128_t uint128_t;
     typedef __int128_t int128_t;
@@ -17,43 +19,38 @@
  */
 #define TRADE_ID_LEN 37
 
+#if defined(HIGH_PRECISION)
+/**
+ * The maximum fixed-point precision.
+ */
+#define FIXED_PRECISION 16
+#endif
+
+#if !defined(HIGH_PRECISION)
 /**
  * The maximum fixed-point precision.
  */
 #define FIXED_PRECISION 9
-
-#define FIXED_HIGH_PRECISION 16
+#endif
 
 #if defined(HIGH_PRECISION)
-#define PRECISION FIXED_HIGH_PRECISION
+/**
+ * The scalar value corresponding to the maximum precision (10^16).
+ */
+#define FIXED_SCALAR 10000000000000000.0
 #endif
 
 #if !defined(HIGH_PRECISION)
-#define PRECISION FIXED_PRECISION
-#endif
-
 /**
- * The scalar value corresponding to the maximum precision (10^FIXED_PRECISION).
+ * The scalar value corresponding to the maximum precision (10^9).
  */
 #define FIXED_SCALAR 1000000000.0
+#endif
 
 /**
- * The scalar value corresponding to the maximum precision (10^FIXED_HIGH_PRECISION).
- */
-#define FIXED_HIGH_PRECISION_SCALAR 10000000000000000.0
-
-/**
- * The scalar representing the difference between high and low precision.
+ * The scalar representing the difference between high-precision and low-precision modes.
  */
 #define PRECISION_DIFF_SCALAR 10000000.0
-
-#if defined(HIGH_PRECISION)
-#define SCALAR FIXED_HIGH_PRECISION_SCALAR
-#endif
-
-#if !defined(HIGH_PRECISION)
-#define SCALAR FIXED_SCALAR
-#endif
 
 #if defined(HIGH_PRECISION)
 /**
@@ -1758,14 +1755,14 @@ extern const uint8_t HIGH_PRECISION_MODE;
 
 #if defined(HIGH_PRECISION)
 /**
- * The width in bytes for fixed-point value types in 128-bit high_precision mode.
+ * The width in bytes for fixed-point value types in high-precision mode (128-bit).
  */
 extern const int32_t PRECISION_BYTES;
 #endif
 
 #if !defined(HIGH_PRECISION)
 /**
- * The width in bytes for fixed-point value types in 64-bit precision mode.
+ * The width in bytes for fixed-point value types in low-precision mode (64-bit).
  */
 extern const int32_t PRECISION_BYTES;
 #endif

@@ -3,40 +3,35 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t, int32_t, int64_t
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
-DEF HIGH_PRECISION = False  # or True
+DEF HIGH_PRECISION = True  # or False
 
 cdef extern from "../includes/model.h":
+    ctypedef unsigned long long uint128_t
+    ctypedef long long int128_t
 
     const uintptr_t DEPTH10_LEN # = 10
 
     # The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
     const uintptr_t TRADE_ID_LEN # = 37
 
-    # The maximum fixed-point precision.
-    const uint8_t FIXED_PRECISION # = 9
-
-    const uint8_t FIXED_HIGH_PRECISION # = 16
-
     IF HIGH_PRECISION:
-        const uint8_t PRECISION # = FIXED_HIGH_PRECISION
+        # The maximum fixed-point precision.
+        const uint8_t FIXED_PRECISION # = 16
 
     IF not HIGH_PRECISION:
-        const uint8_t PRECISION # = FIXED_PRECISION
+        # The maximum fixed-point precision.
+        const uint8_t FIXED_PRECISION # = 9
 
-    # The scalar value corresponding to the maximum precision (10^FIXED_PRECISION).
-    const double FIXED_SCALAR # = 1000000000.0
+    IF HIGH_PRECISION:
+        # The scalar value corresponding to the maximum precision (10^16).
+        const double FIXED_SCALAR # = 10000000000000000.0
 
-    # The scalar value corresponding to the maximum precision (10^FIXED_HIGH_PRECISION).
-    const double FIXED_HIGH_PRECISION_SCALAR # = 10000000000000000.0
+    IF not HIGH_PRECISION:
+        # The scalar value corresponding to the maximum precision (10^9).
+        const double FIXED_SCALAR # = 1000000000.0
 
-    # The scalar representing the difference between high and low precision.
+    # The scalar representing the difference between high-precision and low-precision modes.
     const double PRECISION_DIFF_SCALAR # = 10000000.0
-
-    IF HIGH_PRECISION:
-        const double SCALAR # = FIXED_HIGH_PRECISION_SCALAR
-
-    IF not HIGH_PRECISION:
-        const double SCALAR # = FIXED_SCALAR
 
     IF HIGH_PRECISION:
         # The maximum valid money amount which can be represented.
@@ -986,11 +981,11 @@ cdef extern from "../includes/model.h":
     extern const uint8_t HIGH_PRECISION_MODE;
 
     IF HIGH_PRECISION:
-        # The width in bytes for fixed-point value types in 128-bit high_precision mode.
+        # The width in bytes for fixed-point value types in high-precision mode (128-bit).
         extern const int32_t PRECISION_BYTES;
 
     IF not HIGH_PRECISION:
-        # The width in bytes for fixed-point value types in 64-bit precision mode.
+        # The width in bytes for fixed-point value types in low-precision mode (64-bit).
         extern const int32_t PRECISION_BYTES;
 
     # The maximum raw price integer value.

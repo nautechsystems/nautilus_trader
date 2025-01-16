@@ -28,8 +28,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.core.rust.model cimport PRECISION
-from nautilus_trader.core.rust.model cimport SCALAR
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -84,7 +83,7 @@ def preprocess_bar_data(data: pd.DataFrame, is_raw: bool):
 
     # Scale data if raw (we have to do this now to accommodate high_precision mode)
     if is_raw:
-        data[list(BAR_COLUMNS)] = data[list(BAR_COLUMNS)] / SCALAR
+        data[list(BAR_COLUMNS)] = data[list(BAR_COLUMNS)] / FIXED_SCALAR
 
     return data
 
@@ -136,7 +135,7 @@ def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment:
     volume : np.ndarray
         An array of volume data to be processed.
     precision : int
-        The decimal precision to which the volume data is rounded, adjusted by subtracting PRECISION.
+        The decimal precision to which the volume data is rounded.
 
     Returns
     -------
@@ -223,8 +222,8 @@ cdef class OrderBookDeltaDataWrangler:
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         if is_raw:
-            data["price"] /= SCALAR
-            data["size"] /= SCALAR
+            data["price"] /= FIXED_SCALAR
+            data["size"] /= FIXED_SCALAR
 
         cdef list[OrderBookDelta] deltas
         deltas = list(map(
@@ -417,9 +416,9 @@ cdef class QuoteTickDataWrangler:
 
         # Add default volume if not present
         if "volume" not in bid_data:
-            bid_data.loc[:, "volume"] = float(default_volume * 4.0) / (SCALAR if is_raw else 1.0)
+            bid_data.loc[:, "volume"] = float(default_volume * 4.0) / (FIXED_SCALAR if is_raw else 1.0)
         if "volume" not in ask_data:
-            ask_data.loc[:, "volume"] = float(default_volume * 4.0) / (SCALAR if is_raw else 1.0)
+            ask_data.loc[:, "volume"] = float(default_volume * 4.0) / (FIXED_SCALAR if is_raw else 1.0)
 
         # Standardize and preprocess data
         bid_data = preprocess_bar_data(bid_data, is_raw)
@@ -549,8 +548,8 @@ cdef class TradeTickDataWrangler:
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         if is_raw:
-            data["price"] /= SCALAR
-            data["quantity"] /= SCALAR
+            data["price"] /= FIXED_SCALAR
+            data["quantity"] /= FIXED_SCALAR
 
         return list(map(
             self._build_tick,

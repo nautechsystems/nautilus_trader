@@ -28,7 +28,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::PRECISION;
+use super::fixed::FIXED_PRECISION;
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high-precision"))]
@@ -131,7 +131,7 @@ impl Money {
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
         let precision = self.currency.precision;
-        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(PRECISION - precision));
+        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(FIXED_PRECISION - precision));
         #[allow(clippy::useless_conversion)]
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }

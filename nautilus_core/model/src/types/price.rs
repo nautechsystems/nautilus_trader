@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, PRECISION};
+use super::fixed::{check_fixed_precision, FIXED_PRECISION};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION_DIFF_SCALAR};
 #[cfg(not(feature = "high-precision"))]
@@ -89,8 +89,8 @@ pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> 
 }
 
 #[cfg(feature = "high-precision")]
-/// The raw i64 price has already been scaled by FIXED_PRECISION. Further scale
-/// it by the difference to FIXED_HIGH_PRECISION to make it high precision raw price.
+/// The raw i64 price has already been scaled by 10^9. Further scale
+/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
 }
@@ -240,7 +240,8 @@ impl Price {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
+        let rescaled_raw =
+            self.raw / PriceRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
         #[allow(clippy::useless_conversion)]
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
     }
@@ -279,7 +280,8 @@ impl Price {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(PRECISION - self.precision));
+        let rescaled_raw =
+            self.raw / PriceRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
     }
 }

@@ -19,7 +19,7 @@ from decimal import Decimal
 from nautilus_trader.model.enums import order_status_to_str
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport SCALAR
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -1072,7 +1072,7 @@ cdef class Order:
         cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
         if raw_leaves_qty < 0:
             raise ValueError(
-                f"invalid order.leaves_qty: was {raw_leaves_qty / SCALAR}, "
+                f"invalid order.leaves_qty: was {raw_leaves_qty / FIXED_SCALAR}, "
                 f"order.quantity={self.quantity}, "
                 f"order.filled_qty={self.filled_qty}, "
                 f"fill.last_qty={fill.last_qty}, "

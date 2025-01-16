@@ -1112,7 +1112,7 @@ mod tests {
             CryptoPerpetual, CurrencyPair, InstrumentAny,
         },
         orders::{OrderAny, OrderList, OrderTestBuilder},
-        types::{fixed::PRECISION, AccountBalance, Currency, Money, Price, Quantity},
+        types::{fixed::FIXED_PRECISION, AccountBalance, Currency, Money, Price, Quantity},
     };
     use nautilus_portfolio::Portfolio;
     use rstest::{fixture, rstest};
@@ -2184,7 +2184,7 @@ mod tests {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
-            .price(Price::from_raw(1_000_000_000_000, PRECISION)) // <- Invalid price
+            .price(Price::from_raw(1_000_000_000_000, FIXED_PRECISION)) // <- Invalid price
             .quantity(Quantity::from("1000"))
             .build();
 
@@ -2217,7 +2217,7 @@ mod tests {
             .unwrap()
             .message()
             .unwrap()
-            .contains(&format!("invalid (precision {PRECISION} > 5)")));
+            .contains(&format!("invalid (precision {FIXED_PRECISION} > 5)")));
     }
 
     #[rstest]
@@ -2338,7 +2338,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from_str("1000").unwrap())
             .price(Price::from_raw(1, 1))
-            .trigger_price(Price::from_raw(1_000_000_000_000_000, PRECISION)) // <- Invalid price
+            .trigger_price(Price::from_raw(1_000_000_000_000_000, FIXED_PRECISION)) // <- Invalid price
             .build();
 
         let submit_order = SubmitOrder::new(

@@ -21,7 +21,7 @@ use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
-    types::{fixed::SCALAR, quantity::QuantityRaw, Price, Quantity},
+    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
@@ -113,7 +113,11 @@ pub fn get_avg_px_qty_for_exposure(
         (0.0, 0.0, final_price)
     } else {
         let avg_price = cumulative_exposure / cumulative_size_raw as f64;
-        (avg_price, cumulative_size_raw as f64 / SCALAR, final_price)
+        (
+            avg_price,
+            cumulative_size_raw as f64 / FIXED_SCALAR,
+            final_price,
+        )
     }
 }
 

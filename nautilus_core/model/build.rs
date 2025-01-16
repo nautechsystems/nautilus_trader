@@ -58,7 +58,7 @@ fn main() {
         #[cfg(not(feature = "high-precision"))]
         let flag = Some("\nDEF HIGH_PRECISION = False  # or True".to_string());
 
-        // Activate Cython high precision flag based on feature flags passed to Rust build
+        // Activate Cython high-precision flag based on feature flags passed to Rust build
         config_cython.after_includes = flag;
 
         let cython_path = crate_dir.join("../../nautilus_trader/core/rust/model.pxd");

@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, PRECISION, SCALAR};
+use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 #[cfg(not(feature = "high-precision"))]
@@ -182,7 +182,8 @@ impl Quantity {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / QuantityRaw::pow(10, u32::from(PRECISION - self.precision));
+        let rescaled_raw =
+            self.raw / QuantityRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
         // TODO: casting u128 to i128 is not a good idea
         // check if decimal library provides a better way
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
@@ -346,7 +347,7 @@ impl Mul for Quantity {
             .expect("Overflow occurred when multiplying `Quantity`");
 
         Self {
-            raw: result_raw / (SCALAR as QuantityRaw),
+            raw: result_raw / (FIXED_SCALAR as QuantityRaw),
             precision,
         }
     }
