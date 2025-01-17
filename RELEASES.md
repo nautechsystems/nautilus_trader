@@ -8,7 +8,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
-- Moved SQL schema directory to `schemas/sql/` (reinstall the Nautilus CLI with `make install-cli`)
+- Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
 
 ### Internal Improvements
 - Ported market order filling for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
