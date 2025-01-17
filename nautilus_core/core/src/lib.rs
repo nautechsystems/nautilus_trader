@@ -25,7 +25,7 @@
 //! for the main `nautilus_trader` Python package, or as part of a Rust only build.
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
-//! - `python`: Enables Python bindings from `pyo3` (requires the `msgspec` Python package).
+//! - `python`: Enables Python bindings from `pyo3`.
 
 pub mod consts;
 pub mod correctness;
