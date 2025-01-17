@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
@@ -23,10 +22,13 @@ from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.objects import HIGH_PRECISION
 
 
-@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_order_book_deltas() -> None:
     # Arrange
-    data_path = TEST_DATA_DIR / "nautilus" / "deltas.parquet"
+    if HIGH_PRECISION:
+        data_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "deltas.parquet"
+    else:
+        data_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "deltas.parquet"
+
     session = DataBackendSession()
     session.add_file(NautilusDataType.OrderBookDelta, "order_book_deltas", str(data_path))
 
@@ -44,10 +46,13 @@ def test_backend_session_order_book_deltas() -> None:
     assert is_ascending
 
 
-@pytest.mark.skip(reason="Repair test data once high-precision merged")
 def test_backend_session_quotes() -> None:
     # Arrange
-    data_path = TEST_DATA_DIR / "nautilus" / "quotes.parquet"
+    if HIGH_PRECISION:
+        data_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "quotes.parquet"
+    else:
+        data_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "quotes.parquet"
+
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quote_ticks", str(data_path))
 
@@ -58,17 +63,21 @@ def test_backend_session_quotes() -> None:
     for chunk in result:
         ticks.extend(capsule_to_list(chunk))
 
+    # TODO: Quote tick test data currently uses incorrectly scaled prices and sizes and needs repair
     # Assert
     assert len(ticks) == 9_500
-    assert str(ticks[-1]) == "EUR/USD.SIM,1.12130,1.12132,100000,100000,1577919652000000125"
+    assert str(ticks[-1]) == "EUR/USD.SIM,112.13000,112.13200,10000000,10000000,1577919652000000125"
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 
 
-@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_trades() -> None:
     # Arrange
-    data_path = TEST_DATA_DIR / "nautilus" / "trades.parquet"
+    if HIGH_PRECISION:
+        data_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "trades.parquet"
+    else:
+        data_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "trades.parquet"
+
     session = DataBackendSession()
     session.add_file(NautilusDataType.TradeTick, "trade_ticks", str(data_path))
 
@@ -85,10 +94,13 @@ def test_backend_session_trades() -> None:
     assert is_ascending
 
 
-@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_bars() -> None:
     # Arrange
-    data_path = TEST_DATA_DIR / "nautilus" / "bars.parquet"
+    if HIGH_PRECISION:
+        data_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "bars.parquet"
+    else:
+        data_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "bars.parquet"
+
     session = DataBackendSession()
     session.add_file(NautilusDataType.Bar, "bars_01", str(data_path))
 
@@ -105,11 +117,14 @@ def test_backend_session_bars() -> None:
     assert is_ascending
 
 
-@pytest.mark.skipif(not HIGH_PRECISION, reason="Add test data once high-precision merged")
 def test_backend_session_multiple_types() -> None:
     # Arrange
-    trades_path = TEST_DATA_DIR / "nautilus" / "trades.parquet"
-    quotes_path = TEST_DATA_DIR / "nautilus" / "quotes.parquet"
+    if HIGH_PRECISION:
+        trades_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "trades.parquet"
+        quotes_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "quotes.parquet"
+    else:
+        trades_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "trades.parquet"
+        quotes_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "quotes.parquet"
 
     session = DataBackendSession()
     session.add_file(NautilusDataType.TradeTick, "trades_01", str(trades_path))
