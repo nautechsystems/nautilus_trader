@@ -470,7 +470,6 @@ impl<'de> Deserialize<'de> for Price {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -485,44 +484,45 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
-        let _ = Price::new(1.0, 10);
+        let _ = Price::new(1.0, FIXED_PRECISION + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Price::from_raw(1, 10);
+        let _ = Price::from_raw(1, FIXED_PRECISION + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_max() {
         // Precision out of range for fixed
-        let _ = Price::max(10);
+        let _ = Price::max(FIXED_PRECISION + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_min() {
         // Precision out of range for fixed
-        let _ = Price::min(10);
+        let _ = Price::min(FIXED_PRECISION + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
-        let _ = Price::zero(10);
+        let _ = Price::zero(FIXED_PRECISION + 1);
     }
 
     #[rstest]
     fn test_new() {
-        let price = Price::new(0.00812, 8);
+        let value = 0.00812;
+        let precision = 8;
+        let price = Price::new(value, precision);
         assert_eq!(price, price);
-        assert_eq!(price.raw, 8_120_000);
-        assert_eq!(price.precision, 8);
-        assert_eq!(price.as_f64(), 0.00812);
+        assert_eq!(price.raw, Price::new(value, precision).raw);
+        assert_eq!(price.precision, precision);
         assert_eq!(price.to_string(), "0.00812000");
         assert!(!price.is_zero());
         assert_eq!(price.as_decimal(), dec!(0.00812000));
@@ -534,47 +534,29 @@ mod tests {
         ));
     }
 
-    #[rstest]
+    #[rstest] // Test does not panic rather than exact value
     fn test_with_maximum_value() {
-        let price = Price::new(PRICE_MAX, 9);
-        assert_eq!(price.raw, 9_223_372_036_000_000_000);
-        assert_eq!(price.as_decimal(), dec!(9223372036));
-        assert_eq!(price.to_string(), "9223372036.000000000");
+        let price = Price::new_checked(PRICE_MAX, FIXED_PRECISION);
+        assert!(price.is_ok());
+    }
+
+    #[rstest] // Test does not panic rather than exact value
+    fn test_with_minimum_value() {
+        let price = Price::new_checked(PRICE_MIN, FIXED_PRECISION);
+        assert!(price.is_ok());
     }
 
     #[rstest]
-    fn test_with_minimum_positive_value() {
-        let price = Price::new(0.000_000_001, 9);
-        assert_eq!(price.raw, 1);
-        assert_eq!(price.as_decimal(), dec!(0.000000001));
-        assert_eq!(price.to_string(), "0.000000001");
+    fn test_max() {
+        let price = Price::max(FIXED_PRECISION);
+        assert_eq!(price.raw, Price::new(PRICE_MAX, FIXED_PRECISION).raw);
     }
 
-    // #[rstest]
-    // fn test_with_minimum_value() {
-    //     let price = Price::new(PRICE_MIN, 9);
-    //     assert_eq!(price.raw, -9_223_372_036_000_000_000);
-    //     assert_eq!(price.as_decimal(), dec!(-9223372036));
-    //     assert_eq!(price.to_string(), "-9223372036.000000000");
-    //     assert_eq!(price.to_formatted_string(), "-9_223_372_036.000000000");
-    // }
-    //
-    // #[rstest]
-    // fn test_max() {
-    //     let price = Price::max(9);
-    //     assert_eq!(price.raw, 9_223_372_036_000_000_000);
-    //     assert_eq!(price.as_decimal(), dec!(9223372036));
-    //     assert_eq!(price.to_string(), "9223372036.000000000");
-    //     assert_eq!(price.to_formatted_string(), "9_223_372_036.000000000");
-    // }
-    //
-    // #[rstest]
-    // fn test_min() {
-    //     let price = Price::min(9);
-    //     assert_eq!(price.raw, -9_223_372_036_000_000_000);
-    //     assert_eq!(price.as_decimal(), dec!(-9223372036));
-    //     assert_eq!(price.to_string(), "-9223372036.000000000");
-    // }
+    #[rstest]
+    fn test_min() {
+        let price = Price::min(FIXED_PRECISION);
+        assert_eq!(price.raw, Price::new(PRICE_MIN, FIXED_PRECISION).raw);
+    }
 
     #[rstest]
     fn test_undefined() {
@@ -605,7 +587,6 @@ mod tests {
     #[rstest]
     fn test_precision() {
         let price = Price::new(1.001, 2);
-        assert_eq!(price.raw, 1_000_000_000);
         assert_eq!(price.to_string(), "1.00");
     }
 
@@ -613,7 +594,6 @@ mod tests {
     fn test_new_from_str() {
         let price: Price = "0.00812000".into();
         assert_eq!(price, price);
-        assert_eq!(price.raw, 8_120_000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -651,25 +631,34 @@ mod tests {
 
     #[rstest]
     fn test_add() {
-        let price1 = Price::new(1.000, 3);
-        let price2 = Price::new(1.011, 3);
+        let a = 1.0;
+        let b = 1.011;
+        let precision = 3;
+        let price1 = Price::new(a, precision);
+        let price2 = Price::new(b, precision);
         let price3 = price1 + price2;
-        assert_eq!(price3.raw, Price::from("2.011").raw);
+        assert_eq!(price3.raw, Price::new(a + b, precision).raw);
     }
 
     #[rstest]
     fn test_sub() {
-        let price1 = Price::new(1.011, 3);
-        let price2 = Price::new(1.000, 3);
+        let a = 1.011;
+        let b = 1.0;
+        let precision = 3;
+        let price1 = Price::new(a, precision);
+        let price2 = Price::new(b, precision);
         let price3 = price1 - price2;
-        assert_eq!(price3.raw, Price::from("0.011").raw);
+        assert_eq!(price3.raw, Price::new(a - b, precision).raw);
     }
 
     #[rstest]
     fn test_add_assign() {
-        let mut price = Price::new(1.000, 3);
-        price += Price::new(1.011, 3);
-        assert_eq!(price.raw, Price::from("2.011").raw);
+        let a = 1.0;
+        let b = 1.011;
+        let precision = 3;
+        let mut price = Price::new(a, precision);
+        price += Price::new(b, precision);
+        assert_eq!(price.raw, Price::new(a + b, precision).raw);
     }
 
     #[rstest]

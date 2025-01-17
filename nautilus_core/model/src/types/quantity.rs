@@ -480,7 +480,6 @@ pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -502,21 +501,21 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
-        let _ = Quantity::new(1.0, 10);
+        let _ = Quantity::new(1.0, FIXED_PRECISION + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Quantity::from_raw(1, 10);
+        let _ = Quantity::from_raw(1, FIXED_PRECISION + 1);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
-        let _ = Quantity::zero(10);
+        let _ = Quantity::zero(FIXED_PRECISION + 1);
     }
 
     #[rstest]
@@ -524,12 +523,13 @@ mod tests {
         let value = 0.00812;
         let qty = Quantity::new(value, 8);
         assert_eq!(qty, qty);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
+        assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert_eq!(qty.to_string(), "0.00812000");
         assert!(!qty.is_zero());
         assert!(qty.is_positive());
-        assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000_001));
     }
 
@@ -549,11 +549,30 @@ mod tests {
         assert!(!qty.is_positive());
     }
 
-    #[rstest]
-    fn test_from_i64() {
-        let qty = Quantity::from(100_000);
+    #[test]
+    fn test_from_i32() {
+        let value = 100_000i32;
+        let qty = Quantity::from(value);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, Quantity::from("100000").raw);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
+        assert_eq!(qty.precision, 0);
+    }
+
+    #[test]
+    fn test_from_i64() {
+        let value = 100_000i64;
+        let qty = Quantity::from(value);
+        assert_eq!(qty, qty);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
+        assert_eq!(qty.precision, 0);
+    }
+
+    #[test]
+    fn test_from_u64() {
+        let value = 100_000u64;
+        let qty = Quantity::from(value);
+        assert_eq!(qty, qty);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
         assert_eq!(qty.precision, 0);
     }
 
@@ -627,42 +646,51 @@ mod tests {
 
     #[rstest]
     fn test_add() {
+        let a = 1.0;
+        let b = 2.0;
         let quantity1 = Quantity::new(1.0, 0);
         let quantity2 = Quantity::new(2.0, 0);
         let quantity3 = quantity1 + quantity2;
-        assert_eq!(quantity3.raw, 3_000_000_000);
+        assert_eq!(quantity3.raw, Quantity::new(a + b, 0).raw);
     }
 
     #[rstest]
     fn test_sub() {
-        let quantity1 = Quantity::new(3.0, 0);
-        let quantity2 = Quantity::new(2.0, 0);
+        let a = 3.0;
+        let b = 2.0;
+        let quantity1 = Quantity::new(a, 0);
+        let quantity2 = Quantity::new(b, 0);
         let quantity3 = quantity1 - quantity2;
-        assert_eq!(quantity3.raw, 1_000_000_000);
+        assert_eq!(quantity3.raw, Quantity::new(a - b, 0).raw);
     }
 
     #[rstest]
     fn test_add_assign() {
-        let mut quantity1 = Quantity::new(1.0, 0);
-        let quantity2 = Quantity::new(2.0, 0);
+        let a = 1.0;
+        let b = 2.0;
+        let mut quantity1 = Quantity::new(a, 0);
+        let quantity2 = Quantity::new(b, 0);
         quantity1 += quantity2;
-        assert_eq!(quantity1.raw, 3_000_000_000);
+        assert_eq!(quantity1.raw, Quantity::new(a + b, 0).raw);
     }
 
     #[rstest]
     fn test_sub_assign() {
-        let mut quantity1 = Quantity::new(3.0, 0);
-        let quantity2 = Quantity::new(2.0, 0);
+        let a = 3.0;
+        let b = 2.0;
+        let mut quantity1 = Quantity::new(a, 0);
+        let quantity2 = Quantity::new(b, 0);
         quantity1 -= quantity2;
-        assert_eq!(quantity1.raw, 1_000_000_000);
+        assert_eq!(quantity1.raw, Quantity::new(a - b, 0).raw);
     }
 
     #[rstest]
     fn test_mul() {
-        let quantity1 = Quantity::new(2.0, 1);
-        let quantity2 = Quantity::new(2.0, 1);
+        let value = 2.0;
+        let quantity1 = Quantity::new(value, 1);
+        let quantity2 = Quantity::new(value, 1);
         let quantity3 = quantity1 * quantity2;
-        assert_eq!(quantity3.raw, 4_000_000_000);
+        assert_eq!(quantity3.raw, Quantity::new(value * value, 0).raw);
     }
 
     #[rstest]
