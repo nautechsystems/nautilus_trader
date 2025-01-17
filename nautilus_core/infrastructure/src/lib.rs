@@ -24,7 +24,7 @@
 //! depending on the intended use case, i.e. whether to provide Python bindings
 //! for the main `nautilus_trader` Python package, or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from `pyo3`.
+//! - `python`: Enables Python bindings from `pyo3` (requires the `msgspec` Python package).
 //! - `redis`: Enables the Redis cache database and message bus backing implementations.
 //! - `sql`: Enables the SQL models and cache database.
 
