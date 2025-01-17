@@ -137,7 +137,7 @@ jobs:
       - name: Install Nautilus CLI and run init postgres
         run: |
           make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema
+          nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
