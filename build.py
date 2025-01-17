@@ -391,9 +391,9 @@ if __name__ == "__main__":
     print(f"NumPy:  {np.__version__}")
 
     print(f"\nRUST_TOOLCHAIN={RUST_TOOLCHAIN}")
-    print(f"HIGH_PRECISION={HIGH_PRECISION}")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"BUILD_DIR={BUILD_DIR}")
+    print(f"HIGH_PRECISION={HIGH_PRECISION}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
