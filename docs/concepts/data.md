@@ -380,10 +380,39 @@ Converts JSON back to Parquet format:
 
 ### Migration Process
 
-The following example migration process uses trades data. All commands should be run from
-the root of the `nautilus_persistence` crate directory.
+The following migration examples both use trades data (you can also migrate the other data types in the same way).
+All commands should be run from the root of the `nautilus_core/persistence/` crate directory.
 
-**1. Convert from old schema to JSON**:
+#### Migrating from low-precision (64-bit) to high-precision (128-bit)
+
+This example describes a scenario where you want to migrate from low-precision schema data to high-precision schema data.
+
+**1. Convert from low-precision Parquet to JSON**:
+
+```bash
+cargo run --bin to_json trades.parquet
+```
+
+This will create `trades.json` and `trades.metadata.json` files.
+
+**2. Convert from JSON to high-precision Parquet**:
+
+Add the `--features high-precision` flag to write data as high-precision (128-bit) schema Parquet.
+
+```bash
+cargo run --features high-precision --bin to_parquet trades.json
+```
+
+This will create a `trades.parquet` file with high-precision schema data.
+
+#### Migrating schema changes
+
+This example describes a scenario where you want to migrate from one schema version to another.
+
+**1. Convert from old schema Parquet to JSON**:
+
+Add the `--features high-precision` flag if the source data uses a high-precision (128-bit) schema.
+
 ```bash
 cargo run --bin to_json trades.parquet
 ```
@@ -395,23 +424,16 @@ This will create `trades.json` and `trades.metadata.json` files.
 git checkout <new-version>
 ```
 
-or change precision mode:
+**3. Convert from JSON back to new schema Parquet**:
 ```bash
-export HIGH_PRECISION=true
-make install-debug
+cargo run --features high-precision --bin to_parquet trades.json
 ```
 
-This will build the `nautilus_trader` package with **high-precision** mode enabled.
-
-**3. Convert back to Parquet**:
-```bash
-cargo run --bin to_parquet trades.json
-```
-
-This will create a `trades.parquet` file with new schema.
+This will create a `trades.parquet` file with the new schema.
 
 ### Best Practices
 
 - Always test migrations with a small dataset first.
 - Maintain backups of original files.
 - Verify data integrity after migration.
+- Perform migrations in a staging environment before applying them to production data.
