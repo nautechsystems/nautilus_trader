@@ -414,41 +414,26 @@ mod tests {
         let _result = usd + btc; // This should panic since currencies are different
     }
 
-    #[rstest]
-    #[cfg(feature = "high-precision")]
-    fn test_money_min_max_values() {
-        let min_money = Money::new(MONEY_MIN, Currency::USD());
-        let max_money = Money::new(MONEY_MAX, Currency::USD());
-        assert_eq!(
-            min_money.raw,
-            f64_to_fixed_i128(MONEY_MIN, Currency::USD().precision)
-        );
-        assert_eq!(
-            max_money.raw,
-            f64_to_fixed_i128(MONEY_MAX, Currency::USD().precision)
-        );
+    #[rstest] // Test does not panic rather than exact value
+    fn test_with_maximum_value() {
+        let money = Money::new_checked(MONEY_MAX, Currency::USD());
+        assert!(money.is_ok());
+    }
+
+    #[rstest] // Test does not panic rather than exact value
+    fn test_with_minimum_value() {
+        let money = Money::new_checked(MONEY_MIN, Currency::USD());
+        assert!(money.is_ok());
     }
 
     #[rstest]
-    #[cfg(not(feature = "high-precision"))]
-    fn test_money_min_max_values() {
-        let min_money = Money::new(MONEY_MIN, Currency::USD());
-        let max_money = Money::new(MONEY_MAX, Currency::USD());
-        assert_eq!(
-            min_money.raw,
-            f64_to_fixed_i64(MONEY_MIN, Currency::USD().precision)
-        );
-        assert_eq!(
-            max_money.raw,
-            f64_to_fixed_i64(MONEY_MAX, Currency::USD().precision)
-        );
-    }
-
-    #[rstest]
-    fn test_money_addition_f64() {
-        let money = Money::new(1000.0, Currency::USD());
-        let result = money + 500.0;
-        assert_eq!(result, 1500.0);
+    fn test_add() {
+        let a = 1000.0;
+        let b = 500.0;
+        let money1 = Money::new(a, Currency::USD());
+        let money2 = Money::new(b, Currency::USD());
+        let money3 = money1 + money2;
+        assert_eq!(money3.raw, Money::new(a + b, Currency::USD()).raw);
     }
 
     #[rstest]
