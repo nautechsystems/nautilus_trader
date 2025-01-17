@@ -33,6 +33,10 @@ pub fn get_test_data_file_path(path: &str) -> String {
 pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
     let mut path = get_test_data_path().join("nautilus");
 
+    #[cfg(feature = "high-precision")]
+    {
+        path = path.join("128-bit");
+    }
     #[cfg(not(feature = "high-precision"))]
     {
         path = path.join("64-bit");
