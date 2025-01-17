@@ -176,10 +176,10 @@ test-performance:
 test-examples:
 	bash scripts/test-examples.sh
 
-.PHONY: install-talib
-install-talib:
-	bash scripts/install-talib.sh
-
 .PHONY: install-cli
 install-cli:
 	(cd nautilus_core && cargo install --path cli --bin nautilus --force)
+
+.PHONY: install-talib
+install-talib:
+	bash scripts/install-talib.sh
