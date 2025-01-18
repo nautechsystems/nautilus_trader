@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use pyo3::{prelude::*, types::PyDict};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
+
+use crate::python::to_pyvalue_err;
 
 pub fn from_dict_pyo3<T>(py: Python<'_>, values: Py<PyDict>) -> Result<T, PyErr>
 where
@@ -29,4 +31,17 @@ where
     // Deserialize to object
     let instance = serde_json::from_str(&json_str).map_err(to_pyvalue_err)?;
     Ok(instance)
+}
+
+pub fn to_dict_pyo3<T>(py: Python<'_>, value: &T) -> PyResult<Py<PyDict>>
+where
+    T: Serialize,
+{
+    let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
+
+    // Parse JSON into a Python dictionary
+    let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
+        .call_method("loads", (json_str,), None)?
+        .extract()?;
+    Ok(py_dict)
 }
