@@ -27,6 +27,9 @@ This release will be the final version that uses Poetry for package and dependen
 ### Documentation Updates
 None
 
+### Deprecations
+- The [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage for indicators is deprecated and will be removed in a future version, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2206)
+
 ---
 
 # NautilusTrader 1.210.0 Beta
