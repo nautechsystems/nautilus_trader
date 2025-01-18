@@ -158,9 +158,67 @@ pub fn fixed_u128_to_f64(value: u128) -> f64 {
 #[cfg(feature = "high-precision")]
 #[cfg(test)]
 mod tests {
+    use float_cmp::approx_eq;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_precision_boundaries() {
+        assert!(check_fixed_precision(0).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(1.0)]
+    #[case(-1.0)]
+    fn test_basic_roundtrip(#[case] value: f64) {
+        for precision in 0..=FIXED_PRECISION {
+            let fixed = f64_to_fixed_i128(value, precision);
+            let result = fixed_i128_to_f64(fixed);
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+        }
+    }
+
+    #[rstest]
+    #[case(1000000.0)]
+    #[case(-1000000.0)]
+    fn test_large_value_roundtrip(#[case] value: f64) {
+        for precision in 0..=FIXED_PRECISION {
+            let fixed = f64_to_fixed_i128(value, precision);
+            let result = fixed_i128_to_f64(fixed);
+            assert!(approx_eq!(f64, value, result, epsilon = 0.000_1));
+        }
+    }
+
+    #[rstest]
+    #[case(0, 123456.0, 123456_0000000000000000)]
+    #[case(0, 123456.7, 123457_0000000000000000)]
+    #[case(1, 123456.7, 123456_7000000000000000)]
+    #[case(2, 123456.78, 123456_7800000000000000)]
+    #[case(8, 123456.12345678, 123456_1234567800000000)]
+    #[case(16, 123456.1234567890123456, 123456_1234567889944576)]
+    fn test_precision_specific_values(
+        #[case] precision: u8,
+        #[case] value: f64,
+        #[case] expected: i128,
+    ) {
+        assert_eq!(f64_to_fixed_i128(value, precision), expected);
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(1.0)]
+    #[case(1000000.0)]
+    fn test_unsigned_basic_roundtrip(#[case] value: f64) {
+        for precision in 0..=FIXED_PRECISION {
+            let fixed = f64_to_fixed_u128(value, precision);
+            let result = fixed_u128_to_f64(fixed);
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+        }
+    }
 
     #[rstest]
     #[case(0)]
@@ -330,9 +388,104 @@ mod tests {
 #[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
+    use float_cmp::approx_eq;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_precision_boundaries() {
+        assert!(check_fixed_precision(0).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(1.0)]
+    #[case(-1.0)]
+    fn test_basic_roundtrip(#[case] value: f64) {
+        for precision in 0..=FIXED_PRECISION {
+            let fixed = f64_to_fixed_i64(value, precision);
+            let result = fixed_i64_to_f64(fixed);
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+        }
+    }
+
+    #[rstest]
+    #[case(1000000.0)]
+    #[case(-1000000.0)]
+    fn test_large_value_roundtrip(#[case] value: f64) {
+        for precision in 0..=FIXED_PRECISION {
+            let fixed = f64_to_fixed_i64(value, precision);
+            let result = fixed_i64_to_f64(fixed);
+            assert!(approx_eq!(f64, value, result, epsilon = 0.000_1));
+        }
+    }
+
+    #[rstest]
+    #[case(0, 123456.0, 123456_000000000)]
+    #[case(0, 123456.7, 123457_000000000)]
+    #[case(1, 123456.7, 123456_700000000)]
+    #[case(2, 123456.78, 123456_780000000)]
+    #[case(8, 123456.12345678, 123456_123456780)]
+    #[case(9, 123456.123456789, 123456_123456789)]
+    fn test_precision_specific_values(
+        #[case] precision: u8,
+        #[case] value: f64,
+        #[case] expected: i64,
+    ) {
+        assert_eq!(f64_to_fixed_i64(value, precision), expected);
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(1.0)]
+    #[case(1000000.0)]
+    fn test_unsigned_basic_roundtrip(#[case] value: f64) {
+        for precision in 0..=FIXED_PRECISION {
+            let fixed = f64_to_fixed_u64(value, precision);
+            let result = fixed_u64_to_f64(fixed);
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+        }
+    }
+
+    #[rstest]
+    #[case(0, 1.4, 1.0)]
+    #[case(0, 1.5, 2.0)]
+    #[case(0, 1.6, 2.0)]
+    #[case(1, 1.44, 1.4)]
+    #[case(1, 1.45, 1.5)]
+    #[case(1, 1.46, 1.5)]
+    #[case(2, 1.444, 1.44)]
+    #[case(2, 1.445, 1.45)]
+    #[case(2, 1.446, 1.45)]
+    fn test_rounding(#[case] precision: u8, #[case] input: f64, #[case] expected: f64) {
+        let fixed = f64_to_fixed_i128(input, precision);
+        assert!(approx_eq!(
+            f64,
+            fixed_i128_to_f64(fixed),
+            expected,
+            epsilon = 0.000_000_001
+        ));
+    }
+
+    #[rstest]
+    fn test_special_values() {
+        // Zero handling
+        assert_eq!(f64_to_fixed_i128(0.0, FIXED_PRECISION), 0);
+        assert_eq!(f64_to_fixed_i128(-0.0, FIXED_PRECISION), 0);
+
+        // Small values
+        let smallest_positive = 1.0 / FIXED_SCALAR;
+        let fixed_smallest = f64_to_fixed_i128(smallest_positive, FIXED_PRECISION);
+        assert_eq!(fixed_smallest, 1);
+
+        // Large integers
+        let large_int = 1_000_000_000.0;
+        let fixed_large = f64_to_fixed_i128(large_int, 0);
+        assert_eq!(fixed_i128_to_f64(fixed_large), large_int);
+    }
 
     #[rstest]
     #[case(0)]
