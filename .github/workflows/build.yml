@@ -108,7 +108,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    name: build low-precision (${{ matrix.os }})
+    name: build standard-precision (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: [pre-commit]
     env:
