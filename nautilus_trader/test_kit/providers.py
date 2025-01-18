@@ -36,6 +36,7 @@ from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDT
@@ -724,6 +725,7 @@ class TestInstrumentProvider:
             currency="GBP",
             price_precision=2,  # BETFAIR_PRICE_PRECISION,
             size_precision=2,  # BETFAIR_QUANTITY_PRECISION,
+            min_notional=Money(1, GBP),
             ts_event=0,
             ts_init=0,
         )
