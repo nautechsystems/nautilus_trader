@@ -18,6 +18,7 @@ from decimal import Decimal
 import pandas as pd
 import pytz
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import AssetClass
 from nautilus_trader.core.nautilus_pyo3 import BettingInstrument
 from nautilus_trader.core.nautilus_pyo3 import BinaryOption
@@ -37,14 +38,14 @@ from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.core.nautilus_pyo3 import Venue
-from nautilus_trader.test_kit.rust.types_pyo3 import TestTypesProviderPyo3
 
 
-_USD = TestTypesProviderPyo3.currency_usd()
-_USDC = TestTypesProviderPyo3.currency_usdc()
-_USDT = TestTypesProviderPyo3.currency_usdt()
-_BTC = TestTypesProviderPyo3.currency_btc()
-_ETH = TestTypesProviderPyo3.currency_eth()
+_GBP = nautilus_pyo3.Currency.from_str("GBP")
+_USD = nautilus_pyo3.Currency.from_str("USD")
+_USDC = nautilus_pyo3.Currency.from_str("USDC")
+_USDT = nautilus_pyo3.Currency.from_str("USDT")
+_BTC = nautilus_pyo3.Currency.from_str("BTC")
+_ETH = nautilus_pyo3.Currency.from_str("ETH")
 
 
 class TestInstrumentProviderPyo3:
@@ -116,6 +117,7 @@ class TestInstrumentProviderPyo3:
             size_precision=2,  # BETFAIR_QUANTITY_PRECISION,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.01"),
+            min_notional=Money(1, _GBP),
             maker_fee=Decimal(0),  # TBD
             taker_fee=Decimal(0),  # TBD
             ts_event=0,
@@ -299,7 +301,7 @@ class TestInstrumentProviderPyo3:
             max_quantity=Quantity.from_str("9000"),
             min_quantity=Quantity.from_str("0.00001"),
             max_notional=None,
-            min_notional=Money(10.0, TestTypesProviderPyo3.currency_usdt()),
+            min_notional=Money(10.0, _USDT),
             max_price=Price.from_str("1000000.0"),
             min_price=Price.from_str("0.01"),
             ts_event=0,
@@ -311,7 +313,7 @@ class TestInstrumentProviderPyo3:
         return CurrencyPair(
             id=InstrumentId.from_str("BTCUSDT.BINANCE"),
             raw_symbol=Symbol("BTCUSDT"),
-            base_currency=TestTypesProviderPyo3.currency_btc(),
+            base_currency=_BTC,
             quote_currency=_USDT,
             price_precision=2,
             size_precision=6,
