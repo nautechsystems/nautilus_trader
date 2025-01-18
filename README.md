@@ -173,6 +173,22 @@ We strive to document these changes in the release notes on a **best-effort basi
 
 We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
 
+## Precision mode
+
+NautilusTrader supports two precision modes for its core value types (`Price`, `Quantity`, `Money`),
+which differ in their internal bit-width and maximum decimal precision.
+
+- **High-precision**: 128-bit integers with up to 16 decimals of precision, and a larger value range.
+- **Standard-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
+
+> [!NOTE]
+>
+> By default, the official Python wheels **ship** in high-precision (128-bit) mode on Linux and macOS.
+> On Windows, only standard-precision (64-bit) is available due to the lack of native 128-bit integer support.
+> For the Rust crates, the default is standard-precision unless you explicitly enable the `high-precision` feature flag.
+
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for further details.
+
 ## Installation
 
 ### From PyPI

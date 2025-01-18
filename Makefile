@@ -99,16 +99,16 @@ cargo-test:
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --features "python,ffi,high-precision")
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --features "python,ffi")
 
 
-.PHONY: cargo-test-low-precision
-cargo-test-low-precision:
+.PHONY: cargo-test-high-precision
+cargo-test-high-precision:
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
     echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
     exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --features "python,ffi")
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --features "python,ffi,high-precision")
 
 
 .PHONY: cargo-test-coverage

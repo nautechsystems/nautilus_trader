@@ -206,17 +206,20 @@ We recommend using [Redis Insight](https://redis.io/insight/) as a GUI to visual
 
 ## Precision mode
 
-NautilusTrader supports two precision modes which determine the bit-width of value types like `Price`, `Quantity`, and `Money`.
+NautilusTrader supports two precision modes for its core value types (`Price`, `Quantity`, `Money`),
+which differ in their internal bit-width and maximum decimal precision.
 
-- **high-precision**: 128-bit integers with up to 16 decimals of precision, and a larger value range.
-- **low-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
+- **High-precision**: 128-bit integers with up to 16 decimals of precision, and a larger value range.
+- **Standard-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
 
 :::note
-High-precision mode is not available on Windows due to lack of 128-bit integer support in the Microsoft Visual C++ compiler. Windows users must use low-precision mode.
+By default, the official Python wheels **ship** in high-precision (128-bit) mode on Linux and macOS.
+On Windows, only standard-precision (64-bit) is available due to the lack of native 128-bit integer support.
+For the Rust crates, the default is standard-precision unless you explicitly enable the `high-precision` feature flag.
 :::
 
-The tradeoff is slightly higher performance for low-precision (~3-5% for backtests),
-but with a reduced maximum precision and value range.
+The performance tradeoff is that standard-precision is ~3–5% faster in typical backtests,
+but has lower decimal precision and a smaller representable value range.
 
 :::note
 Performance benchmarks comparing the modes are pending.
@@ -224,10 +227,10 @@ Performance benchmarks comparing the modes are pending.
 
 ### Build configuration
 
-The precision mode is controlled by:
+The precision mode is determined by:
 
-- The `HIGH_PRECISION` environment variable during compilation.
-- The corresponding Rust feature flag `high-precision`.
+- Setting the `HIGH_PRECISION` environment variable during compilation, **and/or**
+- Enabling the `high-precision` Rust feature flag explicitly.
 
 #### High-precision mode (128-bit)
 
@@ -236,7 +239,7 @@ export HIGH_PRECISION=true
 make install-debug
 ```
 
-#### Low-precision mode (64-bit)
+#### Standard-precision mode (64-bit)
 
 ```bash
 export HIGH_PRECISION=false

@@ -48,7 +48,7 @@ HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
 if IS_WINDOWS and HIGH_PRECISION:
     print(
         "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\n"
-        "Forcing low-precision (64-bit) mode",
+        "Forcing standard-precision (64-bit) mode",
     )
     HIGH_PRECISION = False
 
