@@ -99,7 +99,7 @@ jobs:
           echo "Pre-commit checks failed, exiting"
           exit 1
 
-  build-linux-low-precision:
+  build-linux-standard-precision:
     strategy:
       fail-fast: false
       matrix:
@@ -255,8 +255,8 @@ jobs:
         with:
           tool: nextest
 
-      - name: Run nautilus_core tests
-        run: make cargo-test
+      - name: Run nautilus_core tests (with standard-precision)
+        run: make cargo-test-standard-precision
 
       - name: Build Python wheel
         run: |
@@ -428,7 +428,7 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: make cargo-test-high-precision
+        run: make cargo-test
 
       - name: Update version in pyproject.toml
         run: |
@@ -614,7 +614,7 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: make cargo-test-high-precision
+        run: make cargo-test
 
       - name: Update version in pyproject.toml
         run: |
