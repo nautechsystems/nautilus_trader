@@ -30,7 +30,7 @@ cdef extern from "../includes/model.h":
         # The scalar value corresponding to the maximum precision (10^9).
         const double FIXED_SCALAR # = 1000000000.0
 
-    # The scalar representing the difference between high-precision and low-precision modes.
+    # The scalar representing the difference between high-precision and standard-precision modes.
     const double PRECISION_DIFF_SCALAR # = 10000000.0
 
     IF HIGH_PRECISION:
@@ -982,7 +982,7 @@ cdef extern from "../includes/model.h":
         extern const int32_t PRECISION_BYTES;
 
     IF not HIGH_PRECISION:
-        # The width in bytes for fixed-point value types in low-precision mode (64-bit).
+        # The width in bytes for fixed-point value types in standard-precision mode (64-bit).
         extern const int32_t PRECISION_BYTES;
 
     # The maximum raw price integer value.

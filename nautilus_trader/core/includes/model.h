@@ -48,7 +48,7 @@
 #endif
 
 /**
- * The scalar representing the difference between high-precision and low-precision modes.
+ * The scalar representing the difference between high-precision and standard-precision modes.
  */
 #define PRECISION_DIFF_SCALAR 10000000.0
 
@@ -1759,7 +1759,7 @@ extern const int32_t PRECISION_BYTES;
 
 #if !defined(HIGH_PRECISION)
 /**
- * The width in bytes for fixed-point value types in low-precision mode (64-bit).
+ * The width in bytes for fixed-point value types in standard-precision mode (64-bit).
  */
 extern const int32_t PRECISION_BYTES;
 #endif
