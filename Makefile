@@ -94,22 +94,24 @@ cargo-update:
 	(cd nautilus_core && cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov)
 
 .PHONY: cargo-test
+cargo-test: RUST_BACKTRACE=1
+cargo-test: HIGH_PRECISION=true
 cargo-test:
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --features "python,ffi")
+	(cd nautilus_core && RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision")
 
-
-.PHONY: cargo-test-high-precision
-cargo-test-high-precision:
+.PHONY: cargo-test-standard-precision
+cargo-test-standard-precision: RUST_BACKTRACE=1
+cargo-test-standard-precision: HIGH_PRECISION=false
+cargo-test-standard-precision:
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
     echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
     exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --features "python,ffi,high-precision")
-
+	(cd nautilus_core && RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi")
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage:
@@ -121,7 +123,7 @@ cargo-test-coverage:
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo llvm-cov nextest run --workspace)
+	(cd nautilus_core && cargo llvm-cov nextest run --workspace)
 
 .PHONY: cargo-bench
 cargo-bench:
