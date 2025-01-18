@@ -34,7 +34,7 @@ pub const FIXED_PRECISION: u8 = 9;
 #[no_mangle]
 pub static PRECISION_BYTES: i32 = 16;
 #[cfg(not(feature = "high-precision"))]
-/// The width in bytes for fixed-point value types in low-precision mode (64-bit).
+/// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
 #[no_mangle]
 pub static PRECISION_BYTES: i32 = 8;
 
@@ -45,7 +45,7 @@ pub const FIXED_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_PRECISION
 /// The scalar value corresponding to the maximum precision (10^9).
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
-/// The scalar representing the difference between high-precision and low-precision modes.
+/// The scalar representing the difference between high-precision and standard-precision modes.
 pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10.0**(16-9)
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.

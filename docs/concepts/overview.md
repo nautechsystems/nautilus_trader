@@ -228,7 +228,7 @@ When the `high-precision` feature flag is **enabled** (default), values use the 
 | `Money`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
 | `Quantity`   | `u128`      | 16            | 0                   | 34,028,236,692,093 |
 
-### Low-precision mode (64-bit)
+### Standard-precision mode (64-bit)
 
 When the `high-precision` feature flag is **disabled**, values use the specification:
 

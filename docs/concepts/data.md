@@ -383,11 +383,11 @@ Converts JSON back to Parquet format:
 The following migration examples both use trades data (you can also migrate the other data types in the same way).
 All commands should be run from the root of the `nautilus_core/persistence/` crate directory.
 
-#### Migrating from low-precision (64-bit) to high-precision (128-bit)
+#### Migrating from standard-precision (64-bit) to high-precision (128-bit)
 
-This example describes a scenario where you want to migrate from low-precision schema data to high-precision schema data.
+This example describes a scenario where you want to migrate from standard-precision schema data to high-precision schema data.
 
-**1. Convert from low-precision Parquet to JSON**:
+**1. Convert from standard-precision Parquet to JSON**:
 
 ```bash
 cargo run --bin to_json trades.parquet
