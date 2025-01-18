@@ -256,8 +256,7 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: |
-          make cargo-test-low-precision
+        run: make cargo-test
 
       - name: Build Python wheel
         run: |
@@ -429,8 +428,7 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: |
-          make cargo-test
+        run: make cargo-test-high-precision
 
       - name: Update version in pyproject.toml
         run: |
@@ -616,7 +614,7 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: make cargo-test
+        run: make cargo-test-high-precision
 
       - name: Update version in pyproject.toml
         run: |

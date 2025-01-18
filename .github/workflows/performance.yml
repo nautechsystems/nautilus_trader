@@ -151,7 +151,7 @@ jobs:
           tool: nextest
 
       - name: Run nautilus_core tests
-        run: make cargo-test
+        run: make cargo-test-high-precision
 
       - name: Build Python wheel
         run: |
