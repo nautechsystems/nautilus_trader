@@ -12,6 +12,7 @@ This release will be the final version that uses Poetry for package and dependen
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
 - Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
+- Changed `BettingInstrument` default `min_notional` to `None`
 
 ### Internal Improvements
 - Ported market order filling for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
