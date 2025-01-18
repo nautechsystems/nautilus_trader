@@ -29,71 +29,6 @@ A high-performance order book implemented in Rust is available to maintain order
 Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used for backtesting, with markets operating on `L1_MBP` book types.
 :::
 
-## Timestamps
-
-The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events.
-These timestamps serve distinct purposes and help maintain precise timing information throughout the system:
-
-- `ts_event`: UNIX timestamp (nanoseconds) representing when an event actually occurred.
-- `ts_init`: UNIX timestamp (nanoseconds) representing when Nautilus created the internal object representing that event.
-
-### Examples
-
-| **Event Type** | **`ts_event`** | **`ts_init`** |
-| ---------------| ---------------| --------------|
-| `TradeTick` | Time when trade occurred at the exchange. | Time when Nautilus received the trade data. |
-| `QuoteTick` | Time when quote was created at the exchange. | Time when Nautilus received the quote data. |
-| `OrderBookDelta` | Time when order book update occurred at the exchange.| Time when Nautilus received the order book update. |
-| `Bar` | Time of the bar's closing (exact minute/hour). | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
-| `OrderFilled` | Time when order was filled at the exchange. | Time when Nautilus received and processed the fill confirmation. |
-| `OrderCanceled` | Time when cancellation was processed at the exchange.| Time when Nautilus received and processed the cancellation confirmation. |
-| `NewsEvent` | Time when the news was published. | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
-| Custom event | Time when event conditions actually occurred. | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
-
-:::note
-The `ts_init` field represents a more general concept than just the "time of reception" for events.
-It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
-This distinction is important because `ts_init` is not exclusive to "received events" — it applies to any internal
-initialization process.
-
-For example, the `ts_init` field is also used for commands, where the concept of reception does not apply.
-This broader definition ensures consistent handling of initialization timestamps across various object types in the system.
-:::
-
-### Latency analysis
-
-The dual timestamp system enables latency analysis within the platform:
-
-- Latency can be calculated as `ts_init - ts_event`.
-- This difference represents total system latency, including network transmission time, processing overhead, and any queueing delays.
-- It's important to remember that the clocks producing these timestamps are likely not synchronized.
-
-### Environment specific behavior
-
-#### Backtesting environment
-
-- Data is ordered by `ts_init` using a stable sort.
-- This behavior ensures deterministic processing order and simulates realistic system behavior, including latencies.
-
-#### Live trading environment
-
-- Data is processed as it arrives, ensuring minimal latency and allowing for real-time decision-making.
-  - `ts_init` field records the exact moment when data is received by Nautilus in real-time.
-  - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
-- We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
-
-### Other notes and considerations
-
-- For data from external sources, `ts_init` is always the same as or later than `ts_event`.
-- For data created within Nautilus, `ts_init` and `ts_event` can be the same because the object is initialized at the same time the event happens.
-- Not every type with a `ts_init` field necessarily has a `ts_event` field. This reflects cases where:
-  - The initialization of an object happens at the same time as the event itself.
-  - The concept of an external event time does not apply.
-
-#### Persisted Data
-
-The `ts_init` field indicates when the message was originally received.
-
 ## Instruments
 
 The following instrument definitions are available:
@@ -190,6 +125,71 @@ For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS)
 ```python
 bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
 ```
+
+## Timestamps
+
+The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events.
+These timestamps serve distinct purposes and help maintain precise timing information throughout the system:
+
+- `ts_event`: UNIX timestamp (nanoseconds) representing when an event actually occurred.
+- `ts_init`: UNIX timestamp (nanoseconds) representing when Nautilus created the internal object representing that event.
+
+### Examples
+
+| **Event Type**   | **`ts_event`**                                        | **`ts_init`** |
+| -----------------| ------------------------------------------------------| --------------|
+| `TradeTick`      | Time when trade occurred at the exchange.             | Time when Nautilus received the trade data. |
+| `QuoteTick`      | Time when quote was created at the exchange.          | Time when Nautilus received the quote data. |
+| `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update. |
+| `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
+| `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation. |
+| `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation. |
+| `NewsEvent`      | Time when the news was published.                     | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
+| Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
+
+:::note
+The `ts_init` field represents a more general concept than just the "time of reception" for events.
+It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
+This distinction is important because `ts_init` is not exclusive to "received events" — it applies to any internal
+initialization process.
+
+For example, the `ts_init` field is also used for commands, where the concept of reception does not apply.
+This broader definition ensures consistent handling of initialization timestamps across various object types in the system.
+:::
+
+### Latency analysis
+
+The dual timestamp system enables latency analysis within the platform:
+
+- Latency can be calculated as `ts_init - ts_event`.
+- This difference represents total system latency, including network transmission time, processing overhead, and any queueing delays.
+- It's important to remember that the clocks producing these timestamps are likely not synchronized.
+
+### Environment specific behavior
+
+#### Backtesting environment
+
+- Data is ordered by `ts_init` using a stable sort.
+- This behavior ensures deterministic processing order and simulates realistic system behavior, including latencies.
+
+#### Live trading environment
+
+- Data is processed as it arrives, ensuring minimal latency and allowing for real-time decision-making.
+  - `ts_init` field records the exact moment when data is received by Nautilus in real-time.
+  - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
+- We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
+
+### Other notes and considerations
+
+- For data from external sources, `ts_init` is always the same as or later than `ts_event`.
+- For data created within Nautilus, `ts_init` and `ts_event` can be the same because the object is initialized at the same time the event happens.
+- Not every type with a `ts_init` field necessarily has a `ts_event` field. This reflects cases where:
+  - The initialization of an object happens at the same time as the event itself.
+  - The concept of an external event time does not apply.
+
+#### Persisted Data
+
+The `ts_init` field indicates when the message was originally received.
 
 ## Data flow
 
