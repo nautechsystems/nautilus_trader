@@ -82,6 +82,7 @@ jobs:
         continue-on-error: true
         run: make pre-commit || echo "PRECOMMIT_FAILED=true" > $GITHUB_ENV
 
+      # https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
       - name: Add PR comment on failure
         if: env.PRECOMMIT_FAILED == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -89,6 +90,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
               issue_number: context.issue.number,
               body: 'Thank you for your contribution! 🙏\n\nThe pre-commit checks failed, but this is easy to fix. You\'ll need to run:\n\n```bash\nmake pre-commit\n# or\npre-commit run --all-files\n```\n\nThis will automatically fix most formatting issues. Just commit any changes and push again.\n\nSee our [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) guide for more details.'
             })
