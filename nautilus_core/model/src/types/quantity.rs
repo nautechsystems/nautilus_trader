@@ -519,6 +519,36 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(
+        expected = "Precision mismatch: cannot add precision 2 to precision 1 (precision loss)"
+    )]
+    fn test_precision_mismatch_add() {
+        let q1 = Quantity::new(1.0, 1);
+        let q2 = Quantity::new(1.0, 2);
+        let _ = q1 + q2;
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Precision mismatch: cannot subtract precision 2 from precision 1 (precision loss)"
+    )]
+    fn test_precision_mismatch_sub() {
+        let q1 = Quantity::new(1.0, 1);
+        let q2 = Quantity::new(1.0, 2);
+        let _ = q1 - q2;
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Precision mismatch: cannot multiply precision 2 with precision 1 (precision loss)"
+    )]
+    fn test_precision_mismatch_mul() {
+        let q1 = Quantity::new(2.0, 1);
+        let q2 = Quantity::new(3.0, 2);
+        let _ = q1 * q2;
+    }
+
+    #[rstest]
     fn test_new() {
         let value = 0.00812;
         let qty = Quantity::new(value, 8);
@@ -531,6 +561,17 @@ mod tests {
         assert!(!qty.is_zero());
         assert!(qty.is_positive());
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000_001));
+    }
+
+    #[rstest]
+    fn test_check_quantity_positive_ok() {
+        let qty = Quantity::new(10.0, 0);
+        check_quantity_positive(qty).unwrap();
+    }
+
+    #[rstest]
+    fn test_negative_quantity_validation() {
+        assert!(Quantity::new_checked(-1.0, FIXED_PRECISION).is_err());
     }
 
     #[rstest]
@@ -549,7 +590,7 @@ mod tests {
         assert!(!qty.is_positive());
     }
 
-    #[test]
+    #[rstest]
     fn test_from_i32() {
         let value = 100_000i32;
         let qty = Quantity::from(value);
@@ -558,7 +599,15 @@ mod tests {
         assert_eq!(qty.precision, 0);
     }
 
-    #[test]
+    #[rstest]
+    fn test_from_u32() {
+        let value: u32 = 5000;
+        let qty = Quantity::from(value);
+        assert_eq!(qty.raw, Quantity::from(format!("{value}")).raw);
+        assert_eq!(qty.precision, 0);
+    }
+
+    #[rstest]
     fn test_from_i64() {
         let value = 100_000i64;
         let qty = Quantity::from(value);
@@ -567,7 +616,7 @@ mod tests {
         assert_eq!(qty.precision, 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_from_u64() {
         let value = 100_000u64;
         let qty = Quantity::from(value);
@@ -694,7 +743,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_equality() {
+    fn test_mul_assign() {
+        let mut quantity = Quantity::new(2.0, 0);
+        quantity *= 3u64; // calls MulAssign<T: Into<QuantityRaw>>
+        assert_eq!(quantity.raw, Quantity::new(6.0, 0).raw);
+
+        let mut fraction = Quantity::new(1.5, 2);
+        fraction *= 2u64; // => 1.5 * 2 = 3.0 => raw=300, precision=2
+        assert_eq!(fraction.raw, Quantity::new(3.0, 2).raw);
+    }
+
+    #[rstest]
+    fn test_comparisons() {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
@@ -720,5 +780,55 @@ mod tests {
         let quantity = Quantity::from_str("44.12").unwrap();
         let result = format!("{quantity}");
         assert_eq!(result, "44.12");
+    }
+
+    #[test]
+    fn test_to_formatted_string() {
+        let qty = Quantity::new(1234.5678, 4);
+        let formatted = qty.to_formatted_string();
+        assert_eq!(formatted, "1_234.5678");
+        assert_eq!(qty.to_string(), "1234.5678");
+    }
+
+    #[rstest]
+    fn test_hash() {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
+
+        let q1 = Quantity::new(100.0, 1);
+        let q2 = Quantity::new(100.0, 1);
+        let q3 = Quantity::new(200.0, 1);
+
+        let mut s1 = DefaultHasher::new();
+        let mut s2 = DefaultHasher::new();
+        let mut s3 = DefaultHasher::new();
+
+        q1.hash(&mut s1);
+        q2.hash(&mut s2);
+        q3.hash(&mut s3);
+
+        assert_eq!(
+            s1.finish(),
+            s2.finish(),
+            "Equal quantities must hash equally"
+        );
+        assert_ne!(
+            s1.finish(),
+            s3.finish(),
+            "Different quantities must hash differently"
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_serde_json_round_trip() {
+        let original = Quantity::new(123.456, 3);
+        let json_str = serde_json::to_string(&original).unwrap();
+        assert_eq!(json_str, "\"123.456\"");
+
+        let deserialized: Quantity = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized, original);
+        assert_eq!(deserialized.precision, 3);
     }
 }

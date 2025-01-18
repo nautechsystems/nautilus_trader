@@ -427,6 +427,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_money_is_zero() {
+        let zero_usd = Money::new(0.0, Currency::USD());
+        assert!(zero_usd.is_zero());
+        assert_eq!(zero_usd.as_f64(), 0.0);
+
+        let non_zero_usd = Money::new(100.0, Currency::USD());
+        assert!(!non_zero_usd.is_zero());
+    }
+
+    #[rstest]
+    fn test_money_comparisons() {
+        let usd = Currency::USD();
+        let m1 = Money::new(100.0, usd);
+        let m2 = Money::new(200.0, usd);
+
+        assert!(m1 < m2);
+        assert!(m2 > m1);
+        assert!(m1 <= m2);
+        assert!(m2 >= m1);
+
+        // Equality
+        let m3 = Money::new(100.0, usd);
+        assert!(m1 == m3);
+    }
+
+    #[rstest]
     fn test_add() {
         let a = 1000.0;
         let b = 500.0;
@@ -436,12 +462,54 @@ mod tests {
         assert_eq!(money3.raw, Money::new(a + b, Currency::USD()).raw);
     }
 
+    #[test]
+    fn test_add_assign() {
+        let usd = Currency::USD();
+        let mut money = Money::new(100.0, usd);
+        money += Money::new(50.0, usd);
+        assert!(approx_eq!(f64, money.as_f64(), 150.0, epsilon = 1e-9));
+        assert_eq!(money.currency, usd);
+    }
+
+    #[rstest]
+    fn test_sub() {
+        let usd = Currency::USD();
+        let money1 = Money::new(1000.0, usd);
+        let money2 = Money::new(250.0, usd);
+        let result = money1 - money2;
+        assert!(approx_eq!(f64, result.as_f64(), 750.0, epsilon = 1e-9));
+        assert_eq!(result.currency, usd);
+    }
+
+    #[test]
+    fn test_sub_assign() {
+        let usd = Currency::USD();
+        let mut money = Money::new(100.0, usd);
+        money -= Money::new(25.0, usd);
+        assert!(approx_eq!(f64, money.as_f64(), 75.0, epsilon = 1e-9));
+        assert_eq!(money.currency, usd);
+    }
+
     #[rstest]
     fn test_money_negation() {
         let money = Money::new(100.0, Currency::USD());
         let result = -money;
         assert_eq!(result.as_f64(), -100.0);
         assert_eq!(result.currency, Currency::USD().clone());
+    }
+
+    #[rstest]
+    fn test_money_multiplication_by_f64() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money * 1.5;
+        assert!(approx_eq!(f64, result, 150.0, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_money_division_by_f64() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money / 4.0;
+        assert!(approx_eq!(f64, result, 25.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -462,14 +530,6 @@ mod tests {
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");
         assert_eq!(money.to_formatted_string(), "10.30000000 BTC");
-    }
-
-    #[rstest]
-    fn test_money_serialization_deserialization() {
-        let money = Money::new(123.45, Currency::USD());
-        let serialized = serde_json::to_string(&money);
-        let deserialized: Money = serde_json::from_str(&serialized.unwrap()).unwrap();
-        assert_eq!(money, deserialized);
     }
 
     #[rstest]
@@ -495,5 +555,51 @@ mod tests {
         let money = Money::from(input);
         assert_eq!(money.currency, expected_currency);
         assert_eq!(money.as_decimal(), expected_dec);
+    }
+
+    #[rstest]
+    fn test_money_from_str_negative() {
+        let money = Money::from("-123.45 USD");
+        assert!(approx_eq!(f64, money.as_f64(), -123.45, epsilon = 1e-9));
+        assert_eq!(money.currency, Currency::USD());
+    }
+
+    #[rstest]
+    fn test_money_hash() {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
+
+        let m1 = Money::new(100.0, Currency::USD());
+        let m2 = Money::new(100.0, Currency::USD());
+        let m3 = Money::new(100.0, Currency::AUD());
+
+        let mut s1 = DefaultHasher::new();
+        let mut s2 = DefaultHasher::new();
+        let mut s3 = DefaultHasher::new();
+
+        m1.hash(&mut s1);
+        m2.hash(&mut s2);
+        m3.hash(&mut s3);
+
+        assert_eq!(
+            s1.finish(),
+            s2.finish(),
+            "Same amount + same currency => same hash"
+        );
+        assert_ne!(
+            s1.finish(),
+            s3.finish(),
+            "Same amount + different currency => different hash"
+        );
+    }
+
+    #[rstest]
+    fn test_money_serialization_deserialization() {
+        let money = Money::new(123.45, Currency::USD());
+        let serialized = serde_json::to_string(&money);
+        let deserialized: Money = serde_json::from_str(&serialized.unwrap()).unwrap();
+        assert_eq!(money, deserialized);
     }
 }
