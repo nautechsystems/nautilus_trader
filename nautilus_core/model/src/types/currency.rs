@@ -283,6 +283,42 @@ mod tests {
     }
 
     #[rstest]
+    fn test_register_no_overwrite() {
+        let currency1 = Currency::new("TEST1", 2, 999, "Test Currency 1", CurrencyType::Fiat);
+        Currency::register(currency1, false).unwrap();
+
+        let currency2 = Currency::new(
+            "TEST1",
+            2,
+            999,
+            "Test Currency 2 Updated",
+            CurrencyType::Fiat,
+        );
+        Currency::register(currency2, false).unwrap();
+
+        let found = Currency::try_from_str("TEST1").unwrap();
+        assert_eq!(found.name.as_str(), "Test Currency 1");
+    }
+
+    #[rstest]
+    fn test_register_with_overwrite() {
+        let currency1 = Currency::new("TEST2", 2, 998, "Test Currency 2", CurrencyType::Fiat);
+        Currency::register(currency1, false).unwrap();
+
+        let currency2 = Currency::new(
+            "TEST2",
+            2,
+            998,
+            "Test Currency 2 Overwritten",
+            CurrencyType::Fiat,
+        );
+        Currency::register(currency2, true).unwrap();
+
+        let found = Currency::try_from_str("TEST2").unwrap();
+        assert_eq!(found.name.as_str(), "Test Currency 2 Overwritten");
+    }
+
+    #[rstest]
     fn test_new_for_fiat() {
         let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         assert_eq!(currency, currency);
@@ -325,6 +361,59 @@ mod tests {
         let currency1 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         let currency2 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         assert_eq!(currency1, currency2);
+    }
+
+    #[rstest]
+    fn test_currency_partial_eq_only_checks_code() {
+        let c1 = Currency::new("ABC", 2, 999, "Currency ABC", CurrencyType::Fiat);
+        let c2 = Currency::new("ABC", 8, 100, "Completely Different", CurrencyType::Crypto);
+
+        assert_eq!(c1, c2, "Should be equal if 'code' is the same");
+    }
+
+    #[rstest]
+    fn test_is_fiat() {
+        let currency = Currency::new("TESTFIAT", 2, 840, "Test Fiat", CurrencyType::Fiat);
+        Currency::register(currency, true).unwrap();
+
+        let result = Currency::is_fiat("TESTFIAT");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "Expected TESTFIAT to be recognized as fiat"
+        );
+    }
+
+    #[rstest]
+    fn test_is_crypto() {
+        let currency = Currency::new("TESTCRYPTO", 8, 0, "Test Crypto", CurrencyType::Crypto);
+        Currency::register(currency, true).unwrap();
+
+        let result = Currency::is_crypto("TESTCRYPTO");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "Expected TESTCRYPTO to be recognized as crypto"
+        );
+    }
+
+    #[rstest]
+    fn test_is_commodity_backed() {
+        let currency = Currency::new("TESTGOLD", 5, 0, "Test Gold", CurrencyType::CommodityBacked);
+        Currency::register(currency, true).unwrap();
+
+        let result = Currency::is_commodity_backed("TESTGOLD");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "Expected TESTGOLD to be recognized as commodity-backed"
+        );
+    }
+
+    #[rstest]
+    fn test_is_fiat_unknown_currency() {
+        let result = Currency::is_fiat("NON_EXISTENT");
+        assert!(result.is_err(), "Should fail for unknown currency code");
     }
 
     #[rstest]

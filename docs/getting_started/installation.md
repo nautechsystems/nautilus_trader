@@ -215,6 +215,7 @@ which differ in their internal bit-width and maximum decimal precision.
 :::note
 By default, the official Python wheels **ship** in high-precision (128-bit) mode on Linux and macOS.
 On Windows, only standard-precision (64-bit) is available due to the lack of native 128-bit integer support.
+
 For the Rust crates, the default is standard-precision unless you explicitly enable the `high-precision` feature flag.
 :::
 
