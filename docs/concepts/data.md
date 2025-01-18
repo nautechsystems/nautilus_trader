@@ -31,7 +31,7 @@ Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used f
 
 ## Timestamps
 
-The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events. 
+The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events.
 These timestamps serve distinct purposes and help maintain precise timing information throughout the system:
 
 - `ts_event`: UNIX timestamp (nanoseconds) representing when an event actually occurred.
