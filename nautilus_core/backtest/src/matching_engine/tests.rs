@@ -121,7 +121,12 @@ pub fn orderbook_delta_sell(instrument_eth_usdt: InstrumentAny) -> OrderBookDelt
     OrderBookDelta::new(
         instrument_eth_usdt.id(),
         BookAction::Add,
-        BookOrder::new(OrderSide::Sell, Price::from("1500.00"), Quantity::from("1"), 0),
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1"),
+            0,
+        ),
         0,
         0,
         UnixNanos::from(0),
@@ -1051,4 +1056,151 @@ fn test_process_limit_order_matched_immediate_fill(
     assert_eq!(order_filled.client_order_id, client_order_id);
     assert_eq!(order_filled.last_px, Price::from("1500.00"));
     assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_process_stop_market_order_triggered_rejected(
+    instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    // Register saving message handler to exec engine endpoint
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+
+    // create order matching engine which rejects stop orders
+    let mut engine_config = OrderMatchingEngineConfig::default();
+    engine_config.reject_stop_orders = true;
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        Some(engine_config),
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    // create but stop market order, which is triggered (price of 1495 is below current ask of 1500)
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut stop_order, account_id);
+
+    // check we have received OrderRejected event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let order_event = saved_messages.first().unwrap();
+    let order_rejected = match order_event {
+        OrderEventAny::Rejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(
+        order_rejected.reason,
+        Ustr::from("STOP_MARKET BUY order stop px of 1495.00 was in the market: bid=None, ask=1500.00, but rejected because of configuration")
+    );
+}
+
+#[rstest]
+fn test_process_stop_market_order_valid_trigger_filled(
+    instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    // create normal l2 engine without reject_stop_orders config param
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    // create but stop market order, which is triggered (price of 1495 is below current ask of 1500)
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut stop_order, account_id);
+
+    // check we have received OrderFilled event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let order_filled = saved_messages.first().unwrap();
+    let order_filled = match order_filled {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in first message"),
+    };
+    assert_eq!(order_filled.client_order_id, client_order_id);
+    assert_eq!(order_filled.last_px, Price::from("1500.00"));
+    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_process_stop_market_order_valid_not_triggered_accepted(
+    instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    // create but stop market order, which is not triggered (price of 1505 is above current ask of 1500)
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1505.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut stop_order, account_id);
+
+    // check we have received OrderAccepted event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let order_event = saved_messages.first().unwrap();
+    let order_accepted = match order_event {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
 }
