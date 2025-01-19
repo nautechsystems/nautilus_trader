@@ -122,7 +122,7 @@ impl Deref for AtomicTime {
 }
 
 impl Default for AtomicTime {
-    /// Creates a new default [`AtomicTime`] instance in **real-time** mode, starting at the current system time.
+    /// Creates a new default [`AtomicTime`] instance in **real-time mode**, starting at the current system time.
     fn default() -> Self {
         Self::new(true, UnixNanos::default())
     }
@@ -133,7 +133,7 @@ impl AtomicTime {
     ///
     /// - If `realtime` is `true`, the provided `time` is used only as an initial placeholder
     ///   and will quickly be overridden by calls to [`AtomicTime::time_since_epoch`].
-    /// - If `realtime` is `false`, this clock starts in **static** mode, with the given `time`
+    /// - If `realtime` is `false`, this clock starts in **static mode**, with the given `time`
     ///   as its current value.
     #[must_use]
     pub fn new(realtime: bool, time: UnixNanos) -> Self {
