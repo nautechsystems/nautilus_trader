@@ -8,6 +8,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `high-precision` mode for 128-bit integer backed value types, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) and [precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) docs (#2072), thanks @twitu
 - Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
 - Added additional limit parameters for `BettingInstrument` constructor
+- Added `venue_position_id` parameter for `OrderStatusReport`
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
@@ -24,6 +25,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
+- Fixed live reconciliation of generated order fills to use the `venue_position_id` (when provided)
 
 ### Documentation Updates
 None
