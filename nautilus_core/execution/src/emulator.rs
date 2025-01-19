@@ -39,9 +39,9 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::{
     data::{Data, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
-    events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderUpdated},
+    events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
-    orders::{OrderAny, PassiveOrderAny},
+    orders::{LimitOrder, MarketOrder, Order, OrderAny, PassiveOrderAny},
     types::{Price, Quantity},
 };
 use ustr::Ustr;
@@ -52,6 +52,7 @@ use crate::{
     messages::{
         CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
     },
+    trailing::trailing_stop_calculate,
 };
 
 pub struct OrderEmulator {
@@ -559,10 +560,7 @@ impl OrderEmulatorState {
             order.order_type(),
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
         ) {
-            self.update_trailing_stop_order(
-                &mut matching_core,
-                &PassiveOrderAny::from(order.clone()),
-            );
+            self.update_trailing_stop_order(&mut matching_core, &mut order);
             if order.trigger_price().is_none() {
                 log::error!(
                     "Cannot handle trailing stop order with no trigger_price and no market updates"
@@ -978,13 +976,56 @@ impl OrderEmulatorState {
 
         let emulation_trigger = TriggerType::NoTrigger;
 
+        // Transform order
+        let mut transformed = LimitOrder::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.order_side(),
+            order.quantity(),
+            order.price().unwrap(),
+            order.time_in_force(),
+            order.expire_time(),
+            order.is_post_only(),
+            order.is_reduce_only(),
+            order.is_quote_quantity(),
+            order.display_qty(),
+            Some(emulation_trigger),
+            Some(trigger_instrument_id),
+            order.contingency_type(),
+            order.order_list_id(),
+            order.linked_order_ids(),
+            order.parent_order_id(),
+            order.exec_algorithm_id(),
+            order.exec_algorithm_params(),
+            order.exec_spawn_id(),
+            order.tags(),
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        transformed.liquidity_side = order.liquidity_side();
+        let triggered_price = order.trigger_price();
+        // if triggered_price.is_some() {
+        //     transformed.set_triggered_price_c(triggered_price.unwrap());
+        // }
+
+        let original_events = order.events();
+
+        for event in original_events {
+            transformed.events.insert(0, event.clone());
+        }
+        //
+
         // TODO
         // cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
     }
 
     fn fill_market_order(&mut self, order: &OrderAny) {
         // Fetch command
-        let command = match self
+        let mut command = match self
             .manager
             .borrow_mut()
             .pop_submit_order_command(order.client_order_id())
@@ -997,67 +1038,201 @@ impl OrderEmulatorState {
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
 
-        if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-            matching_core
-                .delete_order(&PassiveOrderAny::from(order.clone()))
-                .unwrap();
-        }
+        let matching_core = self.matching_cores.get_mut(&trigger_instrument_id);
+        // TODO: fix borrowing issue
+        // if let Some(matching_core) = matching_core {
+        //     matching_core
+        //         .delete_order(&PassiveOrderAny::from(order.clone()))
+        //         .unwrap();
+        // }
 
         let emulation_trigger = TriggerType::NoTrigger;
 
-        // TODO
-        // cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
+        // Transform order
+        let mut transformed = MarketOrder::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.order_side(),
+            order.quantity(),
+            order.time_in_force(),
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+            order.is_reduce_only(),
+            order.is_quote_quantity(),
+            order.contingency_type(),
+            order.order_list_id(),
+            order.linked_order_ids(),
+            order.parent_order_id(),
+            order.exec_algorithm_id(),
+            order.exec_algorithm_params(),
+            order.exec_spawn_id(),
+            order.tags(),
+        );
+
+        let original_events = order.events();
+
+        for event in original_events {
+            transformed.events.insert(0, event.clone());
+        }
+        //
+
+        if let Err(e) = self.cache.borrow_mut().add_order(
+            OrderAny::Market(transformed.clone()),
+            command.position_id,
+            Some(command.client_id),
+            true,
+        ) {
+            log::error!("Failed to add order: {}", e);
+        }
+
+        // Replace commands order with transformed order
+        command.order = OrderAny::Market(transformed.clone());
+
+        self.msgbus.borrow().publish(
+            &format!("events.order.{}", order.strategy_id()).into(),
+            transformed.last_event(),
+        );
+
+        // Determine triggered price
+        // TODO: fix unwraps
+        let released_price = match order.order_side() {
+            OrderSide::Buy => matching_core.unwrap().ask,
+            OrderSide::Sell => matching_core.unwrap().bid,
+            _ => panic!("invalid `OrderSide`"),
+        };
+
+        // Generate event
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderReleased::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            released_price.unwrap(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        );
+
+        if let Err(e) = transformed.apply(OrderEventAny::Released(event)) {
+            log::error!("Failed to apply order event: {}", e);
+        }
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .update_order(&OrderAny::Market(transformed))
+        {
+            log::error!("Failed to update order: {}", e);
+        }
+        self.manager
+            .borrow()
+            .send_risk_event(OrderEventAny::Released(event));
+
+        log::info!("Releasing order {}", order.client_order_id());
+
+        // Publish event
+        self.msgbus.borrow().publish(
+            &format!("events.order.{}", order.strategy_id()).into(),
+            &OrderEventAny::Released(event),
+        );
+
+        if order.exec_algorithm_id().is_some() {
+            self.manager
+                .borrow()
+                .send_algo_command(command, order.exec_algorithm_id().unwrap());
+        } else {
+            self.manager
+                .borrow()
+                .send_exec_command(TradingCommand::SubmitOrder(command));
+        }
     }
 
     fn update_trailing_stop_order(
         &self,
         matching_core: &mut OrderMatchingCore,
-        order: &PassiveOrderAny,
+        order: &mut OrderAny,
     ) {
-        // let mut bid = None;
-        // let mut ask = None;
-        // let mut last = None;
+        let mut bid = None;
+        let mut ask = None;
+        let mut last = None;
 
-        // if matching_core.is_bid_initialized {
-        //     bid = matching_core.bid;
-        // }
-        // if matching_core.is_ask_initialized {
-        //     ask = matching_core.ask;
-        // }
-        // if matching_core.is_last_initialized {
-        //     last = matching_core.last;
-        // }
+        if matching_core.is_bid_initialized {
+            bid = matching_core.bid;
+        }
+        if matching_core.is_ask_initialized {
+            ask = matching_core.ask;
+        }
+        if matching_core.is_last_initialized {
+            last = matching_core.last;
+        }
 
-        // let quote_tick = self
-        //     .cache
-        //     .borrow()
-        //     .quote(&matching_core.instrument_id)
-        //     .cloned();
-        // let trade_tick = self
-        //     .cache
-        //     .borrow()
-        //     .trade(&matching_core.instrument_id)
-        //     .cloned();
+        let quote_tick = self
+            .cache
+            .borrow()
+            .quote(&matching_core.instrument_id)
+            .copied();
+        let trade_tick = self
+            .cache
+            .borrow()
+            .trade(&matching_core.instrument_id)
+            .copied();
 
-        // if bid.is_none() && quote_tick.is_some() {
-        //     bid = Some(quote_tick.unwrap().bid_price);
-        // }
-        // if ask.is_none() && quote_tick.is_some() {
-        //     ask = Some(quote_tick.unwrap().ask_price);
-        // }
-        // if last.is_none() && trade_tick.is_some() {
-        //     last = Some(trade_tick.unwrap().price);
-        // }
+        if bid.is_none() && quote_tick.is_some() {
+            bid = Some(quote_tick.unwrap().bid_price);
+        }
+        if ask.is_none() && quote_tick.is_some() {
+            ask = Some(quote_tick.unwrap().ask_price);
+        }
+        if last.is_none() && trade_tick.is_some() {
+            last = Some(trade_tick.unwrap().price);
+        }
 
-        // TODO:
+        let (new_trigger_price, new_price) = if let Ok((new_trigger_price, new_price)) =
+            trailing_stop_calculate(matching_core.price_increment, order, bid, ask, last)
+        {
+            (new_trigger_price, new_price)
+        } else {
+            log::warn!("Cannot calculate trailing stop order");
+            return;
+        };
 
-        // TODO
-        // let output = Trail::calculate(
-        //     price_increment: matching_core.price_increment,
-        //     order: order,
-        //     bid: bid,
-        //     ask: ask,
-        //     last: last,
-        // );
+        let (new_trigger_price, new_price) = match (new_trigger_price, new_price) {
+            (None, None) => return, // No updates
+            _ => (new_trigger_price, new_price),
+        };
+
+        // Generate event
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.quantity(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+            new_price,
+            new_trigger_price,
+        );
+
+        if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
+            log::error!("Failed to apply order event: {}", e);
+        }
+        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+            log::error!("Failed to update order: {}", e);
+        }
+
+        self.manager
+            .borrow()
+            .send_risk_event(OrderEventAny::Updated(event));
     }
 }
+
+// TODO: check flow, compare with others. fix clones.
