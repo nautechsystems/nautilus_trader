@@ -43,8 +43,8 @@ The Cache is a central in-memory database, that automatically stores and manages
 
 ## [Message Bus](message_bus.md)
 
-The heart of the communication channels between components, providing decoupled messaging patterns such as
-point-to-point, publish/subscribe and request/response.
+The core communication system enabling decoupled messaging patterns between components, including
+point-to-point, publish/subscribe, and request/response.
 
 ## [Logging](logging.md)
 

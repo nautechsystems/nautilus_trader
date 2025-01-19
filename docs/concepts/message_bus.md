@@ -1,9 +1,16 @@
 # Message Bus
 
-The `MessageBus` is a fundamental part of the platform, facilitating communicate between
-various system components through message passing. This approach enables a loosely coupled architecture,
-where components can interact without strong dependencies. Messages exchanged via the message bus
-can be categorized into three distinct types:
+The `MessageBus` is a fundamental part of the platform, enabling communication between system components
+through message passing. This design creates a loosely coupled architecture where components can interact
+without direct dependencies.
+
+The messaging patterns include:
+
+- point-to-point
+- publish/subscribe
+- request/response
+
+Messages exchanged via the message bus fall into three categories:
 
 - Data
 - Events
@@ -11,8 +18,8 @@ can be categorized into three distinct types:
 
 ## Data and signal publishing
 
-The message bus is a lower-level component, which users typically interact with indirectly.
-`Actor` and `Strategy` classes provide two convenience methods built on top of the underlying `MessageBus`:
+While the `MessageBus` is a lower-level component that users typically interact with indirectly,
+`Actor` and `Strategy` classes provide convenient methods built on top of it:
 
 ```python
 def publish_data(self, data_type: DataType, data: Data) -> None:
@@ -44,8 +51,7 @@ The minimum supported Redis version is 6.2 (required for [streams](https://redis
 :::
 
 Under the hood, when a backing database (or any other compatible technology) is configured,
-all outgoing messages are first serialized. These serialized messages are then transmitted via a
-Multiple-Producer Single-Consumer (MPSC) channel to a separate thread, which is implemented in Rust.
+all outgoing messages are first serialized, then transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a separate thread (implemented in Rust).
 In this separate thread, the message is written to its final destination, which is presently Redis streams.
 
 This design is primarily driven by performance considerations. By offloading the I/O operations to a separate thread,
@@ -54,8 +60,12 @@ time-consuming operations involved in interacting with a database or client.
 
 ### Serialization
 
-Most Nautilus built-in objects are serializable, dictionaries `dict[str, Any]` containing serializable primitives, as well as primitive types themselves such as `str`, `int`, `float`, `bool` and `bytes`.
-Additional custom types can be registered by calling the following registration function from the `serialization` subpackage:
+Nautilus supports serialization for:
+
+- All Nautilus built-in types (serialized as dictionaries `dict[str, Any]` containing serializable primitives).
+- Python primitive types (`str`, `int`, `float`, `bool`, `bytes`).
+
+You can add serialization support for custom types by registering them through the `serialization` subpackage.
 
 ```python
 def register_serializable_type(
