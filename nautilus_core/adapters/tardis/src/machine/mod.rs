@@ -227,7 +227,7 @@ async fn heartbeat(
 
         while count > 0 {
             retry_interval.tick().await;
-            let _ = sender.send(tungstenite::Message::Ping(vec![])).await;
+            let _ = sender.send(tungstenite::Message::Ping(vec![].into())).await;
             count -= 1;
         }
     }
