@@ -116,6 +116,19 @@ pub fn market_order_fill(
     )
 }
 
+#[fixture]
+pub fn orderbook_delta_sell(instrument_eth_usdt: InstrumentAny) -> OrderBookDelta {
+    OrderBookDelta::new(
+        instrument_eth_usdt.id(),
+        BookAction::Add,
+        BookOrder::new(OrderSide::Sell, Price::from("1500.00"), Quantity::from("1"), 0),
+        0,
+        0,
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+    )
+}
+
 // Market sell order
 #[fixture]
 pub fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
@@ -754,6 +767,7 @@ fn test_matching_core_bid_ask_initialized(
 #[rstest]
 fn test_matching_engine_not_enough_quantity_filled_fok_order(
     instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
     order_event_handler: ShareableMessageHandler,
     mut msgbus: MessageBus,
     account_id: AccountId,
@@ -771,20 +785,6 @@ fn test_matching_engine_not_enough_quantity_filled_fok_order(
         None,
     );
 
-    let orderbook_delta_sell = OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
-            1,
-        ),
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
-    );
     // create FOK market order with quantity 2 which wont be enough to fill the order
     let mut market_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
@@ -896,6 +896,7 @@ fn test_matching_engine_valid_market_buy(
 #[rstest]
 fn test_process_limit_post_only_order_that_would_be_a_taker(
     instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -915,21 +916,6 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
         None,
     );
 
-    // add liquidity to the orderbook
-    let orderbook_delta_sell = OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
-            1,
-        ),
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
-    );
     // Create a post-only limit buy order with price above 1500.00
     // that would match the existing sell order and be a taker
     let mut post_only_limit_order = OrderTestBuilder::new(OrderType::Limit)
@@ -962,6 +948,7 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
 #[rstest]
 fn test_process_limit_order_not_matched_and_canceled_fok_order(
     instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -979,22 +966,6 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
         None,
         None,
         None,
-    );
-
-    // add liquidity to the orderbook
-    let orderbook_delta_sell = OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
-            1,
-        ),
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
     );
 
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -1031,6 +1002,7 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
 #[rstest]
 fn test_process_limit_order_matched_immediate_fill(
     instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1050,21 +1022,6 @@ fn test_process_limit_order_matched_immediate_fill(
         None,
     );
 
-    // add liquidity to the orderbook
-    let orderbook_delta_sell = OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
-            1,
-        ),
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
-    );
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
