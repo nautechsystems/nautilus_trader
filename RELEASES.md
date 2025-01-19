@@ -26,6 +26,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
 - Fixed live reconciliation of generated order fills to use the `venue_position_id` (when provided)
+- Fixed `InstrumentProvider` initialization behavior when `reload` flag `True`, thanks @ryantam626
 
 ### Documentation Updates
 None
