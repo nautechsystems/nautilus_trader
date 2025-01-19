@@ -148,8 +148,8 @@ impl WebSocketClientInner {
                     sleep(duration).await;
                     let mut guard = writer.lock().await;
                     let guard_send_response = match message.clone() {
-                        Some(msg) => guard.send(Message::Text(msg)).await,
-                        None => guard.send(Message::Ping(vec![])).await,
+                        Some(msg) => guard.send(Message::Text(msg.into())).await,
+                        None => guard.send(Message::Ping(vec![].into())).await,
                     };
                     match guard_send_response {
                         Ok(()) => tracing::trace!("Sent ping"),
@@ -191,8 +191,7 @@ impl WebSocketClientInner {
                         continue;
                     }
                     Some(Ok(Message::Ping(ping))) => {
-                        let payload = String::from_utf8(ping.clone()).expect("Invalid payload");
-                        tracing::trace!("Received ping: {payload}",);
+                        tracing::trace!("Received ping: {ping:?}",);
                         if let Some(ref handler) = ping_handler {
                             if let Err(e) = Python::with_gil(|py| {
                                 handler.call1(py, (PyBytes::new_bound(py, &ping),))
@@ -459,13 +458,13 @@ impl WebSocketClient {
     pub async fn send_text(&self, data: String) -> Result<(), Error> {
         tracing::trace!("Sending text: {data:?}");
         let mut guard = self.writer.lock().await;
-        guard.send(Message::Text(data)).await
+        guard.send(Message::Text(data.into())).await
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
-        guard.send(Message::Binary(data)).await
+        guard.send(Message::Binary(data.into())).await
     }
 
     pub async fn send_close_message(&self) {

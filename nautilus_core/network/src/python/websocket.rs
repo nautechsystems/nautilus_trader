@@ -18,7 +18,7 @@ use std::sync::{atomic::Ordering, Arc};
 use futures::SinkExt;
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
     ratelimiter::quota::Quota,
@@ -144,7 +144,7 @@ impl WebSocketClient {
 
             let mut guard = writer.lock().await;
             guard
-                .send(Message::Binary(data))
+                .send(Message::Binary(data.into()))
                 .await
                 .map_err(to_websocket_pyerr)
         })
@@ -171,7 +171,8 @@ impl WebSocketClient {
         py: Python<'py>,
         keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
+        let data_str = String::from_utf8(data).map_err(to_pyvalue_err)?;
+        let data = Utf8Bytes::from(data_str);
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
 
@@ -205,7 +206,7 @@ impl WebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
-                .send(Message::Pong(data))
+                .send(Message::Pong(data.into()))
                 .await
                 .map_err(to_websocket_pyerr)
         })
