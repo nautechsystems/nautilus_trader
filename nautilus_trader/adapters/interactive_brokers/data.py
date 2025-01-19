@@ -29,6 +29,7 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.data import DataList
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
@@ -120,8 +121,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         # Load instruments based on config
         await self.instrument_provider.initialize()
-        for instrument in self._instrument_provider.list_all():
-            self._handle_data(instrument)
+        instruments = self._instrument_provider.list_all()
+        self._handle_data(DataList(instruments))
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.remove(self.id)

@@ -91,6 +91,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.core.data import DataList
 
 
 cdef class DataEngine(Component):
@@ -1775,6 +1776,9 @@ cdef class DataEngine(Component):
             self._handle_close_price(data)
         elif isinstance(data, CustomData):
             self._handle_custom_data(data)
+        elif isinstance(data, DataList):
+            for data_element in data.data:
+                self._handle_data(data_element)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}")
 

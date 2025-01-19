@@ -38,6 +38,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.data import DataList
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
@@ -121,8 +122,7 @@ class BetfairDataClient(LiveMarketDataClient):
             await self._instrument_provider.load_all_async()
         instruments = self._instrument_provider.list_all()
         self._log.debug(f"Loading {len(instruments)} instruments from provider into cache")
-        for instrument in instruments:
-            self._handle_data(instrument)
+        self._handle_data(DataList(instruments))
 
         self._log.debug(
             f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments",
@@ -256,8 +256,8 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Skipping subscribe_trade_ticks, Betfair subscribes as part of orderbook")
 
     async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
-        for instrument in self._instrument_provider.list_all():
-            self._handle_data(instrument)
+        instruments = self._instrument_provider.list_all()
+        self._handle_data(DataList(instruments))
 
     async def _subscribe_instrument_status(
         self,

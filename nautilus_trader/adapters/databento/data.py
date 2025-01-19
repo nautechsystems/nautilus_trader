@@ -38,6 +38,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import DataList
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
@@ -300,8 +301,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.info(f"Started {dataset} live feed", LogColor.BLUE)
 
     def _send_all_instruments_to_data_engine(self) -> None:
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_data(instrument)
+        instruments = self._instrument_provider.get_all().values()
+        self._handle_data(DataList(instruments))
 
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
         try:

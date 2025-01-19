@@ -89,3 +89,16 @@ cdef class Data:
             return cls.__name__.startswith("Signal")
 
         return cls.__name__ == f"Signal{name.title()}"
+
+
+cdef class DataList(Data):
+    def __init__(self, list data):
+        self.data = data
+
+    @property
+    def ts_event(self) -> int:
+        return 0
+
+    @property
+    def ts_init(self) -> int:
+        return 0
