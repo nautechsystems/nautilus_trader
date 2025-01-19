@@ -789,8 +789,35 @@ impl OrderMatchingEngine {
         todo!("process_market_to_limit_order")
     }
 
-    fn process_stop_market_order(&mut self, order: &OrderAny) {
-        todo!("process_stop_market_order")
+    fn process_stop_market_order(&mut self, order: &mut OrderAny) {
+        if self
+            .core
+            .is_stop_matched(&StopOrderAny::from(order.to_owned()))
+        {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order stop px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+            self.fill_market_order(order);
+            return;
+        }
+
+        // order is not matched but is valid and we accept it
+        self.accept_order(order);
     }
 
     fn process_stop_limit_order(&mut self, order: &OrderAny) {
@@ -991,14 +1018,10 @@ impl OrderMatchingEngine {
 
     fn determine_market_price_and_volume(&self, order: &OrderAny) -> Vec<(Price, Quantity)> {
         // construct price
-        let price = if order.is_aggressive() {
-            match order.order_side() {
-                OrderSide::Buy => Price::new(PRICE_MAX, 9),
-                OrderSide::Sell => Price::new(PRICE_MIN, 9),
-                _ => panic!("Invalid order side"),
-            }
-        } else {
-            order.price().expect("Price must be set for passive order")
+        let price = match order.order_side() {
+            OrderSide::Buy => Price::new(PRICE_MAX, 9),
+            OrderSide::Sell => Price::new(PRICE_MIN, 9),
+            _ => panic!("Invalid order side"),
         };
 
         // Construct BookOrder from order
