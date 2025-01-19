@@ -51,7 +51,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
 cython = "==3.1.0a1"  # Build dependency (pinned for stability)
-numpy = ">=1.26.4,<2.2.1"  # Build dependency (unable to find 2.2.1 installation candidate?)
+numpy = ">=1.26.4"  # Build dependency
 setuptools = ">=75" # Build dependency
 click = "^8.1.8"
 fsspec = "^2024.12.0"
@@ -62,7 +62,7 @@ pytz = ">=2024.2.0"
 tqdm = "^4.67.1"
 uvloop = {version = "^0.21.0", markers = "sys_platform != 'win32'"}
 
-betfair_parser = {version = "==0.13.0", optional = true}  # Pinned for stability
+betfair_parser = {version = "==0.14.1", optional = true}  # Pinned for stability
 defusedxml = {version = "^0.7.1", optional = true}
 docker = {version = "^7.1.0", optional = true}
 nautilus_ibapi = {version = "==10.19.4", optional = true}  # Pinned for stability
@@ -117,9 +117,9 @@ optional = true
 [tool.poetry.group.docs.dependencies]
 numpydoc = "^1.8.0"
 linkify-it-py = "^2.0.3"
-myst-parser = "^3.0.1"
+myst-parser = "^4.0.0"
 sphinx_comments = "^0.0.3"
-sphinx_markdown_builder = "^0.6.6"
+sphinx_markdown_builder = "^0.6.8"
 
 [tool.isort]  # Used by legacy isort for Cython modules
 py_version = "311"
