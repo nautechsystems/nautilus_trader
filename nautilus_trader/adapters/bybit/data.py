@@ -43,6 +43,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.data import DataList
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -242,8 +243,9 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.disconnect()
 
     def _send_all_instruments_to_data_engine(self) -> None:
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_data(instrument)
+        instruments = self._instrument_provider.get_all().values()
+        ts_init = self._clock.timestamp()
+        self._handle_data(DataList(instruments, ts_init, ts_init))
 
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)

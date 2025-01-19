@@ -15,6 +15,8 @@
 
 import cython
 
+from nautilus_trader.serialization.base import register_serializable_type
+
 
 @cython.auto_pickle(False)
 cdef class Data:
@@ -89,3 +91,27 @@ cdef class Data:
             return cls.__name__.startswith("Signal")
 
         return cls.__name__ == f"Signal{name.title()}"
+
+
+cdef class DataList(Data):
+    def __init__(self, list data = None, ts_event: int = 0, ts_init: int = 0):
+        self.data = data
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def to_dict(self):
+        return {"data": self.data, "ts_event": self._ts_event, "ts_init": self._ts_init}
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return cls(**data)
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+register_serializable_type(DataList, DataList.to_dict, DataList.from_dict)

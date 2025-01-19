@@ -16,3 +16,7 @@
 
 cdef class Data:
     pass
+
+
+cdef class DataList(Data):
+    cdef public list data
