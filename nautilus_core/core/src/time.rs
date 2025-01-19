@@ -26,12 +26,12 @@
 //!   While this guarantees that every new timestamp is at least one nanosecond greater than the
 //!   last, it may introduce higher contention if many threads call it heavily.
 //!
-//! - **Static mode:** The clock is manually controlled via [`set_time`] or [`increment_time`],
+//! - **Static mode:** The clock is manually controlled via [`AtomicTime::set_time`] or [`AtomicTime::increment_time`],
 //!   which can be useful for simulations or backtesting. You can switch modes at runtime using
-//!   [`make_realtime`] or [`make_static`]. In static mode, we use acquire/release semantics so
-//!   that updates from one thread can be observed by another; however, we do not enforce strict
-//!   global ordering for manual updates. If you need strong, multi-threaded ordering in static
-//!   mode, you must coordinate higher-level synchronization yourself.
+//!   [`AtomicTime::make_realtime`] or [`AtomicTime::make_static`]. In **static mode**, we use
+//!   acquire/release semantics so that updates from one thread can be observed by another;
+//!   however, we do not enforce strict global ordering for manual updates. If you need strong,
+//!   multi-threaded ordering in **static mode**, you must coordinate higher-level synchronization yourself.
 
 use std::{
     ops::Deref,
@@ -47,30 +47,30 @@ use crate::{
     UnixNanos,
 };
 
-/// Global atomic time in real-time mode for use across the system.
+/// Global atomic time in **real-time mode** for use across the system.
 ///
-/// This clock operates in **real-time** mode, synchronizing with the system clock.
+/// This clock operates in **real-time mode**, synchronizing with the system clock.
 /// It provides globally unique, strictly increasing timestamps across threads.
 pub static ATOMIC_CLOCK_REALTIME: OnceLock<AtomicTime> = OnceLock::new();
 
-/// Global atomic time in static mode for use across the system.
+/// Global atomic time in **static mode** for use across the system.
 ///
-/// This clock operates in **static** mode, where the time value can be set or incremented
+/// This clock operates in **static mode**, where the time value can be set or incremented
 /// manually. Useful for backtesting or simulated time control.
 pub static ATOMIC_CLOCK_STATIC: OnceLock<AtomicTime> = OnceLock::new();
 
-/// Returns a static reference to the global atomic clock in real-time mode.
+/// Returns a static reference to the global atomic clock in **real-time mode**.
 ///
-/// This clock uses [`time_since_epoch`] under the hood, ensuring strictly increasing
+/// This clock uses [`AtomicTime::time_since_epoch`] under the hood, ensuring strictly increasing
 /// timestamps across threads.
 pub fn get_atomic_clock_realtime() -> &'static AtomicTime {
     ATOMIC_CLOCK_REALTIME.get_or_init(AtomicTime::default)
 }
 
-/// Returns a static reference to the global atomic clock in static mode.
+/// Returns a static reference to the global atomic clock in **static mode**.
 ///
-/// This clock allows manual time control via [`set_time`] or [`increment_time`], and does not
-/// automatically sync with system time.
+/// This clock allows manual time control via [`AtomicTime::set_time`] or [`AtomicTime::increment_time`],
+/// and does not automatically sync with system time.
 pub fn get_atomic_clock_static() -> &'static AtomicTime {
     ATOMIC_CLOCK_STATIC.get_or_init(|| AtomicTime::new(false, UnixNanos::default()))
 }
@@ -101,15 +101,15 @@ pub fn nanos_since_unix_epoch() -> u64 {
 ///
 /// The `realtime` flag indicates which mode the clock is currently in.
 /// For concurrency, this struct uses atomic operations with appropriate memory orderings:
-/// - **Acquire/Release** for reading/writing in static mode,
+/// - **Acquire/Release** for reading/writing in **static mode**,
 /// - **Compare-and-exchange (AcqRel)** in real-time mode to guarantee monotonic increments.
 #[repr(C)]
 #[derive(Debug)]
 pub struct AtomicTime {
-    /// Indicates whether the clock is operating in real-time mode (`true`) or static mode (`false`)
+    /// Indicates whether the clock is operating in **real-time mode** (`true`) or **static mode** (`false`)
     pub realtime: AtomicBool,
     /// The last recorded time (in UNIX nanoseconds). Updated atomically with compare-and-exchange
-    /// in real-time mode, or simple store/fetch in static mode.
+    /// in **real-time mode**, or simple store/fetch in **static mode**.
     pub timestamp_ns: AtomicU64,
 }
 
@@ -132,7 +132,7 @@ impl AtomicTime {
     /// Creates a new [`AtomicTime`] instance.
     ///
     /// - If `realtime` is `true`, the provided `time` is used only as an initial placeholder
-    ///   and will quickly be overridden by calls to [`time_since_epoch`].
+    ///   and will quickly be overridden by calls to [`AtomicTime::time_since_epoch`].
     /// - If `realtime` is `false`, this clock starts in **static** mode, with the given `time`
     ///   as its current value.
     #[must_use]
@@ -145,10 +145,11 @@ impl AtomicTime {
 
     /// Returns the current time in nanoseconds, based on the clock’s mode.
     ///
-    /// - In **real-time mode**, calls [`time_since_epoch`], ensuring strictly increasing
+    /// - In **real-time mode**, calls [`AtomicTime::time_since_epoch`], ensuring strictly increasing
     ///   timestamps across threads, using AcqRel semantics for the underlying atomic.
     /// - In **static mode**, reads the stored time using [`Ordering::Acquire`]. Updates by other
-    ///   threads using [`set_time`] or [`increment_time`] (Release/AcqRel) will be visible here.
+    ///   threads using [`AtomicTime::set_time`] or [`AtomicTime::increment_time`] (Release/AcqRel)
+    ///   will be visible here.
     #[must_use]
     pub fn get_time_ns(&self) -> UnixNanos {
         match self.realtime.load(Ordering::Acquire) {
@@ -175,27 +176,27 @@ impl AtomicTime {
         self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
 
-    /// Manually sets a new time for the clock (only meaningful in static mode).
+    /// Manually sets a new time for the clock (only meaningful in **static mode**).
     ///
     /// This uses an atomic store with [`Ordering::Release`], so any thread reading with
     /// [`Ordering::Acquire`] will see the updated time. This does *not* enforce a total ordering
     /// among all threads, but is enough to ensure that once a thread sees this update, it also
     /// sees all writes made before this call in the writing thread.
     ///
-    /// Typically used in single-threaded scenarios or coordinated concurrency in static mode,
+    /// Typically used in single-threaded scenarios or coordinated concurrency in **static mode**,
     /// since there’s no global ordering across threads.
     pub fn set_time(&self, time: UnixNanos) {
         self.store(time.into(), Ordering::Release);
     }
 
     /// Increments the current time by `delta` nanoseconds and returns the *updated* value
-    /// (only meaningful in static mode).
+    /// (only meaningful in **static mode**).
     ///
-    /// Uses [`fetch_add`] with [`Ordering::AcqRel`], ensuring that:
+    /// Uses `fetch_add` with [`Ordering::AcqRel`], ensuring that:
     /// - The increment is atomic (no lost updates if multiple threads do increments).
     /// - Other threads reading with [`Ordering::Acquire`] will see the incremented result.
     ///
-    /// Typically used in single-threaded scenarios or coordinated concurrency in static mode,
+    /// Typically used in single-threaded scenarios or coordinated concurrency in **static mode**,
     /// since there’s no global ordering across threads.
     pub fn increment_time(&self, delta: u64) -> UnixNanos {
         UnixNanos::from(self.fetch_add(delta, Ordering::AcqRel) + delta)
@@ -237,7 +238,7 @@ impl AtomicTime {
         }
     }
 
-    /// Switches the clock to real-time mode (`realtime = true`).
+    /// Switches the clock to **real-time mode** (`realtime = true`).
     ///
     /// Uses [`Ordering::SeqCst`] for the mode store, which ensures a global ordering for the
     /// mode switch if other threads also do `SeqCst` loads/stores of `realtime`.
@@ -247,7 +248,7 @@ impl AtomicTime {
         self.realtime.store(true, Ordering::SeqCst);
     }
 
-    /// Switches the clock to static mode (`realtime = false`).
+    /// Switches the clock to **static mode** (`realtime = false`).
     ///
     /// Uses [`Ordering::SeqCst`] for the mode store, which ensures a global ordering for the
     /// mode switch if other threads also do `SeqCst` loads/stores of `realtime`.
