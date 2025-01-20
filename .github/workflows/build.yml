@@ -512,8 +512,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     # Pause macOS jobs on develop branch for now (they take 1-1.5 hrs again)
     if: >
-      !( (github.event_name == 'push' and github.ref_name == 'develop')
-      or (github.event_name == 'pull_request' and github.base_ref == 'develop') )
+      !( (github.event_name == 'push' && github.ref_name == 'develop')
+      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs: [pre-commit]
     env:
       BUILD_MODE: release
