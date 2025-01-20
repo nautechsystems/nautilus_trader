@@ -40,8 +40,8 @@ use nautilus_model::{
     data::{order::BookOrder, Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, ContingencyType,
-        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus,
-        OrderType, PriceType, TimeInForce,
+        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderSideSpecified,
+        OrderStatus, OrderType, PriceType, TimeInForce,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
@@ -58,10 +58,7 @@ use nautilus_model::{
         TrailingStopMarketOrder,
     },
     position::Position,
-    types::{
-        price::{PRICE_MAX, PRICE_MIN},
-        Currency, Money, Price, Quantity,
-    },
+    types::{fixed::FIXED_PRECISION, Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;
 
@@ -778,9 +775,7 @@ impl OrderMatchingEngine {
                 order.set_liquidity_side(LiquiditySide::Taker);
             }
             self.fill_limit_order(order);
-        } else if order.time_in_force() == TimeInForce::Fok
-            || order.time_in_force() == TimeInForce::Ioc
-        {
+        } else if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
             self.cancel_order(order, None);
         }
     }
@@ -965,48 +960,49 @@ impl OrderMatchingEngine {
                     .liquidity_side()
                     .is_some_and(|liquidity_side| liquidity_side == LiquiditySide::Maker)
                 {
-                    if order.order_side() == OrderSide::Buy {
-                        let target_price = if order
-                            .trigger_price()
-                            .is_some_and(|trigger_price| order_price > trigger_price)
-                        {
-                            order.trigger_price().unwrap()
-                        } else {
-                            order_price
-                        };
-                        for fill in &fills {
-                            let last_px = fill.0;
-                            if last_px < order_price {
-                                // Marketable SELL would have filled at limit
-                                self.target_bid = self.core.bid;
-                                self.target_ask = self.core.ask;
-                                self.target_last = self.core.last;
-                                self.core.set_ask_raw(target_price);
-                                self.core.set_last_raw(target_price);
+                    match order.order_side().as_specified() {
+                        OrderSideSpecified::Buy => {
+                            let target_price = if order
+                                .trigger_price()
+                                .is_some_and(|trigger_price| order_price > trigger_price)
+                            {
+                                order.trigger_price().unwrap()
+                            } else {
+                                order_price
+                            };
+                            for fill in &fills {
+                                let last_px = fill.0;
+                                if last_px < order_price {
+                                    // Marketable SELL would have filled at limit
+                                    self.target_bid = self.core.bid;
+                                    self.target_ask = self.core.ask;
+                                    self.target_last = self.core.last;
+                                    self.core.set_ask_raw(target_price);
+                                    self.core.set_last_raw(target_price);
+                                }
                             }
                         }
-                    } else if order.order_side() == OrderSide::Sell {
-                        let target_price = if order
-                            .trigger_price()
-                            .is_some_and(|trigger_price| order_price < trigger_price)
-                        {
-                            order.trigger_price().unwrap()
-                        } else {
-                            order_price
-                        };
-                        for fill in &fills {
-                            let last_px = fill.0;
-                            if last_px > order_price {
-                                // Marketable BUY would have filled at limit
-                                self.target_bid = self.core.bid;
-                                self.target_ask = self.core.ask;
-                                self.target_last = self.core.last;
-                                self.core.set_bid_raw(target_price);
-                                self.core.set_last_raw(target_price);
+                        OrderSideSpecified::Sell => {
+                            let target_price = if order
+                                .trigger_price()
+                                .is_some_and(|trigger_price| order_price < trigger_price)
+                            {
+                                order.trigger_price().unwrap()
+                            } else {
+                                order_price
+                            };
+                            for fill in &fills {
+                                let last_px = fill.0;
+                                if last_px > order_price {
+                                    // Marketable BUY would have filled at limit
+                                    self.target_bid = self.core.bid;
+                                    self.target_ask = self.core.ask;
+                                    self.target_last = self.core.last;
+                                    self.core.set_bid_raw(target_price);
+                                    self.core.set_last_raw(target_price);
+                                }
                             }
                         }
-                    } else {
-                        panic!("Invalid order side {}", order.order_side());
                     }
                 }
 
@@ -1018,15 +1014,13 @@ impl OrderMatchingEngine {
 
     fn determine_market_price_and_volume(&self, order: &OrderAny) -> Vec<(Price, Quantity)> {
         // construct price
-        let price = match order.order_side() {
-            OrderSide::Buy => Price::new(PRICE_MAX, 9),
-            OrderSide::Sell => Price::new(PRICE_MIN, 9),
-            _ => panic!("Invalid order side"),
+        let price = match order.order_side().as_specified() {
+            OrderSideSpecified::Buy => Price::max(FIXED_PRECISION),
+            OrderSideSpecified::Sell => Price::min(FIXED_PRECISION),
         };
 
         // Construct BookOrder from order
-        let book_order = BookOrder::new(order.order_side(), price, order.quantity(), 1);
-
+        let book_order = BookOrder::new(order.order_side(), price, order.quantity(), 0);
         self.book.simulate_fills(&book_order)
     }
 
@@ -1206,12 +1200,9 @@ impl OrderMatchingEngine {
             }
 
             if self.book_type == BookType::L1_MBP && self.fill_model.is_slipped() {
-                if order.order_side() == OrderSide::Buy {
-                    fill_px = fill_px.add(self.instrument.price_increment());
-                } else if order.order_side() == OrderSide::Sell {
-                    fill_px = fill_px.sub(self.instrument.price_increment());
-                } else {
-                    panic!("Invalid order side {}", order.order_side())
+                fill_px = match order.order_side().as_specified() {
+                    OrderSideSpecified::Buy => fill_px.add(self.instrument.price_increment()),
+                    OrderSideSpecified::Sell => fill_px.sub(self.instrument.price_increment()),
                 }
             }
 
@@ -1266,9 +1257,10 @@ impl OrderMatchingEngine {
 
         if order.is_open()
             && self.book_type == BookType::L1_MBP
-            && (order.order_type() == OrderType::Market
-                || order.order_type() == OrderType::MarketIfTouched
-                || order.order_type() == OrderType::StopMarket)
+            && matches!(
+                order.order_type(),
+                OrderType::Market | OrderType::MarketIfTouched | OrderType::StopMarket
+            )
         {
             // Exhausted simulated book volume (continue aggressive filling into next level)
             // This is a very basic implementation of slipping by a single tick, in the future
@@ -1352,9 +1344,10 @@ impl OrderMatchingEngine {
             let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
             self.generate_order_accepted(order, venue_order_id);
 
-            if (order.order_type() == OrderType::TrailingStopLimit
-                || order.order_type() == OrderType::TrailingStopMarket)
-                && order.trigger_price().is_none()
+            if matches!(
+                order.order_type(),
+                OrderType::TrailingStopLimit | OrderType::TrailingStopMarket
+            ) && order.trigger_price().is_none()
             {
                 match order.order_type() {
                     OrderType::TrailingStopLimit => self
