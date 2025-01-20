@@ -20,6 +20,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Ported limit order filling for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
 - Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
+- Continued porting `OrderEmulator` to Rust (#2219), thanks @Pushkarm029
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
