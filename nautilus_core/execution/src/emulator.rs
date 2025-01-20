@@ -248,34 +248,10 @@ impl OrderEmulator {
             )?;
 
             // TODO: complete this
-            // self.handle_submit_order(command);
+            self.state.borrow_mut().handle_submit_order(command);
         }
 
         Ok(())
-    }
-
-    pub fn on_event(&mut self, event: OrderEventAny) {
-        log::info!("{RECV}{EVT} {event}");
-
-        self.manager.borrow_mut().handle_event(event.clone());
-
-        if let Some(order) = self.cache.borrow().order(&event.client_order_id()) {
-            if order.is_closed() {
-                if let Some(matching_core) = self
-                    .state
-                    .borrow_mut()
-                    .matching_cores
-                    .get_mut(&order.instrument_id())
-                {
-                    if let Err(e) =
-                        matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
-                    {
-                        log::error!("Error deleting order: {}", e);
-                    }
-                }
-            }
-        } else { // Order not in cache yet
-        }
     }
 
     pub const fn on_stop(&self) {}
@@ -327,84 +303,114 @@ impl OrderEmulator {
     pub fn on_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
         log::debug!("Processing OrderBookDeltas:{}", deltas);
 
-        //     let matching_core = match self.matching_cores.get_mut(&deltas.instrument_id) {
-        //         Some(matching_core) => matching_core,
-        //         None => {
-        //             log::error!(
-        //                 "Cannot handle `OrderBookDeltas`: no matching core for instrument {}",
-        //                 deltas.instrument_id
-        //             );
-        //             return;
-        //         }
-        //     };
+        let mut matching_core = if let Some(matching_core) = self
+            .state
+            .borrow()
+            .matching_cores
+            .get(&deltas.instrument_id)
+        {
+            matching_core.clone()
+        } else {
+            log::error!(
+                "Cannot handle `OrderBookDeltas`: no matching core for instrument {}",
+                deltas.instrument_id
+            );
+            return;
+        };
 
-        //     let borrowed_cache = self.cache.borrow();
-        //     let book = match borrowed_cache.order_book(&deltas.instrument_id) {
-        //         Some(book) => book,
-        //         None => {
-        //             log::error!(
-        //                 "Cannot handle `OrderBookDeltas`: no book being maintained for {}",
-        //                 deltas.instrument_id
-        //             );
-        //             return;
-        //         }
-        //     };
+        let borrowed_cache = self.cache.borrow();
+        let book = if let Some(book) = borrowed_cache.order_book(&deltas.instrument_id) {
+            book
+        } else {
+            log::error!(
+                "Cannot handle `OrderBookDeltas`: no book being maintained for {}",
+                deltas.instrument_id
+            );
+            return;
+        };
 
-        //     let best_bid = book.best_bid_price();
-        //     let best_ask = book.best_ask_price();
+        let best_bid = book.best_bid_price();
+        let best_ask = book.best_ask_price();
 
-        //     if let Some(best_bid) = best_bid {
-        //         matching_core.set_bid_raw(best_bid);
-        //     }
+        if let Some(best_bid) = best_bid {
+            matching_core.set_bid_raw(best_bid);
+        }
 
-        //     if let Some(best_ask) = best_ask {
-        //         matching_core.set_ask_raw(best_ask);
-        //     }
+        if let Some(best_ask) = best_ask {
+            matching_core.set_ask_raw(best_ask);
+        }
 
-        //     self.iterate_orders(matching_core).unwrap();
+        drop(borrowed_cache);
+        self.iterate_orders(&mut matching_core).unwrap();
+
+        // TODO: Check flow
+        self.state
+            .borrow_mut()
+            .matching_cores
+            .insert(deltas.instrument_id, matching_core);
     }
 
     fn on_quote_tick(&mut self, tick: QuoteTick) {
-        //     log::debug!("Processing QuoteTick:{}", tick);
+        log::debug!("Processing QuoteTick:{}", tick);
 
-        //     let matching_core = match self.matching_cores.get_mut(&tick.instrument_id) {
-        //         Some(matching_core) => matching_core,
-        //         None => {
-        //             log::error!(
-        //                 "Cannot handle `QuoteTick`: no matching core for instrument {}",
-        //                 tick.instrument_id
-        //             );
-        //             return;
-        //         }
-        //     };
+        let mut matching_core = if let Some(matching_core) =
+            self.state.borrow().matching_cores.get(&tick.instrument_id)
+        {
+            matching_core.clone()
+        } else {
+            log::error!(
+                "Cannot handle `QuoteTick`: no matching core for instrument {}",
+                tick.instrument_id
+            );
+            return;
+        };
 
-        //     matching_core.set_bid_raw(tick.bid_price);
-        //     matching_core.set_ask_raw(tick.ask_price);
+        matching_core.set_bid_raw(tick.bid_price);
+        matching_core.set_ask_raw(tick.ask_price);
 
-        //     self.iterate_orders(matching_core).unwrap();
+        self.iterate_orders(&mut matching_core).unwrap();
+
+        // TODO: Check flow
+        self.state
+            .borrow_mut()
+            .matching_cores
+            .insert(tick.instrument_id, matching_core);
     }
 
     fn on_trade_tick(&mut self, tick: TradeTick) {
-        //     log::debug!("Processing TradeTick:{}", tick);
+        log::debug!("Processing TradeTick:{}", tick);
 
-        //     let matching_core = match self.matching_cores.get_mut(&tick.instrument_id) {
-        //         Some(matching_core) => matching_core,
-        //         None => {
-        //             log::error!(
-        //                 "Cannot handle `TradeTick`: no matching core for instrument {}",
-        //                 tick.instrument_id
-        //             );
-        //             return;
-        //         }
-        //     };
+        let borrowed_state = self.state.borrow();
+        let mut matching_core =
+            if let Some(matching_core) = borrowed_state.matching_cores.get(&tick.instrument_id) {
+                matching_core.clone()
+            } else {
+                log::error!(
+                    "Cannot handle `TradeTick`: no matching core for instrument {}",
+                    tick.instrument_id
+                );
+                return;
+            };
 
-        //     matching_core.set_last_raw(tick.price);
-        //     if !self.subscribed_quotes.contains(&tick.instrument_id) {
-        //         matching_core.set_bid_raw(tick.price);
-        //         matching_core.set_ask_raw(tick.price);
-        //     }
+        matching_core.set_last_raw(tick.price);
+        if !self
+            .state
+            .borrow()
+            .subscribed_quotes
+            .contains(&tick.instrument_id)
+        {
+            matching_core.set_bid_raw(tick.price);
+            matching_core.set_ask_raw(tick.price);
+        }
 
-        //     self.iterate_orders(matching_core).unwrap();
+        drop(borrowed_state);
+        self.iterate_orders(&mut matching_core).unwrap();
+
+        // TODO: Check flow
+        self.state
+            .borrow_mut()
+            .matching_cores
+            .insert(tick.instrument_id, matching_core);
     }
 
     fn iterate_orders(&mut self, matching_core: &mut OrderMatchingCore) -> Result<()> {
@@ -417,6 +423,7 @@ impl OrderEmulator {
             }
 
             // Manage trailing stop
+            // TODO: fix need matching for PassiveOrderAny
             // if matches!(
             //     order,
             //     OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
@@ -577,7 +584,6 @@ impl OrderEmulatorState {
             .cache_submit_order_command(command);
 
         // Check if immediately marketable
-        // matching_core.match_order(&PassiveOrderAny::from(order), true);
         matching_core.match_order(&PassiveOrderAny::from(order.clone()), true);
 
         // Handle data subscriptions
@@ -672,7 +678,7 @@ impl OrderEmulatorState {
                 }
             }
 
-            // TODO: looks suspicious
+            // TODO: looks sus
             self.manager.borrow_mut().create_new_submit_order(
                 order.clone(),
                 command.position_id,
@@ -882,6 +888,7 @@ impl OrderEmulatorState {
     // TODO: keep it in Outer
     fn check_monitoring(&mut self, strategy_id: StrategyId, position_id: PositionId) {
         // todo: fix: add handler
+        // instead add this while initializing, or create a new function or struct
         if !self.subscribed_strategies.contains(&strategy_id) {
             // Subscribe to all strategy events
             // self.msgbus.borrow().subscribe(
@@ -906,23 +913,30 @@ impl OrderEmulatorState {
         }
     }
 
-    // TODO: remove this: keep it in Outer
+    pub fn on_event(&mut self, event: OrderEventAny) {
+        log::info!("{RECV}{EVT} {event}");
+
+        self.manager.borrow_mut().handle_event(event.clone());
+
+        if let Some(order) = self.cache.borrow().order(&event.client_order_id()) {
+            if order.is_closed() {
+                if let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id()) {
+                    if let Err(e) =
+                        matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+                    {
+                        log::error!("Error deleting order: {}", e);
+                    }
+                }
+            }
+        } else { // Order not in cache yet
+        }
+    }
+
     pub fn create_matching_core(
         &mut self,
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        // TODO: need _trigger_stop_order, _fill_market_order, _fill_limit_order in inner
-
-        // fn trigger_stop_order_handler(order: &StopOrderAny) {
-        //     let order = order;
-        //     TRIGGERED_STOPS.lock().unwrap().push(order.clone());
-        // }
-        // fn trigger_stop_order(order: &StopOrderAny) {
-        //     let order = order;
-        // }
-
-        // currently, not able to pass clock, manager to fill_market_order, which is necessary
         let matching_core = OrderMatchingCore::new(
             instrument_id,
             price_increment,
@@ -930,10 +944,10 @@ impl OrderEmulatorState {
             None, // TBD (will be a function on the engine)
             None, // TBD (will be a function on the engine)
         );
-        // self.matching_cores.insert(instrument_id, matching_core);
+        self.matching_cores
+            .insert(instrument_id, matching_core.clone());
         log::info!("Creating matching core for {:?}", instrument_id);
-        // matching_core
-        todo!()
+        matching_core
     }
 
     fn trigger_stop_order(&mut self, order: &OrderAny) {
@@ -955,7 +969,7 @@ impl OrderEmulatorState {
         }
 
         // Fetch command
-        let command = match self
+        let mut command = match self
             .manager
             .borrow_mut()
             .pop_submit_order_command(order.client_order_id())
@@ -968,11 +982,11 @@ impl OrderEmulatorState {
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
         let matching_core = self.matching_cores.get_mut(&trigger_instrument_id);
-        if let Some(matching_core) = matching_core {
-            matching_core
-                .delete_order(&PassiveOrderAny::from(order.clone()))
-                .unwrap();
-        }
+        // if let Some(matching_core) = matching_core {
+        //     matching_core
+        //         .delete_order(&PassiveOrderAny::from(order.clone()))
+        //         .unwrap();
+        // }
 
         let emulation_trigger = TriggerType::NoTrigger;
 
@@ -1007,9 +1021,9 @@ impl OrderEmulatorState {
         .unwrap();
 
         transformed.liquidity_side = order.liquidity_side();
-        let triggered_price = order.trigger_price();
+        // let triggered_price = order.trigger_price();
         // if triggered_price.is_some() {
-        //     transformed.set_triggered_price_c(triggered_price.unwrap());
+        //     transformed.trigger_price() = (triggered_price.unwrap());
         // }
 
         let original_events = order.events();
@@ -1019,8 +1033,75 @@ impl OrderEmulatorState {
         }
         //
 
-        // TODO
-        // cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
+        if let Err(e) = self.cache.borrow_mut().add_order(
+            OrderAny::Limit(transformed.clone()),
+            command.position_id,
+            Some(command.client_id),
+            true,
+        ) {
+            log::error!("Failed to add order: {}", e);
+        }
+
+        // Replace commands order with transformed order
+        command.order = OrderAny::Limit(transformed.clone());
+
+        self.msgbus.borrow().publish(
+            &format!("events.order.{}", order.strategy_id()).into(),
+            transformed.last_event(),
+        );
+
+        // Determine triggered price
+        // TODO: fix unwraps
+        let released_price = match order.order_side() {
+            OrderSide::Buy => matching_core.unwrap().ask,
+            OrderSide::Sell => matching_core.unwrap().bid,
+            _ => panic!("invalid `OrderSide`"),
+        };
+
+        // Generate event
+        let event = OrderReleased::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            released_price.unwrap(),
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+            self.clock.borrow().timestamp_ns(),
+        );
+
+        if let Err(e) = transformed.apply(OrderEventAny::Released(event)) {
+            log::error!("Failed to apply order event: {}", e);
+        }
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .update_order(&OrderAny::Limit(transformed.clone()))
+        {
+            log::error!("Failed to update order: {}", e);
+        }
+
+        self.manager
+            .borrow()
+            .send_risk_event(OrderEventAny::Released(event));
+
+        log::info!("Releasing order {}", order.client_order_id());
+
+        // Publish event
+        self.msgbus.borrow().publish(
+            &format!("events.order.{}", transformed.strategy_id()).into(),
+            &OrderEventAny::Released(event),
+        );
+
+        if order.exec_algorithm_id().is_some() {
+            self.manager
+                .borrow()
+                .send_algo_command(command, order.exec_algorithm_id().unwrap());
+        } else {
+            self.manager
+                .borrow()
+                .send_exec_command(TradingCommand::SubmitOrder(command));
+        }
     }
 
     fn fill_market_order(&mut self, order: &OrderAny) {
