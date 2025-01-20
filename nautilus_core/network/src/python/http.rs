@@ -19,10 +19,11 @@ use std::{
 };
 
 use bytes::Bytes;
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
 
 use crate::{
-    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse},
+    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, HttpStatus},
     ratelimiter::quota::Quota,
 };
 
@@ -54,19 +55,18 @@ impl HttpMethod {
 #[pymethods]
 impl HttpResponse {
     #[new]
-    #[must_use]
-    pub fn py_new(status: u16, body: Vec<u8>) -> Self {
-        Self {
-            status,
+    pub fn py_new(status: u16, body: Vec<u8>) -> PyResult<Self> {
+        Ok(Self {
+            status: HttpStatus::from(status).map_err(to_pyvalue_err)?,
             headers: HashMap::new(),
             body: Bytes::from(body),
-        }
+        })
     }
 
     #[getter]
     #[pyo3(name = "status")]
     pub const fn py_status(&self) -> u16 {
-        self.status
+        self.status.as_u16()
     }
 
     #[getter]
@@ -118,7 +118,7 @@ impl HttpClient {
         Self::new(default_headers, header_keys, keyed_quotas, default_quota)
     }
 
-    /// Send an HTTP request.
+    /// Sends an HTTP request.
     ///
     /// `method`: The HTTP method to call.
     /// `url`: The request is sent to this url.
