@@ -261,7 +261,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._pending_trailing_stops: dict[ClientOrderId, Order] = {}
 
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 0.0,

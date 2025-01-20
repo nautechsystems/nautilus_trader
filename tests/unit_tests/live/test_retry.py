@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -114,7 +115,7 @@ async def test_retry_manager_exhausts_retries(mock_logger) -> None:
 async def test_retry_manager_pool_acquire_and_release(mock_logger) -> None:
     # Arrange
     pool_size = 3
-    pool = RetryManagerPool(
+    pool = RetryManagerPool[Any](
         pool_size=pool_size,
         max_retries=2,
         retry_delay_secs=0.1,
@@ -134,7 +135,7 @@ async def test_retry_manager_pool_acquire_and_release(mock_logger) -> None:
 async def test_retry_manager_pool_create_new_when_empty(mock_logger) -> None:
     # Arrange
     pool_size = 1
-    pool = RetryManagerPool(
+    pool = RetryManagerPool[Any](
         pool_size=pool_size,
         max_retries=2,
         retry_delay_secs=0.1,
@@ -206,7 +207,7 @@ async def test_retry_manager_cancellation(mock_logger) -> None:
 async def test_retry_manager_pool_shutdown(mock_logger) -> None:
     # Arrange
     pool_size = 2
-    pool = RetryManagerPool(
+    pool = RetryManagerPool[Any](
         pool_size=pool_size,
         max_retries=3,
         retry_delay_secs=0.1,
