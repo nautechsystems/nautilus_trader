@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.16.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -56,7 +56,6 @@ from nautilus_trader.trading.strategy import Strategy
 
 # %%
 # import nautilus_trader.adapters.databento.data_utils as db_data_utils
-# from nautilus_trader.adapters.databento.data_utils import init_databento_client
 # from option_trader import DATA_PATH # personal library, use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
@@ -71,7 +70,7 @@ end_time = "2024-05-09T10:05"
 
 # a valid databento key can be entered here (or as an env variable of the same name)
 # DATABENTO_API_KEY = None
-# init_databento_client(DATABENTO_API_KEY)
+# db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
 # https://databento.com/docs/schemas-and-data-formats/whats-a-schema
 futures_data = databento_data(
@@ -86,7 +85,7 @@ options_data = databento_data(
     option_symbols,
     start_time,
     end_time,
-    "mbp-1",
+    "bbo-1m",
     "options",
     catalog_folder,
 )

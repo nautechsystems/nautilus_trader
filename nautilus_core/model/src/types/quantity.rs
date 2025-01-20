@@ -23,6 +23,10 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(feature = "high-precision")]
+use nautilus_core::correctness::check_positive_u128;
+#[cfg(not(feature = "high-precision"))]
+use nautilus_core::correctness::check_positive_u64;
 use nautilus_core::{
     correctness::{check_in_range_inclusive_f64, FAILED},
     parsing::precision_from_str,
@@ -32,16 +36,41 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+#[cfg(feature = "high-precision")]
+use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+#[cfg(not(feature = "high-precision"))]
+use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+
+#[cfg(feature = "high-precision")]
+pub type QuantityRaw = u128;
+#[cfg(not(feature = "high-precision"))]
+pub type QuantityRaw = u64;
+
+/// The maximum raw quantity integer value.
+#[no_mangle]
+pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
 
 /// The sentinel value for an unset or null quantity.
-pub const QUANTITY_UNDEF: u64 = u64::MAX;
+pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
 /// The maximum valid quantity value which can be represented.
+#[cfg(feature = "high-precision")]
+pub const QUANTITY_MAX: f64 = 34_028_236_692_093.0;
+#[cfg(not(feature = "high-precision"))]
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
+
+#[cfg(not(feature = "high-precision"))]
+pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_u64(value, param)
+}
+
+#[cfg(feature = "high-precision")]
+pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_u128(value, param)
+}
 
 /// Represents a quantity with a non-negative value.
 ///
@@ -49,9 +78,9 @@ pub const QUANTITY_MIN: f64 = 0.0;
 /// or 'shares' (instruments denominated in whole units) or a decimal value
 /// containing decimal places for instruments denominated in fractional units.
 ///
-/// Handles up to 9 decimals of precision.
+/// Handles up to {FIXED_PRECISION} decimals of precision.
 ///
-/// - `QUANTITY_MAX` = 18_446_744_073
+/// - `QUANTITY_MAX` = {QUANTITY_MAX}
 /// - `QUANTITY_MIN` = 0
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
@@ -60,10 +89,9 @@ pub const QUANTITY_MIN: f64 = 0.0;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
-    /// The raw quantity as an unsigned 64-bit integer.
-    /// Represents the unscaled value, with `precision` defining the number of decimal places.
-    pub raw: u64,
-    /// The number of decimal places, with a maximum precision of 9.
+    /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
+    pub raw: QuantityRaw,
+    /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
     pub precision: u8,
 }
 
@@ -73,8 +101,8 @@ impl Quantity {
     /// # Errors
     ///
     /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [0, 18_446_744_073].
-    /// - If `precision` is invalid outside the representable range [0, 9].
+    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -83,10 +111,12 @@ impl Quantity {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
         check_fixed_precision(precision)?;
 
-        Ok(Self {
-            raw: f64_to_fixed_u64(value, precision),
-            precision,
-        })
+        #[cfg(feature = "high-precision")]
+        let raw = f64_to_fixed_u128(value, precision);
+        #[cfg(not(feature = "high-precision"))]
+        let raw = f64_to_fixed_u64(value, precision);
+
+        Ok(Self { raw, precision })
     }
 
     /// Creates a new [`Quantity`] instance.
@@ -100,7 +130,7 @@ impl Quantity {
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
-    pub fn from_raw(raw: u64, precision: u8) -> Self {
+    pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
@@ -137,6 +167,12 @@ impl Quantity {
 
     /// Returns the value of this instance as an `f64`.
     #[must_use]
+    #[cfg(feature = "high-precision")]
+    pub fn as_f64(&self) -> f64 {
+        fixed_u128_to_f64(self.raw)
+    }
+
+    #[cfg(not(feature = "high-precision"))]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -145,8 +181,13 @@ impl Quantity {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw = self.raw / u64::pow(10, u32::from(FIXED_PRECISION - self.precision));
-        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
+        let rescaled_raw =
+            self.raw / QuantityRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
+        // SAFETY: The raw value is guaranteed to be within i128 range after scaling
+        // because our quantity constraints ensure the maximum raw value times the scaling
+        // factor cannot exceed i128::MAX (high-precision) or i64::MAX (standard-precision).
+        #[allow(clippy::useless_conversion)] // Required for precision modes
+        Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
     /// Returns a formatted string representation of this instance.
@@ -168,8 +209,26 @@ impl From<&Quantity> for f64 {
     }
 }
 
+impl From<i32> for Quantity {
+    fn from(value: i32) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
 impl From<i64> for Quantity {
     fn from(value: i64) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
+impl From<u32> for Quantity {
+    fn from(value: u32) -> Self {
+        Self::new(value as f64, 0)
+    }
+}
+
+impl From<u64> for Quantity {
+    fn from(value: u64) -> Self {
         Self::new(value as f64, 0)
     }
 }
@@ -215,7 +274,7 @@ impl Ord for Quantity {
 }
 
 impl Deref for Quantity {
-    type Target = u64;
+    type Target = QuantityRaw;
 
     fn deref(&self) -> &Self::Target {
         &self.raw
@@ -289,7 +348,7 @@ impl Mul for Quantity {
             .expect("Overflow occurred when multiplying `Quantity`");
 
         Self {
-            raw: result_raw / (FIXED_SCALAR as u64),
+            raw: result_raw / (FIXED_SCALAR as QuantityRaw),
             precision,
         }
     }
@@ -302,13 +361,13 @@ impl Mul<f64> for Quantity {
     }
 }
 
-impl From<Quantity> for u64 {
+impl From<Quantity> for QuantityRaw {
     fn from(value: Quantity) -> Self {
         value.raw
     }
 }
 
-impl From<&Quantity> for u64 {
+impl From<&Quantity> for QuantityRaw {
     fn from(value: &Quantity) -> Self {
         value.raw
     }
@@ -346,7 +405,7 @@ impl From<&String> for Quantity {
     }
 }
 
-impl<T: Into<u64>> AddAssign<T> for Quantity {
+impl<T: Into<QuantityRaw>> AddAssign<T> for Quantity {
     fn add_assign(&mut self, other: T) {
         self.raw = self
             .raw
@@ -355,7 +414,7 @@ impl<T: Into<u64>> AddAssign<T> for Quantity {
     }
 }
 
-impl<T: Into<u64>> SubAssign<T> for Quantity {
+impl<T: Into<QuantityRaw>> SubAssign<T> for Quantity {
     fn sub_assign(&mut self, other: T) {
         self.raw = self
             .raw
@@ -364,7 +423,7 @@ impl<T: Into<u64>> SubAssign<T> for Quantity {
     }
 }
 
-impl<T: Into<u64>> MulAssign<T> for Quantity {
+impl<T: Into<QuantityRaw>> MulAssign<T> for Quantity {
     fn mul_assign(&mut self, other: T) {
         self.raw = self
             .raw
@@ -439,38 +498,80 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
-        let _ = Quantity::new(1.0, 10);
+        let _ = Quantity::new(1.0, FIXED_PRECISION + 1);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Quantity::from_raw(1, 10);
+        let _ = Quantity::from_raw(1, FIXED_PRECISION + 1);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
-        let _ = Quantity::zero(10);
+        let _ = Quantity::zero(FIXED_PRECISION + 1);
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Precision mismatch: cannot add precision 2 to precision 1 (precision loss)"
+    )]
+    fn test_precision_mismatch_add() {
+        let q1 = Quantity::new(1.0, 1);
+        let q2 = Quantity::new(1.0, 2);
+        let _ = q1 + q2;
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Precision mismatch: cannot subtract precision 2 from precision 1 (precision loss)"
+    )]
+    fn test_precision_mismatch_sub() {
+        let q1 = Quantity::new(1.0, 1);
+        let q2 = Quantity::new(1.0, 2);
+        let _ = q1 - q2;
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Precision mismatch: cannot multiply precision 2 with precision 1 (precision loss)"
+    )]
+    fn test_precision_mismatch_mul() {
+        let q1 = Quantity::new(2.0, 1);
+        let q2 = Quantity::new(3.0, 2);
+        let _ = q1 * q2;
     }
 
     #[rstest]
     fn test_new() {
-        let qty = Quantity::new(0.00812, 8);
+        let value = 0.00812;
+        let qty = Quantity::new(value, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
+        assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert_eq!(qty.to_string(), "0.00812000");
         assert!(!qty.is_zero());
         assert!(qty.is_positive());
-        assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000_001));
+    }
+
+    #[rstest]
+    fn test_check_quantity_positive_ok() {
+        let qty = Quantity::new(10.0, 0);
+        check_quantity_positive(qty).unwrap();
+    }
+
+    #[rstest]
+    fn test_negative_quantity_validation() {
+        assert!(Quantity::new_checked(-1.0, FIXED_PRECISION).is_err());
     }
 
     #[rstest]
@@ -490,26 +591,51 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_i64() {
-        let qty = Quantity::from(100_000);
+    fn test_from_i32() {
+        let value = 100_000i32;
+        let qty = Quantity::from(value);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 100_000_000_000_000);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
         assert_eq!(qty.precision, 0);
     }
 
     #[rstest]
+    fn test_from_u32() {
+        let value: u32 = 5000;
+        let qty = Quantity::from(value);
+        assert_eq!(qty.raw, Quantity::from(format!("{value}")).raw);
+        assert_eq!(qty.precision, 0);
+    }
+
+    #[rstest]
+    fn test_from_i64() {
+        let value = 100_000i64;
+        let qty = Quantity::from(value);
+        assert_eq!(qty, qty);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
+        assert_eq!(qty.precision, 0);
+    }
+
+    #[rstest]
+    fn test_from_u64() {
+        let value = 100_000u64;
+        let qty = Quantity::from(value);
+        assert_eq!(qty, qty);
+        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
+        assert_eq!(qty.precision, 0);
+    }
+
+    #[rstest] // Test does not panic rather than exact value
     fn test_with_maximum_value() {
-        let qty = Quantity::new(QUANTITY_MAX, 8);
-        assert_eq!(qty.raw, 18_446_744_073_000_000_000);
-        assert_eq!(qty.as_decimal(), dec!(18_446_744_073));
-        assert_eq!(qty.to_string(), "18446744073.00000000");
-        assert_eq!(qty.to_formatted_string(), "18_446_744_073.00000000");
+        let qty = Quantity::new_checked(QUANTITY_MAX, 0);
+        assert!(qty.is_ok());
     }
 
     #[rstest]
     fn test_with_minimum_positive_value() {
-        let qty = Quantity::new(0.000_000_001, 9);
-        assert_eq!(qty.raw, 1);
+        let value = 0.000_000_001;
+        let qty = Quantity::new(value, 9);
+        assert_eq!(qty.raw, Quantity::from("0.000000001").raw);
         assert_eq!(qty.as_decimal(), dec!(0.000000001));
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -536,8 +662,8 @@ mod tests {
 
     #[rstest]
     fn test_precision() {
-        let qty = Quantity::new(1.001, 2);
-        assert_eq!(qty.raw, 1_000_000_000);
+        let value = 1.001;
+        let qty = Quantity::new(value, 2);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -545,7 +671,6 @@ mod tests {
     fn test_new_from_str() {
         let qty = Quantity::new(0.00812000, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -570,46 +695,66 @@ mod tests {
 
     #[rstest]
     fn test_add() {
+        let a = 1.0;
+        let b = 2.0;
         let quantity1 = Quantity::new(1.0, 0);
         let quantity2 = Quantity::new(2.0, 0);
         let quantity3 = quantity1 + quantity2;
-        assert_eq!(quantity3.raw, 3_000_000_000);
+        assert_eq!(quantity3.raw, Quantity::new(a + b, 0).raw);
     }
 
     #[rstest]
     fn test_sub() {
-        let quantity1 = Quantity::new(3.0, 0);
-        let quantity2 = Quantity::new(2.0, 0);
+        let a = 3.0;
+        let b = 2.0;
+        let quantity1 = Quantity::new(a, 0);
+        let quantity2 = Quantity::new(b, 0);
         let quantity3 = quantity1 - quantity2;
-        assert_eq!(quantity3.raw, 1_000_000_000);
+        assert_eq!(quantity3.raw, Quantity::new(a - b, 0).raw);
     }
 
     #[rstest]
     fn test_add_assign() {
-        let mut quantity1 = Quantity::new(1.0, 0);
-        let quantity2 = Quantity::new(2.0, 0);
+        let a = 1.0;
+        let b = 2.0;
+        let mut quantity1 = Quantity::new(a, 0);
+        let quantity2 = Quantity::new(b, 0);
         quantity1 += quantity2;
-        assert_eq!(quantity1.raw, 3_000_000_000);
+        assert_eq!(quantity1.raw, Quantity::new(a + b, 0).raw);
     }
 
     #[rstest]
     fn test_sub_assign() {
-        let mut quantity1 = Quantity::new(3.0, 0);
-        let quantity2 = Quantity::new(2.0, 0);
+        let a = 3.0;
+        let b = 2.0;
+        let mut quantity1 = Quantity::new(a, 0);
+        let quantity2 = Quantity::new(b, 0);
         quantity1 -= quantity2;
-        assert_eq!(quantity1.raw, 1_000_000_000);
+        assert_eq!(quantity1.raw, Quantity::new(a - b, 0).raw);
     }
 
     #[rstest]
     fn test_mul() {
-        let quantity1 = Quantity::new(2.0, 1);
-        let quantity2 = Quantity::new(2.0, 1);
+        let value = 2.0;
+        let quantity1 = Quantity::new(value, 1);
+        let quantity2 = Quantity::new(value, 1);
         let quantity3 = quantity1 * quantity2;
-        assert_eq!(quantity3.raw, 4_000_000_000);
+        assert_eq!(quantity3.raw, Quantity::new(value * value, 0).raw);
     }
 
     #[rstest]
-    fn test_equality() {
+    fn test_mul_assign() {
+        let mut quantity = Quantity::new(2.0, 0);
+        quantity *= 3u64; // calls MulAssign<T: Into<QuantityRaw>>
+        assert_eq!(quantity.raw, Quantity::new(6.0, 0).raw);
+
+        let mut fraction = Quantity::new(1.5, 2);
+        fraction *= 2u64; // => 1.5 * 2 = 3.0 => raw=300, precision=2
+        assert_eq!(fraction.raw, Quantity::new(3.0, 2).raw);
+    }
+
+    #[rstest]
+    fn test_comparisons() {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
@@ -635,5 +780,55 @@ mod tests {
         let quantity = Quantity::from_str("44.12").unwrap();
         let result = format!("{quantity}");
         assert_eq!(result, "44.12");
+    }
+
+    #[test]
+    fn test_to_formatted_string() {
+        let qty = Quantity::new(1234.5678, 4);
+        let formatted = qty.to_formatted_string();
+        assert_eq!(formatted, "1_234.5678");
+        assert_eq!(qty.to_string(), "1234.5678");
+    }
+
+    #[rstest]
+    fn test_hash() {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
+
+        let q1 = Quantity::new(100.0, 1);
+        let q2 = Quantity::new(100.0, 1);
+        let q3 = Quantity::new(200.0, 1);
+
+        let mut s1 = DefaultHasher::new();
+        let mut s2 = DefaultHasher::new();
+        let mut s3 = DefaultHasher::new();
+
+        q1.hash(&mut s1);
+        q2.hash(&mut s2);
+        q3.hash(&mut s3);
+
+        assert_eq!(
+            s1.finish(),
+            s2.finish(),
+            "Equal quantities must hash equally"
+        );
+        assert_ne!(
+            s1.finish(),
+            s3.finish(),
+            "Different quantities must hash differently"
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_serde_json_round_trip() {
+        let original = Quantity::new(123.456, 3);
+        let json_str = serde_json::to_string(&original).unwrap();
+        assert_eq!(json_str, "\"123.456\"");
+
+        let deserialized: Quantity = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized, original);
+        assert_eq!(deserialized.precision, 3);
     }
 }

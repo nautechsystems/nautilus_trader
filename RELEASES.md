@@ -2,24 +2,37 @@
 
 Released on TBD (UTC).
 
+This release will be the final version that uses Poetry for package and dependency management.
+
 ### Enhancements
+- Added `high-precision` mode for 128-bit integer backed value types, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) and [precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) docs (#2072), thanks @twitu
 - Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
+- Added additional limit parameters for `BettingInstrument` constructor
+- Added `venue_position_id` parameter for `OrderStatusReport`
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
+- Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
+- Changed `BettingInstrument` default `min_notional` to `None`
 
 ### Internal Improvements
 - Ported market order filling for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order filling for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
+- Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
+- Fixed live reconciliation of generated order fills to use the `venue_position_id` (when provided), thanks for reporting @sdk451
+- Fixed `InstrumentProvider` initialization behavior when `reload` flag `True`, thanks @ryantam626
 
 ### Documentation Updates
 None
+
+### Deprecations
+- The [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage for indicators is deprecated and will be removed in a future version, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2206)
 
 ---
 

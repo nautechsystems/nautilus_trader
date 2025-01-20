@@ -132,7 +132,7 @@ fn get_schema_dir() -> anyhow::Result<String> {
         let current_dir = binding.to_str().unwrap();
         match current_dir.find(nautilus_git_repo_name){
             Some(index) => {
-                let schema_path = current_dir[0..index + nautilus_git_repo_name.len()].to_string() + "/schema";
+                let schema_path = current_dir[0..index + nautilus_git_repo_name.len()].to_string() + "/schema/sql";
                 Ok(schema_path)
             }
             None => anyhow::bail!("Could not calculate schema dir from current directory path or SCHEMA_DIR env variable")

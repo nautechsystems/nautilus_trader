@@ -28,12 +28,16 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PriceRaw
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport RecordFlag
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -59,7 +63,7 @@ def preprocess_bar_data(data: pd.DataFrame, is_raw: bool):
         data : pd.DataFrame
             The input DataFrame containing financial bar data.
         is_raw : bool
-            A flag to determine whether the data should be scaled. If False, scales the data by 1e9.
+            A flag to determine whether the data should be scaled. If True, scales the data back by FIXED_SCALAR.
 
     Returns
     -------
@@ -77,9 +81,9 @@ def preprocess_bar_data(data: pd.DataFrame, is_raw: bool):
     # Drop rows with NaN values in critical columns
     data = data.dropna(subset=BAR_COLUMNS)
 
-    # Scale data if not raw
-    if not is_raw:
-        data[list(BAR_COLUMNS)] = data[list(BAR_COLUMNS)].multiply(1e9)
+    # Scale data if raw (we have to do this now to accommodate high_precision mode)
+    if is_raw:
+        data[list(BAR_COLUMNS)] = data[list(BAR_COLUMNS)] / FIXED_SCALAR
 
     return data
 
@@ -122,7 +126,7 @@ def calculate_bar_price_offsets(num_records, timestamp_is_close: bool, offset_in
     return offsets
 
 
-def calculate_volume_quarter(volume: np.ndarray, precision: int):
+def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment: float):
     """
     Convert raw volume data to quarter precision.
 
@@ -131,7 +135,7 @@ def calculate_volume_quarter(volume: np.ndarray, precision: int):
     volume : np.ndarray
         An array of volume data to be processed.
     precision : int
-        The decimal precision to which the volume data is rounded, adjusted by subtracting 9.
+        The decimal precision to which the volume data is rounded.
 
     Returns
     -------
@@ -139,8 +143,8 @@ def calculate_volume_quarter(volume: np.ndarray, precision: int):
         The volume data adjusted to quarter precision.
 
     """
-    # Convert raw volume to quarter precision
-    return np.round(volume / 4, precision - 9).astype(np.uint64)
+    # Convert volume to quarter precision (respect minimum size increment)
+    return np.round(np.maximum(volume / 4.0, size_increment), precision)
 
 
 def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame):
@@ -217,33 +221,23 @@ cdef class OrderBookDeltaDataWrangler:
         data = as_utc_index(data)
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
-        cdef list[OrderBookDelta] deltas
         if is_raw:
-            deltas = list(map(
-                self._build_delta_from_raw,
-                data["action"].apply(book_action_from_str),
-                data["side"].apply(order_side_from_str),
-                data["price"],
-                data["size"],
-                data["order_id"],
-                data["flags"],
-                data["sequence"],
-                ts_events,
-                ts_inits,
-            ))
-        else:
-            deltas = list(map(
-                self._build_delta,
-                data["action"].apply(book_action_from_str),
-                data["side"].apply(order_side_from_str),
-                data["price"],
-                data["size"],
-                data["order_id"],
-                data["flags"],
-                data["sequence"],
-                ts_events,
-                ts_inits,
-            ))
+            data["price"] /= FIXED_SCALAR
+            data["size"] /= FIXED_SCALAR
+
+        cdef list[OrderBookDelta] deltas
+        deltas = list(map(
+            self._build_delta,
+            data["action"].apply(book_action_from_str),
+            data["side"].apply(order_side_from_str),
+            data["price"],
+            data["size"],
+            data["order_id"],
+            data["flags"],
+            data["sequence"],
+            ts_events,
+            ts_inits,
+        ))
 
         cdef:
             OrderBookDelta first
@@ -261,34 +255,6 @@ cdef class OrderBookDeltaDataWrangler:
         return deltas
 
     # cpdef method for Python wrap() (called with map)
-    cpdef OrderBookDelta _build_delta_from_raw(
-        self,
-        BookAction action,
-        OrderSide side,
-        int64_t price_raw,
-        uint64_t size_raw,
-        uint64_t order_id,
-        uint8_t flags,
-        uint64_t sequence,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ):
-        return OrderBookDelta.from_raw_c(
-            self.instrument.id,
-            action,
-            side,
-            price_raw,
-            self.instrument.price_precision,
-            size_raw,
-            self.instrument.size_precision,
-            order_id,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        )
-
-    # cpdef method for Python wrap() (called with map)
     cpdef OrderBookDelta _build_delta(
         self,
         BookAction action,
@@ -301,15 +267,16 @@ cdef class OrderBookDeltaDataWrangler:
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        return OrderBookDelta.from_raw_c(
+        cdef BookOrder order = BookOrder(
+            side,
+            Price(price, self.instrument.price_precision),
+            Quantity(size, self.instrument.size_precision),
+            order_id,
+        )
+        return OrderBookDelta(
             self.instrument.id,
             action,
-            side,
-            int(price * 1e9),
-            self.instrument.price_precision,
-            int(size * 1e9),
-            self.instrument.size_precision,
-            order_id,
+            order,
             flags,
             sequence,
             ts_event,
@@ -449,9 +416,9 @@ cdef class QuoteTickDataWrangler:
 
         # Add default volume if not present
         if "volume" not in bid_data:
-            bid_data.loc[:, "volume"] = float(default_volume * 4) * (1e9 if is_raw else 1)
+            bid_data.loc[:, "volume"] = float(default_volume * 4.0) / (FIXED_SCALAR if is_raw else 1.0)
         if "volume" not in ask_data:
-            ask_data.loc[:, "volume"] = float(default_volume * 4) * (1e9 if is_raw else 1)
+            ask_data.loc[:, "volume"] = float(default_volume * 4.0) / (FIXED_SCALAR if is_raw else 1.0)
 
         # Standardize and preprocess data
         bid_data = preprocess_bar_data(bid_data, is_raw)
@@ -490,14 +457,15 @@ cdef class QuoteTickDataWrangler:
         ts_init_delta,
     ):
         dtype = [
-            ("bid_price_raw", np.int64), ("ask_price_raw", np.int64),
-            ("bid_size_raw", np.uint64), ("ask_size_raw", np.uint64),
+            ("bid_price_raw", np.double), ("ask_price_raw", np.double),
+            ("bid_size_raw", np.double), ("ask_size_raw", np.double),
             ("timestamp", "datetime64[ns]")
         ]
 
         size_precision = instrument.size_precision
-        merged_data.loc[:, "bid_volume"] = calculate_volume_quarter(merged_data["bid_volume"], size_precision)
-        merged_data.loc[:, "ask_volume"] = calculate_volume_quarter(merged_data["ask_volume"], size_precision)
+        size_increment = float(instrument.size_increment)
+        merged_data.loc[:, "bid_volume"] = calculate_volume_quarter(merged_data["bid_volume"], size_precision, size_increment)
+        merged_data.loc[:, "ask_volume"] = calculate_volume_quarter(merged_data["ask_volume"], size_precision, size_increment)
 
         # Convert to record array
         records = merged_data.to_records()
@@ -510,37 +478,13 @@ cdef class QuoteTickDataWrangler:
             start_index = i * len(records)
             end_index = start_index + len(records)
 
-            tick_data["bid_price_raw"][start_index:end_index] = records[f"bid_{price_key}"].astype(np.int64)
-            tick_data["ask_price_raw"][start_index:end_index] = records[f"ask_{price_key}"].astype(np.int64)
-            tick_data["bid_size_raw"][start_index:end_index] = records["bid_volume"].astype(np.uint64)
-            tick_data["ask_size_raw"][start_index:end_index] = records["ask_volume"].astype(np.uint64)
+            tick_data["bid_price_raw"][start_index:end_index] = records[f"bid_{price_key}"].astype(np.double)
+            tick_data["ask_price_raw"][start_index:end_index] = records[f"ask_{price_key}"].astype(np.double)
+            tick_data["bid_size_raw"][start_index:end_index] = records["bid_volume"].astype(np.double)
+            tick_data["ask_size_raw"][start_index:end_index] = records["ask_volume"].astype(np.double)
             tick_data["timestamp"][start_index:end_index] = records["timestamp"] + offsets[price_key]
 
         return tick_data
-
-    # cpdef method for Python wrap() (called with map)
-    cpdef QuoteTick _build_tick_from_raw(
-        self,
-        int64_t bid_price_raw,
-        int64_t ask_price_raw,
-        uint64_t bid_size_raw,
-        uint64_t ask_size_raw,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ):
-        return QuoteTick.from_raw_c(
-            self.instrument.id,
-            bid_price_raw,
-            ask_price_raw,
-            self.instrument.price_precision,
-            self.instrument.price_precision,
-            bid_size_raw,
-            ask_size_raw,
-            self.instrument.size_precision,
-            self.instrument.size_precision,
-            ts_event,
-            ts_init,
-        )
 
     # cpdef method for Python wrap() (called with map)
     cpdef QuoteTick _build_tick(
@@ -552,16 +496,12 @@ cdef class QuoteTickDataWrangler:
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        return QuoteTick.from_raw_c(
+        return QuoteTick(
             self.instrument.id,
-            int(bid * 1e9),
-            int(ask * 1e9),
-            self.instrument.price_precision,
-            self.instrument.price_precision,
-            int(bid_size * 1e9),
-            int(ask_size * 1e9),
-            self.instrument.size_precision,
-            self.instrument.size_precision,
+            Price(bid, self.instrument.price_precision),
+            Price(ask, self.instrument.price_precision),
+            Quantity(bid_size, self.instrument.size_precision),
+            Quantity(ask_size, self.instrument.size_precision),
             ts_event,
             ts_init,
         )
@@ -608,25 +548,18 @@ cdef class TradeTickDataWrangler:
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         if is_raw:
-            return list(map(
-                self._build_tick_from_raw,
-                data["price"],
-                data["quantity"],
-                self._create_side_if_not_exist(data),
-                data["trade_id"].astype(str),
-                ts_events,
-                ts_inits,
-            ))
-        else:
-            return list(map(
-                self._build_tick,
-                data["price"],
-                data["quantity"],
-                self._create_side_if_not_exist(data),
-                data["trade_id"].astype(str),
-                ts_events,
-                ts_inits,
-            ))
+            data["price"] /= FIXED_SCALAR
+            data["quantity"] /= FIXED_SCALAR
+
+        return list(map(
+            self._build_tick,
+            data["price"],
+            data["quantity"],
+            self._create_side_if_not_exist(data),
+            data["trade_id"].astype(str),
+            ts_events,
+            ts_inits,
+        ))
 
     def process_bar_data(
         self,
@@ -679,7 +612,9 @@ cdef class TradeTickDataWrangler:
 
         # Standardize and preprocess data
         data = preprocess_bar_data(data, is_raw)
-        data.loc[:, "volume"] = calculate_volume_quarter(data["volume"], self.instrument.size_precision)
+        size_precision = self.instrument.size_precision
+        size_increment = float(self.instrument.size_increment)
+        data.loc[:, "volume"] = calculate_volume_quarter(data["volume"], size_precision, size_increment)
         data.loc[:, "trade_id"] = data.index.view(np.uint64).astype(str)
 
         records = data.to_records()
@@ -696,7 +631,7 @@ cdef class TradeTickDataWrangler:
 
         cdef uint8_t[:] aggressor_sides = np.full(len(ts_events), AggressorSide.NO_AGGRESSOR, dtype=np.uint8)
 
-        return TradeTick.from_raw_arrays_to_list_c(
+        return TradeTick.from_raw_arrays_to_list(
             self.instrument.id,
             self.instrument.price_precision,
             self.instrument.size_precision,
@@ -713,13 +648,13 @@ cdef class TradeTickDataWrangler:
         records,
         offsets,
     ):
-        dtype = [("price", np.int64), ("size", np.uint64), ("timestamp", "datetime64[ns]")]
+        dtype = [("price", np.double), ("size", np.double), ("timestamp", "datetime64[ns]")]
         tick_data = np.empty(len(records) * 4, dtype=dtype)
         for i, price_key in enumerate(BAR_PRICES):
             start_index = i * len(records)
             end_index = start_index + len(records)
-            tick_data["price"][start_index:end_index] = records[price_key].astype(np.int64)
-            tick_data["size"][start_index:end_index] = records["volume"].astype(np.uint64)
+            tick_data["price"][start_index:end_index] = records[price_key].astype(np.double)
+            tick_data["size"][start_index:end_index] = records["volume"].astype(np.double)
             tick_data["timestamp"][start_index:end_index] = records["timestamp"] + offsets[price_key]
 
         return tick_data
@@ -733,28 +668,6 @@ cdef class TradeTickDataWrangler:
             return [AggressorSide.NO_AGGRESSOR] * len(data)
 
     # cpdef method for Python wrap() (called with map)
-    cpdef TradeTick _build_tick_from_raw(
-        self,
-        int64_t price_raw,
-        uint64_t size_raw,
-        AggressorSide aggressor_side,
-        str trade_id,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ):
-        return TradeTick.from_raw_c(
-            self.instrument.id,
-            price_raw,
-            self.instrument.price_precision,
-            size_raw,
-            self.instrument.size_precision,
-            aggressor_side,
-            TradeId(trade_id),
-            ts_event,
-            ts_init,
-        )
-
-    # cpdef method for Python wrap() (called with map)
     cpdef TradeTick _build_tick(
         self,
         double price,
@@ -764,12 +677,10 @@ cdef class TradeTickDataWrangler:
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        return TradeTick.from_raw_c(
+        return TradeTick(
             self.instrument.id,
-            int(price * 1e9),
-            self.instrument.price_precision,
-            int(size * 1e9),
-            self.instrument.size_precision,
+            Price(price, self.instrument.price_precision),
+            Quantity(size, self.instrument.size_precision),
             aggressor_side,
             TradeId(trade_id),
             ts_event,

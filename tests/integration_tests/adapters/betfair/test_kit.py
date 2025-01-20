@@ -57,12 +57,14 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
+from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
@@ -674,6 +676,7 @@ class BetfairDataProvider:
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            min_notional=Money(1, GBP),
             ts_event=0,
             ts_init=0,
         )
@@ -835,6 +838,7 @@ def betting_instrument(
         currency="GBP",
         price_precision=BETFAIR_PRICE_PRECISION,
         size_precision=BETFAIR_QUANTITY_PRECISION,
+        min_notional=Money(1, GBP),
         tick_scheme_name=BETFAIR_TICK_SCHEME.name,
         ts_event=0,
         ts_init=0,

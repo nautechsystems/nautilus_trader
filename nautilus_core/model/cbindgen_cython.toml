@@ -5,6 +5,9 @@ sys_includes = ["stdint.h", "Python.h"]
 no_includes = true
 tab_width = 4
 
+[defines]
+"feature = high-precision" = "HIGH_PRECISION"
+
 [cython]
 header = '"../includes/model.h"'
 
@@ -15,6 +18,7 @@ header = '"../includes/model.h"'
     "uint32_t",
     "uint64_t",
     "uintptr_t",
+    "int32_t",
     "int64_t",
 ]
 
@@ -33,6 +37,9 @@ exclude = [
 ]
 
 [export.rename]
+"u128" = "uint128_t"
+"i128" = "int128_t"
+"i32" = "int32_t"
 "bool" = "bint"
 "Ustr" = "char*"
 "AccountId" = "AccountId_t"

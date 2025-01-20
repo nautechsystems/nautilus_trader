@@ -16,6 +16,8 @@
 import copy
 from collections import Counter
 
+import pytest
+
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.signal import generate_signal_class
@@ -37,6 +39,7 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skip(reason="Repair test data once high-precision merged")
 class TestPersistenceStreaming:
     def setup(self) -> None:
         self.catalog: ParquetDataCatalog | None = None

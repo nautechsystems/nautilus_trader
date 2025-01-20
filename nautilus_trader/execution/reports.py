@@ -107,6 +107,11 @@ class OrderStatusReport(ExecutionReport):
         The reported client order ID.
     order_list_id : OrderListId, optional
         The reported order list ID associated with the order.
+    venue_position_id : PositionId, optional
+        The reported venue position ID for the order. If the trading venue has
+        associated a position ID / ticket with the order then pass that here,
+        otherwise pass ``None`` and the execution engine OMS will handle
+        position ID resolution.
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The reported order contingency type.
     expire_time : datetime, optional
@@ -166,6 +171,7 @@ class OrderStatusReport(ExecutionReport):
         ts_init: int,
         client_order_id: ClientOrderId | None = None,  # (None if external order)
         order_list_id: OrderListId | None = None,
+        venue_position_id: PositionId | None = None,  # (None if not assigned by venue)
         contingency_type: ContingencyType = ContingencyType.NO_CONTINGENCY,
         expire_time: datetime | None = None,
         price: Price | None = None,
@@ -202,6 +208,7 @@ class OrderStatusReport(ExecutionReport):
         self.client_order_id = client_order_id
         self.order_list_id = order_list_id
         self.venue_order_id = venue_order_id
+        self.venue_position_id = venue_position_id
         self.order_side = order_side
         self.order_type = order_type
         self.contingency_type = contingency_type
@@ -265,6 +272,7 @@ class OrderStatusReport(ExecutionReport):
             f"client_order_id={self.client_order_id}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"venue_position_id={self.venue_position_id}, "  # Can be None
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "

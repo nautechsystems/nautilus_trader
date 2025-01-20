@@ -988,7 +988,7 @@ class LiveExecutionEngine(ExecutionEngine):
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
             account_id=report.account_id,
-            position_id=PositionId(f"{instrument.id}-EXTERNAL"),
+            position_id=report.venue_position_id or PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(UUID4().value),
             order_side=order.side,
             order_type=order.order_type,

@@ -404,9 +404,16 @@ impl LimitOrder {
             .extract::<&str>()?
             .parse::<TimeInForce>()
             .unwrap();
-        let expire_time_ns = dict
+        let expire_time = dict
             .get_item("expire_time_ns")
-            .map(|x| x.extract::<u64>().ok())?;
+            .map(|x| {
+                let extracted = x.extract::<u64>();
+                match extracted {
+                    Ok(item) => Some(UnixNanos::from(item)),
+                    Err(_) => None,
+                }
+            })
+            .unwrap();
         let is_post_only = dict.get_item("is_post_only")?.extract::<bool>()?;
         let is_reduce_only = dict.get_item("is_reduce_only")?.extract::<bool>()?;
         let is_quote_quantity = dict.get_item("is_quote_quantity")?.extract::<bool>()?;
@@ -493,7 +500,7 @@ impl LimitOrder {
             quantity,
             price,
             time_in_force,
-            expire_time_ns.map(UnixNanos::from),
+            expire_time,
             is_post_only,
             is_reduce_only,
             is_quote_quantity,

@@ -46,6 +46,7 @@ from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
@@ -788,7 +789,7 @@ cdef class OrderMatchingEngine:
         # Index identifiers
         self._account_ids[order.trader_id] = account_id
 
-        cdef uint64_t
+        cdef uint64_t now_ns
         if self._instrument_has_expiration:
             now_ns = self._clock.timestamp_ns()
             if now_ns < self.instrument.activation_ns:
@@ -1770,7 +1771,7 @@ cdef class OrderMatchingEngine:
         cdef:
             Price fill_px
             Quantity fill_qty
-            uint64_t total_size_raw = 0
+            QuantityRaw total_size_raw = 0
         if order.time_in_force == TimeInForce.FOK:
             # Check FOK requirement
             for fill in fills:
@@ -1783,7 +1784,7 @@ cdef class OrderMatchingEngine:
 
         if not fills:
             if order.status_c() == OrderStatus.SUBMITTED:
-                self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+                self._generate_order_rejected(order, f"no market with no fills for {order.instrument_id}")
             else:
                 self._log.error(
                     "Cannot fill order: no fills from book when fills were expected (check data)",
