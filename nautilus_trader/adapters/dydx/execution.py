@@ -281,7 +281,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._block_height: int = 0
         self._oracle_prices: dict[InstrumentId, Decimal] = {}
 
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 1.0,

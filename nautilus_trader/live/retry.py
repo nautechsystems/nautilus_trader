@@ -181,7 +181,7 @@ class RetryManager(Generic[T]):
         return self.details_str
 
 
-class RetryManagerPool:
+class RetryManagerPool(Generic[T]):
     """
     Provides a pool of `RetryManager`s.
 
@@ -218,10 +218,10 @@ class RetryManagerPool:
         self.exc_types = exc_types
         self.retry_check = retry_check
         self.pool_size = pool_size
-        self._pool: list[RetryManager] = [self._create_manager() for _ in range(pool_size)]
+        self._pool: list[RetryManager[T]] = [self._create_manager() for _ in range(pool_size)]
         self._lock = asyncio.Lock()
-        self._current_manager: RetryManager | None = None
-        self._active_managers: set[RetryManager] = set()
+        self._current_manager: RetryManager[T] | None = None
+        self._active_managers: set[RetryManager[T]] = set()
 
     def _create_manager(self) -> RetryManager:
         return RetryManager(

@@ -163,7 +163,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # HTTP API
         self._signature_type = 0
         self._http_client = http_client
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 0.0,
