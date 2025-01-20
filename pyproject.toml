@@ -37,8 +37,8 @@ include = [
 
 [build-system]
 requires = [
-    "setuptools",
-    "poetry-core>=2.0.0",
+    "setuptools>=75",
+    "poetry-core>=2.0.1",
     "numpy>=1.26.4",
     "Cython==3.1.0a1",
 ]
@@ -50,12 +50,10 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
-cython = "==3.1.0a1"  # Build dependency (pinned for stability)
-numpy = ">=1.26.4"  # Build dependency
-setuptools = ">=75" # Build dependency
 click = "^8.1.8"
 fsspec = "^2024.12.0"
 msgspec = "^0.19.0"
+numpy = ">=1.26.4"
 pandas = "^2.2.3"
 pyarrow = ">=19.0.0"
 pytz = ">=2024.2.0"
@@ -86,6 +84,8 @@ polymarket = ["py-clob-client"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
+cython = "==3.1.0a1"  # Build dependency (pinned for stability)
+setuptools = ">=75" # Build dependency
 black = "^24.10.0"
 docformatter = "^1.7.5"
 mypy = "^1.14.1"
