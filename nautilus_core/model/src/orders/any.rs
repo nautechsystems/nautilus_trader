@@ -150,6 +150,20 @@ impl OrderAny {
         }
     }
 
+    pub fn events(&self) -> Vec<&OrderEventAny> {
+        match self {
+            Self::Limit(order) => order.events(),
+            Self::LimitIfTouched(order) => order.events(),
+            Self::Market(order) => order.events(),
+            Self::MarketIfTouched(order) => order.events(),
+            Self::MarketToLimit(order) => order.events(),
+            Self::StopLimit(order) => order.events(),
+            Self::StopMarket(order) => order.events(),
+            Self::TrailingStopLimit(order) => order.events(),
+            Self::TrailingStopMarket(order) => order.events(),
+        }
+    }
+
     #[must_use]
     pub fn last_event(&self) -> &OrderEventAny {
         match self {
