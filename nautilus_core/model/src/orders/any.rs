@@ -1186,6 +1186,8 @@ impl From<OrderAny> for LimitOrderAny {
         match order {
             OrderAny::Limit(order) => LimitOrderAny::Limit(order),
             OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
+            OrderAny::StopLimit(order) => LimitOrderAny::StopLimit(order),
+            OrderAny::TrailingStopLimit(order) => LimitOrderAny::TrailingStopLimit(order),
             _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
         }
     }
