@@ -135,10 +135,10 @@ impl WebSocketClientInner {
             .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
 
         let heartbeat_task = Self::spawn_heartbeat_task(
+            connection_state.clone(),
             *heartbeat,
             heartbeat_msg.clone(),
             writer.clone(),
-            connection_state.clone(),
         );
 
         Ok(Self {
@@ -173,10 +173,10 @@ impl WebSocketClientInner {
 
     /// Optionally spawn a hearbeat task to periodically ping the server.
     pub fn spawn_heartbeat_task(
+        connection_state: Arc<AtomicU8>,
         heartbeat: Option<u64>,
         message: Option<String>,
         writer: SharedMessageWriter,
-        connection_state: Arc<AtomicU8>,
     ) -> Option<task::JoinHandle<()>> {
         tracing::debug!("Started task 'heartbeat'");
         heartbeat.map(|duration| {
@@ -184,6 +184,9 @@ impl WebSocketClientInner {
                 let duration = Duration::from_secs(duration);
                 while connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
                     sleep(duration).await;
+                    if connection_state.load(Ordering::SeqCst) != CONNECTION_ACTIVE {
+                        break;
+                    }
                     let mut guard = writer.lock().await;
                     // Only send if still active
                     if connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
@@ -272,6 +275,8 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
+        tracing::debug!("Reconnecting client");
+
         let state_guard = {
             let guard = self.reconnection_lock.lock().await;
             self.connection_state
@@ -306,15 +311,17 @@ impl WebSocketClientInner {
         }
 
         self.heartbeat_task = Self::spawn_heartbeat_task(
+            self.connection_state.clone(),
             self.config.heartbeat,
             self.config.heartbeat_msg.clone(),
             self.writer.clone(),
-            self.connection_state.clone(),
         );
 
         drop(state_guard);
         self.connection_state
             .store(CONNECTION_ACTIVE, Ordering::SeqCst);
+
+        tracing::debug!("Reconnect succeeded");
         Ok(())
     }
 
