@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance raw TCP client implementation with TLS capability.
+//! High-performance raw TCP client implementation with TLS capability, automatic reconnection
+//! and state management.
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
     time::Duration,
@@ -42,6 +43,19 @@ use crate::tls::tcp_tls;
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
+
+/// Connection state for the Socket client.
+///
+/// - ACTIVE: Normal operation, all tasks running
+/// - RECONNECTING: In process of reconnecting, tasks paused
+/// - CLOSED: Connection terminated, cleanup in progress
+///
+/// Connection state transitions:
+/// ACTIVE <-> RECONNECTING: During reconnection attempts
+/// ACTIVE/RECONNECTING -> CLOSED: Only when controller task terminates
+const CONNECTION_ACTIVE: u8 = 0;
+const CONNECTION_RECONNECTING: u8 = 1;
+const CONNECTION_CLOSED: u8 = 2;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -84,9 +98,11 @@ pub struct SocketConfig {
 )]
 struct SocketClientInner {
     config: SocketConfig,
-    read_task: task::JoinHandle<()>,
+    read_task: Arc<task::JoinHandle<()>>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedTcpWriter,
+    reconnection_lock: Arc<Mutex<()>>,
+    connection_state: Arc<AtomicU8>,
 }
 
 impl SocketClientInner {
@@ -102,21 +118,30 @@ impl SocketClientInner {
             max_reconnection_tries: _,
         } = &config;
         let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
-        let shared_writer = Arc::new(Mutex::new(writer));
+        let writer = Arc::new(Mutex::new(writer));
+
+        let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
+        let reconnection_lock = Arc::new(Mutex::new(()));
 
         let handler1 = Python::with_gil(|py| handler.clone_ref(py));
         // Keep receiving messages from socket pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler1, suffix.clone());
+        let read_task = Arc::new(Self::spawn_read_task(reader, handler1, suffix.clone()));
 
         // Optionally create heartbeat task
-        let heartbeat_task =
-            Self::spawn_heartbeat_task(heartbeat.clone(), shared_writer.clone(), suffix.clone());
+        let heartbeat_task = Self::spawn_heartbeat_task(
+            connection_state.clone(),
+            heartbeat.clone(),
+            writer.clone(),
+            suffix.clone(),
+        );
 
         Ok(Self {
             config,
             read_task,
             heartbeat_task,
-            writer: shared_writer,
+            writer,
+            reconnection_lock,
+            connection_state,
         })
     }
 
@@ -181,6 +206,7 @@ impl SocketClientInner {
 
     /// Optionally spawn a heartbeat task to periodically ping the server.
     fn spawn_heartbeat_task(
+        connection_state: Arc<AtomicU8>,
         heartbeat: Option<(u64, Vec<u8>)>,
         writer: SharedTcpWriter,
         suffix: Vec<u8>,
@@ -189,8 +215,11 @@ impl SocketClientInner {
             task::spawn(async move {
                 let duration = Duration::from_secs(duration);
                 message.extend(suffix);
-                loop {
+                while connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
                     sleep(duration).await;
+                    if connection_state.load(Ordering::SeqCst) != CONNECTION_ACTIVE {
+                        break;
+                    }
                     tracing::debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
                     match guard.write_all(&message).await {
@@ -202,37 +231,6 @@ impl SocketClientInner {
         })
     }
 
-    /// Shutdown read and hearbeat task and the connection.
-    ///
-    /// The client must be explicitly shutdown before dropping otherwise
-    /// the connection might still be alive for some time before terminating.
-    /// Closing the connection is an async call which cannot be done by the
-    /// drop method so it must be done explicitly.
-    async fn shutdown(&mut self) {
-        tracing::debug!("Closing connection");
-
-        if !self.read_task.is_finished() {
-            self.read_task.abort();
-            tracing::debug!("Aborted message read task");
-        }
-
-        // Cancel heart beat task
-        if let Some(ref handle) = self.heartbeat_task.take() {
-            if !handle.is_finished() {
-                handle.abort();
-                tracing::debug!("Aborted heartbeat task");
-            }
-        }
-
-        tracing::debug!("Shutdown writer");
-        let mut writer = self.writer.lock().await;
-        if let Err(e) = writer.shutdown().await {
-            tracing::error!("Error closing writer: {e:?}");
-        } else {
-            tracing::debug!("Closed connection");
-        }
-    }
-
     /// Reconnect with server.
     ///
     /// Make a new connection with server. Use the new read and write halves
@@ -240,8 +238,20 @@ impl SocketClientInner {
     async fn reconnect(&mut self) -> Result<(), Error> {
         tracing::debug!("Reconnecting client");
 
+        let state_guard = {
+            let guard = self.reconnection_lock.lock().await;
+            self.connection_state
+                .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
+            guard
+        };
+
         // Clean up existing tasks
-        let _ = self.shutdown().await;
+        shutdown(
+            self.read_task.clone(),
+            self.heartbeat_task.take(),
+            self.writer.clone(),
+        )
+        .await;
 
         let SocketConfig {
             url,
@@ -259,14 +269,25 @@ impl SocketClientInner {
 
         // Spawn new read task
         let handler_for_read = Python::with_gil(|py| handler.clone_ref(py));
-        self.read_task = Self::spawn_read_task(reader, handler_for_read, suffix.clone());
+        self.read_task = Arc::new(Self::spawn_read_task(
+            reader,
+            handler_for_read,
+            suffix.clone(),
+        ));
 
         // Spawn new heartbeat task
-        self.heartbeat_task =
-            Self::spawn_heartbeat_task(heartbeat.clone(), new_writer_arc, suffix.clone());
+        self.heartbeat_task = Self::spawn_heartbeat_task(
+            self.connection_state.clone(),
+            heartbeat.clone(),
+            new_writer_arc,
+            suffix.clone(),
+        );
 
-        tracing::info!("Reconnect succeeded");
+        drop(state_guard);
+        self.connection_state
+            .store(CONNECTION_ACTIVE, Ordering::SeqCst);
 
+        tracing::debug!("Reconnect succeeded");
         Ok(())
     }
 
@@ -280,6 +301,42 @@ impl SocketClientInner {
     #[must_use]
     pub fn is_alive(&self) -> bool {
         !self.read_task.is_finished()
+    }
+}
+
+/// Shutdown socket connection.
+///
+/// The client must be explicitly shutdown before dropping otherwise
+/// the connection might still be alive for some time before terminating.
+/// Closing the connection is an async call which cannot be done by the
+/// drop method so it must be done explicitly.
+async fn shutdown(
+    read_task: Arc<task::JoinHandle<()>>,
+    heartbeat_task: Option<task::JoinHandle<()>>,
+    writer: SharedTcpWriter,
+) {
+    tracing::debug!("Closing connection");
+
+    // Final close of writer
+    let mut writer = writer.lock().await;
+    if let Err(e) = writer.shutdown().await {
+        tracing::error!("Error on shutdown: {e}");
+    }
+    drop(writer);
+
+    // Small delay for close frame to be sent
+    sleep(Duration::from_millis(100)).await;
+
+    // Abort tasks
+    if !read_task.is_finished() {
+        read_task.abort();
+        tracing::debug!("Aborted read task");
+    }
+    if let Some(task) = heartbeat_task {
+        if !task.is_finished() {
+            task.abort();
+            tracing::debug!("Aborted heartbeat task");
+        }
     }
 }
 
@@ -434,7 +491,12 @@ impl SocketClient {
                     },
                     (true, true) => {
                         tracing::debug!("Shutting down inner client");
-                        inner.shutdown().await;
+                        shutdown(
+                            inner.read_task.clone(),
+                            inner.heartbeat_task.take(),
+                            inner.writer.clone(),
+                        )
+                        .await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
                                 Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
@@ -450,11 +512,19 @@ impl SocketClient {
                     (true, false) => {
                         tracing::debug!("Inner client is disconnected");
                         tracing::debug!("Shutting down inner client to clean up running tasks");
-                        inner.shutdown().await;
+                        shutdown(
+                            inner.read_task.clone(),
+                            inner.heartbeat_task.take(),
+                            inner.writer.clone(),
+                        )
+                        .await;
                     }
                     _ => (),
                 }
             }
+            inner
+                .connection_state
+                .store(CONNECTION_CLOSED, Ordering::SeqCst);
         })
     }
 }
