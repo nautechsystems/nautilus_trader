@@ -102,7 +102,7 @@ pub fn nanos_since_unix_epoch() -> u64 {
 /// The `realtime` flag indicates which mode the clock is currently in.
 /// For concurrency, this struct uses atomic operations with appropriate memory orderings:
 /// - **Acquire/Release** for reading/writing in **static mode**,
-/// - **Compare-and-exchange (AcqRel)** in real-time mode to guarantee monotonic increments.
+/// - **Compare-and-exchange (`AcqRel`)** in real-time mode to guarantee monotonic increments.
 #[repr(C)]
 #[derive(Debug)]
 pub struct AtomicTime {
@@ -146,7 +146,7 @@ impl AtomicTime {
     /// Returns the current time in nanoseconds, based on the clock’s mode.
     ///
     /// - In **real-time mode**, calls [`AtomicTime::time_since_epoch`], ensuring strictly increasing
-    ///   timestamps across threads, using AcqRel semantics for the underlying atomic.
+    ///   timestamps across threads, using `AcqRel` semantics for the underlying atomic.
     /// - In **static mode**, reads the stored time using [`Ordering::Acquire`]. Updates by other
     ///   threads using [`AtomicTime::set_time`] or [`AtomicTime::increment_time`] (Release/AcqRel)
     ///   will be visible here.
