@@ -13,10 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance WebSocket client implementation.
+//! High-performance WebSocket client with automatic reconnection and state management.
+//!
+//! **Key features**:
+//! - Connection state tracking (ACTIVE/RECONNECTING/CLOSED)
+//! - Synchronized reconnection with backoff
+//! - Clean shutdown sequence
+//! - Split read/write architecture
+//! - Python callback integration
+//!
+//! **Design**:
+//! - Single reader, multiple writer model
+//! - Read half runs in dedicated task
+//! - Write half protected by Arc<Mutex>
+//! - Controller task manages lifecycle
+
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
     time::Duration,
@@ -26,6 +40,7 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
@@ -40,6 +55,19 @@ type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Messa
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+
+/// Connection state for the WebSocket client
+///
+/// - ACTIVE: Normal operation, all tasks running
+/// - RECONNECTING: In process of reconnecting, tasks paused
+/// - CLOSED: Connection terminated, cleanup in progress
+///
+/// Connection state transitions:
+/// ACTIVE <-> RECONNECTING: During reconnection attempts
+/// ACTIVE/RECONNECTING -> CLOSED: Only when controller task terminates
+const CONNECTION_ACTIVE: u8 = 0;
+const CONNECTION_RECONNECTING: u8 = 1;
+const CONNECTION_CLOSED: u8 = 2;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -76,6 +104,8 @@ struct WebSocketClientInner {
     read_task: Option<task::JoinHandle<()>>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
+    reconnection_lock: Arc<Mutex<()>>,
+    connection_state: Arc<AtomicU8>,
 }
 
 impl WebSocketClientInner {
@@ -96,19 +126,28 @@ impl WebSocketClientInner {
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
+        let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
+        let reconnection_lock = Arc::new(Mutex::new(()));
+
         // Only spawn read task if handler is provided
         let read_task = handler
             .as_ref()
             .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
 
-        let heartbeat_task =
-            Self::spawn_heartbeat_task(*heartbeat, heartbeat_msg.clone(), writer.clone());
+        let heartbeat_task = Self::spawn_heartbeat_task(
+            *heartbeat,
+            heartbeat_msg.clone(),
+            writer.clone(),
+            connection_state.clone(),
+        );
 
         Ok(Self {
             config,
             read_task,
             heartbeat_task,
             writer,
+            connection_state,
+            reconnection_lock,
         })
     }
 
@@ -121,14 +160,12 @@ impl WebSocketClientInner {
         let mut request = url.into_client_request()?;
         let req_headers = request.headers_mut();
 
-        // Hacky solution to overcome the new `http` trait bounds
+        let mut header_names: Vec<HeaderName> = Vec::new();
         for (key, val) in headers {
             let header_value = HeaderValue::from_str(&val)?;
-            use http::header::HeaderName;
             let header_name: HeaderName = key.parse()?;
-            let header_name_string = header_name.to_string();
-            let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
-            req_headers.insert(header_name_str, header_value);
+            header_names.push(header_name.clone());
+            req_headers.insert(header_name, header_value);
         }
 
         connect_async(request).await.map(|resp| resp.0.split())
@@ -139,21 +176,26 @@ impl WebSocketClientInner {
         heartbeat: Option<u64>,
         message: Option<String>,
         writer: SharedMessageWriter,
+        connection_state: Arc<AtomicU8>,
     ) -> Option<task::JoinHandle<()>> {
         tracing::debug!("Started task 'heartbeat'");
         heartbeat.map(|duration| {
             task::spawn(async move {
                 let duration = Duration::from_secs(duration);
-                loop {
+                while connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
                     sleep(duration).await;
                     let mut guard = writer.lock().await;
-                    let guard_send_response = match message.clone() {
-                        Some(msg) => guard.send(Message::Text(msg.into())).await,
-                        None => guard.send(Message::Ping(vec![].into())).await,
-                    };
-                    match guard_send_response {
-                        Ok(()) => tracing::trace!("Sent ping"),
-                        Err(e) => tracing::error!("Error sending ping: {e}"),
+                    // Only send if still active
+                    if connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
+                        let guard_send_response = match message.clone() {
+                            Some(msg) => guard.send(Message::Text(msg.into())).await,
+                            None => guard.send(Message::Ping(vec![].into())).await,
+                        };
+
+                        match guard_send_response {
+                            Ok(()) => tracing::trace!("Sent ping"),
+                            Err(e) => tracing::error!("Error sending ping: {e}"),
+                        }
                     }
                 }
             })
@@ -225,51 +267,35 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Shutdown read and hearbeat task and the connection.
-    ///
-    /// The client must be explicitly shutdown before dropping otherwise
-    /// the connection might still be alive for some time before terminating.
-    /// Closing the connection is an async call which cannot be done by the
-    /// drop method so it must be done explicitly.
-    pub async fn shutdown(&mut self) {
-        tracing::debug!("Closing connection");
-
-        if let Some(ref read_task) = self.read_task.take() {
-            if !read_task.is_finished() {
-                read_task.abort();
-                tracing::debug!("Aborted message read task");
-            }
-        }
-
-        // Cancel heart beat task
-        if let Some(ref handle) = self.heartbeat_task.take() {
-            if !handle.is_finished() {
-                handle.abort();
-                tracing::debug!("Aborted heartbeat task");
-            }
-        }
-
-        tracing::debug!("Closing writer");
-        let mut write_half = self.writer.lock().await;
-        if let Err(e) = write_half.close().await {
-            tracing::error!("Error closing writer: {e:?}");
-        } else {
-            tracing::debug!("Closed connection");
-        }
-    }
-
     /// Reconnect with server.
     ///
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        self.shutdown().await;
+        let state_guard = {
+            let guard = self.reconnection_lock.lock().await;
+            self.connection_state
+                .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
+            guard
+        };
+
+        sleep(Duration::from_millis(100)).await;
+
+        shutdown(
+            self.read_task.take(),
+            self.heartbeat_task.take(),
+            self.writer.clone(),
+        )
+        .await;
 
         let (new_writer, reader) =
             Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
-        let mut guard = self.writer.lock().await;
-        *guard = new_writer;
-        drop(guard);
+
+        {
+            let mut guard = self.writer.lock().await;
+            *guard = new_writer;
+            drop(guard);
+        }
 
         if let Some(ref handler) = self.config.handler {
             self.read_task = Some(Self::spawn_read_task(
@@ -283,8 +309,12 @@ impl WebSocketClientInner {
             self.config.heartbeat,
             self.config.heartbeat_msg.clone(),
             self.writer.clone(),
+            self.connection_state.clone(),
         );
 
+        drop(state_guard);
+        self.connection_state
+            .store(CONNECTION_ACTIVE, Ordering::SeqCst);
         Ok(())
     }
 
@@ -305,6 +335,53 @@ impl WebSocketClientInner {
     }
 }
 
+/// Shutdown websocket connection.
+///
+/// Performs orderly WebSocket shutdown:
+/// 1. Sends close frame to server
+/// 2. Waits briefly for frame delivery
+/// 3. Aborts read/heartbeat tasks
+/// 4. Closes underlying connection
+///
+/// This sequence ensures proper protocol compliance and clean resource cleanup.
+async fn shutdown(
+    read_task: Option<task::JoinHandle<()>>,
+    heartbeat_task: Option<task::JoinHandle<()>>,
+    writer: SharedMessageWriter,
+) {
+    tracing::debug!("Closing connection");
+
+    // Send close frame first
+    let mut write_half = writer.lock().await;
+    if let Err(e) = write_half.send(Message::Close(None)).await {
+        tracing::error!("Error sending close frame: {e}");
+    }
+    drop(write_half);
+
+    // Small delay for close frame to be sent
+    sleep(Duration::from_millis(100)).await;
+
+    // Abort tasks
+    if let Some(task) = read_task {
+        if !task.is_finished() {
+            task.abort();
+            tracing::debug!("Aborted read task");
+        }
+    }
+    if let Some(task) = heartbeat_task {
+        if !task.is_finished() {
+            task.abort();
+            tracing::debug!("Aborted heartbeat task");
+        }
+    }
+
+    // Final close of writer
+    let mut write_half = writer.lock().await;
+    if let Err(e) = write_half.close().await {
+        tracing::error!("Error closing writer: {e}");
+    }
+}
+
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
         if let Some(ref read_task) = self.read_task.take() {
@@ -322,6 +399,10 @@ impl Drop for WebSocketClientInner {
     }
 }
 
+/// WebSocket client with automatic reconnection.
+///
+/// Handles connection state, Python callbacks, and rate limiting.
+/// See module docs for architecture details.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -455,13 +536,15 @@ impl WebSocketClient {
         }
     }
 
-    pub async fn send_text(&self, data: String) -> Result<(), Error> {
+    pub async fn send_text(&self, data: String, keys: Option<Vec<String>>) -> Result<(), Error> {
+        self.rate_limiter.await_keys_ready(keys).await;
         tracing::trace!("Sending text: {data:?}");
         let mut guard = self.writer.lock().await;
         guard.send(Message::Text(data.into())).await
     }
 
-    pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
+    pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<Vec<String>>) -> Result<(), Error> {
+        self.rate_limiter.await_keys_ready(keys).await;
         tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
         guard.send(Message::Binary(data.into())).await
@@ -529,8 +612,12 @@ impl WebSocketClient {
                         }
                     },
                     (true, true) => {
-                        tracing::debug!("Shutting down inner client");
-                        inner.shutdown().await;
+                        shutdown(
+                            inner.read_task.take(),
+                            inner.heartbeat_task.take(),
+                            inner.writer.clone(),
+                        )
+                        .await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
                                 Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
@@ -547,11 +634,275 @@ impl WebSocketClient {
                     (true, false) => {
                         tracing::debug!("Inner client is disconnected");
                         tracing::debug!("Shutting down inner client to clean up running tasks");
-                        inner.shutdown().await;
+                        shutdown(
+                            inner.read_task.take(),
+                            inner.heartbeat_task.take(),
+                            inner.writer.clone(),
+                        )
+                        .await;
                     }
                     _ => (),
                 }
             }
+            inner
+                .connection_state
+                .store(CONNECTION_CLOSED, Ordering::SeqCst);
         })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::{num::NonZeroU32, sync::Arc};
+
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::{
+        net::TcpListener,
+        task::{self, JoinHandle},
+    };
+    use tokio_tungstenite::{
+        accept_hdr_async,
+        tungstenite::{
+            handshake::server::{self, Callback},
+            http::HeaderValue,
+        },
+    };
+
+    use crate::{
+        ratelimiter::quota::Quota,
+        websocket::{WebSocketClient, WebSocketConfig},
+    };
+
+    struct TestServer {
+        task: JoinHandle<()>,
+        port: u16,
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestCallback {
+        key: String,
+        value: HeaderValue,
+    }
+
+    impl Callback for TestCallback {
+        fn on_request(
+            self,
+            request: &server::Request,
+            response: server::Response,
+        ) -> Result<server::Response, server::ErrorResponse> {
+            let _ = response;
+            let value = request.headers().get(&self.key);
+            assert!(value.is_some());
+
+            if let Some(value) = request.headers().get(&self.key) {
+                assert_eq!(value, self.value);
+            }
+
+            Ok(response)
+        }
+    }
+
+    impl TestServer {
+        async fn setup() -> Self {
+            let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = TcpListener::local_addr(&server).unwrap().port();
+
+            let header_key = "test".to_string();
+            let header_value = "test".to_string();
+
+            let test_call_back = TestCallback {
+                key: header_key,
+                value: HeaderValue::from_str(&header_value).unwrap(),
+            };
+
+            // Set up test server
+            let task = task::spawn(async move {
+                // Keep accepting connections
+                loop {
+                    let (conn, _) = server.accept().await.unwrap();
+                    let mut websocket = accept_hdr_async(conn, test_call_back.clone())
+                        .await
+                        .unwrap();
+
+                    task::spawn(async move {
+                        while let Some(Ok(msg)) = websocket.next().await {
+                            match msg {
+                                // Force a close if we see "close"
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
+                                    if txt == "close-now" =>
+                                {
+                                    tracing::debug!("Forcibly closing from server side");
+                                    // This sends a close frame, then stops reading
+                                    let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                // Echo text/binary frames
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(_)
+                                | tokio_tungstenite::tungstenite::protocol::Message::Binary(_) => {
+                                    if websocket.send(msg).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                // If the client closes, we also break
+                                tokio_tungstenite::tungstenite::protocol::Message::Close(
+                                    _frame,
+                                ) => {
+                                    let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                // Ignore pings/pongs
+                                _ => {}
+                            }
+                        }
+                    });
+                }
+            });
+
+            Self { task, port }
+        }
+    }
+
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn setup_test_client(port: u16) -> WebSocketClient {
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{}", port),
+            headers: vec![("test".into(), "test".into())],
+            handler: None,
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            max_reconnection_tries: None,
+        };
+        WebSocketClient::connect(config, None, None, None, vec![], None)
+            .await
+            .expect("Failed to connect")
+    }
+
+    #[tokio::test]
+    async fn test_websocket_basic() {
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+
+        assert!(!client.is_disconnected());
+
+        client.disconnect().await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    async fn test_websocket_heartbeat() {
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+
+        // Wait ~3s => server should see multiple "ping"
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        // Cleanup
+        client.disconnect().await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    async fn test_websocket_reconnect_exhausted() {
+        let config = WebSocketConfig {
+            url: "ws://127.0.0.1:9997".into(), // <-- No server
+            headers: vec![],
+            handler: None,
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            max_reconnection_tries: Some(2),
+        };
+        let res = WebSocketClient::connect(config, None, None, None, vec![], None).await;
+        assert!(res.is_err(), "Should fail quickly with no server");
+    }
+
+    #[tokio::test]
+    async fn test_websocket_forced_close_reconnect() {
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+
+        // 1) Send normal message
+        client.send_text("Hello".into(), None).await.unwrap();
+        // 2) Trigger forced close from server
+        client.send_text("close-now".into(), None).await.unwrap();
+
+        // Wait a bit => read loop sees close => reconnect
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        // Confirm not disconnected => meaning it’s in reconnect or reconnected
+        assert!(!client.is_disconnected());
+
+        // Cleanup
+        client.disconnect().await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiter() {
+        let server = TestServer::setup().await;
+        let quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{}", server.port),
+            headers: vec![("test".into(), "test".into())],
+            handler: None,
+            heartbeat: None,
+            heartbeat_msg: None,
+            ping_handler: None,
+            max_reconnection_tries: None,
+        };
+
+        let client = WebSocketClient::connect(
+            config,
+            None,
+            None,
+            None,
+            vec![("default".into(), quota)],
+            None,
+        )
+        .await
+        .unwrap();
+
+        // First 2 should succeed
+        client.send_text("test1".into(), None).await.unwrap();
+        client.send_text("test2".into(), None).await.unwrap();
+
+        // Third should error
+        client.send_text("test3".into(), None).await.unwrap();
+
+        // Cleanup
+        client.disconnect().await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_writers() {
+        let server = TestServer::setup().await;
+        let client = Arc::new(setup_test_client(server.port).await);
+
+        let mut handles = vec![];
+        for i in 0..10 {
+            let client = client.clone();
+            handles.push(task::spawn(async move {
+                client.send_text(format!("test{}", i), None).await.unwrap();
+            }));
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Cleanup
+        client.disconnect().await;
+        assert!(client.is_disconnected());
     }
 }

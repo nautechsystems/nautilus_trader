@@ -367,7 +367,7 @@ counter = Counter()",
 
         // Send messages that increment the count
         for _ in 0..N {
-            if client.send_bytes(b"ping".to_vec()).await.is_ok() {
+            if client.send_bytes(b"ping".to_vec(), None).await.is_ok() {
                 success_count += 1;
             };
         }
@@ -396,7 +396,7 @@ counter = Counter()",
         // Send messages that increment the count
         sleep(Duration::from_secs(2)).await;
         for _ in 0..N {
-            if client.send_bytes(b"ping".to_vec()).await.is_ok() {
+            if client.send_bytes(b"ping".to_vec(), None).await.is_ok() {
                 success_count += 1;
             };
         }
