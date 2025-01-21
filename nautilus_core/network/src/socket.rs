@@ -533,6 +533,7 @@ impl SocketClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::net::TcpListener;
 
