@@ -146,8 +146,8 @@ impl WebSocketClientInner {
             read_task,
             heartbeat_task,
             writer,
-            connection_state,
             reconnection_lock,
+            connection_state,
         })
     }
 
@@ -780,7 +780,7 @@ mod tests {
 
     async fn setup_test_client(port: u16) -> WebSocketClient {
         let config = WebSocketConfig {
-            url: format!("ws://127.0.0.1:{}", port),
+            url: format!("ws://127.0.0.1:{port}"),
             headers: vec![("test".into(), "test".into())],
             handler: None,
             heartbeat: None,
@@ -900,7 +900,7 @@ mod tests {
         for i in 0..10 {
             let client = client.clone();
             handles.push(task::spawn(async move {
-                client.send_text(format!("test{}", i), None).await.unwrap();
+                client.send_text(format!("test{i}"), None).await.unwrap();
             }));
         }
 

@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{
     any::Any,
     cell::RefCell,
@@ -58,7 +54,7 @@ use crate::{
 pub struct OrderEmulator {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
+    _msgbus: Rc<RefCell<MessageBus>>,
     manager: Rc<RefCell<OrderManager>>,
     state: Rc<RefCell<OrderEmulatorState>>,
 }
@@ -88,7 +84,6 @@ impl OrderEmulator {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
-        debug: bool,
     ) -> Self {
         // TODO: Impl Actor Trait
         // self.register_base(portfolio, msgbus, cache, clock);
@@ -127,7 +122,7 @@ impl OrderEmulator {
         Self {
             clock,
             cache,
-            msgbus,
+            _msgbus: msgbus,
             manager,
             state,
         }
@@ -169,6 +164,7 @@ impl OrderEmulator {
         self.state
             .borrow()
             .matching_cores
+            .borrow()
             .get(instrument_id)
             .cloned()
     }
@@ -261,14 +257,14 @@ impl OrderEmulator {
 
     pub fn on_reset(&mut self) {
         self.manager.borrow_mut().reset();
-        self.state.borrow_mut().matching_cores.clear();
+        self.state.borrow_mut().matching_cores.borrow_mut().clear();
     }
 
     pub const fn on_dispose(&self) {}
 
     // --------------------------------------------------------------------------------------------
 
-    fn update_order(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
+    pub fn update_order(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
         log::info!(
             "Updating order {} quantity to {}",
             order.client_order_id(),
@@ -316,6 +312,7 @@ impl OrderEmulator {
             .state
             .borrow()
             .matching_cores
+            .borrow()
             .get(&deltas.instrument_id)
         {
             matching_core.clone()
@@ -352,18 +349,22 @@ impl OrderEmulator {
         drop(borrowed_cache);
         self.iterate_orders(&mut matching_core);
 
-        // TODO: Check flow
         self.state
             .borrow_mut()
             .matching_cores
+            .borrow_mut()
             .insert(deltas.instrument_id, matching_core);
     }
 
-    fn on_quote_tick(&mut self, tick: QuoteTick) {
+    pub fn on_quote_tick(&mut self, tick: QuoteTick) {
         log::debug!("Processing QuoteTick:{}", tick);
 
-        let mut matching_core = if let Some(matching_core) =
-            self.state.borrow().matching_cores.get(&tick.instrument_id)
+        let mut matching_core = if let Some(matching_core) = self
+            .state
+            .borrow()
+            .matching_cores
+            .borrow()
+            .get(&tick.instrument_id)
         {
             matching_core.clone()
         } else {
@@ -379,27 +380,30 @@ impl OrderEmulator {
 
         self.iterate_orders(&mut matching_core);
 
-        // TODO: Check flow
         self.state
             .borrow_mut()
             .matching_cores
+            .borrow_mut()
             .insert(tick.instrument_id, matching_core);
     }
 
-    fn on_trade_tick(&mut self, tick: TradeTick) {
+    pub fn on_trade_tick(&mut self, tick: TradeTick) {
         log::debug!("Processing TradeTick:{}", tick);
 
         let borrowed_state = self.state.borrow();
-        let mut matching_core =
-            if let Some(matching_core) = borrowed_state.matching_cores.get(&tick.instrument_id) {
-                matching_core.clone()
-            } else {
-                log::error!(
-                    "Cannot handle `TradeTick`: no matching core for instrument {}",
-                    tick.instrument_id
-                );
-                return;
-            };
+        let mut matching_core = if let Some(matching_core) = borrowed_state
+            .matching_cores
+            .borrow()
+            .get(&tick.instrument_id)
+        {
+            matching_core.clone()
+        } else {
+            log::error!(
+                "Cannot handle `TradeTick`: no matching core for instrument {}",
+                tick.instrument_id
+            );
+            return;
+        };
 
         matching_core.set_last_raw(tick.price);
         if !self
@@ -415,14 +419,22 @@ impl OrderEmulator {
         drop(borrowed_state);
         self.iterate_orders(&mut matching_core);
 
-        // TODO: Check flow
         self.state
             .borrow_mut()
             .matching_cores
+            .borrow_mut()
             .insert(tick.instrument_id, matching_core);
     }
 
-    // TODO: add necessary handlers in OrderEmulator, like on_event here also
+    pub fn on_event(&mut self, event: OrderEventAny) {
+        OrderEmulatorState::on_event(
+            event,
+            self.manager.clone(),
+            self.cache.clone(),
+            self.state.borrow().matching_cores.clone(),
+        );
+    }
+
     fn iterate_orders(&mut self, matching_core: &mut OrderMatchingCore) {
         matching_core.iterate();
 
@@ -432,7 +444,6 @@ impl OrderEmulator {
                 continue;
             }
 
-            // TODO: fix this flow
             let mut order: OrderAny = order.clone().into();
             if matches!(
                 order.order_type(),
@@ -446,12 +457,32 @@ impl OrderEmulator {
     }
 }
 
+struct OrderEmulatorEventHandler {
+    id: Ustr,
+    callback: Box<dyn Fn(&OrderEventAny)>,
+}
+
+impl MessageHandler for OrderEmulatorEventHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &dyn Any) {
+        (self.callback)(msg.downcast_ref::<&OrderEventAny>().unwrap());
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 pub struct OrderEmulatorState {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     manager: Rc<RefCell<OrderManager>>,
-    matching_cores: HashMap<InstrumentId, OrderMatchingCore>,
+    matching_cores: Rc<RefCell<HashMap<InstrumentId, OrderMatchingCore>>>,
     subscribed_quotes: HashSet<InstrumentId>,
     subscribed_trades: HashSet<InstrumentId>,
     subscribed_strategies: HashSet<StrategyId>,
@@ -467,7 +498,7 @@ impl OrderEmulatorState {
     ) -> Self {
         Self {
             manager,
-            matching_cores: HashMap::new(),
+            matching_cores: Rc::new(RefCell::new(HashMap::new())),
             subscribed_quotes: HashSet::new(),
             subscribed_trades: HashSet::new(),
             subscribed_strategies: HashSet::new(),
@@ -526,12 +557,16 @@ impl OrderEmulatorState {
             .trigger_instrument_id()
             .unwrap_or_else(|| order.instrument_id());
 
-        let mut matching_core = if let Some(core) = self.matching_cores.get(&trigger_instrument_id)
-        {
-            core.clone()
+        let matching_core = self
+            .matching_cores
+            .borrow()
+            .get(&trigger_instrument_id)
+            .cloned();
+
+        let mut matching_core = if let Some(core) = matching_core {
+            core
         } else {
             // Handle synthetic instruments
-            // TODO: fix clones
             let (instrument_id, price_increment) = match trigger_instrument_id.is_synthetic() {
                 true => {
                     let synthetic = self
@@ -582,6 +617,7 @@ impl OrderEmulatorState {
                 log::error!(
                     "Cannot handle trailing stop order with no trigger_price and no market updates"
                 );
+
                 self.manager_cancel_order(order.clone());
                 return;
             }
@@ -669,8 +705,9 @@ impl OrderEmulatorState {
             );
         }
 
-        // Since we are cloning the matching core, we need to insert it back into the map
+        // Since we are cloning the matching core, we need to insert it back into the original hashmap
         self.matching_cores
+            .borrow_mut()
             .insert(trigger_instrument_id, matching_core);
 
         log::info!("Emulating {}", order);
@@ -749,7 +786,8 @@ impl OrderEmulatorState {
             .trigger_instrument_id()
             .unwrap_or_else(|| order.instrument_id());
 
-        let matching_core = if let Some(core) = self.matching_cores.get_mut(&trigger_instrument_id)
+        let borrowed_matching_cores = self.matching_cores.borrow();
+        let matching_core = if let Some(core) = borrowed_matching_cores.get(&trigger_instrument_id)
         {
             core
         } else {
@@ -762,7 +800,7 @@ impl OrderEmulatorState {
 
         matching_core.match_order(&PassiveOrderAny::from(order.clone()), false);
 
-        // todo: complete this + fix clones
+        // TODO: fix
         // match order.order_side() {
         //     OrderSide::Buy => matching_core.get_orders_bid().sort(),
         //     OrderSide::Sell => matching_core.get_orders_ask().sort(),
@@ -782,9 +820,12 @@ impl OrderEmulatorState {
             .trigger_instrument_id()
             .unwrap_or_else(|| order.instrument_id());
 
-        let matching_core = if let Some(core) = self.matching_cores.get(&trigger_instrument_id) {
+        let borrowed_matching_cores = self.matching_cores.borrow();
+        let matching_core = if let Some(core) = borrowed_matching_cores.get(&trigger_instrument_id)
+        {
             core
         } else {
+            drop(borrowed_matching_cores);
             self.manager_cancel_order(order);
             return;
         };
@@ -798,12 +839,14 @@ impl OrderEmulatorState {
                 .borrow()
                 .send_exec_command(TradingCommand::CancelOrder(command));
         } else {
+            drop(borrowed_matching_cores);
             self.manager_cancel_order(order);
         }
     }
 
     fn handle_cancel_all_orders(&mut self, command: CancelAllOrders) {
-        let matching_core = match self.matching_cores.get(&command.instrument_id) {
+        let borrowed_matching_cores = self.matching_cores.borrow();
+        let matching_core = match borrowed_matching_cores.get(&command.instrument_id) {
             Some(core) => core,
             None => return, // No orders to cancel
         };
@@ -820,6 +863,8 @@ impl OrderEmulatorState {
             OrderSide::Sell => matching_core.get_orders_ask().to_vec(),
         };
 
+        drop(borrowed_matching_cores);
+
         // Process all orders in a single iteration
         for order in orders_to_cancel {
             let order: OrderAny = order.into();
@@ -828,7 +873,7 @@ impl OrderEmulatorState {
     }
 
     // Cloned from manager to bypass few layers of handlers;
-    pub fn manager_cancel_order(&mut self, order: OrderAny) {
+    fn manager_cancel_order(&mut self, order: OrderAny) {
         if self
             .cache
             .borrow()
@@ -859,8 +904,12 @@ impl OrderEmulatorState {
         let trigger_instrument_id = order
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
-        let matching_core = self.matching_cores.get_mut(&trigger_instrument_id);
-        if let Some(matching_core) = matching_core {
+
+        if let Some(matching_core) = self
+            .matching_cores
+            .borrow_mut()
+            .get_mut(&trigger_instrument_id)
+        {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
                 log::error!("Cannot delete order: {:?}", e);
             }
@@ -890,21 +939,36 @@ impl OrderEmulatorState {
     }
 
     fn check_monitoring(&mut self, strategy_id: StrategyId, position_id: Option<PositionId>) {
-        // TODO: fix: add handler
-        // instead add this while initializing, -> not possible since, we need strategy_id
-        // or create a new function or struct
         if !self.subscribed_strategies.contains(&strategy_id) {
+            let handler = {
+                let manager = self.manager.clone();
+                let cache = self.cache.clone();
+                let matching_cores = self.matching_cores.clone();
+                ShareableMessageHandler(Rc::new(OrderEmulatorEventHandler {
+                    id: Ustr::from(&UUID4::new().to_string()),
+                    callback: Box::new(move |event: &OrderEventAny| {
+                        Self::on_event(
+                            event.clone(),
+                            manager.clone(),
+                            cache.clone(),
+                            matching_cores.clone(),
+                        );
+                    }),
+                }))
+            };
+
             // Subscribe to all strategy events
-            // self.msgbus.borrow().subscribe(
-            //     format!("events.order.{}", strategy_id),
-            //     self.on_event,
-            //     None,
-            // );
-            // self.msgbus.borrow().subscribe(
-            //     format!("events.position.{}", strategy_id),
-            //     self.on_event,
-            //     None,
-            // );
+            self.msgbus.borrow_mut().subscribe(
+                format!("events.order.{strategy_id}"),
+                handler.clone(),
+                None,
+            );
+            self.msgbus.borrow_mut().subscribe(
+                format!("events.position.{strategy_id}"),
+                handler,
+                None,
+            );
+
             self.subscribed_strategies.insert(strategy_id);
             log::info!(
                 "Subscribed to strategy {} order and position events",
@@ -919,14 +983,21 @@ impl OrderEmulatorState {
         }
     }
 
-    pub fn on_event(&mut self, event: OrderEventAny) {
+    fn on_event(
+        event: OrderEventAny,
+        manager: Rc<RefCell<OrderManager>>,
+        cache: Rc<RefCell<Cache>>,
+        matching_cores: Rc<RefCell<HashMap<InstrumentId, OrderMatchingCore>>>,
+    ) {
         log::info!("{RECV}{EVT} {event}");
 
-        self.manager.borrow_mut().handle_event(event.clone());
+        manager.borrow_mut().handle_event(event.clone());
 
-        if let Some(order) = self.cache.borrow().order(&event.client_order_id()) {
+        if let Some(order) = cache.borrow().order(&event.client_order_id()) {
             if order.is_closed() {
-                if let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id()) {
+                if let Some(matching_core) =
+                    matching_cores.borrow_mut().get_mut(&order.instrument_id())
+                {
                     if let Err(e) =
                         matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
                     {
@@ -934,29 +1005,25 @@ impl OrderEmulatorState {
                     }
                 }
             }
-        } else { // Order not in cache yet
         }
+        // else: Order not in cache yet
     }
 
-    pub fn create_matching_core(
+    fn create_matching_core(
         &mut self,
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        let matching_core = OrderMatchingCore::new(
-            instrument_id,
-            price_increment,
-            None, // TBD (will be a function on the engine)
-            None, // TBD (will be a function on the engine)
-            None, // TBD (will be a function on the engine)
-        );
+        let matching_core =
+            OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
         self.matching_cores
+            .borrow_mut()
             .insert(instrument_id, matching_core.clone());
         log::info!("Creating matching core for {:?}", instrument_id);
         matching_core
     }
 
-    fn trigger_stop_order(&mut self, order: &OrderAny) {
+    pub fn trigger_stop_order(&mut self, order: &mut OrderAny) {
         match order.order_type() {
             OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
                 self.fill_limit_order(order);
@@ -968,7 +1035,7 @@ impl OrderEmulatorState {
         }
     }
 
-    fn fill_limit_order(&mut self, order: &OrderAny) {
+    fn fill_limit_order(&mut self, order: &mut OrderAny) {
         if matches!(order.order_type(), OrderType::Limit) {
             self.fill_market_order(order);
             return;
@@ -987,13 +1054,22 @@ impl OrderEmulatorState {
         let trigger_instrument_id = order
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
-        let matching_core = self.matching_cores.get_mut(&trigger_instrument_id);
-        // TODO: fix
-        // if let Some(matching_core) = matching_core {
-        //     matching_core
-        //         .delete_order(&PassiveOrderAny::from(order.clone()))
-        //         .unwrap();
-        // }
+
+        let mut matching_core = self
+            .matching_cores
+            .borrow()
+            .get(&trigger_instrument_id)
+            .cloned();
+        if let Some(ref mut matching_core) = matching_core {
+            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
+                log::error!("Cannot delete order: {:?}", e);
+            } else {
+                // Update matching cores
+                self.matching_cores
+                    .borrow_mut()
+                    .insert(trigger_instrument_id, matching_core.clone());
+            }
+        }
 
         let emulation_trigger = TriggerType::NoTrigger;
 
@@ -1032,6 +1108,7 @@ impl OrderEmulatorState {
         };
 
         transformed.liquidity_side = order.liquidity_side();
+        // TODO: fix
         // let triggered_price = order.trigger_price();
         // if triggered_price.is_some() {
         //     transformed.trigger_price() = (triggered_price.unwrap());
@@ -1042,7 +1119,6 @@ impl OrderEmulatorState {
         for event in original_events {
             transformed.events.insert(0, event.clone());
         }
-        //
 
         if let Err(e) = self.cache.borrow_mut().add_order(
             OrderAny::Limit(transformed.clone()),
@@ -1115,7 +1191,7 @@ impl OrderEmulatorState {
         }
     }
 
-    fn fill_market_order(&mut self, order: &OrderAny) {
+    fn fill_market_order(&mut self, order: &mut OrderAny) {
         // Fetch command
         let mut command = match self
             .manager
@@ -1130,15 +1206,23 @@ impl OrderEmulatorState {
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
 
-        let matching_core = self.matching_cores.get_mut(&trigger_instrument_id);
-        // TODO: fix borrowing issue
-        // if let Some(matching_core) = matching_core {
-        //     matching_core
-        //         .delete_order(&PassiveOrderAny::from(order.clone()))
-        //         .unwrap();
-        // }
+        let mut matching_core = self
+            .matching_cores
+            .borrow()
+            .get(&trigger_instrument_id)
+            .cloned();
+        if let Some(ref mut matching_core) = matching_core {
+            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
+                log::error!("Cannot delete order: {:?}", e);
+            } else {
+                // Update matching cores
+                self.matching_cores
+                    .borrow_mut()
+                    .insert(trigger_instrument_id, matching_core.clone());
+            }
+        }
 
-        let emulation_trigger = TriggerType::NoTrigger;
+        order.set_emulation_trigger(Some(TriggerType::NoTrigger));
 
         // Transform order
         let mut transformed = MarketOrder::new(
@@ -1168,7 +1252,6 @@ impl OrderEmulatorState {
         for event in original_events {
             transformed.events.insert(0, event.clone());
         }
-        //
 
         if let Err(e) = self.cache.borrow_mut().add_order(
             OrderAny::Market(transformed.clone()),
@@ -1322,5 +1405,3 @@ impl OrderEmulatorState {
             .send_risk_event(OrderEventAny::Updated(event));
     }
 }
-
-// TODO: check flow, compare with others. fix clones.
