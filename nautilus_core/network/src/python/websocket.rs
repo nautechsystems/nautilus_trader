@@ -286,16 +286,32 @@ mod tests {
                         .unwrap();
 
                     task::spawn(async move {
-                        loop {
-                            let msg = websocket.next().await.unwrap().unwrap();
-                            // We do not want to send back ping/pong messages.
-                            if msg.is_binary() || msg.is_text() {
-                                websocket.send(msg).await.unwrap();
-                            } else if msg.is_close() {
-                                if let Err(e) = websocket.close(None).await {
-                                    tracing::debug!("Connection already closed {e}");
-                                };
-                                break;
+                        while let Some(Ok(msg)) = websocket.next().await {
+                            match msg {
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
+                                    if txt == "close-now" =>
+                                {
+                                    tracing::debug!("Forcibly closing from server side");
+                                    // This sends a close frame, then stops reading
+                                    let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                // Echo text/binary frames
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(_)
+                                | tokio_tungstenite::tungstenite::protocol::Message::Binary(_) => {
+                                    if websocket.send(msg).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                // If the client closes, we also break
+                                tokio_tungstenite::tungstenite::protocol::Message::Close(
+                                    _frame,
+                                ) => {
+                                    let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                // Ignore pings/pongs
+                                _ => {}
                             }
                         }
                     });
@@ -312,34 +328,28 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[traced_test]
-    async fn basic_client_test() {
-        prepare_freethreaded_python();
-
-        const N: usize = 10;
-        let mut success_count = 0;
-        let header_key = "hello-custom-key".to_string();
-        let header_value = "hello-custom-value".to_string();
-
-        // Initialize test server
-        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
-
-        // Create counter class and handler that increments it
-        let (counter, handler) = Python::with_gil(|py| {
+    fn create_test_handler() -> (PyObject, PyObject) {
+        Python::with_gil(|py| {
             let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Counter:
-    def __init__(self):
-        self.count = 0
+   def __init__(self):
+       self.count = 0
+       self.check = False
 
-    def handler(self, bytes):
-        if bytes.decode() == 'ping':
-            self.count = self.count + 1
+   def handler(self, bytes):
+       msg = bytes.decode()
+       if msg == 'ping':
+           self.count = self.count + 1
+       elif msg == 'heartbeat message':
+           self.check = True
 
-    def get_count(self):
-        return self.count
+   def get_check(self):
+       return self.check
+
+   def get_count(self):
+       return self.count
 
 counter = Counter()",
                 "",
@@ -351,7 +361,21 @@ counter = Counter()",
             let handler = counter.getattr(py, "handler").unwrap().into_py(py);
 
             (counter, handler)
-        });
+        })
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn basic_client_test() {
+        prepare_freethreaded_python();
+
+        const N: usize = 10;
+        let mut success_count = 0;
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
+
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
+        let (counter, handler) = create_test_handler();
 
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
@@ -386,12 +410,7 @@ counter = Counter()",
         });
         assert_eq!(count_value, success_count);
 
-        //////////////////////////////////////////////////////////////////////
-        // Close connection client should reconnect and send messages
-        //////////////////////////////////////////////////////////////////////
-
-        // close the connection
-        // client should reconnect automatically
+        // Close the connection => client should reconnect automatically
         client.send_close_message().await;
 
         // Send messages that increment the count
@@ -416,7 +435,7 @@ counter = Counter()",
         assert_eq!(count_value, success_count);
         assert_eq!(success_count, N + N);
 
-        // Shutdown client
+        // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
     }
@@ -429,32 +448,7 @@ counter = Counter()",
         let header_key = "hello-custom-key".to_string();
         let header_value = "hello-custom-value".to_string();
 
-        let (checker, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code_bound(
-                py,
-                r"
-class Checker:
-    def __init__(self):
-        self.check = False
-
-    def handler(self, bytes):
-        if bytes.decode() == 'heartbeat message':
-            self.check = True
-
-    def get_check(self):
-        return self.check
-
-checker = Checker()",
-                "",
-                "",
-            )
-            .unwrap();
-
-            let checker = pymod.getattr("checker").unwrap().into_py(py);
-            let handler = checker.getattr(py, "handler").unwrap().into_py(py);
-
-            (checker, handler)
-        });
+        let (checker, handler) = create_test_handler();
 
         // Initialize test server and config
         let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
@@ -484,7 +478,7 @@ checker = Checker()",
         });
         assert!(check_value);
 
-        // Shutdown client
+        // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
     }

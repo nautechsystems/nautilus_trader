@@ -210,8 +210,8 @@ impl WebSocketClientInner {
         handler: Arc<PyObject>,
         ping_handler: Option<Arc<PyObject>>,
     ) -> task::JoinHandle<()> {
-        // Keep receiving messages from socket and pass them as arguments to handler
         tracing::debug!("Started task 'read'");
+
         task::spawn(async move {
             loop {
                 match reader.next().await {
@@ -275,54 +275,67 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
+        // TODO: Expose reconnect timeout as config option
+        let timeout = Duration::from_secs(30);
         tracing::debug!("Reconnecting client");
 
-        let state_guard = {
-            let guard = self.reconnection_lock.lock().await;
+        tokio::time::timeout(timeout, async {
+            let state_guard = {
+                let guard = self.reconnection_lock.lock().await;
+                self.connection_state
+                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
+                guard
+            };
+
+            sleep(Duration::from_millis(100)).await;
+
+            shutdown(
+                self.read_task.take(),
+                self.heartbeat_task.take(),
+                self.writer.clone(),
+            )
+            .await;
+
+            let (new_writer, reader) =
+                Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
+
+            {
+                let mut guard = self.writer.lock().await;
+                *guard = new_writer;
+                drop(guard);
+            }
+
+            // Spawn new read task
+            if let Some(ref handler) = self.config.handler {
+                self.read_task = Some(Self::spawn_read_task(
+                    reader,
+                    handler.clone(),
+                    self.config.ping_handler.clone(),
+                ));
+            }
+
+            // Spawn new heartbeat task
+            self.heartbeat_task = Self::spawn_heartbeat_task(
+                self.connection_state.clone(),
+                self.config.heartbeat,
+                self.config.heartbeat_msg.clone(),
+                self.writer.clone(),
+            );
+
             self.connection_state
-                .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
-            guard
-        };
+                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
+            drop(state_guard);
 
-        sleep(Duration::from_millis(100)).await;
-
-        shutdown(
-            self.read_task.take(),
-            self.heartbeat_task.take(),
-            self.writer.clone(),
-        )
-        .await;
-
-        let (new_writer, reader) =
-            Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
-
-        {
-            let mut guard = self.writer.lock().await;
-            *guard = new_writer;
-            drop(guard);
-        }
-
-        if let Some(ref handler) = self.config.handler {
-            self.read_task = Some(Self::spawn_read_task(
-                reader,
-                handler.clone(),
-                self.config.ping_handler.clone(),
-            ));
-        }
-
-        self.heartbeat_task = Self::spawn_heartbeat_task(
-            self.connection_state.clone(),
-            self.config.heartbeat,
-            self.config.heartbeat_msg.clone(),
-            self.writer.clone(),
-        );
-
-        drop(state_guard);
-        self.connection_state
-            .store(CONNECTION_ACTIVE, Ordering::SeqCst);
-
-        tracing::debug!("Reconnect succeeded");
-        Ok(())
+            tracing::debug!("Reconnect succeeded");
+            Ok(())
+        })
+        .await
+        .map_err(|_| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("reconnection timed out after {}s", timeout.as_secs()),
+            ))
+        })?
     }
 
     /// Check if the client is still connected.
@@ -356,36 +369,43 @@ async fn shutdown(
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
 ) {
+    let timeout = Duration::from_secs(5);
     tracing::debug!("Closing connection");
 
-    // Send close frame first
-    let mut write_half = writer.lock().await;
-    if let Err(e) = write_half.send(Message::Close(None)).await {
-        tracing::error!("Error sending close frame: {e}");
-    }
-    drop(write_half);
-
-    // Small delay for close frame to be sent
-    sleep(Duration::from_millis(100)).await;
-
-    // Abort tasks
-    if let Some(task) = read_task {
-        if !task.is_finished() {
-            task.abort();
-            tracing::debug!("Aborted read task");
+    if tokio::time::timeout(timeout, async {
+        // Send close frame first
+        let mut write_half = writer.lock().await;
+        if let Err(e) = write_half.send(Message::Close(None)).await {
+            tracing::error!("Error sending close frame: {e}");
         }
-    }
-    if let Some(task) = heartbeat_task {
-        if !task.is_finished() {
-            task.abort();
-            tracing::debug!("Aborted heartbeat task");
-        }
-    }
+        drop(write_half);
 
-    // Final close of writer
-    let mut write_half = writer.lock().await;
-    if let Err(e) = write_half.close().await {
-        tracing::error!("Error closing writer: {e}");
+        sleep(Duration::from_millis(100)).await;
+
+        // Abort tasks
+        if let Some(task) = read_task {
+            if !task.is_finished() {
+                task.abort();
+                tracing::debug!("Aborted read task");
+            }
+        }
+        if let Some(task) = heartbeat_task {
+            if !task.is_finished() {
+                task.abort();
+                tracing::debug!("Aborted heartbeat task");
+            }
+        }
+
+        // Final close of writer
+        let mut write_half = writer.lock().await;
+        if let Err(e) = write_half.close().await {
+            tracing::error!("Error closing writer: {e}");
+        }
+    })
+    .await
+    .is_err()
+    {
+        tracing::error!("Shutdown timed out after {}s", timeout.as_secs());
     }
 }
 
@@ -726,7 +746,6 @@ mod tests {
                 value: HeaderValue::from_str(&header_value).unwrap(),
             };
 
-            // Set up test server
             let task = task::spawn(async move {
                 // Keep accepting connections
                 loop {
@@ -738,7 +757,6 @@ mod tests {
                     task::spawn(async move {
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
-                                // Force a close if we see "close"
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
                                     if txt == "close-now" =>
                                 {
@@ -840,13 +858,14 @@ mod tests {
 
         // 1) Send normal message
         client.send_text("Hello".into(), None).await.unwrap();
+
         // 2) Trigger forced close from server
         client.send_text("close-now".into(), None).await.unwrap();
 
-        // Wait a bit => read loop sees close => reconnect
+        // 3) Wait a bit => read loop sees close => reconnect
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-        // Confirm not disconnected => meaning it’s in reconnect or reconnected
+        // Confirm not disconnected
         assert!(!client.is_disconnected());
 
         // Cleanup

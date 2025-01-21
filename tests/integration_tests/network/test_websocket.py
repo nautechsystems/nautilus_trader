@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 
 import msgspec
 import pytest
@@ -22,6 +23,9 @@ from aiohttp.test_utils import TestServer
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 from nautilus_trader.test_kit.functions import eventually
+
+
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Only run socket tests on Linux")
 
 
 def _server_url(server: TestServer) -> str:
