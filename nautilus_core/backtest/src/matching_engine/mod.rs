@@ -815,8 +815,45 @@ impl OrderMatchingEngine {
         self.accept_order(order);
     }
 
-    fn process_stop_limit_order(&mut self, order: &OrderAny) {
-        todo!("process_stop_limit_order")
+    fn process_stop_limit_order(&mut self, order: &mut OrderAny) {
+        if self
+            .core
+            .is_stop_matched(&StopOrderAny::from(order.to_owned()))
+        {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order stop px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+
+            self.accept_order(order);
+            self.generate_order_triggered(order);
+
+            // Check for immediate fill
+            if self
+                .core
+                .is_limit_matched(&LimitOrderAny::from(order.to_owned()))
+            {
+                order.set_liquidity_side(LiquiditySide::Taker);
+                self.fill_limit_order(order);
+            }
+        }
+
+        // order is not matched but is valid and we accept it
+        self.accept_order(order);
     }
 
     fn process_market_if_touched_order(&mut self, order: &OrderAny) {
