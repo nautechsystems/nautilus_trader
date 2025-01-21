@@ -60,6 +60,7 @@ pub struct SocketConfig {
     pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
+    pub max_reconnection_tries: Option<u64>,
 }
 
 /// Creates a TcpStream with the server.
@@ -98,6 +99,7 @@ impl SocketClientInner {
             heartbeat,
             suffix,
             handler,
+            max_reconnection_tries: _,
         } = &config;
         let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
         let shared_writer = Arc::new(Mutex::new(writer));
@@ -130,7 +132,7 @@ impl SocketClientInner {
     }
 
     #[must_use]
-    pub fn spawn_read_task(
+    fn spawn_read_task(
         mut reader: TcpReader,
         handler: PyObject,
         suffix: Vec<u8>,
@@ -178,7 +180,7 @@ impl SocketClientInner {
     }
 
     /// Optionally spawn a heartbeat task to periodically ping the server.
-    pub fn spawn_heartbeat_task(
+    fn spawn_heartbeat_task(
         heartbeat: Option<(u64, Vec<u8>)>,
         writer: SharedTcpWriter,
         suffix: Vec<u8>,
@@ -200,58 +202,71 @@ impl SocketClientInner {
         })
     }
 
-    /// Shutdown read task and the connection.
+    /// Shutdown read and hearbeat task and the connection.
     ///
     /// The client must be explicitly shutdown before dropping otherwise
     /// the connection might still be alive for some time before terminating.
     /// Closing the connection is an async call which cannot be done by the
     /// drop method so it must be done explicitly.
-    pub async fn shutdown(&mut self) -> Result<(), std::io::Error> {
-        tracing::debug!("Abort read task");
+    async fn shutdown(&mut self) {
+        tracing::debug!("Closing connection");
+
         if !self.read_task.is_finished() {
             self.read_task.abort();
+            tracing::debug!("Aborted message read task");
         }
 
         // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
-                tracing::debug!("Abort heartbeat task");
                 handle.abort();
+                tracing::debug!("Aborted heartbeat task");
             }
         }
 
         tracing::debug!("Shutdown writer");
         let mut writer = self.writer.lock().await;
-        writer.shutdown().await
+        if let Err(e) = writer.shutdown().await {
+            tracing::error!("Error closing writer: {e:?}");
+        } else {
+            tracing::debug!("Closed connection");
+        }
     }
 
     /// Reconnect with server.
     ///
     /// Make a new connection with server. Use the new read and write halves
     /// to update the shared writer and the read and heartbeat tasks.
-    ///
-    /// TODO: fix error type
-    pub async fn reconnect(&mut self) -> Result<(), Error> {
+    async fn reconnect(&mut self) -> Result<(), Error> {
+        tracing::debug!("Reconnecting client");
+
+        // Clean up existing tasks
+        let _ = self.shutdown().await;
+
         let SocketConfig {
             url,
             mode,
             heartbeat,
             suffix,
             handler,
+            max_reconnection_tries: _,
         } = &self.config;
-        tracing::debug!("Reconnecting client");
+        // Create a fresh connection
         let (reader, new_writer) = Self::tls_connect_with_server(url, *mode).await?;
 
-        tracing::debug!("Use new writer end");
-        let mut guard = self.writer.lock().await;
-        *guard = new_writer;
-        drop(guard);
+        let new_writer_arc = Arc::new(Mutex::new(new_writer));
+        self.writer = new_writer_arc.clone();
 
-        let handler1 = Python::with_gil(|py| handler.clone_ref(py));
-        tracing::debug!("Recreate reader and heartbeat task");
-        self.read_task = Self::spawn_read_task(reader, handler1, suffix.clone());
+        // Spawn new read task
+        let handler_for_read = Python::with_gil(|py| handler.clone_ref(py));
+        self.read_task = Self::spawn_read_task(reader, handler_for_read, suffix.clone());
+
+        // Spawn new heartbeat task
         self.heartbeat_task =
-            Self::spawn_heartbeat_task(heartbeat.clone(), self.writer.clone(), suffix.clone());
+            Self::spawn_heartbeat_task(heartbeat.clone(), new_writer_arc, suffix.clone());
+
+        tracing::info!("Reconnect succeeded");
+
         Ok(())
     }
 
@@ -302,6 +317,7 @@ impl SocketClient {
         post_disconnection: Option<PyObject>,
     ) -> Result<Self, Error> {
         let suffix = config.suffix.clone();
+        let max_reconnection_tries = config.max_reconnection_tries;
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(AtomicBool::new(false));
@@ -311,6 +327,7 @@ impl SocketClient {
             disconnect_mode.clone(),
             post_reconnection,
             post_disconnection,
+            max_reconnection_tries,
         );
 
         if let Some(handler) = post_connection {
@@ -367,17 +384,24 @@ impl SocketClient {
         disconnect_mode: Arc<AtomicBool>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
+        max_reconnection_tries: Option<u64>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
+            let check_interval = Duration::from_millis(100);
+            let retry_interval = Duration::from_millis(1000);
+            let mut retry_counter: u64 = 0;
+
             loop {
-                sleep(Duration::from_millis(100)).await;
+                sleep(check_interval).await;
 
                 // Check if client needs to disconnect
-                let disconnected = disconnect_mode.load(Ordering::SeqCst);
-                match (disconnected, inner.is_alive()) {
+                let disconnect = disconnect_mode.load(Ordering::SeqCst);
+                match (disconnect, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
+                            retry_counter = 0;
+
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
@@ -390,17 +414,27 @@ impl SocketClient {
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Reconnect failed {e}");
-                            break;
+                            retry_counter += 1;
+
+                            if let Some(max) = max_reconnection_tries {
+                                tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max}");
+
+                                if retry_counter >= max {
+                                    tracing::error!("Reached max reconnection tries");
+                                    break;
+                                }
+                            } else {
+                                tracing::warn!(
+                                    "Reconnect failed {e}. Retry {retry_counter} (infinite)"
+                                );
+                            }
+
+                            sleep(retry_interval).await;
                         }
                     },
                     (true, true) => {
                         tracing::debug!("Shutting down inner client");
-                        match inner.shutdown().await {
-                            Ok(()) => tracing::debug!("Closed connection"),
-                            Err(e) => tracing::error!("Error on `shutdown`: {e}"),
-                        }
-
+                        inner.shutdown().await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
                                 Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
@@ -413,10 +447,315 @@ impl SocketClient {
                         }
                         break;
                     }
-                    (true, false) => break,
+                    (true, false) => {
+                        tracing::debug!("Inner client is disconnected");
+                        tracing::debug!("Shutting down inner client to clean up running tasks");
+                        inner.shutdown().await;
+                    }
                     _ => (),
                 }
             }
         })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+
+    use pyo3::prepare_freethreaded_python;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpStream,
+        task,
+        time::{sleep, Duration},
+    };
+
+    use super::*;
+
+    fn create_handler() -> Arc<PyObject> {
+        Python::with_gil(|py| {
+            let pymod = PyModule::from_code_bound(
+                py,
+                r#"
+def handler(bytes_data):
+    # Do nothing
+    pass
+"#,
+                "no_op.py",
+                "no_op",
+            )
+            .expect("Failed to create in-memory Python module for no-op handler");
+
+            let func = pymod
+                .getattr("handler")
+                .expect("Failed to retrieve 'handler' from no_op.py");
+
+            Arc::new(func.into_py(py))
+        })
+    }
+
+    fn bind_test_server() -> (u16, TcpListener) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
+        let port = listener.local_addr().unwrap().port();
+        (port, listener)
+    }
+
+    async fn run_echo_server(mut socket: TcpStream) {
+        let mut buf = Vec::new();
+        loop {
+            match socket.read_buf(&mut buf).await {
+                Ok(0) => {
+                    break;
+                }
+                Ok(_n) => {
+                    while let Some(idx) = buf.windows(2).position(|w| w == b"\r\n") {
+                        let mut line = buf.drain(..idx + 2).collect::<Vec<u8>>();
+                        // Remove trailing \r\n
+                        line.truncate(line.len() - 2);
+
+                        if line == b"close" {
+                            let _ = socket.shutdown().await;
+                            return;
+                        }
+
+                        let mut echo_data = line;
+                        echo_data.extend_from_slice(b"\r\n");
+                        if socket.write_all(&echo_data).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Server read error: {e}");
+                    break;
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_basic_send_receive() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        let server_task = task::spawn(async move {
+            let (socket, _) = tokio::net::TcpListener::from_std(listener)
+                .unwrap()
+                .accept()
+                .await
+                .unwrap();
+            run_echo_server(socket).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler: create_handler(),
+            heartbeat: None,
+            max_reconnection_tries: Some(1),
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .expect("Client connect failed unexpectedly");
+
+        client.send_bytes(b"Hello").await.unwrap();
+        client.send_bytes(b"World").await.unwrap();
+
+        // Wait a bit for the server to echo them back
+        sleep(Duration::from_millis(100)).await;
+
+        client.send_bytes(b"close").await.unwrap();
+        server_task.await.unwrap();
+        assert_eq!(client.is_disconnected(), false);
+    }
+
+    #[tokio::test]
+    async fn test_reconnect_fail_exhausted() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        drop(listener); // We drop it immediately -> no server is listening
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler: create_handler(),
+            heartbeat: None,
+            max_reconnection_tries: Some(2),
+        };
+
+        let client_res = SocketClient::connect(config, None, None, None).await;
+        assert!(
+            client_res.is_err(),
+            "Should fail quickly with no server listening"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_user_disconnect() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        let server_task = task::spawn(async move {
+            let (socket, _) = tokio::net::TcpListener::from_std(listener)
+                .unwrap()
+                .accept()
+                .await
+                .unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = socket.try_read(&mut buf);
+
+            loop {
+                sleep(Duration::from_secs(1)).await;
+            }
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler: create_handler(),
+            heartbeat: None,
+            max_reconnection_tries: None,
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        client.disconnect().await;
+        assert!(client.is_disconnected());
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received2 = received.clone();
+
+        let server_task = task::spawn(async move {
+            let (socket, _) = tokio::net::TcpListener::from_std(listener)
+                .unwrap()
+                .accept()
+                .await
+                .unwrap();
+
+            let mut buf = Vec::new();
+            loop {
+                match socket.try_read_buf(&mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        while let Some(idx) = buf.windows(2).position(|w| w == b"\r\n") {
+                            let mut line = buf.drain(..idx + 2).collect::<Vec<u8>>();
+                            line.truncate(line.len() - 2);
+                            received2.lock().await.push(line);
+                        }
+                    }
+                    Err(_) => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }
+            }
+        });
+
+        // Heartbeat every 1 second
+        let heartbeat = Some((1, b"ping".to_vec()));
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler: create_handler(),
+            heartbeat,
+            max_reconnection_tries: None,
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        // Wait ~3 seconds to collect some heartbeats
+        sleep(Duration::from_secs(3)).await;
+
+        {
+            let lock = received.lock().await;
+            let pings = lock
+                .iter()
+                .filter(|line| line == &&b"ping".to_vec())
+                .count();
+            assert!(
+                pings >= 2,
+                "Expected at least 2 heartbeat pings; got {}",
+                pings
+            );
+        }
+
+        client.disconnect().await;
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn test_python_handler_error() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        let server_task = task::spawn(async move {
+            let (socket, _) = tokio::net::TcpListener::from_std(listener)
+                .unwrap()
+                .accept()
+                .await
+                .unwrap();
+            run_echo_server(socket).await;
+        });
+
+        let handler = Python::with_gil(|py| {
+            let code = r#"
+def handler(bytes_data):
+    txt = bytes_data.decode()
+    if "ERR" in txt:
+        raise ValueError("Simulated error in handler")
+    return
+"#;
+            let module =
+                PyModule::from_code_bound(py, code, "error_handler.py", "error_handler").unwrap();
+            let func = module.getattr("handler").unwrap();
+            Arc::new(func.into_py(py))
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler,
+            heartbeat: None,
+            max_reconnection_tries: Some(1),
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .expect("Client connect failed unexpectedly");
+
+        client.send_bytes(b"hello").await.unwrap();
+        sleep(Duration::from_millis(100)).await;
+
+        client.send_bytes(b"ERR").await.unwrap();
+        sleep(Duration::from_secs(1)).await;
+
+        assert!(!client.is_disconnected());
+
+        client.disconnect().await;
+
+        assert!(client.is_disconnected());
+        server_task.abort();
     }
 }

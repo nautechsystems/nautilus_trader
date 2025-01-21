@@ -3247,6 +3247,17 @@ class WebSocketClient:
     def send_text(self, data: bytes, keys: list[str] | None = None) -> Awaitable[None]: ...
     def send_pong(self, data: bytes) -> Awaitable[None]: ...
 
+class SocketConfig:
+    def __init__(
+        self,
+        url: str,
+        ssl: bool,
+        suffix: bytes,
+        handler: Callable[..., Any],
+        heartbeat: tuple[int, list[int]] | None = None,
+        max_reconnection_tries: int | None = None,
+    ) -> None: ...
+
 class SocketClient:
     @classmethod
     def connect(
@@ -3259,16 +3270,6 @@ class SocketClient:
     def disconnect(self) -> Awaitable[None]: ...
     def is_alive(self) -> bool: ...
     def send(self, data: bytes) -> Awaitable[None]: ...
-
-class SocketConfig:
-    def __init__(
-        self,
-        url: str,
-        ssl: bool,
-        suffix: bytes,
-        handler: Callable[..., Any],
-        heartbeat: tuple[int, list[int]] | None = None,
-    ) -> None: ...
 
 ###################################################################################################
 # Persistence
