@@ -16,8 +16,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Changed `BettingInstrument` default `min_notional` to `None`
 
 ### Internal Improvements
-- Refined `WebSocketClient` state management and reconnect logic in Rust
-- Refined `SocketClient` state management and reconnect logic in Rust
+- Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
+- Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
