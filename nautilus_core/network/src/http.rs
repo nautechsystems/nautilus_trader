@@ -41,7 +41,8 @@ pub struct HttpStatus {
 
 impl HttpStatus {
     /// Create a new [`HttpStatus`] instance from a given [`StatusCode`].
-    pub fn new(code: StatusCode) -> Self {
+    #[must_use]
+    pub const fn new(code: StatusCode) -> Self {
         Self { inner: code }
     }
 
@@ -56,42 +57,49 @@ impl HttpStatus {
 
     /// Returns the status code as a `u16` (e.g., `200` for OK).
     #[inline]
+    #[must_use]
     pub const fn as_u16(&self) -> u16 {
         self.inner.as_u16()
     }
 
     /// Returns the three-digit ASCII representation of this status (e.g., `"200"`).
     #[inline]
+    #[must_use]
     pub fn as_str(&self) -> &str {
         self.inner.as_str()
     }
 
     /// Checks if this status is in the 1xx (informational) range.
     #[inline]
+    #[must_use]
     pub fn is_informational(&self) -> bool {
         self.inner.is_informational()
     }
 
     /// Checks if this status is in the 2xx (success) range.
     #[inline]
+    #[must_use]
     pub fn is_success(&self) -> bool {
         self.inner.is_success()
     }
 
     /// Checks if this status is in the 3xx (redirection) range.
     #[inline]
+    #[must_use]
     pub fn is_redirection(&self) -> bool {
         self.inner.is_redirection()
     }
 
     /// Checks if this status is in the 4xx (client error) range.
     #[inline]
+    #[must_use]
     pub fn is_client_error(&self) -> bool {
         self.inner.is_client_error()
     }
 
     /// Checks if this status is in the 5xx (server error) range.
     #[inline]
+    #[must_use]
     pub fn is_server_error(&self) -> bool {
         self.inner.is_server_error()
     }
