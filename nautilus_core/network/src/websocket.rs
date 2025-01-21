@@ -160,12 +160,12 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Keep receiving messages from socket and pass them as arguments to handler.
-    pub fn spawn_read_task(
+    fn spawn_read_task(
         mut reader: MessageReader,
         handler: Arc<PyObject>,
         ping_handler: Option<Arc<PyObject>>,
     ) -> task::JoinHandle<()> {
+        // Keep receiving messages from socket and pass them as arguments to handler
         tracing::debug!("Started task 'read'");
         task::spawn(async move {
             loop {
@@ -510,19 +510,22 @@ impl WebSocketClient {
                             }
                         }
                         Err(e) => {
-                            if let Some(max_reconnection_tries) = max_reconnection_tries {
-                                if retry_counter < max_reconnection_tries {
-                                    retry_counter += 1;
-                                    tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max_reconnection_tries}");
-                                    sleep(retry_interval).await;
-                                } else {
-                                    tracing::error!("Reconnect failed {e}");
+                            retry_counter += 1;
+
+                            if let Some(max) = max_reconnection_tries {
+                                tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max}");
+
+                                if retry_counter >= max {
+                                    tracing::error!("Reached max reconnection tries");
                                     break;
                                 }
                             } else {
-                                tracing::error!("Reconnect failed {e}");
-                                break;
+                                tracing::warn!(
+                                    "Reconnect failed {e}. Retry {retry_counter} (infinite)"
+                                );
                             }
+
+                            sleep(retry_interval).await;
                         }
                     },
                     (true, true) => {

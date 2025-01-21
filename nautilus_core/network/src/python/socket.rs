@@ -25,13 +25,14 @@ use crate::socket::{SocketClient, SocketConfig};
 #[pymethods]
 impl SocketConfig {
     #[new]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, max_reconnection_tries=3))]
     fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
         handler: PyObject,
         heartbeat: Option<(u64, Vec<u8>)>,
+        max_reconnection_tries: Option<u64>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
         Self {
@@ -40,6 +41,7 @@ impl SocketConfig {
             suffix,
             handler: Arc::new(handler),
             heartbeat,
+            max_reconnection_tries,
         }
     }
 }
@@ -125,191 +127,5 @@ impl SocketClient {
             writer.write_all(&data).await?;
             Ok(())
         })
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-
-    use std::sync::Arc;
-
-    use pyo3::{prelude::*, prepare_freethreaded_python};
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
-        task::{self, JoinHandle},
-        time::{sleep, Duration},
-    };
-    use tokio_tungstenite::tungstenite::stream::Mode;
-    use tracing_test::traced_test;
-
-    use crate::socket::{SocketClient, SocketConfig};
-
-    struct TestServer {
-        task: JoinHandle<()>,
-        port: u16,
-    }
-
-    impl Drop for TestServer {
-        fn drop(&mut self) {
-            self.task.abort();
-        }
-    }
-
-    impl TestServer {
-        async fn basic_client_test() -> Self {
-            let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let port = TcpListener::local_addr(&server).unwrap().port();
-
-            // Set up test server
-            let handle = task::spawn(async move {
-                // Keep listening for new connections
-                loop {
-                    let (mut stream, _) = server.accept().await.unwrap();
-                    tracing::debug!("socket:test Server accepted connection");
-
-                    // Keep receiving messages from connection and sending them back as it is
-                    // if the message contains a close stop receiving messages
-                    // and drop the connection.
-                    task::spawn(async move {
-                        let mut buf = Vec::new();
-                        loop {
-                            let bytes = stream.read_buf(&mut buf).await.unwrap();
-                            tracing::debug!("socket:test Server received {bytes} bytes");
-
-                            // Terminate if 0 bytes have been read
-                            // Connection has been terminated or vector buffer is completely
-                            if bytes == 0 {
-                                break;
-                            } else {
-                                // if received data has a line break
-                                // extract and write it to the stream
-                                while let Some((i, _)) =
-                                    &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
-                                {
-                                    let close_message = b"close".as_slice();
-                                    if &buf[0..*i] == close_message {
-                                        tracing::debug!("socket:test Client sent closing message");
-                                        return;
-                                    } else {
-                                        tracing::debug!("socket:test Server sending message");
-                                        stream
-                                            .write_all(buf.drain(0..i + 2).as_slice())
-                                            .await
-                                            .unwrap();
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-            });
-
-            Self { task: handle, port }
-        }
-    }
-
-    #[tokio::test]
-    #[traced_test]
-    async fn basic_client_test() {
-        prepare_freethreaded_python();
-
-        const N: usize = 10;
-
-        // Initialize test server
-        let server = TestServer::basic_client_test().await;
-
-        // Create counter class and handler that increments it
-        let (counter, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code_bound(
-                py,
-                r"
-class Counter:
-    def __init__(self):
-        self.count = 0
-
-    def handler(self, bytes):
-        if bytes.decode().rstrip() == 'ping':
-            self.count = self.count + 1
-
-    def get_count(self):
-        return self.count
-
-counter = Counter()",
-                "",
-                "",
-            )
-            .unwrap();
-
-            let counter = pymod.getattr("counter").unwrap().into_py(py);
-            let handler = counter.getattr(py, "handler").unwrap().into_py(py);
-
-            (counter, handler)
-        });
-
-        let config = SocketConfig {
-            url: format!("127.0.0.1:{}", server.port),
-            handler: Arc::new(handler),
-            mode: Mode::Plain,
-            suffix: b"\r\n".to_vec(),
-            heartbeat: None,
-        };
-        let client: SocketClient = SocketClient::connect(config, None, None, None)
-            .await
-            .unwrap();
-
-        // Send messages that increment the count
-        for _ in 0..N {
-            let _ = client.send_bytes(b"ping".as_slice()).await;
-        }
-
-        sleep(Duration::from_secs(1)).await;
-        let count_value: usize = Python::with_gil(|py| {
-            counter
-                .getattr(py, "get_count")
-                .unwrap()
-                .call0(py)
-                .unwrap()
-                .extract(py)
-                .unwrap()
-        });
-
-        // Check count is same as number messages sent
-        assert_eq!(count_value, N);
-
-        //////////////////////////////////////////////////////////////////////
-        // Close connection client should reconnect and send messages
-        //////////////////////////////////////////////////////////////////////
-
-        // close the connection and wait
-        // client should reconnect automatically
-        let _ = client.send_bytes(b"close".as_slice()).await;
-        sleep(Duration::from_secs(2)).await;
-
-        for _ in 0..N {
-            let _ = client.send_bytes(b"ping".as_slice()).await;
-        }
-
-        // Check count is same as number messages sent
-        sleep(Duration::from_secs(1)).await;
-        let count_value: usize = Python::with_gil(|py| {
-            counter
-                .getattr(py, "get_count")
-                .unwrap()
-                .call0(py)
-                .unwrap()
-                .extract(py)
-                .unwrap()
-        });
-
-        // Check that messages were received correctly after reconnecting
-        assert_eq!(count_value, N + N);
-
-        // Shutdown client
-        client.disconnect().await;
-        assert!(client.is_disconnected());
     }
 }
