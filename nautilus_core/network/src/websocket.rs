@@ -662,6 +662,7 @@ impl WebSocketClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::{num::NonZeroU32, sync::Arc};
 

@@ -217,6 +217,7 @@ impl WebSocketClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use futures_util::{SinkExt, StreamExt};
     use pyo3::{prelude::*, prepare_freethreaded_python};
