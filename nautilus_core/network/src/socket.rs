@@ -550,11 +550,11 @@ mod tests {
         Python::with_gil(|py| {
             let pymod = PyModule::from_code_bound(
                 py,
-                r#"
+                r"
 def handler(bytes_data):
     # Do nothing
     pass
-"#,
+",
                 "no_op.py",
                 "no_op",
             )
@@ -642,7 +642,7 @@ def handler(bytes_data):
 
         client.send_bytes(b"close").await.unwrap();
         server_task.await.unwrap();
-        assert_eq!(client.is_disconnected(), false);
+        assert!(!client.is_disconnected());
     }
 
     #[tokio::test]
@@ -765,8 +765,7 @@ def handler(bytes_data):
                 .count();
             assert!(
                 pings >= 2,
-                "Expected at least 2 heartbeat pings; got {}",
-                pings
+                "Expected at least 2 heartbeat pings; got {pings}"
             );
         }
 
