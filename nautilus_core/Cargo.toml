@@ -69,10 +69,10 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
 tokio = { version = "1.43.0", features = ["full"] }
 tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.12.0", features = ["v4", "serde"] }
+uuid = { version = "1.12.1", features = ["v4", "serde"] }
 
 # dev-dependencies
-axum = "0.8.1"
+axum = "0.8.2"
 criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
