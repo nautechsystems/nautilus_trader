@@ -15,13 +15,11 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 nautilus-serialization = { path = "../serialization" }
 
-anyhow = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rand = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -39,6 +37,7 @@ datafusion = { version = "44.0.0", default-features = false, features = [
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }
 criterion = { workspace = true }
+rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 quickcheck = "1"

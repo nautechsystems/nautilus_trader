@@ -26,6 +26,12 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 
+#![deny(unsafe_code)]
+#![deny(warnings)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(clippy::missing_errors_doc)]
+
 use pyo3::prelude::*;
 
 /// We modify sys modules so that submodule can be loaded directly as

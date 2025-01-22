@@ -50,7 +50,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
 impl Visitor<'_> for BoolVisitor {
     type Value = u8;
 
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("a boolean as u8")
     }
 

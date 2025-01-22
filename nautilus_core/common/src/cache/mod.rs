@@ -141,6 +141,7 @@ impl CacheConfig {
 }
 
 /// A key-value lookup index for a `Cache`.
+#[derive(Debug)]
 pub struct CacheIndex {
     venue_account: HashMap<Venue, AccountId>,
     venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,

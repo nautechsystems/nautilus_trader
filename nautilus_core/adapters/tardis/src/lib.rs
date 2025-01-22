@@ -15,6 +15,13 @@
 
 //! The [Tardis](https://tardis.dev) integration adapter.
 
+#![deny(unsafe_code)]
+#![deny(warnings)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
 pub mod config;
 pub mod csv;
 pub mod enums;
