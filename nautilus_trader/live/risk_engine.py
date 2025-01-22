@@ -24,6 +24,7 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.message import Event
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.risk.engine import RiskEngine
 
@@ -79,6 +80,21 @@ class LiveRiskEngine(RiskEngine):
         self._loop: asyncio.AbstractEventLoop = loop
         self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+
+        self._cmd_enqueuer: ThrottledEnqueuer[Command] = ThrottledEnqueuer(
+            qname="cmd_queue",
+            queue=self._cmd_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+        self._evt_enqueuer: ThrottledEnqueuer[Event] = ThrottledEnqueuer(
+            qname="evt_queue",
+            queue=self._evt_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
 
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
@@ -151,8 +167,9 @@ class LiveRiskEngine(RiskEngine):
         """
         Execute the given command.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
@@ -165,49 +182,23 @@ class LiveRiskEngine(RiskEngine):
         loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
-        PyCondition.not_none(command, "command")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_cmd_queue.put` as queue full "
-                f"at {self._cmd_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._cmd_queue.put(command))
+        self._cmd_enqueuer.enqueue(command)
 
     def process(self, event: Event) -> None:
         """
         Process the given event.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
         event : Event
             The event to process.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(event, "event")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, event)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_evt_queue.put` as queue full "
-                f"at {self._evt_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._evt_queue.put(event))
+        self._evt_enqueuer.enqueue(event)
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 

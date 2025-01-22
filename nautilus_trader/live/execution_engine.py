@@ -39,6 +39,7 @@ from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -117,9 +118,25 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop: asyncio.AbstractEventLoop = loop
+        self._max_qsize = config.qsize
         self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._inflight_check_retries: Counter[ClientOrderId] = Counter()
+
+        self._cmd_enqueuer: ThrottledEnqueuer[TradingCommand] = ThrottledEnqueuer(
+            qname="cmd_queue",
+            queue=self._cmd_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+        self._evt_enqueuer: ThrottledEnqueuer[OrderEvent] = ThrottledEnqueuer(
+            qname="evt_queue",
+            queue=self._evt_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
 
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
@@ -290,54 +307,24 @@ class LiveExecutionEngine(ExecutionEngine):
         command : TradingCommand
             The command to execute.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(command, "command")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_cmd_queue.put` as queue full "
-                f"at {self._cmd_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._cmd_queue.put(command))
+        self._cmd_enqueuer.enqueue(command)
 
     def process(self, event: OrderEvent) -> None:
         """
-        Process the given event.
+        Process the given event message.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
         event : OrderEvent
             The event to process.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(event, "event")
-
-        try:
-            self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, event)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_evt_queue.put` as queue full "
-                f"at {self._evt_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._evt_queue.put(event))
+        self._evt_enqueuer.enqueue(event)
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 

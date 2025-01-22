@@ -16,6 +16,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Changed `BettingInstrument` default `min_notional` to `None`
 
 ### Internal Improvements
+- Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
