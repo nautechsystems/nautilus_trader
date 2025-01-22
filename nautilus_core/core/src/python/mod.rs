@@ -38,26 +38,46 @@ use crate::{
 };
 
 /// Gets the type name for the given Python `obj`.
+///
+/// # Errors
+///
+/// Returns a error if accessing the type name fails.
 pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyString>> {
     obj.get_type().name()
 }
 
 /// Converts any type that implements `Display` to a Python `ValueError`.
+///
+/// # Errors
+///
+/// Returns a Python error with the error string.
 pub fn to_pyvalue_err(e: impl std::fmt::Display) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
 /// Converts any type that implements `Display` to a Python `TypeError`.
+///
+/// # Errors
+///
+/// Returns a Python error with the error string.
 pub fn to_pytype_err(e: impl std::fmt::Display) -> PyErr {
     PyTypeError::new_err(e.to_string())
 }
 
 /// Converts any type that implements `Display` to a Python `RuntimeError`.
+///
+/// # Errors
+///
+/// Returns a Python error with the error string.
 pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
 /// Loaded as nautilus_pyo3.core
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 #[rustfmt::skip]
 pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

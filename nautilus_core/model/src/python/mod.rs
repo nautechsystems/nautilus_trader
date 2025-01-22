@@ -31,6 +31,10 @@ pub mod position;
 pub mod types;
 
 /// Loaded as nautilus_pyo3.model
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types

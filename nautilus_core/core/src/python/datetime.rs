@@ -184,6 +184,7 @@ pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64, nanos_precision: Option<bool>
 /// ValueError
 ///     If given an invalid date.
 #[pyfunction(name = "last_weekday_nanos")]
+#[allow(clippy::missing_errors_doc)]
 pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
     Ok(last_weekday_nanos(year, month, day)
         .map_err(to_pyvalue_err)?
@@ -206,6 +207,7 @@ pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
 /// ValueError
 ///     If `timestamp` is invalid.
 #[pyfunction(name = "is_within_last_24_hours")]
+#[allow(clippy::missing_errors_doc)]
 pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
     is_within_last_24_hours(UnixNanos::from(timestamp_ns)).map_err(to_pyvalue_err)
 }

@@ -20,6 +20,10 @@ pub mod arrow;
 use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.serialization
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(
