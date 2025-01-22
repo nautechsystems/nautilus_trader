@@ -123,7 +123,7 @@ impl OrderBookDelta {
         .expect(FAILED)
     }
 
-    /// Creates a new [`OrderBookDelta`] instance with a `Clear` action and and NULL order.
+    /// Creates a new [`OrderBookDelta`] instance with a `Clear` action and NULL order.
     #[must_use]
     pub fn clear(
         instrument_id: InstrumentId,

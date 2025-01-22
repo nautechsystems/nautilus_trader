@@ -34,6 +34,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `InstrumentProvider` initialization behavior when `reload` flag `True`, thanks @ryantam626
 - Fixed handling of Binance HTTP error messages (not always JSON-parsable, leading to `msgspec.DecodeError`)
 - Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
+- Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
 
 ### Documentation Updates
 None
