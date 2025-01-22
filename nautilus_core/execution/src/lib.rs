@@ -27,6 +27,15 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
+#![deny(unsafe_code)]
+#![deny(warnings)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
+// Uncomment once we've added trivial debug impls everywhere
+// #![deny(missing_debug_implementations)]
+
 pub mod client;
 pub mod emulator;
 pub mod engine;

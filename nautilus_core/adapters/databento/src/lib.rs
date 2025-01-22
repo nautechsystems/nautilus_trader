@@ -15,6 +15,12 @@
 
 //! The [Databento](https://databento.com) integration adapter.
 
+#![deny(warnings)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
 pub mod common;
 pub mod decode;
 pub mod enums;

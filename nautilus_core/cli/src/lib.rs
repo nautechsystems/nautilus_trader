@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![deny(unsafe_code)]
+#![deny(warnings)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+
 mod database;
 pub mod opt;
 

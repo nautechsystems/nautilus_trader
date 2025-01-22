@@ -15,7 +15,7 @@
 
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[clap(version, about, author)]
 pub struct NautilusCli {
     #[clap(subcommand)]

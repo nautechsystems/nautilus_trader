@@ -15,17 +15,9 @@ nautilus-analysis = { path = "../analysis" }
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
-anyhow = { workspace = true }
-derive_builder = { workspace = true }
-indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-strum = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
@@ -45,7 +37,6 @@ extension-module = [
 ]
 python = [
   "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-analysis/python",
   "nautilus-common/python",
   "nautilus-core/python",

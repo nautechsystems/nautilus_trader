@@ -19,6 +19,7 @@ use nautilus_model::identifiers::{OrderListId, StrategyId, TraderId};
 use super::get_datetime_tag;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct OrderListIdGenerator {
     clock: &'static AtomicTime,
     trader_id: TraderId,

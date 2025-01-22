@@ -41,6 +41,7 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
+#[derive(Debug)]
 pub struct DatabentoLiveClient {
     #[pyo3(get)]
     pub key: String,

@@ -25,7 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
-pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Only run socket tests on Linux")
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Run socket tests on Linux only")
 
 
 def _server_url(server: TestServer) -> str:

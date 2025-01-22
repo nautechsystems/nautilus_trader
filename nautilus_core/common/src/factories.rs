@@ -32,6 +32,7 @@ use crate::generators::{
 };
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct OrderFactory {
     clock: &'static AtomicTime,
     trader_id: TraderId,

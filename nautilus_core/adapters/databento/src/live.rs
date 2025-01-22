@@ -68,6 +68,7 @@ pub enum LiveMessage {
 /// [`LiveCommand`] messages are recieved synchronously across a channel,
 /// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
 /// back to a message processing task.
+#[derive(Debug)]
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,

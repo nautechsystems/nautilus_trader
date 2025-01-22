@@ -3018,7 +3018,6 @@ dependencies = [
  "nautilus-model",
  "proptest",
  "pyo3",
- "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3090,9 +3089,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
- "pyo3-async-runtimes",
  "rstest",
- "thiserror 2.0.11",
  "tokio",
  "ustr",
 ]
@@ -3110,7 +3107,6 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-model",
- "nautilus-serialization",
  "nautilus-test-kit",
  "pyo3",
  "pyo3-async-runtimes",
@@ -3118,7 +3114,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.11",
  "time",
  "tokio",
  "tracing",
@@ -3142,13 +3137,11 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-risk",
  "pyo3",
- "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
  "strum",
- "thiserror 2.0.11",
  "ustr",
 ]
 
@@ -3157,7 +3150,6 @@ name = "nautilus-indicators"
 version = "0.41.0"
 dependencies = [
  "anyhow",
- "log",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
@@ -3259,7 +3251,6 @@ dependencies = [
 name = "nautilus-persistence"
 version = "0.41.0"
 dependencies = [
- "anyhow",
  "binary-heap-plus",
  "compare",
  "criterion",
@@ -3291,23 +3282,15 @@ dependencies = [
 name = "nautilus-portfolio"
 version = "0.41.0"
 dependencies = [
- "anyhow",
  "criterion",
- "derive_builder",
- "indexmap",
  "log",
  "nautilus-analysis",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
- "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "strum",
  "thiserror 2.0.11",
  "ustr",
  "uuid",
@@ -3337,7 +3320,6 @@ dependencies = [
 name = "nautilus-risk"
 version = "0.41.0"
 dependencies = [
- "anyhow",
  "criterion",
  "log",
  "nautilus-common",
@@ -3346,7 +3328,6 @@ dependencies = [
  "nautilus-model",
  "nautilus-portfolio",
  "pyo3",
- "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
  "thiserror 2.0.11",
@@ -3386,7 +3367,6 @@ dependencies = [
  "nautilus-model",
  "nautilus-serialization",
  "nautilus-test-kit",
- "parquet",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",

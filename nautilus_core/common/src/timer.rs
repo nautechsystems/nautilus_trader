@@ -347,6 +347,7 @@ impl Iterator for TestTimer {
 ///
 /// `LiveTimer` triggers events at specified intervals in a real-time environment,
 /// using Tokio's async runtime to handle scheduling and execution.
+#[derive(Debug)]
 pub struct LiveTimer {
     /// The name of the timer.
     pub name: Ustr,
