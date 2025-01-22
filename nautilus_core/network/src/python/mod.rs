@@ -15,6 +15,12 @@
 
 //! Python bindings from `pyo3`.
 
+// We need to allow `unexpected_cfgs` because the PyO3 macros internally check for
+// the `gil-refs` feature. We don’t define or enable `gil-refs` ourselves (due to a
+// memory leak), so the compiler raises an error about an unknown cfg feature.
+// This attribute prevents those errors without actually enabling `gil-refs`.
+#![allow(unexpected_cfgs)]
+
 pub mod http;
 pub mod socket;
 pub mod websocket;
