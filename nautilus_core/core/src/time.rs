@@ -353,20 +353,13 @@ mod tests {
         assert_eq!(updated_time.as_u64(), 1_500);
     }
 
-    #[cfg(target_os = "linux")]
     #[rstest]
     fn test_nanos_since_unix_epoch_vs_system_time() {
         let unix_nanos = nanos_since_unix_epoch();
         let system_ns = duration_since_unix_epoch().as_nanos() as u64;
-
-        // Allow for a reasonable delta due to overhead
-        assert!(
-            (unix_nanos as i64 - system_ns as i64).abs() < NANOSECONDS_IN_SECOND as i64,
-            "CLOCK_MONOTONIC_COARSE and SystemTime differ significantly"
-        );
+        assert!((unix_nanos as i64 - system_ns as i64).abs() < NANOSECONDS_IN_SECOND as i64);
     }
 
-    #[cfg(target_os = "linux")]
     #[rstest]
     fn test_time_since_epoch_monotonicity() {
         let clock = get_atomic_clock_realtime();
