@@ -33,6 +33,10 @@ use crate::python::{
 };
 
 /// Loaded as nautilus_pyo3.network
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HttpClient>()?;

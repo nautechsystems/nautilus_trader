@@ -61,6 +61,10 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
 }
 
 /// Returns a `usize` from the given bytes.
+///
+/// # Errors
+///
+/// Returns an error if there are not enough bytes to represent a `usize`.
 pub fn bytes_to_usize(bytes: &[u8]) -> anyhow::Result<usize> {
     // Check bytes width
     if bytes.len() >= std::mem::size_of::<usize>() {

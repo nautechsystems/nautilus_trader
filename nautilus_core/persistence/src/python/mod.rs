@@ -22,6 +22,10 @@ pub mod wranglers;
 use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.persistence
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::backend::session::DataBackendSession>()?;
