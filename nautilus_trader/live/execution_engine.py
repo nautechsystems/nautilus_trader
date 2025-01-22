@@ -118,7 +118,6 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop: asyncio.AbstractEventLoop = loop
-        self._max_qsize = config.qsize
         self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._inflight_check_retries: Counter[ClientOrderId] = Counter()
