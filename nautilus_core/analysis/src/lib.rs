@@ -31,8 +31,8 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
+#![warn(rustc::all)]
 #![deny(unsafe_code)]
-#![deny(warnings)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::broken_intra_doc_links)]
