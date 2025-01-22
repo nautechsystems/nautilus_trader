@@ -35,6 +35,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed handling of Binance HTTP error messages (not always JSON-parsable, leading to `msgspec.DecodeError`)
 - Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
 - Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
+- Fixed memory leak in network PyO3 layer caused by the `gil-refs` feature (#2229), thanks for reporting @davidsblom
 
 ### Documentation Updates
 None
