@@ -15,7 +15,7 @@
 
 //! The [Databento](https://databento.com) integration adapter.
 
-#![deny(warnings)]
+#![warn(rustc::all)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::broken_intra_doc_links)]

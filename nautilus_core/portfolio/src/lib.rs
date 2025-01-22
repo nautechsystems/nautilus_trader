@@ -15,8 +15,8 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
+#![warn(rustc::all)]
 #![deny(unsafe_code)]
-#![deny(warnings)]
 #![deny(nonstandard_style)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::missing_errors_doc)]

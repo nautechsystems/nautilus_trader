@@ -26,7 +26,7 @@
 //!
 //! - `python`: Enables Python bindings from `pyo3`.
 
-#![deny(warnings)]
+#![warn(rustc::all)]
 #![deny(nonstandard_style)]
 #![deny(rustdoc::broken_intra_doc_links)]
 // #![deny(clippy::missing_errors_doc)]

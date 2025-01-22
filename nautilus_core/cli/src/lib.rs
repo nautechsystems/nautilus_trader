@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(rustc::all)]
 #![deny(unsafe_code)]
-#![deny(warnings)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 
