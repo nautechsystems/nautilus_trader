@@ -179,6 +179,7 @@ impl WebSocketClientInner {
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
         tracing::debug!("Started task 'heartbeat'");
+
         heartbeat.map(|duration| {
             task::spawn(async move {
                 let duration = Duration::from_secs(duration);
@@ -275,10 +276,10 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        // TODO: Expose reconnect timeout as config option
-        let timeout = Duration::from_secs(30);
         tracing::debug!("Reconnecting client");
 
+        // TODO: Expose reconnect timeout as config option
+        let timeout = Duration::from_secs(30);
         tokio::time::timeout(timeout, async {
             let state_guard = {
                 let guard = self.reconnection_lock.lock().await;
@@ -369,9 +370,9 @@ async fn shutdown(
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
 ) {
-    let timeout = Duration::from_secs(5);
-    tracing::debug!("Closing connection");
+    tracing::debug!("Closing");
 
+    let timeout = Duration::from_secs(5);
     if tokio::time::timeout(timeout, async {
         // Send close frame first
         let mut write_half = writer.lock().await;
@@ -407,6 +408,8 @@ async fn shutdown(
     {
         tracing::error!("Shutdown timed out after {}s", timeout.as_secs());
     }
+
+    tracing::debug!("Closed");
 }
 
 impl Drop for WebSocketClientInner {

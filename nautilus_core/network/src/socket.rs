@@ -327,9 +327,9 @@ async fn shutdown(
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedTcpWriter,
 ) {
-    let timeout = Duration::from_secs(5);
-    tracing::debug!("Closing connection");
+    tracing::debug!("Closing");
 
+    let timeout = Duration::from_secs(5);
     if tokio::time::timeout(timeout, async {
         // Final close of writer
         let mut writer = writer.lock().await;
@@ -338,7 +338,6 @@ async fn shutdown(
         }
         drop(writer);
 
-        // Small delay for close frame to be sent
         sleep(Duration::from_millis(100)).await;
 
         // Abort tasks
@@ -358,6 +357,8 @@ async fn shutdown(
     {
         tracing::error!("Shutdown timed out after {}s", timeout.as_secs());
     }
+
+    tracing::debug!("Closed");
 }
 
 impl Drop for SocketClientInner {

@@ -33,6 +33,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed live reconciliation of generated order fills to use the `venue_position_id` (when provided), thanks for reporting @sdk451
 - Fixed `InstrumentProvider` initialization behavior when `reload` flag `True`, thanks @ryantam626
 - Fixed handling of Binance HTTP error messages (not always JSON-parsable, leading to `msgspec.DecodeError`)
+- Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
 
 ### Documentation Updates
 None
