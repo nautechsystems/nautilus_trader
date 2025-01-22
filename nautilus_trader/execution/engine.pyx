@@ -145,7 +145,7 @@ cdef class ExecutionEngine(Component):
             clock=clock,
         )
 
-        # Settings
+        # Configuration
         self.debug: bool = config.debug
         self.snapshot_orders = config.snapshot_orders
         self.snapshot_positions = config.snapshot_positions

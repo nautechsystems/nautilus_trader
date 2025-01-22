@@ -123,7 +123,7 @@ cdef class RiskEngine(Component):
         self._portfolio = portfolio
         self._cache = cache
 
-        # Settings
+        # Configuration
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.bypass
         self.debug = config.debug

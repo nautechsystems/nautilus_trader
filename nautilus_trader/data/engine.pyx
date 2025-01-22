@@ -145,7 +145,7 @@ cdef class DataEngine(Component):
         self._query_group_n_components: dict[UUID4, int] = {}
         self._query_group_components: dict[UUID4, list] = {}
 
-        # Settings
+        # Configuration
         self.debug = config.debug
         self._time_bars_interval_type = config.time_bars_interval_type
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close

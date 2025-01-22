@@ -128,7 +128,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._open_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
-        # Settings
+        # Configuration
         self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
         self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
