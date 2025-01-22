@@ -1535,8 +1535,8 @@ cdef class Component:
         self._clock = clock
         self._log = Logger(name=component_name)
         self._msgbus = msgbus
-        self._config = config.json_primitives() if config is not None else {}
         self._fsm = ComponentFSMFactory.create()
+        self._config = config.json_primitives() if config is not None else {}
 
         if self._msgbus is not None:
             self._initialize()
