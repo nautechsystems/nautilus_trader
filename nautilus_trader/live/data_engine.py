@@ -27,6 +27,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 
 
 class LiveDataEngine(DataEngine):
@@ -78,6 +79,35 @@ class LiveDataEngine(DataEngine):
         self._req_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._res_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._data_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+
+        self._cmd_enqueuer: ThrottledEnqueuer[DataCommand] = ThrottledEnqueuer(
+            qname="cmd_queue",
+            queue=self._cmd_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+        self._req_enqueuer: ThrottledEnqueuer[DataRequest] = ThrottledEnqueuer(
+            qname="req_queue",
+            queue=self._req_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+        self._res_enqueuer: ThrottledEnqueuer[DataResponse] = ThrottledEnqueuer(
+            qname="res_queue",
+            queue=self._res_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+        self._data_enqueuer: ThrottledEnqueuer[Data] = ThrottledEnqueuer(
+            qname="data_queue",
+            queue=self._data_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
 
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
@@ -228,101 +258,57 @@ class LiveDataEngine(DataEngine):
         """
         Execute the given data command.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
         command : DataCommand
             The command to execute.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(command, "command")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_cmd_queue.put` as queue full at "
-                f"{self._cmd_queue.qsize()} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._cmd_queue.put(command))
+        self._cmd_enqueuer.enqueue(command)
 
     def request(self, request: DataRequest) -> None:
         """
         Handle the given request.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
         request : DataRequest
             The request to handle.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(request, "request")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._req_queue.put_nowait, request)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_req_queue.put` as queue full at "
-                f"{self._req_queue.qsize()} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._req_queue.put(request))
+        self._req_enqueuer.enqueue(request)
 
     def response(self, response: DataResponse) -> None:
         """
         Handle the given response.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
         response : DataResponse
             The response to handle.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(response, "response")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._res_queue.put_nowait, response)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_res_queue.put` as queue full at "
-                f"{self._res_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._res_queue.put(response))
+        self._res_enqueuer.enqueue(response)
 
     def process(self, data: Data) -> None:
         """
-        Process the given data.
+        Process the given data message.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
@@ -335,18 +321,7 @@ class LiveDataEngine(DataEngine):
         loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
-        PyCondition.not_none(data, "data")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_data_queue.put` as queue full at "
-                f"{self._data_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._data_queue.put(data))
+        self._data_enqueuer.enqueue(data)
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 
