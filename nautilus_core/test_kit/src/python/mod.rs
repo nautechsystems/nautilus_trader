@@ -30,6 +30,10 @@ pub mod files;
 use pyo3::{prelude::*, wrap_pyfunction};
 
 /// Loaded as nautilus_pyo3.test_kit
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn test_kit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(
