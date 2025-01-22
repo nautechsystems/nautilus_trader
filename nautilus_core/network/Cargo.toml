@@ -42,6 +42,5 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
-gil-refs = []
 python = ["pyo3", "pyo3-async-runtimes"]
 std = []
