@@ -20,6 +20,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PriceRaw
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -30,19 +32,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 cdef class OrderBookDeltaDataWrangler:
     cdef readonly Instrument instrument
-
-    cpdef OrderBookDelta _build_delta_from_raw(
-        self,
-        BookAction action,
-        OrderSide side,
-        int64_t price_raw,
-        uint64_t size_raw,
-        uint64_t order_id,
-        uint8_t flags,
-        uint64_t sequence,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    )
 
     cpdef OrderBookDelta _build_delta(
         self,
@@ -61,16 +50,6 @@ cdef class OrderBookDeltaDataWrangler:
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument
 
-    cpdef QuoteTick _build_tick_from_raw(
-        self,
-        int64_t bid_price_raw,
-        int64_t ask_price_raw,
-        uint64_t bid_size_raw,
-        uint64_t ask_size_raw,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    )
-
     cpdef QuoteTick _build_tick(
         self,
         double bid_price,
@@ -85,16 +64,6 @@ cdef class QuoteTickDataWrangler:
 cdef class TradeTickDataWrangler:
     cdef readonly Instrument instrument
     cdef readonly processed_data
-
-    cpdef TradeTick _build_tick_from_raw(
-        self,
-        int64_t price_raw,
-        uint64_t size_raw,
-        AggressorSide aggressor_side,
-        str trade_id,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    )
 
     cpdef TradeTick _build_tick(
         self,

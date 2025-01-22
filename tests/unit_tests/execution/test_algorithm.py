@@ -200,7 +200,11 @@ class TestExecAlgorithm:
         assert config.dict() == {
             "exec_algorithm_path": "nautilus_trader.examples.algorithms.twap:TWAPExecAlgorithm",
             "config_path": "nautilus_trader.examples.algorithms.twap:TWAPExecAlgorithmConfig",
-            "config": {"exec_algorithm_id": ExecAlgorithmId("TWAP")},
+            "config": {
+                "exec_algorithm_id": ExecAlgorithmId("TWAP"),
+                "log_events": True,
+                "log_commands": True,
+            },
         }
 
     def test_exec_algorithm_spawn_market_order_with_quantity_too_high(self) -> None:

@@ -21,7 +21,7 @@ use nautilus_model::{
         ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId},
     types::{Price, Quantity},
 };
 use serde::{Deserialize, Serialize};
@@ -64,6 +64,8 @@ pub struct OrderStatusReport {
     pub ts_init: UnixNanos,
     /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,
+    /// The position ID associated with the order (assigned by the venue).
+    pub venue_position_id: Option<PositionId>,
     /// The orders contingency type.
     pub contingency_type: ContingencyType,
     /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.
@@ -130,6 +132,7 @@ impl OrderStatusReport {
             ts_last,
             ts_init,
             order_list_id: None,
+            venue_position_id: None,
             contingency_type: ContingencyType::default(),
             expire_time: None,
             price: None,
@@ -158,6 +161,13 @@ impl OrderStatusReport {
     #[must_use]
     pub const fn with_order_list_id(mut self, order_list_id: OrderListId) -> Self {
         self.order_list_id = Some(order_list_id);
+        self
+    }
+
+    /// Sets the venue position ID.
+    #[must_use]
+    pub const fn with_venue_position_id(mut self, venue_position_id: PositionId) -> Self {
+        self.venue_position_id = Some(venue_position_id);
         self
     }
 
@@ -283,6 +293,7 @@ impl Display for OrderStatusReport {
                 ts_init={}, \
                 client_order_id={:?}, \
                 order_list_id={:?}, \
+                venue_position_id={:?}, \
                 contingency_type={}, \
                 expire_time={:?}, \
                 price={:?}, \
@@ -313,6 +324,7 @@ impl Display for OrderStatusReport {
             self.ts_init,
             self.client_order_id,
             self.order_list_id,
+            self.venue_position_id,
             self.contingency_type,
             self.expire_time,
             self.price,

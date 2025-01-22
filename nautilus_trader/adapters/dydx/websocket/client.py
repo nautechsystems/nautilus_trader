@@ -153,7 +153,7 @@ class DYDXWebsocketClient:
         Connect to the websocket server.
         """
         self._is_running = True
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=self._max_send_retries or 0,
             retry_delay_secs=self._retry_delay_secs or 1.0,

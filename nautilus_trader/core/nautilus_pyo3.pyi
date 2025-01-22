@@ -165,6 +165,10 @@ def ed25519_signature(private_key: bytes, data: str) -> str: ...
 # Model
 ###################################################################################################
 
+HIGH_PRECISION: Final[bool]
+FIXED_SCALAR: Final[float]
+FIXED_PRECISION: Final[int]
+
 class DataType:
     def __init__(self, type_name: str, metadata: dict[str, str] | None = None) -> None: ...
     @property
@@ -3243,6 +3247,17 @@ class WebSocketClient:
     def send_text(self, data: bytes, keys: list[str] | None = None) -> Awaitable[None]: ...
     def send_pong(self, data: bytes) -> Awaitable[None]: ...
 
+class SocketConfig:
+    def __init__(
+        self,
+        url: str,
+        ssl: bool,
+        suffix: bytes,
+        handler: Callable[..., Any],
+        heartbeat: tuple[int, list[int]] | None = None,
+        max_reconnection_tries: int | None = None,
+    ) -> None: ...
+
 class SocketClient:
     @classmethod
     def connect(
@@ -3255,16 +3270,6 @@ class SocketClient:
     def disconnect(self) -> Awaitable[None]: ...
     def is_alive(self) -> bool: ...
     def send(self, data: bytes) -> Awaitable[None]: ...
-
-class SocketConfig:
-    def __init__(
-        self,
-        url: str,
-        ssl: bool,
-        suffix: bytes,
-        handler: Callable[..., Any],
-        heartbeat: tuple[int, list[int]] | None = None,
-    ) -> None: ...
 
 ###################################################################################################
 # Persistence

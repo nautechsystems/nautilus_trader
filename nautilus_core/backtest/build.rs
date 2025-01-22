@@ -15,8 +15,17 @@
 
 use std::env;
 
-#[allow(clippy::expect_used)] // OK in build script
+#[allow(clippy::expect_used)]
 fn main() {
+    // Ensure the build script runs on changes
+    println!("cargo:rerun-if-env-changed=HIGH_PRECISION");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HIGH_PRECISION");
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=cbindgen.toml");
+    println!("cargo:rerun-if-changed=cbindgen_cython.toml");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=../Cargo.toml");
+
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {
         extern crate cbindgen;

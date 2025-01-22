@@ -81,8 +81,6 @@ cdef class Strategy(Actor):
     """If contingent orders should be managed automatically by the strategy.\n\n:returns: `bool`"""
     cdef readonly bint manage_gtd_expiry
     """If all order GTD time in force expirations should be managed automatically by the strategy.\n\n:returns: `bool`"""
-    cdef readonly bint event_logging
-    """If event logging should be enabled for the strategy.\n\n:returns: `bool`"""
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 

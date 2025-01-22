@@ -153,7 +153,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
        poetry install --only main --all-extras
 
 :::note
-The `--branch develop` flag clones only the develop branch, and `--depth 1` fetches just the latest commit for a faster, lightweight clone.
+The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::
 
 ## From GitHub Release
@@ -178,7 +178,7 @@ Use NautilusTrader only if you are prepared to adapt to these changes.
 Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](../concepts/message_bus.md).
 
 :::info
-The minimum supported Redis version is 6.2 or higher (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
+The minimum supported Redis version is 6.2 (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
 :::
 
 For a quick setup, we recommend using a [Redis Docker container](https://hub.docker.com/_/redis/). You can find an example setup in the `.docker` directory,
@@ -202,4 +202,51 @@ To manage the Redis container:
 
 :::tip
 We recommend using [Redis Insight](https://redis.io/insight/) as a GUI to visualize and debug Redis data efficiently.
+:::
+
+## Precision mode
+
+NautilusTrader supports two precision modes for its core value types (`Price`, `Quantity`, `Money`),
+which differ in their internal bit-width and maximum decimal precision.
+
+- **High-precision**: 128-bit integers with up to 16 decimals of precision, and a larger value range.
+- **Standard-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
+
+:::note
+By default, the official Python wheels **ship** in high-precision (128-bit) mode on Linux and macOS.
+On Windows, only standard-precision (64-bit) is available due to the lack of native 128-bit integer support.
+
+For the Rust crates, the default is standard-precision unless you explicitly enable the `high-precision` feature flag.
+:::
+
+The performance tradeoff is that standard-precision is ~3–5% faster in typical backtests,
+but has lower decimal precision and a smaller representable value range.
+
+:::note
+Performance benchmarks comparing the modes are pending.
+:::
+
+### Build configuration
+
+The precision mode is determined by:
+
+- Setting the `HIGH_PRECISION` environment variable during compilation, **and/or**
+- Enabling the `high-precision` Rust feature flag explicitly.
+
+#### High-precision mode (128-bit)
+
+```bash
+export HIGH_PRECISION=true
+make install-debug
+```
+
+#### Standard-precision mode (64-bit)
+
+```bash
+export HIGH_PRECISION=false
+make install-debug
+```
+
+:::info
+See the [Value Types](../concepts/overview.md#value-types) guide for more details.
 :::

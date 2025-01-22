@@ -29,18 +29,6 @@ A high-performance order book implemented in Rust is available to maintain order
 Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used for backtesting, with markets operating on `L1_MBP` book types.
 :::
 
-## Timestamps
-
-Each of these data types defines two timestamp fields:
-
-- `ts_event`: UNIX timestamp (nanoseconds) representing when the data event occurred.
-- `ts_init`: UNIX timestamp (nanoseconds) marking when the object was initialized.
-
-For backtesting, data is ordered by `ts_init` using a stable sort. For persisted data, the `ts_init` field indicates when the message was originally received.
-
-The `ts_event` timestamp enhances analytics by enabling some latency analysis. Relative latency can be measured as the difference between `ts_init` and `ts_event`,
-though it's important to remember that the clocks producing these timestamps are likely not synchronized.
-
 ## Instruments
 
 The following instrument definitions are available:
@@ -137,6 +125,71 @@ For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS)
 ```python
 bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
 ```
+
+## Timestamps
+
+The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events.
+These timestamps serve distinct purposes and help maintain precise timing information throughout the system:
+
+- `ts_event`: UNIX timestamp (nanoseconds) representing when an event actually occurred.
+- `ts_init`: UNIX timestamp (nanoseconds) representing when Nautilus created the internal object representing that event.
+
+### Examples
+
+| **Event Type**   | **`ts_event`**                                        | **`ts_init`** |
+| -----------------| ------------------------------------------------------| --------------|
+| `TradeTick`      | Time when trade occurred at the exchange.             | Time when Nautilus received the trade data. |
+| `QuoteTick`      | Time when quote was created at the exchange.          | Time when Nautilus received the quote data. |
+| `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update. |
+| `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
+| `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation. |
+| `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation. |
+| `NewsEvent`      | Time when the news was published.                     | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
+| Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
+
+:::note
+The `ts_init` field represents a more general concept than just the "time of reception" for events.
+It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
+This distinction is important because `ts_init` is not exclusive to "received events" — it applies to any internal
+initialization process.
+
+For example, the `ts_init` field is also used for commands, where the concept of reception does not apply.
+This broader definition ensures consistent handling of initialization timestamps across various object types in the system.
+:::
+
+### Latency analysis
+
+The dual timestamp system enables latency analysis within the platform:
+
+- Latency can be calculated as `ts_init - ts_event`.
+- This difference represents total system latency, including network transmission time, processing overhead, and any queueing delays.
+- It's important to remember that the clocks producing these timestamps are likely not synchronized.
+
+### Environment specific behavior
+
+#### Backtesting environment
+
+- Data is ordered by `ts_init` using a stable sort.
+- This behavior ensures deterministic processing order and simulates realistic system behavior, including latencies.
+
+#### Live trading environment
+
+- Data is processed as it arrives, ensuring minimal latency and allowing for real-time decision-making.
+  - `ts_init` field records the exact moment when data is received by Nautilus in real-time.
+  - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
+- We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
+
+### Other notes and considerations
+
+- For data from external sources, `ts_init` is always the same as or later than `ts_event`.
+- For data created within Nautilus, `ts_init` and `ts_event` can be the same because the object is initialized at the same time the event happens.
+- Not every type with a `ts_init` field necessarily has a `ts_event` field. This reflects cases where:
+  - The initialization of an object happens at the same time as the event itself.
+  - The concept of an external event time does not apply.
+
+#### Persisted Data
+
+The `ts_init` field indicates when the message was originally received.
 
 ## Data flow
 
@@ -305,7 +358,7 @@ Rust Arrow schema implementations are available for the follow data types (enhan
 - `Bar`
 
 ### Reading data
-Any stored data can then we read back into memory:
+Any stored data can then be read back into memory:
 ```python
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 import pandas as pd
@@ -339,3 +392,101 @@ data_config = BacktestDataConfig(
 
 This configuration object can then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
 See the [Backtest (high-level API)](../getting_started/backtest_high_level.md) tutorial for further details.
+
+## Data migrations
+
+NautilusTrader defines an internal data format specified in the `nautilus_model` crate.
+These models are serialized into Arrow record batches and written to Parquet files.
+Nautilus backtesting is most efficient when using these Nautilus-format Parquet files.
+
+However, migrating the data model between [precision modes](../getting_started/installation.md#precision-mode) and schema changes can be challenging.
+This guide explains how to handle data migrations using our utility tools.
+
+### Migration tools
+
+The `nautilus_persistence` crate provides two key utilities:
+
+#### `to_json`
+
+Converts Parquet files to JSON while preserving metadata:
+
+- Creates two files:
+
+  - `<input>.json`: Contains the deserialized data
+  - `<input>.metadata.json`: Contains schema metadata and row group configuration
+
+- Automatically detects data type from filename:
+
+  - `OrderBookDelta` (contains "deltas" or "order_book_delta")
+  - `QuoteTick` (contains "quotes" or "quote_tick")
+  - `TradeTick` (contains "trades" or "trade_tick")
+  - `Bar` (contains "bars")
+
+#### `to_parquet`
+
+Converts JSON back to Parquet format:
+
+- Reads both the data JSON and metadata JSON files
+- Preserves row group sizes from original metadata
+- Uses ZSTD compression
+- Creates `<input>.parquet`
+
+### Migration Process
+
+The following migration examples both use trades data (you can also migrate the other data types in the same way).
+All commands should be run from the root of the `nautilus_core/persistence/` crate directory.
+
+#### Migrating from standard-precision (64-bit) to high-precision (128-bit)
+
+This example describes a scenario where you want to migrate from standard-precision schema data to high-precision schema data.
+
+**1. Convert from standard-precision Parquet to JSON**:
+
+```bash
+cargo run --bin to_json trades.parquet
+```
+
+This will create `trades.json` and `trades.metadata.json` files.
+
+**2. Convert from JSON to high-precision Parquet**:
+
+Add the `--features high-precision` flag to write data as high-precision (128-bit) schema Parquet.
+
+```bash
+cargo run --features high-precision --bin to_parquet trades.json
+```
+
+This will create a `trades.parquet` file with high-precision schema data.
+
+#### Migrating schema changes
+
+This example describes a scenario where you want to migrate from one schema version to another.
+
+**1. Convert from old schema Parquet to JSON**:
+
+Add the `--features high-precision` flag if the source data uses a high-precision (128-bit) schema.
+
+```bash
+cargo run --bin to_json trades.parquet
+```
+
+This will create `trades.json` and `trades.metadata.json` files.
+
+**2. Switch to new schema version**:
+```bash
+git checkout <new-version>
+```
+
+**3. Convert from JSON back to new schema Parquet**:
+```bash
+cargo run --features high-precision --bin to_parquet trades.json
+```
+
+This will create a `trades.parquet` file with the new schema.
+
+### Best Practices
+
+- Always test migrations with a small dataset first.
+- Maintain backups of original files.
+- Verify data integrity after migration.
+- Perform migrations in a staging environment before applying them to production data.

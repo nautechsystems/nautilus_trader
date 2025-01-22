@@ -20,6 +20,13 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
+# Platform constants
+IS_LINUX = platform.system() == "Linux"
+IS_MACOS = platform.system() == "Darwin"
+IS_WINDOWS = platform.system() == "Windows"
+IS_ARM64 = platform.machine() == "arm64"
+
+
 # The Rust toolchain to use for builds
 RUST_TOOLCHAIN = os.getenv("RUST_TOOLCHAIN", "stable")
 # The Cargo build mode
@@ -29,11 +36,21 @@ PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
-PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true") == "true"
+PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
-COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true") == "true"
+COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
-PYO3_ONLY = os.getenv("PYO3_ONLY", "") != ""
+PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
+
+# Precision mode configuration
+# https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode
+HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
+if IS_WINDOWS and HIGH_PRECISION:
+    print(
+        "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\n"
+        "Forcing standard-precision (64-bit) mode",
+    )
+    HIGH_PRECISION = False
 
 if PROFILE_MODE:
     # For subsequent debugging, the C source needs to be in the same tree as
@@ -50,23 +67,23 @@ else:
 
 USE_SCCACHE = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
 
-if platform.system() == "Linux":
+if IS_LINUX:
     # Use clang as the default compiler
     os.environ["CC"] = "sccache clang" if USE_SCCACHE else "clang"
     os.environ["CXX"] = "sccache clang++" if USE_SCCACHE else "clang++"
     os.environ["LDSHARED"] = "clang -shared"
 
-if platform.system() == "Darwin" and platform.machine() == "arm64":
+if IS_MACOS and IS_ARM64:
     os.environ["CFLAGS"] = "-arch arm64"
     os.environ["LDFLAGS"] = "-arch arm64 -w"
 
-if platform.system() == "Windows":
+if IS_WINDOWS:
     # Linker error 1181
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
     RUST_LIB_PFX = ""
     RUST_STATIC_LIB_EXT = "lib"
     RUST_DYLIB_EXT = "dll"
-elif platform.system() == "Darwin":
+elif IS_MACOS:
     RUST_LIB_PFX = "lib"
     RUST_STATIC_LIB_EXT = "a"
     RUST_DYLIB_EXT = "dylib"
@@ -75,16 +92,21 @@ else:  # Linux
     RUST_STATIC_LIB_EXT = "a"
     RUST_DYLIB_EXT = "so"
 
-TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
+ENV_CARGO_TARGET_DIR = os.environ.get("CARGO_TARGET_DIR")
+CARGO_TARGET_DIR = (
+    Path(ENV_CARGO_TARGET_DIR) / BUILD_MODE
+    if ENV_CARGO_TARGET_DIR
+    else Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
+)
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
 RUST_LIB_PATHS: list[Path] = [
-    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_backtest.{RUST_STATIC_LIB_EXT}",
-    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_common.{RUST_STATIC_LIB_EXT}",
-    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_core.{RUST_STATIC_LIB_EXT}",
-    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_model.{RUST_STATIC_LIB_EXT}",
-    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_persistence.{RUST_STATIC_LIB_EXT}",
+    CARGO_TARGET_DIR / f"{RUST_LIB_PFX}nautilus_backtest.{RUST_STATIC_LIB_EXT}",
+    CARGO_TARGET_DIR / f"{RUST_LIB_PFX}nautilus_common.{RUST_STATIC_LIB_EXT}",
+    CARGO_TARGET_DIR / f"{RUST_LIB_PFX}nautilus_core.{RUST_STATIC_LIB_EXT}",
+    CARGO_TARGET_DIR / f"{RUST_LIB_PFX}nautilus_model.{RUST_STATIC_LIB_EXT}",
+    CARGO_TARGET_DIR / f"{RUST_LIB_PFX}nautilus_persistence.{RUST_STATIC_LIB_EXT}",
 ]
 RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
@@ -99,11 +121,17 @@ def _build_rust_libs() -> None:
 
         build_options = " --release" if BUILD_MODE == "release" else ""
 
+        if HIGH_PRECISION:
+            features = ["--all-features"]
+        else:
+            # Enable features needed for main build, but not high_precision
+            features = ["--features", "ffi,python,extension-module"]
+
         cmd_args = [
             "cargo",
             "build",
             *build_options.split(),
-            "--all-features",
+            *features,
         ]
 
         if RUST_TOOLCHAIN == "nightly":
@@ -132,8 +160,6 @@ Options.fast_fail = True  # Abort the compilation on the first error occurred
 Options.annotate = ANNOTATION_MODE  # Create annotated HTML files for each .pyx
 if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
-Options.warning_errors = True  # Treat compiler warnings as errors
-Options.extra_warnings = True
 
 CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
@@ -144,6 +170,12 @@ CYTHON_COMPILER_DIRECTIVES = {
     "linetrace": PROFILE_MODE,  # If we're debugging or profiling
     "warn.maybe_uninitialized": True,
 }
+
+# TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
+if cython_compiler_version == "3.1.0a1":
+    Options.warning_errors = True  # Treat compiler warnings as errors
+    Options.extra_warnings = True
+    CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
 
 
 def _build_extensions() -> list[Extension]:
@@ -161,14 +193,14 @@ def _build_extensions() -> list[Extension]:
     extra_compile_args = []
     extra_link_args = RUST_LIBS
 
-    if platform.system() != "Windows":
+    if not IS_WINDOWS:
         # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-unreachable-code")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
 
-    if platform.system() == "Windows":
+    if IS_WINDOWS:
         extra_link_args += [
             "AdvAPI32.Lib",
             "bcrypt.lib",
@@ -213,7 +245,7 @@ def _build_extensions() -> list[Extension]:
 
 def _build_distribution(extensions: list[Extension]) -> Distribution:
     nthreads = os.cpu_count() or 1
-    if platform.system() == "Windows":
+    if IS_WINDOWS:
         nthreads = min(nthreads, 60)
     print(f"nthreads={nthreads}")
 
@@ -252,7 +284,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 def _copy_rust_dylibs_to_project() -> None:
     # https://pyo3.rs/latest/building-and-distribution#manual-builds
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    src = Path(TARGET_DIR) / f"{RUST_LIB_PFX}nautilus_pyo3.{RUST_DYLIB_EXT}"
+    src = Path(CARGO_TARGET_DIR) / f"{RUST_LIB_PFX}nautilus_pyo3.{RUST_DYLIB_EXT}"
     dst = Path("nautilus_trader/core") / f"nautilus_pyo3{ext_suffix}"
     shutil.copyfile(src=src, dst=dst)
 
@@ -304,9 +336,9 @@ def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
-            if platform.system() == "Linux":
+            if IS_LINUX:
                 strip_cmd = ["strip", "--strip-unneeded", so]
-            elif platform.system() == "Darwin":
+            elif IS_MACOS:
                 strip_cmd = ["strip", "-x", so]
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
@@ -343,7 +375,7 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if BUILD_MODE == "release" and platform.system() in ("Linux", "Darwin"):
+    if BUILD_MODE == "release" and (IS_LINUX or IS_MACOS):
         # Only strip symbols for release builds
         _strip_unneeded_symbols()
 
@@ -366,6 +398,7 @@ if __name__ == "__main__":
     print(f"\nRUST_TOOLCHAIN={RUST_TOOLCHAIN}")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"BUILD_DIR={BUILD_DIR}")
+    print(f"HIGH_PRECISION={HIGH_PRECISION}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")

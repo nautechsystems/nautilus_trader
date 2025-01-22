@@ -15,7 +15,7 @@
 
 //! Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 //!
-//! Handles up to 9 decimals of precision.
+//! Handles up to 16 decimals of precision.
 
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -27,12 +27,13 @@ use nautilus_core::correctness::{check_valid_string, FAILED};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
-use super::fixed::check_fixed_precision;
+#[allow(unused_imports)] // FIXED_PRECISION used in docs
+use super::fixed::{check_fixed_precision, FIXED_PRECISION};
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 /// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 ///
-/// Handles up to 9 decimals of precision.
+/// Handles up to {FIXED_PRECISION} decimals of precision.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -44,7 +45,7 @@ pub struct Currency {
     pub code: Ustr,
     /// The currency decimal precision.
     pub precision: u8,
-    /// The currency code (ISO 4217).
+    /// The ISO 4217 currency code.
     pub iso4217: u16,
     /// The full name of the currency.
     pub name: Ustr,
@@ -60,7 +61,7 @@ impl Currency {
     /// This function returns an error:
     /// - If `code` is not a valid string.
     /// - If `name` is not a valid string.
-    /// - If `precision` is invalid outside the valid representable range [0, 9].
+    /// - If `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -275,10 +276,46 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision() {
-        // Precision out of range for fixed
-        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
+        // Precision greater than maximum
+        let _ = Currency::new("USD", 17, 840, "United States dollar", CurrencyType::Fiat);
+    }
+
+    #[rstest]
+    fn test_register_no_overwrite() {
+        let currency1 = Currency::new("TEST1", 2, 999, "Test Currency 1", CurrencyType::Fiat);
+        Currency::register(currency1, false).unwrap();
+
+        let currency2 = Currency::new(
+            "TEST1",
+            2,
+            999,
+            "Test Currency 2 Updated",
+            CurrencyType::Fiat,
+        );
+        Currency::register(currency2, false).unwrap();
+
+        let found = Currency::try_from_str("TEST1").unwrap();
+        assert_eq!(found.name.as_str(), "Test Currency 1");
+    }
+
+    #[rstest]
+    fn test_register_with_overwrite() {
+        let currency1 = Currency::new("TEST2", 2, 998, "Test Currency 2", CurrencyType::Fiat);
+        Currency::register(currency1, false).unwrap();
+
+        let currency2 = Currency::new(
+            "TEST2",
+            2,
+            998,
+            "Test Currency 2 Overwritten",
+            CurrencyType::Fiat,
+        );
+        Currency::register(currency2, true).unwrap();
+
+        let found = Currency::try_from_str("TEST2").unwrap();
+        assert_eq!(found.name.as_str(), "Test Currency 2 Overwritten");
     }
 
     #[rstest]
@@ -324,6 +361,59 @@ mod tests {
         let currency1 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         let currency2 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         assert_eq!(currency1, currency2);
+    }
+
+    #[rstest]
+    fn test_currency_partial_eq_only_checks_code() {
+        let c1 = Currency::new("ABC", 2, 999, "Currency ABC", CurrencyType::Fiat);
+        let c2 = Currency::new("ABC", 8, 100, "Completely Different", CurrencyType::Crypto);
+
+        assert_eq!(c1, c2, "Should be equal if 'code' is the same");
+    }
+
+    #[rstest]
+    fn test_is_fiat() {
+        let currency = Currency::new("TESTFIAT", 2, 840, "Test Fiat", CurrencyType::Fiat);
+        Currency::register(currency, true).unwrap();
+
+        let result = Currency::is_fiat("TESTFIAT");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "Expected TESTFIAT to be recognized as fiat"
+        );
+    }
+
+    #[rstest]
+    fn test_is_crypto() {
+        let currency = Currency::new("TESTCRYPTO", 8, 0, "Test Crypto", CurrencyType::Crypto);
+        Currency::register(currency, true).unwrap();
+
+        let result = Currency::is_crypto("TESTCRYPTO");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "Expected TESTCRYPTO to be recognized as crypto"
+        );
+    }
+
+    #[rstest]
+    fn test_is_commodity_backed() {
+        let currency = Currency::new("TESTGOLD", 5, 0, "Test Gold", CurrencyType::CommodityBacked);
+        Currency::register(currency, true).unwrap();
+
+        let result = Currency::is_commodity_backed("TESTGOLD");
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "Expected TESTGOLD to be recognized as commodity-backed"
+        );
+    }
+
+    #[rstest]
+    fn test_is_fiat_unknown_currency() {
+        let result = Currency::is_fiat("NON_EXISTENT");
+        assert!(result.is_err(), "Should fail for unknown currency code");
     }
 
     #[rstest]

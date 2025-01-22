@@ -26,6 +26,15 @@
 //!
 //! - `python`: Enables Python bindings from `pyo3`.
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
+// Uncomment once we've added trivial debug impls everywhere
+// #![deny(missing_debug_implementations)]
+
 pub mod average;
 pub mod book;
 pub mod indicator;

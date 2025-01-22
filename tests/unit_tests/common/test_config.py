@@ -56,4 +56,7 @@ def test_create_actor_from_importable_config() -> None:
 
     # Assert
     assert isinstance(actor, MockActor)
-    assert repr(actor.config) == "MockActorConfig(component_id='MyActor')"
+    assert (
+        repr(actor.config)
+        == "MockActorConfig(component_id='MyActor', log_events=True, log_commands=True)"
+    )

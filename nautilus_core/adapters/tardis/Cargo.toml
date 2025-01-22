@@ -32,7 +32,6 @@ async-stream = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
 heck = { workspace = true }
-parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }

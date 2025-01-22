@@ -73,6 +73,7 @@ pub extern "C" fn order_emulated_new(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn order_released_new(
     trader_id: TraderId,
     strategy_id: StrategyId,

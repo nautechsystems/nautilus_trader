@@ -92,8 +92,10 @@ jobs:
         with:
           version: ${{ env.POETRY_VERSION }}
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+      - name: Install build and dev dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          poetry install --only dev --no-root
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -210,8 +212,10 @@ jobs:
         with:
           version: ${{ env.POETRY_VERSION }}
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+      - name: Install build and dev dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          poetry install --only dev --no-root
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -358,8 +362,10 @@ jobs:
         with:
           version: ${{ env.POETRY_VERSION }}
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+      - name: Install build and dev dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          poetry install --only dev --no-root
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV

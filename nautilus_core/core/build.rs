@@ -17,11 +17,16 @@ use std::{env, fs, path::PathBuf};
 
 use toml::Value;
 
-#[allow(clippy::expect_used)] // OK in build script
+#[allow(clippy::expect_used)]
 fn main() {
-    // Ensure the build script runs again if `build.rs` or top-level `pyproject.toml` changes
+    // Ensure the build script runs on changes
+    println!("cargo:rerun-if-env-changed=HIGH_PRECISION");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HIGH_PRECISION");
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../../pyproject.toml");
+    println!("cargo:rerun-if-changed=cbindgen.toml");
+    println!("cargo:rerun-if-changed=cbindgen_cython.toml");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=../Cargo.toml");
 
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let project_dir = crate_dir

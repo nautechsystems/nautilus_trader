@@ -400,6 +400,7 @@ cdef class BacktestEngine:
         use_position_ids: bool = True,
         use_random_ids: bool = False,
         use_reduce_only: bool = True,
+        use_message_queue: bool = True,
         bar_execution: bool = True,
         bar_adaptive_high_low_ordering: bool = False,
         trade_execution: bool = False,
@@ -451,6 +452,11 @@ cdef class BacktestEngine:
             If all venue generated identifiers will be random UUID4's.
         use_reduce_only : bool, default True
             If the `reduce_only` execution instruction on orders will be honored.
+        use_message_queue : bool, default True
+            If an internal message queue should be used to process trading commands in sequence after
+            they have initially arrived. Setting this to False would be appropriate for real-time
+            sandbox environments, where we don't want to introduce additional latency of waiting for
+            the next data event before processing the trading command.
         bar_execution : bool, default True
             If bars should be processed by the matching engine(s) (and move the market).
         bar_adaptive_high_low_ordering : bool, default False
@@ -513,6 +519,7 @@ cdef class BacktestEngine:
             use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
             use_reduce_only=use_reduce_only,
+            use_message_queue=use_message_queue,
             bar_execution=bar_execution,
             bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
             trade_execution=trade_execution,
@@ -1080,7 +1087,7 @@ cdef class BacktestEngine:
         else:
             end = pd.to_datetime(end, utc=True)
             end_ns = end.value
-        Condition.is_true(start_ns < end_ns, "start was >= end")
+        Condition.is_true(start_ns <= end_ns, "start was > end")
         Condition.not_empty(self._data, "data")
 
         # Set clocks

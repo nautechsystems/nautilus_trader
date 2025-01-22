@@ -50,7 +50,7 @@ format:
 
 .PHONY: pre-commit
 pre-commit:
-	pre-commit run --all-files
+	poetry run pre-commit run --all-files
 
 .PHONY: ruff
 ruff:
@@ -94,12 +94,24 @@ cargo-update:
 	(cd nautilus_core && cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov)
 
 .PHONY: cargo-test
+cargo-test: RUST_BACKTRACE=1
+cargo-test: HIGH_PRECISION=true
 cargo-test:
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace)
+	(cd nautilus_core && RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision")
+
+.PHONY: cargo-test-standard-precision
+cargo-test-standard-precision: RUST_BACKTRACE=1
+cargo-test-standard-precision: HIGH_PRECISION=false
+cargo-test-standard-precision:
+	@if ! cargo nextest --version >/dev/null 2>&1; then \
+    echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
+    exit 1; \
+	fi
+	(cd nautilus_core && RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi")
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage:
@@ -111,7 +123,7 @@ cargo-test-coverage:
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo llvm-cov nextest run --workspace)
+	(cd nautilus_core && cargo llvm-cov nextest run --workspace)
 
 .PHONY: cargo-bench
 cargo-bench:
@@ -166,10 +178,10 @@ test-performance:
 test-examples:
 	bash scripts/test-examples.sh
 
-.PHONY: install-talib
-install-talib:
-	bash scripts/install-talib.sh
-
 .PHONY: install-cli
 install-cli:
 	(cd nautilus_core && cargo install --path cli --bin nautilus --force)
+
+.PHONY: install-talib
+install-talib:
+	bash scripts/install-talib.sh

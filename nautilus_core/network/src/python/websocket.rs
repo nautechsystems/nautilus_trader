@@ -18,7 +18,7 @@ use std::sync::{atomic::Ordering, Arc};
 use futures::SinkExt;
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
     ratelimiter::quota::Quota,
@@ -144,7 +144,7 @@ impl WebSocketClient {
 
             let mut guard = writer.lock().await;
             guard
-                .send(Message::Binary(data))
+                .send(Message::Binary(data.into()))
                 .await
                 .map_err(to_websocket_pyerr)
         })
@@ -171,7 +171,8 @@ impl WebSocketClient {
         py: Python<'py>,
         keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
+        let data_str = String::from_utf8(data).map_err(to_pyvalue_err)?;
+        let data = Utf8Bytes::from(data_str);
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
 
@@ -205,7 +206,7 @@ impl WebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
-                .send(Message::Pong(data))
+                .send(Message::Pong(data.into()))
                 .await
                 .map_err(to_websocket_pyerr)
         })
@@ -216,6 +217,7 @@ impl WebSocketClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use futures_util::{SinkExt, StreamExt};
     use pyo3::{prelude::*, prepare_freethreaded_python};
@@ -284,16 +286,32 @@ mod tests {
                         .unwrap();
 
                     task::spawn(async move {
-                        loop {
-                            let msg = websocket.next().await.unwrap().unwrap();
-                            // We do not want to send back ping/pong messages.
-                            if msg.is_binary() || msg.is_text() {
-                                websocket.send(msg).await.unwrap();
-                            } else if msg.is_close() {
-                                if let Err(e) = websocket.close(None).await {
-                                    tracing::debug!("Connection already closed {e}");
-                                };
-                                break;
+                        while let Some(Ok(msg)) = websocket.next().await {
+                            match msg {
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
+                                    if txt == "close-now" =>
+                                {
+                                    tracing::debug!("Forcibly closing from server side");
+                                    // This sends a close frame, then stops reading
+                                    let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                // Echo text/binary frames
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(_)
+                                | tokio_tungstenite::tungstenite::protocol::Message::Binary(_) => {
+                                    if websocket.send(msg).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                // If the client closes, we also break
+                                tokio_tungstenite::tungstenite::protocol::Message::Close(
+                                    _frame,
+                                ) => {
+                                    let _ = websocket.close(None).await;
+                                    break;
+                                }
+                                // Ignore pings/pongs
+                                _ => {}
                             }
                         }
                     });
@@ -310,34 +328,28 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[traced_test]
-    async fn basic_client_test() {
-        prepare_freethreaded_python();
-
-        const N: usize = 10;
-        let mut success_count = 0;
-        let header_key = "hello-custom-key".to_string();
-        let header_value = "hello-custom-value".to_string();
-
-        // Initialize test server
-        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
-
-        // Create counter class and handler that increments it
-        let (counter, handler) = Python::with_gil(|py| {
+    fn create_test_handler() -> (PyObject, PyObject) {
+        Python::with_gil(|py| {
             let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Counter:
-    def __init__(self):
-        self.count = 0
+   def __init__(self):
+       self.count = 0
+       self.check = False
 
-    def handler(self, bytes):
-        if bytes.decode() == 'ping':
-            self.count = self.count + 1
+   def handler(self, bytes):
+       msg = bytes.decode()
+       if msg == 'ping':
+           self.count = self.count + 1
+       elif msg == 'heartbeat message':
+           self.check = True
 
-    def get_count(self):
-        return self.count
+   def get_check(self):
+       return self.check
+
+   def get_count(self):
+       return self.count
 
 counter = Counter()",
                 "",
@@ -349,7 +361,21 @@ counter = Counter()",
             let handler = counter.getattr(py, "handler").unwrap().into_py(py);
 
             (counter, handler)
-        });
+        })
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn basic_client_test() {
+        prepare_freethreaded_python();
+
+        const N: usize = 10;
+        let mut success_count = 0;
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
+
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
+        let (counter, handler) = create_test_handler();
 
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
@@ -366,7 +392,7 @@ counter = Counter()",
 
         // Send messages that increment the count
         for _ in 0..N {
-            if client.send_bytes(b"ping".to_vec()).await.is_ok() {
+            if client.send_bytes(b"ping".to_vec(), None).await.is_ok() {
                 success_count += 1;
             };
         }
@@ -384,18 +410,13 @@ counter = Counter()",
         });
         assert_eq!(count_value, success_count);
 
-        //////////////////////////////////////////////////////////////////////
-        // Close connection client should reconnect and send messages
-        //////////////////////////////////////////////////////////////////////
-
-        // close the connection
-        // client should reconnect automatically
+        // Close the connection => client should reconnect automatically
         client.send_close_message().await;
 
         // Send messages that increment the count
         sleep(Duration::from_secs(2)).await;
         for _ in 0..N {
-            if client.send_bytes(b"ping".to_vec()).await.is_ok() {
+            if client.send_bytes(b"ping".to_vec(), None).await.is_ok() {
                 success_count += 1;
             };
         }
@@ -414,7 +435,7 @@ counter = Counter()",
         assert_eq!(count_value, success_count);
         assert_eq!(success_count, N + N);
 
-        // Shutdown client
+        // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
     }
@@ -427,32 +448,7 @@ counter = Counter()",
         let header_key = "hello-custom-key".to_string();
         let header_value = "hello-custom-value".to_string();
 
-        let (checker, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code_bound(
-                py,
-                r"
-class Checker:
-    def __init__(self):
-        self.check = False
-
-    def handler(self, bytes):
-        if bytes.decode() == 'heartbeat message':
-            self.check = True
-
-    def get_check(self):
-        return self.check
-
-checker = Checker()",
-                "",
-                "",
-            )
-            .unwrap();
-
-            let checker = pymod.getattr("checker").unwrap().into_py(py);
-            let handler = checker.getattr(py, "handler").unwrap().into_py(py);
-
-            (checker, handler)
-        });
+        let (checker, handler) = create_test_handler();
 
         // Initialize test server and config
         let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
@@ -482,7 +478,7 @@ checker = Checker()",
         });
         assert!(check_value);
 
-        // Shutdown client
+        // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
     }

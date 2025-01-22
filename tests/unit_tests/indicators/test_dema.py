@@ -76,7 +76,7 @@ class TestDoubleExponentialMovingAverage:
         indicator.handle_quote_tick(tick)
 
         # Assert
-        print(Decimal(1.00002))
+        print(Decimal("1.00002"))
         print(Decimal(indicator.value))
         assert indicator.has_inputs
         assert indicator.value == 1.0

@@ -178,8 +178,13 @@ impl From<Bar> for Data {
     }
 }
 
+// TODO: https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
+// i128 and u128 is now FFI compatible. However, since the clippy lint
+// hasn't been removed yet. We'll suppress with #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn data_clone(data: &Data) -> Data {
+    // Dummy function for cbindgen to export types
     data.clone()
 }
 

@@ -107,6 +107,7 @@ pub extern "C" fn synthetic_instrument_price_precision(synth: &SyntheticInstrume
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn synthetic_instrument_price_increment(synth: &SyntheticInstrument_API) -> Price {
     synth.price_increment
 }
@@ -174,6 +175,7 @@ pub unsafe extern "C" fn synthetic_instrument_change_formula(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn synthetic_instrument_calculate(
     synth: &mut SyntheticInstrument_API,
     inputs_ptr: &CVec,

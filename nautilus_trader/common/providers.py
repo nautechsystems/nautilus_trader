@@ -46,7 +46,7 @@ class InstrumentProvider:
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._currencies: dict[str, Currency] = {}
 
-        # Settings
+        # Configuration
         self._load_all_on_start = config.load_all
         self._load_ids_on_start = set(config.load_ids) if config.load_ids is not None else None
         self._filters = config.filters
@@ -160,25 +160,26 @@ class InstrumentProvider:
             while self._loading:
                 await asyncio.sleep(0.1)
 
-        if not self._loaded:
-            self._log.info("Initializing instruments")
+        if not reload and self._loaded:
+            return  # Already loaded
 
-            # Set state flag
-            self._loading = True
+        # Set state flag
+        self._loading = True
+        self._log.info("Initializing instruments")
 
-            if self._load_all_on_start:
-                await self.load_all_async(self._filters)
-            elif self._load_ids_on_start:
-                instrument_ids = [
-                    i if isinstance(i, InstrumentId) else InstrumentId.from_str(i)
-                    for i in self._load_ids_on_start
-                ]
+        if self._load_all_on_start:
+            await self.load_all_async(self._filters)
+        elif self._load_ids_on_start:
+            instrument_ids = [
+                i if isinstance(i, InstrumentId) else InstrumentId.from_str(i)
+                for i in self._load_ids_on_start
+            ]
 
-                instruments_str = ", ".join([i.value for i in instrument_ids])
-                filters_str = "..." if not self._filters else f" with filters {self._filters}..."
-                self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
+            instruments_str = ", ".join([i.value for i in instrument_ids])
+            filters_str = "..." if not self._filters else f" with filters {self._filters}..."
+            self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
 
-                await self.load_ids_async(instrument_ids, self._filters)
+            await self.load_ids_async(instrument_ids, self._filters)
 
         if self._instruments:
             self._log.info(f"Loaded {self.count} instruments")

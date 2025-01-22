@@ -48,6 +48,7 @@ use crate::sql::models::{
     types::CurrencyModel,
 };
 
+#[derive(Debug)]
 pub struct DatabaseQueries;
 
 impl DatabaseQueries {

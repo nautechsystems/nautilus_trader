@@ -19,12 +19,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
-    enums::AccountType,
+    enums::{AccountType, LiquiditySide},
     events::{AccountState, OrderFilled},
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,
-    types::{AccountBalance, Currency, Money},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AccountAny {
@@ -105,6 +105,32 @@ impl AccountAny {
         match self {
             AccountAny::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
             AccountAny::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
+        }
+    }
+
+    pub fn calculate_commission(
+        &self,
+        instrument: InstrumentAny,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        match self {
+            AccountAny::Margin(margin) => margin.calculate_commission(
+                instrument,
+                last_qty,
+                last_px,
+                liquidity_side,
+                use_quote_for_inverse,
+            ),
+            AccountAny::Cash(cash) => cash.calculate_commission(
+                instrument,
+                last_qty,
+                last_px,
+                liquidity_side,
+                use_quote_for_inverse,
+            ),
         }
     }
 }

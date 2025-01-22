@@ -90,8 +90,10 @@ jobs:
         with:
           version: ${{ env.POETRY_VERSION }}
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry-plugin-export pre-commit msgspec
+      - name: Install build and dev dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          poetry install --only dev --no-root
 
       - name: Cached pre-commit
         id: cached-pre-commit
@@ -101,8 +103,7 @@ jobs:
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit # Runs again here to check on Python 3.12
-        run: |
-          pre-commit run --all-files
+        run: make pre-commit
 
       - name: Cached cargo
         id: cached-cargo
@@ -137,7 +138,7 @@ jobs:
       - name: Install Nautilus CLI and run init postgres
         run: |
           make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema
+          nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -160,6 +161,7 @@ jobs:
 
       - name: Install Python wheel
         run: |
+          python -m pip install --upgrade poetry-plugin-export
           poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
           python -m pip install -r requirements-test.txt
           pip install "$(ls dist/*.whl)"

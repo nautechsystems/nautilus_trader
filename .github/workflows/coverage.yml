@@ -6,14 +6,7 @@ on:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
-        os: [ubuntu-latest]
-        python-version: ["3.11"]
-    name: build - python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     env:
       # > --------------------------------------------------
       # > sccache
@@ -29,6 +22,7 @@ jobs:
       # https://github.com/mozilla/sccache#rust
       CARGO_INCREMENTAL: 0
       # > --------------------------------------------------
+
     services:
       redis:
         image: redis
@@ -50,17 +44,6 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Install runner dependencies
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
@@ -74,7 +57,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Get Python version
         run: |
@@ -91,12 +74,14 @@ jobs:
         with:
           version: ${{ env.POETRY_VERSION }}
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+      - name: Install build and dev dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          poetry install --only dev --no-root
 
       - name: Cached sccache
         id: cached-sccache
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
@@ -113,34 +98,34 @@ jobs:
 
       - name: Cached poetry
         id: cached-poetry
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Cached test data
         id: cached-testdata-large
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         with:
           path: tests/test_data/large
           key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
           restore-keys: ${{ runner.os }}-large-files-
 
-      # TODO: Pause the below for now pending inventigation on why it started failing?
-      # - name: Install Nautilus CLI and run init postgres
-      #   run: |
-      #     make install-cli
-      #     nautilus database init --schema ${{ github.workspace }}/schema
-      #   env:
-      #     POSTGRES_HOST: localhost
-      #     POSTGRES_PORT: 5432
-      #     POSTGRES_USERNAME: postgres
-      #     POSTGRES_PASSWORD: pass
-      #     POSTGRES_DATABASE: nautilus
-      #
-      # - name: Run tests with coverage
-      #   run: make pytest-coverage
-      #
+      - name: Install Nautilus CLI and run init postgres
+        run: |
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Run tests with coverage
+        run: make pytest-coverage
+
+      # TODO: Temporarily pause coverage report due pending test data repair
       # - name: Upload coverage report
       #   uses: codecov/codecov-action@v4
       #   with:

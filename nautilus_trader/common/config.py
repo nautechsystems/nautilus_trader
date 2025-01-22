@@ -415,10 +415,17 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
     component_id : ComponentId, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
+    log_events : bool, default True
+        If events should be logged by the actor.
+        If False, then only warning events and above are logged.
+    log_commands : bool, default True
+        If commands should be logged by the actor.
 
     """
 
     component_id: ComponentId | None = None
+    log_events: bool = True
+    log_commands: bool = True
 
 
 class ImportableActorConfig(NautilusConfig, frozen=True):

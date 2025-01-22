@@ -15,7 +15,7 @@
 
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[clap(version, about, author)]
 pub struct NautilusCli {
     #[clap(subcommand)]
@@ -36,22 +36,22 @@ pub struct DatabaseOpt {
 
 #[derive(Parser, Debug, Clone)]
 pub struct DatabaseConfig {
-    /// Hostname or IP address of the database server
+    /// Hostname or IP address of the database server.
     #[arg(long)]
     pub host: Option<String>,
-    /// Port number of the database server
+    /// Port number of the database server.
     #[arg(long)]
     pub port: Option<u16>,
-    /// Username for connecting to the database
+    /// Username for connecting to the database.
     #[arg(long)]
     pub username: Option<String>,
-    /// Name of the database
+    /// Name of the database.
     #[arg(long)]
     pub database: Option<String>,
-    /// Password for connecting to the database
+    /// Password for connecting to the database.
     #[arg(long)]
     pub password: Option<String>,
-    /// Directory path to the schema files
+    /// Directory path to the schema files.
     #[arg(long)]
     pub schema: Option<String>,
 }
@@ -59,8 +59,8 @@ pub struct DatabaseConfig {
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Postgres database operations", long_about = None)]
 pub enum DatabaseCommand {
-    /// Initializes a new Postgres database with the latest schema
+    /// Initializes a new Postgres database with the latest schema.
     Init(DatabaseConfig),
-    /// Drops roles, privileges and deletes all data from the database
+    /// Drops roles, privileges and deletes all data from the database.
     Drop(DatabaseConfig),
 }

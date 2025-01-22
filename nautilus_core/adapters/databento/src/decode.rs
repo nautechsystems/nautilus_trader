@@ -30,7 +30,7 @@ use nautilus_model::{
     instruments::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
     },
-    types::{fixed::FIXED_SCALAR, Currency, Price, Quantity},
+    types::{price::decode_raw_price_i64, Currency, Price, Quantity},
 };
 use ustr::Ustr;
 
@@ -38,6 +38,8 @@ use super::{
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
     types::{DatabentoImbalance, DatabentoStatistics},
 };
+
+const DATABENTO_FIXED_SCALAR: f64 = 1_000_000_000.0;
 
 // SAFETY: Known valid value
 const STEP_ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
@@ -218,12 +220,24 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
     Ok(Some(Ustr::from(value_str)))
 }
 
+/// Decodes a price from the given value, expressed in units of 1e-9.
+#[must_use]
+pub fn decode_price(value: i64, precision: u8) -> Price {
+    Price::from_raw(decode_raw_price_i64(value), precision)
+}
+
+/// Decodes a quantity from the given value, expressed in standard whole-number units.
+#[must_use]
+pub fn decode_quantity(value: u64) -> Quantity {
+    Quantity::from(value)
+}
+
 /// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
 #[must_use]
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => Price::from(format!("{}", value as f64 / FIXED_SCALAR)),
+        _ => decode_price(value, precision),
     }
 }
 
@@ -232,7 +246,7 @@ pub fn decode_price_increment(value: i64, precision: u8) -> Price {
 pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
     match value {
         i64::MAX => None,
-        _ => Some(Price::from_raw(value, precision)),
+        _ => Some(decode_price(value, precision)),
     }
 }
 
@@ -241,7 +255,7 @@ pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
 pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
     match value {
         i32::MAX => None,
-        _ => Some(Quantity::new(f64::from(value), 0)),
+        _ => Some(Quantity::from(value)),
     }
 }
 
@@ -250,10 +264,7 @@ pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
 pub fn decode_multiplier(value: i64) -> Quantity {
     match value {
         0 | i64::MAX => Quantity::from(1),
-        value => {
-            let scaled_value = std::cmp::max(value as u64, FIXED_SCALAR as u64);
-            Quantity::from_raw(scaled_value, 0)
-        }
+        _ => Quantity::from(format!("{}", value as f64 / DATABENTO_FIXED_SCALAR)),
     }
 }
 
@@ -262,7 +273,7 @@ pub fn decode_multiplier(value: i64) -> Quantity {
 pub fn decode_lot_size(value: i32) -> Quantity {
     match value {
         0 | i32::MAX => Quantity::from(1),
-        value => Quantity::from(i64::from(value)),
+        value => Quantity::from(value),
     }
 }
 
@@ -395,7 +406,10 @@ pub fn decode_options_contract_v1(
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
-    let strike_price = Price::from_raw(msg.strike_price, strike_price_currency.precision);
+    let strike_price = Price::from_raw(
+        decode_raw_price_i64(msg.strike_price),
+        strike_price_currency.precision,
+    );
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
     let multiplier = decode_multiplier(msg.unit_of_measure_qty);
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -493,8 +507,8 @@ pub fn decode_mbo_msg(
         if include_trades {
             let trade = TradeTick::new(
                 instrument_id,
-                Price::from_raw(msg.price, price_precision),
-                Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
+                Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+                Quantity::from(msg.size),
                 parse_aggressor_side(msg.side),
                 TradeId::new(itoa::Buffer::new().format(msg.sequence)),
                 msg.ts_recv.into(),
@@ -508,8 +522,8 @@ pub fn decode_mbo_msg(
 
     let order = BookOrder::new(
         side,
-        Price::from_raw(msg.price, price_precision),
-        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from(msg.size),
         msg.order_id,
     );
 
@@ -534,8 +548,8 @@ pub fn decode_trade_msg(
 ) -> anyhow::Result<TradeTick> {
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(msg.price, price_precision),
-        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from(msg.size),
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         msg.ts_recv.into(),
@@ -554,18 +568,18 @@ pub fn decode_tbbo_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(top_level.bid_px, price_precision),
-        Price::from_raw(top_level.ask_px, price_precision),
-        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
-        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from(top_level.bid_sz),
+        Quantity::from(top_level.ask_sz),
         msg.ts_recv.into(),
         ts_init,
     );
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(msg.price, price_precision),
-        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from(msg.size),
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         msg.ts_recv.into(),
@@ -585,10 +599,10 @@ pub fn decode_mbp1_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(top_level.bid_px, price_precision),
-        Price::from_raw(top_level.ask_px, price_precision),
-        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
-        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from(top_level.bid_sz),
+        Quantity::from(top_level.ask_sz),
         msg.ts_recv.into(),
         ts_init,
     );
@@ -596,8 +610,8 @@ pub fn decode_mbp1_msg(
     let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
         Some(TradeTick::new(
             instrument_id,
-            Price::from_raw(msg.price, price_precision),
-            Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
+            Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+            Quantity::from(msg.size),
             parse_aggressor_side(msg.side),
             TradeId::new(itoa::Buffer::new().format(msg.sequence)),
             msg.ts_recv.into(),
@@ -619,10 +633,10 @@ pub fn decode_bbo_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(top_level.bid_px, price_precision),
-        Price::from_raw(top_level.ask_px, price_precision),
-        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
-        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from(top_level.bid_sz),
+        Quantity::from(top_level.ask_sz),
         msg.ts_recv.into(),
         ts_init,
     );
@@ -644,15 +658,15 @@ pub fn decode_mbp10_msg(
     for level in &msg.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
-            Price::from_raw(level.bid_px, price_precision),
-            Quantity::from_raw(u64::from(level.bid_sz) * FIXED_SCALAR as u64, 0),
+            Price::from_raw(decode_raw_price_i64(level.bid_px), price_precision),
+            Quantity::from(level.bid_sz),
             0,
         );
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
-            Price::from_raw(level.ask_px, price_precision),
-            Quantity::from_raw(u64::from(level.ask_sz) * FIXED_SCALAR as u64, 0),
+            Price::from_raw(decode_raw_price_i64(level.ask_px), price_precision),
+            Quantity::from(level.ask_sz),
             0,
         );
 
@@ -754,11 +768,11 @@ pub fn decode_ohlcv_msg(
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(msg.open, price_precision),
-        Price::from_raw(msg.high, price_precision),
-        Price::from_raw(msg.low, price_precision),
-        Price::from_raw(msg.close, price_precision),
-        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0),
+        Price::from_raw(decode_raw_price_i64(msg.open), price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.high), price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.low), price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.close), price_precision),
+        Quantity::from(msg.volume),
         ts_event,
         ts_init,
     );
@@ -1055,7 +1069,10 @@ pub fn decode_options_contract(
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
-    let strike_price = Price::from_raw(msg.strike_price, strike_price_currency.precision);
+    let strike_price = Price::from_raw(
+        decode_raw_price_i64(msg.strike_price),
+        strike_price_currency.precision,
+    );
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
     let multiplier = decode_multiplier(msg.unit_of_measure_qty);
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -1144,9 +1161,15 @@ pub fn decode_imbalance_msg(
 ) -> anyhow::Result<DatabentoImbalance> {
     DatabentoImbalance::new(
         instrument_id,
-        Price::from_raw(msg.ref_price, price_precision),
-        Price::from_raw(msg.cont_book_clr_price, price_precision),
-        Price::from_raw(msg.auct_interest_clr_price, price_precision),
+        Price::from_raw(decode_raw_price_i64(msg.ref_price), price_precision),
+        Price::from_raw(
+            decode_raw_price_i64(msg.cont_book_clr_price),
+            price_precision,
+        ),
+        Price::from_raw(
+            decode_raw_price_i64(msg.auct_interest_clr_price),
+            price_precision,
+        ),
         Quantity::new(f64::from(msg.paired_qty), 0),
         Quantity::new(f64::from(msg.total_imbalance_qty), 0),
         parse_order_side(msg.side),
@@ -1285,7 +1308,7 @@ mod tests {
     #[rstest]
     #[case(0, 2, Price::new(0.01, 2))] // Default for 0
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
-    #[case(1000000, 2, Price::from_raw(1000000, 2))] // Arbitrary valid price
+    #[case(1000000, 2, Price::from_raw(decode_raw_price_i64(1000000), 2))] // Arbitrary valid price
     fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
         let actual = decode_price_increment(value, precision);
         assert_eq!(actual, expected);
@@ -1294,7 +1317,7 @@ mod tests {
     #[rstest]
     #[case(i64::MAX, 2, None)] // None for i64::MAX
     #[case(0, 2, Some(Price::from_raw(0, 2)))] // 0 is valid here
-    #[case(1000000, 2, Some(Price::from_raw(1000000, 2)))] // Arbitrary valid price
+    #[case(1000000, 2, Some(Price::from_raw(decode_raw_price_i64(1000000), 2)))] // Arbitrary valid price
     fn test_decode_optional_price(
         #[case] value: i64,
         #[case] precision: u8,
@@ -1511,6 +1534,7 @@ mod tests {
         let result = decode_instrument_def_msg(msg, instrument_id, 0.into());
 
         assert!(result.is_ok());
+        assert_eq!(result.unwrap().multiplier(), Quantity::from(1));
     }
 
     #[rstest]
@@ -1525,6 +1549,7 @@ mod tests {
         let result = decode_instrument_def_msg_v1(msg, instrument_id, 0.into());
 
         assert!(result.is_ok());
+        assert_eq!(result.unwrap().multiplier(), Quantity::from(1));
     }
 
     #[rstest]

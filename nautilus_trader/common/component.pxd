@@ -209,8 +209,8 @@ cdef class Component:
     cdef readonly Clock _clock
     cdef readonly Logger _log
     cdef readonly MessageBus _msgbus
+    cdef readonly dict _config
     cdef FiniteStateMachine _fsm
-    cdef dict _config
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the component.\n\n:returns: `TraderId`"""

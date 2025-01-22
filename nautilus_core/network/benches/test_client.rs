@@ -36,7 +36,7 @@ async fn main() {
 
         let resp = futures::future::join_all(reqs.drain(0..)).await;
         assert!(resp.iter().all(|res| if let Ok(resp) = res {
-            resp.status == 200
+            resp.status.is_success()
         } else {
             false
         }));

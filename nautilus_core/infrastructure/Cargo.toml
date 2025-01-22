@@ -28,12 +28,11 @@ log = { workspace = true }  # Required until Cython gone
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 semver = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-redis = { version = "0.28.0", features = [
+redis = { version = "0.28.1", features = [
   "connection-manager",
   "keep-alive",
   "sentinel",
@@ -51,6 +50,7 @@ sqlx = { version = "0.8.3", features = [
 
 [dev-dependencies]
 rstest = { workspace = true }
+serde = { workspace = true }
 
 [features]
 default = ["redis"]  # redis needed by `nautilus_trader` by default for now

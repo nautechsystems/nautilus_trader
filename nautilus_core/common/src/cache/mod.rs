@@ -141,6 +141,7 @@ impl CacheConfig {
 }
 
 /// A key-value lookup index for a `Cache`.
+#[derive(Debug)]
 pub struct CacheIndex {
     venue_account: HashMap<Venue, AccountId>,
     venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,
@@ -222,7 +223,7 @@ pub struct Cache {
     accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
-    pub positions: HashMap<PositionId, Position>,
+    positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Bytes>,
 }
 
@@ -1952,6 +1953,12 @@ impl Cache {
     #[must_use]
     pub fn order(&self, client_order_id: &ClientOrderId) -> Option<&OrderAny> {
         self.orders.get(client_order_id)
+    }
+
+    /// Gets a reference to the order with the given `client_order_id` (if found).
+    #[must_use]
+    pub fn mut_order(&mut self, client_order_id: &ClientOrderId) -> Option<&mut OrderAny> {
+        self.orders.get_mut(client_order_id)
     }
 
     /// Gets a reference to the client order ID for given `venue_order_id` (if found).

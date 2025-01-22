@@ -135,7 +135,11 @@ class TestActor:
         assert isinstance(result, ImportableActorConfig)
         assert result.actor_path == "nautilus_trader.common.actor:Actor"
         assert result.config_path == "nautilus_trader.common.config:ActorConfig"
-        assert result.config == {"component_id": "ALPHA-01"}
+        assert result.config == {
+            "component_id": "ALPHA-01",
+            "log_events": True,
+            "log_commands": True,
+        }
 
     def test_id(self) -> None:
         # Arrange, Act

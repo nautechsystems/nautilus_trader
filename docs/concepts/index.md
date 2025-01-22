@@ -21,10 +21,10 @@ trading strategies. The **Strategies** guide covers how to implement trading str
 
 The instrument definitions provide the specification for any tradable asset/contract.
 
-## [Orders](orders.md)
+## [Data](data.md)
 
-The orders guide provides more details about the available order types for the platform, along with
-the execution instructions supported for each.
+The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
+a trading domain
 
 ## [Execution](execution.md)
 
@@ -32,14 +32,23 @@ NautilusTrader can handle trade execution and order management for multiple stra
 simultaneously (per instance). Several interacting components are involved in execution, making it
 crucial to understand the possible flows of execution messages (commands and events).
 
-## [Data](data.md)
+## [Orders](orders.md)
 
-The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
-a trading domain
+The orders guide provides more details about the available order types for the platform, along with
+the execution instructions supported for each.
 
 ## [Cache](cache.md)
 
 The Cache is a central in-memory database, that automatically stores and manages all trading-related data.
+
+## [Message Bus](message_bus.md)
+
+The core communication system enabling decoupled messaging patterns between components, including
+point-to-point, publish/subscribe, and request/response.
+
+## [Logging](logging.md)
+
+The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
 
 ## [Backtesting](backtesting.md)
 
@@ -56,15 +65,6 @@ key differences between backtesting and live trading.
 
 The NautilusTrader design allows for integrating data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage.
-
-## [Logging](logging.md)
-
-The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
-
-## [Message Bus](message_bus.md)
-
-The heart of the communication channels between components, providing decoupled messaging patterns such as
-point-to-point, publish/subscribe and request/response.
 
 ## [Advanced](advanced/index.md)
 
