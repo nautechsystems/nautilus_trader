@@ -46,7 +46,7 @@ class InstrumentProvider:
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._currencies: dict[str, Currency] = {}
 
-        # Settings
+        # Configuration
         self._load_all_on_start = config.load_all
         self._load_ids_on_start = set(config.load_ids) if config.load_ids is not None else None
         self._filters = config.filters
