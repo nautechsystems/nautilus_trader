@@ -353,7 +353,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
-            self._log.warning("Stream unhealthy, waiting for recover")
+            self._log.warning("Stream unhealthy, waiting for recovery")
             self.degrade()
         if update.mc is not None:
             for mc in update.mc:
@@ -363,7 +363,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _handle_status_message(self, update: Status) -> None:
         if update.status_code == "FAILURE" and update.connection_closed:
-            self._log.error(f"Error connecting to betfair: {update.error_message}")
+            self._log.error(f"Error connecting to Betfair: {update.error_message}")
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             elif update.error_code == "SUBSCRIPTION_LIMIT_EXCEEDED":
