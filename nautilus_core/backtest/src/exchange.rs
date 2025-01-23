@@ -495,8 +495,41 @@ impl SimulatedExchange {
         todo!("reset")
     }
 
-    pub fn process_trading_command(&mut self, _command: TradingCommand) {
-        todo!("process trading command")
+    pub fn process_trading_command(&mut self, command: TradingCommand) {
+        if let Some(matching_engine) = self.matching_engines.get_mut(&command.instrument_id()) {
+            let account_id = if let Some(exec_client) = &self.exec_client {
+                exec_client.account_id
+            } else {
+                panic!("Execution client should be initialized");
+            };
+            match command {
+                TradingCommand::SubmitOrder(mut command) => {
+                    matching_engine.process_order(&mut command.order, account_id)
+                }
+                TradingCommand::ModifyOrder(ref command) => {
+                    matching_engine.process_modify(command, account_id)
+                }
+                TradingCommand::CancelOrder(ref command) => {
+                    matching_engine.process_cancel(command, account_id)
+                }
+                TradingCommand::CancelAllOrders(ref command) => {
+                    matching_engine.process_cancel_all(command, account_id)
+                }
+                TradingCommand::BatchCancelOrders(ref command) => {
+                    matching_engine.process_batch_cancel(command, account_id)
+                }
+                TradingCommand::QueryOrder(ref command) => {
+                    matching_engine.process_query_order(command, account_id)
+                }
+                TradingCommand::SubmitOrderList(mut command) => {
+                    for order in &mut command.order_list.orders {
+                        matching_engine.process_order(order, account_id);
+                    }
+                }
+            }
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn generate_fresh_account_state(&self) {
