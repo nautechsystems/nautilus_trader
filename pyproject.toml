@@ -92,7 +92,7 @@ mypy = "^1.14.1"
 pandas-stubs = "^2.2.2"
 pre-commit = "^4.1.0"
 requests = "^2.32.3"  # Required for fsspec github FS
-ruff = "^0.9.2"
+ruff = "^0.9.3"
 types-pytz = "^2024.2"
 types-requests = "^2.32"
 types-toml = "^0.10.2"
@@ -103,7 +103,7 @@ optional = true
 [tool.poetry.group.test.dependencies]
 coverage = "^7.6.10"
 pytest = "^7.4.4"
-pytest-aiohttp = "^1.0.5"
+pytest-aiohttp = "^1.1.0"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
 pytest-benchmark = "^4.0.0"
 pytest-codspeed = "^3.1.2"

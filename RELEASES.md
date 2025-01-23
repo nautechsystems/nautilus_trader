@@ -17,6 +17,7 @@ This release will be the final version that uses Poetry for package and dependen
 
 ### Internal Improvements
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
+- Added `OrderBookDeltaTestBuilder` in Rust to improve testing (#2234), thanks @filipmacek
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
@@ -26,6 +27,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
 - Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
 - Continued porting `OrderEmulator` to Rust (#2219, #2226), thanks @Pushkarm029
+- Moved `model` crate stubs into defaults (#2235), thanks @fhill2
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
@@ -37,9 +39,13 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
 - Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
 - Fixed memory leak in network PyO3 layer caused by the `gil-refs` feature (#2229), thanks for reporting @davidsblom
+- Fixed reconnect handling for Betfair (#2232), thanks @limx0
 
 ### Documentation Updates
-None
+- Added Databento overview (#2233), thanks @stefansimik
+- Added docs for Actor (#2233), thanks @stefansimik
+- Added docs for Portfolio limitations with bar data (#2233), thanks @stefansimik
+- Improved docstrings for Actor subscription and request methods
 
 ### Deprecations
 - The [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage for indicators is deprecated and will be removed in a future version, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2206)
