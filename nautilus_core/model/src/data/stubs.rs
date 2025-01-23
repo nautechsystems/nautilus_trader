@@ -359,3 +359,76 @@ pub fn stub_instrument_status() -> InstrumentStatus {
         None,
     )
 }
+
+pub struct OrderBookDeltaTestBuilder {
+    instrument_id: InstrumentId,
+    action: Option<BookAction>,
+    book_order: Option<BookOrder>,
+    flags: Option<u8>,
+    sequence: Option<u64>,
+}
+
+impl OrderBookDeltaTestBuilder {
+    pub fn new(instrument_id: InstrumentId) -> Self {
+        Self {
+            instrument_id,
+            action: None,
+            book_order: None,
+            flags: None,
+            sequence: None,
+        }
+    }
+
+    pub fn book_action(&mut self, action: BookAction) -> &mut Self {
+        self.action = Some(action);
+        self
+    }
+
+    fn get_book_action(&self) -> BookAction {
+        self.action.unwrap_or(BookAction::Add)
+    }
+
+    pub fn book_order(&mut self, book_order: BookOrder) -> &mut Self {
+        self.book_order = Some(book_order);
+        self
+    }
+
+    fn get_book_order(&self) -> BookOrder {
+        self.book_order.unwrap_or(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1"),
+            1,
+        ))
+    }
+
+    pub fn flags(&mut self, flags: u8) -> &mut Self {
+        self.flags = Some(flags);
+        self
+    }
+
+    fn get_flags(&self) -> u8 {
+        self.flags.unwrap_or(0)
+    }
+
+    pub fn sequence(&mut self, sequence: u64) -> &mut Self {
+        self.sequence = Some(sequence);
+        self
+    }
+
+    fn get_sequence(&self) -> u64 {
+        self.sequence.unwrap_or(1)
+    }
+
+    pub fn build(&self) -> OrderBookDelta {
+        OrderBookDelta::new(
+            self.instrument_id,
+            self.get_book_action(),
+            self.get_book_order(),
+            self.get_flags(),
+            self.get_sequence(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        )
+    }
+}
