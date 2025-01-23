@@ -45,13 +45,13 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 
-# Trump Election 2024 Winner market
-condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
-token_id1 = 21742633143463906290569050155826241533067272736897614950488156847949938836455  # (Yes)
-token_id2 = 48331043336612883890938759509493159234755048973500640148014422747788308965732  # (No)
+# Bundesliga Winner: will-bayern-munich-win-the-bundesliga
+# https://polymarket.com/event/bundesliga-winner/will-bayern-munich-win-the-bundesliga?tid=1737609778712
+condition_id = "0x40ee70f4ac20bac0565f5a0455e5a06d54856f0dcc7960a1b9033d9939ee5966"
+token_id = "91187039365329005211165725984783762943673232863186175327958364347484511288345"
+
 instrument_ids = [
-    get_polymarket_instrument_id(condition_id, token_id1),
-    get_polymarket_instrument_id(condition_id, token_id2),
+    get_polymarket_instrument_id(condition_id, token_id),
 ]
 
 filters = {

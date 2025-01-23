@@ -235,16 +235,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if condition_id in self._active_markets:
             return  # Already active
 
-        # Update balance and allowances
-        token_id = get_polymarket_token_id(instrument_id)
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.CONDITIONAL,
-            token_id=token_id,
-            signature_type=self._signature_type,
-        )
-        self._log.info(f"Updating {params}")
-        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
         if not self._ws_client.is_connected():
             ws_client = self._ws_client
             if condition_id in ws_client.market_subscriptions():

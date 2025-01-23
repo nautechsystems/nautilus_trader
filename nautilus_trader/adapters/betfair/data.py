@@ -355,7 +355,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
-            self._log.warning("Stream unhealthy, waiting for recover")
+            self._log.warning("Stream unhealthy, waiting for recovery")
             self.degrade()
         if update.mc is not None:
             for mc in update.mc:

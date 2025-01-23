@@ -24,7 +24,7 @@ use crate::{
     types::Price,
 };
 
-/// C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+/// C compatible Foreign Function Interface (FFI) for an underlying order book[`BookLevel`].
 ///
 /// This struct wraps `Level` in a way that makes it compatible with C function
 /// calls, enabling interaction with `Level` in a C environment.

@@ -439,7 +439,7 @@ cdef extern from "../includes/model.h":
         DOUBLE_LAST # = 6,
         # Based on a 'double match' of the bid/ask price for the instrument
         DOUBLE_BID_ASK # = 7,
-        # Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
+        # Based on both the [`TriggerType::LastPrice`] and [`TriggerType::BidAsk`].
         LAST_OR_BID_ASK # = 8,
         # Based on the mid-point of the [`TriggerType::BidAsk`].
         MID_POINT # = 9,
@@ -920,7 +920,7 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook_API:
         OrderBook *_0;
 
-    # C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+    # C compatible Foreign Function Interface (FFI) for an underlying order book[`BookLevel`].
     #
     # This struct wraps `Level` in a way that makes it compatible with C function
     # calls, enabling interaction with `Level` in a C environment.
