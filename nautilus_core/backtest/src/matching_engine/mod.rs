@@ -35,7 +35,10 @@ use std::{
 use chrono::TimeDelta;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::matching_core::OrderMatchingCore;
+use nautilus_execution::{
+    matching_core::OrderMatchingCore,
+    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder},
+};
 use nautilus_model::{
     data::{order::BookOrder, Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
@@ -705,6 +708,41 @@ impl OrderMatchingEngine {
             OrderType::TrailingStopMarket => self.process_trailing_stop_market_order(order),
             OrderType::TrailingStopLimit => self.process_trailing_stop_limit_order(order),
         }
+    }
+
+    pub fn process_modify(&self, command: &ModifyOrder, account_id: AccountId) {
+        todo!("implement process_modify")
+    }
+
+    pub fn process_cancel(&mut self, command: &CancelOrder, account_id: AccountId) {
+        match self.core.get_order(command.client_order_id) {
+            Some(passive_order) => {
+                if passive_order.is_inflight() || passive_order.is_open() {
+                    self.cancel_order(&OrderAny::from(passive_order.to_owned()), None);
+                }
+            }
+            None => self.generate_order_cancel_rejected(
+                command.trader_id,
+                command.strategy_id,
+                account_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+            ),
+        }
+    }
+
+    pub fn process_cancel_all(&self, command: &CancelAllOrders, account_id: AccountId) {
+        todo!("implement process_cancel_all")
+    }
+
+    pub fn process_batch_cancel(&self, command: &BatchCancelOrders, account_id: AccountId) {
+        todo!("implement process_batch_cancel")
+    }
+
+    pub fn process_query_order(&self, command: &QueryOrder, account_id: AccountId) {
+        todo!("implement process_query_order")
     }
 
     fn process_market_order(&mut self, order: &mut OrderAny) {
