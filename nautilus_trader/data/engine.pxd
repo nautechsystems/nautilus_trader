@@ -135,7 +135,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, BookType book_type, uint64_t depth, bint managed, dict params)  # noqa
     cpdef void _handle_subscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, BookType book_type, uint64_t depth, uint64_t interval_ms, bint managed, dict params)  # noqa
     cpdef void _setup_order_book(self, MarketDataClient client, InstrumentId instrument_id, BookType book_type, uint64_t depth, bint only_deltas, bint managed, dict params)  # noqa
-    cpdef void _create_new_book(self, Instrument instrument, BookType book_type)
+    cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type)
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
