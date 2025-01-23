@@ -25,7 +25,7 @@
 //! **Design**:
 //! - Single reader, multiple writer model
 //! - Read half runs in dedicated task
-//! - Write half protected by Arc<Mutex>
+//! - Write half protected by `Arc<Mutex>`
 //! - Controller task manages lifecycle
 
 use std::{
