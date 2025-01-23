@@ -99,6 +99,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self.parser = BetfairParser(currency=account_currency.code)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
         self.keep_alive_period = keep_alive_period
+        self._reconnect_in_progress = False
 
         # Subscriptions
         self._subscribed_instrument_ids: set[InstrumentId] = set()
@@ -173,6 +174,7 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.info("Stream connected, disconnecting")
             await self._stream.disconnect()
         await self._stream.connect()
+        self._reconnect_in_progress = False
 
     def _reset(self) -> None:
         if self.is_connected:
@@ -362,12 +364,26 @@ class BetfairDataClient(LiveMarketDataClient):
                     self._log.warning(f"Conflated stream - data received is delayed ({ms_delay}ms)")
 
     def _handle_status_message(self, update: Status) -> None:
-        if update.status_code == "FAILURE" and update.connection_closed:
-            self._log.error(f"Error connecting to Betfair: {update.error_message}")
+        if update.is_error and update.connection_closed:
+            self._log.error(f"Betfair connection closed: {update.error_message}")
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             elif update.error_code == "SUBSCRIPTION_LIMIT_EXCEEDED":
                 raise RuntimeError("Subscription request limit exceeded")
+            elif update.error_code == "INVALID_SESSION_INFORMATION":
+                if self._reconnect_in_progress:
+                    self._log.info("Reconnect already in progress")
+                    return
+                self._log.info("Invalid session information, reconnecting client")
+                self._reconnect_in_progress = True
+                self._stream.is_connected = False
+                self._client.reset_headers()
+                self._log.info("Reconnecting socket")
+                self.create_task(self._reconnect())
             else:
+                if self._reconnect_in_progress:
+                    self._log.info("Reconnect already in progress")
+                    return
                 self._log.info("Unknown failure message, scheduling restart")
+                self._reconnect_in_progress = True
                 self.create_task(self._reconnect())
