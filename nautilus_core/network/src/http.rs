@@ -181,7 +181,7 @@ impl From<String> for HttpClientError {
 /// An HTTP client that supports rate limiting and timeouts.
 ///
 /// Built on `reqwest` for async I/O. Allows per-endpoint and default quotas
-/// through [`RateLimiter`].
+/// through a rate limiter.
 ///
 /// This struct is designed to handle HTTP requests efficiently, providing
 /// support for rate limiting, timeouts, and custom headers. The client is

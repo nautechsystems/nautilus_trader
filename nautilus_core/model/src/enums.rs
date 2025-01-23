@@ -1229,7 +1229,7 @@ pub enum TriggerType {
     DoubleLast = 6,
     /// Based on a 'double match' of the bid/ask price for the instrument
     DoubleBidAsk = 7,
-    /// Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
+    /// Based on both the [`TriggerType::LastPrice`] and [`TriggerType::BidAsk`].
     LastOrBidAsk = 8,
     /// Based on the mid-point of the [`TriggerType::BidAsk`].
     MidPoint = 9,

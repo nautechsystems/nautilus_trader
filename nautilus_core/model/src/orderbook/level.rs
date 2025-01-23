@@ -42,7 +42,7 @@ pub struct BookLevel {
 }
 
 impl BookLevel {
-    /// Creates a new [`Level`] instance.
+    /// Creates a new [`BookLevel`] instance.
     #[must_use]
     pub fn new(price: BookPrice) -> Self {
         Self {
@@ -52,7 +52,7 @@ impl BookLevel {
         }
     }
 
-    /// Creates a new price level from an order, using the order's price and side.
+    /// Creates a new [`BookLevel`] from an order, using the order's price and side.
     #[must_use]
     pub fn from_order(order: BookOrder) -> Self {
         let mut level = Self {
