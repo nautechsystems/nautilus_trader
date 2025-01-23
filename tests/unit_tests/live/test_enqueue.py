@@ -33,7 +33,7 @@ def logger():
     return MagicMock(Logger)
 
 
-def test_properties(loop, clock, logger):
+def test_properties(event_loop, clock, logger):
     # Arrange
     queue = asyncio.Queue(maxsize=5)
 
@@ -41,7 +41,7 @@ def test_properties(loop, clock, logger):
     enqueuer = ThrottledEnqueuer(
         qname="test_queue",
         queue=queue,
-        loop=loop,
+        loop=event_loop,
         clock=clock,
         logger=logger,
     )
@@ -52,20 +52,20 @@ def test_properties(loop, clock, logger):
     assert enqueuer.capacity == 5
 
     # Put some items in
-    loop.run_until_complete(queue.put("item1"))
-    loop.run_until_complete(queue.put("item2"))
+    event_loop.run_until_complete(queue.put("item1"))
+    event_loop.run_until_complete(queue.put("item2"))
     assert enqueuer.size == 2
     assert enqueuer.capacity == 5
 
 
 @pytest.mark.asyncio
-async def test_enqueue_when_queue_has_capacity(loop, clock, logger):
+async def test_enqueue_when_queue_has_capacity(event_loop, clock, logger):
     # Arrange
     queue = asyncio.Queue(maxsize=10)
     enqueuer = ThrottledEnqueuer(
         qname="test_queue",
         queue=queue,
-        loop=loop,
+        loop=event_loop,
         clock=clock,
         logger=logger,
     )
@@ -82,7 +82,7 @@ async def test_enqueue_when_queue_has_capacity(loop, clock, logger):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_when_queue_is_full(loop, clock, logger):
+async def test_enqueue_when_queue_is_full(event_loop, clock, logger):
     # Arrange
     queue = asyncio.Queue(maxsize=1)
     await queue.put("message1")
@@ -90,7 +90,7 @@ async def test_enqueue_when_queue_is_full(loop, clock, logger):
     enqueuer = ThrottledEnqueuer(
         qname="test_queue",
         queue=queue,
-        loop=loop,
+        loop=event_loop,
         clock=clock,
         logger=logger,
     )

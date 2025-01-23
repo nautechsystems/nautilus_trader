@@ -44,9 +44,9 @@ def logger():
 
 
 @pytest_asyncio.fixture(name="actor_executor")
-async def fixture_actor_executor(loop):
+async def fixture_actor_executor(event_loop):
     executor = ActorExecutor(
-        loop=loop,
+        loop=event_loop,
         executor=ThreadPoolExecutor(),
     )
     yield executor
