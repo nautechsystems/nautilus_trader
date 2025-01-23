@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
 use nautilus_execution::messages::CancelOrder;
 use nautilus_model::{
-    data::{BookOrder, OrderBookDelta},
+    data::{stubs::OrderBookDeltaTestBuilder, BookOrder},
     enums::{
         AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
         OrderType, TimeInForce,
@@ -117,24 +117,6 @@ pub fn market_order_fill(
         false,
         Some(PositionId::new("P-1")),
         None,
-    )
-}
-
-#[fixture]
-pub fn orderbook_delta_sell(instrument_eth_usdt: InstrumentAny) -> OrderBookDelta {
-    OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1"),
-            0,
-        ),
-        0,
-        0,
-        UnixNanos::from(0),
-        UnixNanos::from(0),
     )
 }
 
@@ -741,24 +723,17 @@ fn test_matching_core_bid_ask_initialized(
     );
     // Create bid and ask orderbook delta and check if
     // bid and ask are initialized in order matching core
-    let orderbook_delta_buy = OrderBookDelta::new(
-        instrument_es.id(),
-        BookAction::Add,
-        BookOrder::new(OrderSide::Buy, Price::from("100"), Quantity::from("1"), 0),
-        0,
-        0,
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-    );
-    let orderbook_delta_sell = OrderBookDelta::new(
-        instrument_es.id(),
-        BookAction::Add,
-        BookOrder::new(OrderSide::Sell, Price::from("101"), Quantity::from("1"), 1),
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
-    );
+    let book_order_buy = BookOrder::new(OrderSide::Buy, Price::from("100"), Quantity::from("1"), 0);
+    let book_order_sell =
+        BookOrder::new(OrderSide::Sell, Price::from("101"), Quantity::from("1"), 0);
+    let orderbook_delta_buy = OrderBookDeltaTestBuilder::new(instrument_es.id())
+        .book_action(BookAction::Add)
+        .book_order(book_order_buy)
+        .build();
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_es.id())
+        .book_action(BookAction::Add)
+        .book_order(book_order_sell)
+        .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_buy);
     assert_eq!(engine_l2.core.bid, Some(Price::from("100")));
@@ -776,7 +751,6 @@ fn test_matching_core_bid_ask_initialized(
 #[rstest]
 fn test_matching_engine_not_enough_quantity_filled_fok_order(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     order_event_handler: ShareableMessageHandler,
     mut msgbus: MessageBus,
     account_id: AccountId,
@@ -793,6 +767,16 @@ fn test_matching_engine_not_enough_quantity_filled_fok_order(
         None,
         None,
     );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
 
     // create FOK market order with quantity 2 which wont be enough to fill the order
     let mut market_order = OrderTestBuilder::new(OrderType::Market)
@@ -842,34 +826,27 @@ fn test_matching_engine_valid_market_buy(
     );
 
     // create 2 orderbook deltas and appropriate market order
-    let orderbook_delta_sell_1 = OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
-            1,
-        ),
-        0,
+    let book_order_1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
         1,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
     );
-    let orderbook_delta_sell_2 = OrderBookDelta::new(
-        instrument_eth_usdt.id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1510.00"),
-            Quantity::from("1.000"),
-            1,
-        ),
-        0,
-        2,
-        UnixNanos::from(1),
-        UnixNanos::from(1),
+    let book_order_2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1510.00"),
+        Quantity::from("1.000"),
+        1,
     );
+    let orderbook_delta_sell_1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(book_order_1)
+        .build();
+    let orderbook_delta_sell_2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(book_order_2)
+        .build();
+
     let mut market_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
@@ -905,7 +882,6 @@ fn test_matching_engine_valid_market_buy(
 #[rstest]
 fn test_process_limit_post_only_order_that_would_be_a_taker(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -924,6 +900,16 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
         None,
         None,
     );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
 
     // Create a post-only limit buy order with price above 1500.00
     // that would match the existing sell order and be a taker
@@ -957,7 +943,6 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
 #[rstest]
 fn test_process_limit_order_not_matched_and_canceled_fok_order(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -976,6 +961,16 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
         None,
         None,
     );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
 
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create limit order which is bellow currently supplied liquidity and ask
@@ -1011,7 +1006,6 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
 #[rstest]
 fn test_process_limit_order_matched_immediate_fill(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1031,6 +1025,15 @@ fn test_process_limit_order_matched_immediate_fill(
         None,
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
@@ -1065,7 +1068,6 @@ fn test_process_limit_order_matched_immediate_fill(
 #[rstest]
 fn test_process_stop_market_order_triggered_rejected(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1088,6 +1090,15 @@ fn test_process_stop_market_order_triggered_rejected(
         Some(engine_config),
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create but stop market order, which is triggered (price of 1495 is below current ask of 1500)
     let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -1119,7 +1130,6 @@ fn test_process_stop_market_order_triggered_rejected(
 #[rstest]
 fn test_process_stop_market_order_valid_trigger_filled(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1138,6 +1148,15 @@ fn test_process_stop_market_order_valid_trigger_filled(
         None,
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create but stop market order, which is triggered (price of 1495 is below current ask of 1500)
     let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -1167,7 +1186,6 @@ fn test_process_stop_market_order_valid_trigger_filled(
 #[rstest]
 fn test_process_stop_market_order_valid_not_triggered_accepted(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1185,6 +1203,15 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
         None,
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create but stop market order, which is not triggered (price of 1505 is above current ask of 1500)
     let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -1212,7 +1239,6 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
 #[rstest]
 fn test_process_stop_limit_order_triggered_not_filled(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1230,6 +1256,15 @@ fn test_process_stop_limit_order_triggered_not_filled(
         None,
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create but stop limit order, which is triggered (price of 1495 is bellow current ask of 1500)
     // but price of 1490 it's not immediately filled
@@ -1265,7 +1300,6 @@ fn test_process_stop_limit_order_triggered_not_filled(
 #[rstest]
 fn test_process_stop_limit_order_triggered_filled(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1284,6 +1318,15 @@ fn test_process_stop_limit_order_triggered_filled(
         None,
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create but stop limit order, which is triggered (price of 1505 is above current ask of 1500)
     // and price 1502 is also above current ask of 1500 so it's immediately filled
@@ -1327,7 +1370,6 @@ fn test_process_stop_limit_order_triggered_filled(
 #[rstest]
 fn test_process_cancel_command_valid(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1345,8 +1387,17 @@ fn test_process_cancel_command_valid(
         None,
         None,
     );
-    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     // create BUY LIMIT order bellow current ask, so it wont be filled
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
@@ -1392,7 +1443,6 @@ fn test_process_cancel_command_valid(
 #[rstest]
 fn test_process_cancel_command_order_not_found(
     instrument_eth_usdt: InstrumentAny,
-    orderbook_delta_sell: OrderBookDelta,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
@@ -1411,6 +1461,15 @@ fn test_process_cancel_command_order_not_found(
         None,
     );
 
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let account_id = AccountId::from("ACCOUNT-001");
     let cancel_command = CancelOrder::new(
