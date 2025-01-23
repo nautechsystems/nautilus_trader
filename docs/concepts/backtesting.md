@@ -99,6 +99,22 @@ between OHLC levels, or uses tight take-profit/stop-loss levels), you can then i
 for more accurate validation.
 :::
 
+### Portfolio limitations with bar data
+
+The Portfolio component cannot calculate position metrics correctly when using bar data alone - it needs trade tick
+or quote tick data. When running bar-only backtests, `portfolio.unrealized_pnl()` will return `None` when positions are open,
+and `portfolio.realized_pnl()` may return zero values even when positions are closed with profit or loss.
+
+Currently, if you need accurate Portfolio metrics when using bar data, you should either:
+- Convert your bar data into synthetic trade ticks
+- Use trade tick / quote tick data in your strategy
+
+:::note
+Future versions of Nautilus plan to implement full bar data support for Portfolio calculations, making bars
+a first-class citizen in the platform. This will enable accurate backtesting using readily available bar data without
+requiring tick-level granularity.
+:::
+
 ## Venues
 
 When initializing a venue for backtesting, you must specify its internal order `book_type` for execution processing from the following options:
