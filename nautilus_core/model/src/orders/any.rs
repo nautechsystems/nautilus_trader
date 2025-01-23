@@ -1248,6 +1248,22 @@ impl PassiveOrderAny {
     }
 
     #[must_use]
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_open(),
+            Self::Stop(order) => order.is_open(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_inflight(),
+            Self::Stop(order) => order.is_inflight(),
+        }
+    }
+
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::Limit(order) => order.expire_time(),
@@ -1311,6 +1327,26 @@ impl LimitOrderAny {
             Self::MarketToLimit(order) => order.is_closed(),
             Self::StopLimit(order) => order.is_closed(),
             Self::TrailingStopLimit(order) => order.is_closed(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_open(),
+            Self::MarketToLimit(order) => order.is_open(),
+            Self::StopLimit(order) => order.is_open(),
+            Self::TrailingStopLimit(order) => order.is_open(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_inflight(),
+            Self::MarketToLimit(order) => order.is_inflight(),
+            Self::StopLimit(order) => order.is_inflight(),
+            Self::TrailingStopLimit(order) => order.is_inflight(),
         }
     }
 
@@ -1392,6 +1428,30 @@ impl StopOrderAny {
             Self::StopMarket(order) => order.is_closed(),
             Self::TrailingStopLimit(order) => order.is_closed(),
             Self::TrailingStopMarket(order) => order.is_closed(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::LimitIfTouched(order) => order.is_open(),
+            Self::MarketIfTouched(order) => order.is_open(),
+            Self::StopLimit(order) => order.is_open(),
+            Self::StopMarket(order) => order.is_open(),
+            Self::TrailingStopLimit(order) => order.is_open(),
+            Self::TrailingStopMarket(order) => order.is_open(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
+        match self {
+            Self::LimitIfTouched(order) => order.is_inflight(),
+            Self::MarketIfTouched(order) => order.is_inflight(),
+            Self::StopLimit(order) => order.is_inflight(),
+            Self::StopMarket(order) => order.is_inflight(),
+            Self::TrailingStopLimit(order) => order.is_inflight(),
+            Self::TrailingStopMarket(order) => order.is_inflight(),
         }
     }
 

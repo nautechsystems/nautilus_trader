@@ -27,6 +27,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
+use nautilus_execution::messages::CancelOrder;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{
@@ -37,7 +38,10 @@ use nautilus_model::{
         order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
         OrderRejected,
     },
-    identifiers::{stubs::account_id, AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+    identifiers::{
+        stubs::account_id, AccountId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
+    },
     instruments::{
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
         CryptoPerpetual, Equity, InstrumentAny,
@@ -1318,4 +1322,123 @@ fn test_process_stop_limit_order_triggered_filled(
     assert_eq!(order_filled.client_order_id, client_order_id);
     assert_eq!(order_filled.last_px, Price::from("1500.00"));
     assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_process_cancel_command_valid(
+    instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    // create normal l2 engine without reject_stop_orders config param
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+    // create BUY LIMIT order bellow current ask, so it wont be filled
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+    // create cancel command for limit order above
+    let cancel_command = CancelOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        VenueOrderId::from("V1"),
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+    engine_l2.process_order(&mut limit_order, account_id);
+    engine_l2.process_cancel(&cancel_command, account_id);
+
+    // check we have received OrderAccepted and then OrderCanceled event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_canceled = match order_event_second {
+        OrderEventAny::Canceled(order_canceled) => order_canceled,
+        _ => panic!("Expected OrderCanceled event in second message"),
+    };
+    assert_eq!(order_canceled.client_order_id, client_order_id);
+}
+
+#[rstest]
+fn test_process_cancel_command_order_not_found(
+    instrument_eth_usdt: InstrumentAny,
+    orderbook_delta_sell: OrderBookDelta,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    // create normal l2 engine without reject_stop_orders config param
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let account_id = AccountId::from("ACCOUNT-001");
+    let cancel_command = CancelOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        VenueOrderId::from("V1"),
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+
+    // process cancel command for order which doesn't exists
+    engine_l2.process_cancel(&cancel_command, account_id);
+
+    // check we have received OrderCancelRejected event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let order_event = saved_messages.first().unwrap();
+    let order_rejected = match order_event {
+        OrderEventAny::CancelRejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(
+        order_rejected.reason,
+        Ustr::from(format!("Order {client_order_id} not found").as_str())
+    );
 }
