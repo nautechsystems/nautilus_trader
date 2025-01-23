@@ -60,6 +60,15 @@ repos:
         args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all-features", "--", "-D", "warnings"]
         files: \.rs$
         pass_filenames: false
+      - id: cargo-doc
+        name: cargo doc
+        description: Check documentation builds without errors.
+        entry: cargo doc
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all-features", "--no-deps", "--workspace"]
+        files: \.rs$
+        pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting
