@@ -144,7 +144,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairHttpClient = client
         self.request_account_state_period = request_account_state_period or 300
-        self.stream = BetfairOrderStreamClient(
+        self._stream = BetfairOrderStreamClient(
             http_client=self._client,
             message_handler=self.handle_order_stream_update,
         )
@@ -175,7 +175,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             "Connecting to stream, checking account currency and loading venue id mapping...",
         )
         aws = [
-            self.stream.connect(),
+            self._stream.connect(),
             self.check_account_currency(),
             self.load_venue_id_mapping_from_cache(),
         ]
@@ -194,11 +194,16 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Close socket
         self._log.info("Closing streaming socket")
-        await self.stream.disconnect()
+        await self._stream.disconnect()
 
         # Ensure client closed
         self._log.info("Closing BetfairHttpClient")
         await self._client.disconnect()
+
+    async def _reconnect(self) -> None:
+        await self._disconnect()
+        await self._connect()
+        self._reconnect_in_progress = False
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
@@ -215,9 +220,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             try:
                 # Session is invalid, need to reconnect
                 self._log.warning("Invalid session error, reconnecting...")
-                await self._disconnect()
-                await self._connect()
-                self._log.info("Reconnected.")
+                await self._reconnect()
             except Exception:
                 self._log.error(f"Reconnection failed: {traceback.format_exc()}")
 
@@ -1056,9 +1059,22 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _handle_status_message(self, update: Status) -> None:
         if update.is_error and update.connection_closed:
-            self._log.warning(str(update))
+            self._log.warning(f"Betfair connection closed: {update.error_message}")
             if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
+            elif update.error_code == "INVALID_SESSION_INFORMATION":
+                if self._reconnect_in_progress:
+                    self._log.info("Reconnect already in progress")
+                    return
+                self._log.info("Invalid session information, reconnecting client")
+                self._reconnect_in_progress = True
+                self._stream.is_connected = False
+                self._client.reset_headers()
+                self._log.info("Reconnecting socket")
+                self.create_task(self._reconnect())
             else:
+                if self._reconnect_in_progress:
+                    self._log.info("Reconnect already in progress")
+                    return
                 self._log.info("Attempting reconnect")
-                self._loop.create_task(self.stream.connect())
+                self._loop.create_task(self._stream.connect())
