@@ -1110,6 +1110,9 @@ cdef class Actor(Component):
         """
         Subscribe to data of the given data type.
 
+        Once subscribed, any matching data published on the message bus is forwarded
+        to the `on_data` handler.
+
         Parameters
         ----------
         data_type : DataType
@@ -1152,6 +1155,9 @@ cdef class Actor(Component):
         """
         Subscribe to update `Instrument` data for the given venue.
 
+        Once subscribed, any matching instrument data published on the message bus is forwarded
+        the `on_instrument` handler.
+
         Parameters
         ----------
         venue : Venue
@@ -1190,6 +1196,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to update `Instrument` data for the given instrument ID.
+
+        Once subscribed, any matching instrument data published on the message bus is forwarded
+        to the `on_instrument` handler.
 
         Parameters
         ----------
@@ -1236,6 +1245,9 @@ cdef class Actor(Component):
         """
         Subscribe to the order book data stream, being a snapshot then deltas
         for the given instrument ID.
+
+        Once subscribed, any matching order book data published on the message bus is forwarded
+        to the `on_order_book_deltas` handler.
 
         Parameters
         ----------
@@ -1300,6 +1312,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to an `OrderBook` at a specified interval for the given instrument ID.
+
+        Once subscribed, any matching order book updates published on the message bus are forwarded
+        to the `on_order_book` handler.
 
         The `DataEngine` will only maintain one order book for each instrument.
         Because of this - the level, depth and params for the stream will be set
@@ -1383,6 +1398,9 @@ cdef class Actor(Component):
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
 
+        Once subscribed, any matching quote tick data published on the message bus is forwarded
+        to the `on_quote_tick` handler.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -1423,6 +1441,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to streaming `TradeTick` data for the given instrument ID.
+
+        Once subscribed, any matching trade tick data published on the message bus is forwarded
+        to the `on_trade_tick` handler.
 
         Parameters
         ----------
@@ -1465,6 +1486,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to streaming `Bar` data for the given bar type.
+
+        Once subscribed, any matching bar data published on the message bus is forwarded
+        to the `on_bar` handler.
 
         Parameters
         ----------
@@ -1511,6 +1535,9 @@ cdef class Actor(Component):
         """
         Subscribe to status updates for the given instrument ID.
 
+        Once subscribed, any matching instrument status data published on the message bus is forwarded
+        to the `on_instrument_status` handler.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -1550,6 +1577,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to close updates for the given instrument ID.
+
+        Once subscribed, any matching instrument close data published on the message bus is forwarded
+        to the `on_instrument_close` handler.
 
         Parameters
         ----------
@@ -2016,6 +2046,9 @@ cdef class Actor(Component):
         """
         Subscribe to a specific signal by name, or to all signals if no name is provided.
 
+        Once subscribed, any matching signal data published on the message bus is forwarded
+        to the `on_signal` handler.
+
         Parameters
         ----------
         name : str, optional
@@ -2046,6 +2079,11 @@ cdef class Actor(Component):
     ):
         """
         Request custom data for the given data type from the given data client.
+
+        Once the response is received, the data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2108,6 +2146,11 @@ cdef class Actor(Component):
         Request `Instrument` data for the given instrument ID.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the instrument data is forwarded from the message bus
+        to the `on_instrument` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2196,6 +2239,11 @@ cdef class Actor(Component):
 
         If `end` is ``None`` then will request up to the most recent data.
 
+        Once the response is received, the instrument data is forwarded from the message bus
+        to the `on_instrument` handler.
+
+        If the request fails, then an error is logged.
+
         Parameters
         ----------
         venue : Venue
@@ -2279,6 +2327,11 @@ cdef class Actor(Component):
         """
         Request an order book snapshot.
 
+        Once the response is received, the order book data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -2345,6 +2398,11 @@ cdef class Actor(Component):
         Request historical `QuoteTick` data.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the quote tick data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2433,6 +2491,11 @@ cdef class Actor(Component):
 
         If `end` is ``None`` then will request up to the most recent data.
 
+        Once the response is received, the trade tick data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -2519,6 +2582,11 @@ cdef class Actor(Component):
         Request historical `Bar` data.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the bar data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2612,6 +2680,12 @@ cdef class Actor(Component):
         This external bar type will be queried.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the bar data is forwarded from the message bus
+        to the `on_historical_data` handler. Any tick data used for aggregation is also
+        forwarded to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
