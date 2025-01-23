@@ -22,6 +22,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
+- Ported process cancel for OrderMatchingEngine in Rust (#2231), thanks @filipmacek
 - Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
 - Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
 - Continued porting `OrderEmulator` to Rust (#2219, #2226), thanks @Pushkarm029
