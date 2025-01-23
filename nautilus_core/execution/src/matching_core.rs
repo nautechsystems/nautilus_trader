@@ -84,6 +84,18 @@ impl OrderMatchingCore {
     }
 
     #[must_use]
+    pub fn get_order(&self, client_order_id: ClientOrderId) -> Option<&PassiveOrderAny> {
+        self.orders_bid
+            .iter()
+            .find(|o| o.client_order_id() == client_order_id)
+            .or_else(|| {
+                self.orders_ask
+                    .iter()
+                    .find(|o| o.client_order_id() == client_order_id)
+            })
+    }
+
+    #[must_use]
     pub fn get_orders_bid(&self) -> &[PassiveOrderAny] {
         self.orders_bid.as_slice()
     }
