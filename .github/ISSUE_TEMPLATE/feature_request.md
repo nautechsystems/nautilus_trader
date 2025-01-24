@@ -7,4 +7,19 @@ labels:
 
 # Feature Request
 
-Provide a detailed description of your proposal, with some examples.
+### Problem Statement
+What problem are you trying to solve? What limitations exist in the current implementation?
+
+### Proposed Solution
+Detailed description of the feature you'd like to see implemented.
+
+### Example Usage
+```python
+# Show how the feature would be used
+```
+
+### Alternatives Considered
+What alternatives have you explored? Why is this solution preferred?
+
+### Additional Context
+Any other relevant information or references.
