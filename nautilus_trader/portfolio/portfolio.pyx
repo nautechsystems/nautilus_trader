@@ -183,7 +183,7 @@ cdef class Portfolio(PortfolioFacade):
             if instrument is None:
                 self._log.error(
                     f"Cannot update initial (order) margin: "
-                    f"no instrument found for {instrument.id}"
+                    f"no instrument found for {instrument_id}"
                 )
                 initialized = False
                 break
@@ -274,7 +274,7 @@ cdef class Portfolio(PortfolioFacade):
             if instrument is None:
                 self._log.error(
                     f"Cannot update maintenance (position) margin: "
-                    f"no instrument found for {instrument.id}"
+                    f"no instrument found for {instrument_id}"
                 )
                 initialized = False
                 break
