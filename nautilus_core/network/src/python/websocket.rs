@@ -219,6 +219,8 @@ impl WebSocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use std::ffi::CString;
+
     use futures_util::{SinkExt, StreamExt};
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
@@ -329,33 +331,33 @@ mod tests {
     }
 
     fn create_test_handler() -> (PyObject, PyObject) {
-        Python::with_gil(|py| {
-            let pymod = PyModule::from_code_bound(
-                py,
-                r"
+        let code = r#"
 class Counter:
-   def __init__(self):
-       self.count = 0
-       self.check = False
+    def __init__(self):
+        self.count = 0
+        self.check = False
 
-   def handler(self, bytes):
-       msg = bytes.decode()
-       if msg == 'ping':
-           self.count = self.count + 1
-       elif msg == 'heartbeat message':
-           self.check = True
+    def handler(self, bytes):
+        msg = bytes.decode()
+        if msg == 'ping':
+            self.count += 1
+        elif msg == 'heartbeat message':
+            self.check = True
 
-   def get_check(self):
-       return self.check
+    def get_check(self):
+        return self.check
 
-   def get_count(self):
-       return self.count
+    def get_count(self):
+        return self.count
 
-counter = Counter()",
-                "",
-                "",
-            )
-            .unwrap();
+counter = Counter()
+"#;
+
+        let code = CString::new(code).unwrap();
+        let filename = CString::new("test".to_string()).unwrap();
+        let module = CString::new("test".to_string()).unwrap();
+        Python::with_gil(|py| {
+            let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
 
             let counter = pymod.getattr("counter").unwrap().into_py(py);
             let handler = counter.getattr(py, "handler").unwrap().into_py(py);

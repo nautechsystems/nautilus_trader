@@ -25,7 +25,7 @@ use crate::enums::{LogColor, LogLevel};
 impl LogLevel {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -106,7 +106,7 @@ impl LogLevel {
 impl LogColor {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 

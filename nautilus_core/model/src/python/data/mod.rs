@@ -83,8 +83,8 @@ impl DataType {
 /// Rust data structure.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
-    let capsule = PyCapsule::new_bound(py, data, None).expect("Error creating `PyCapsule`");
-    capsule.into_py(py)
+    let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
+    capsule.into_any().unbind()
 }
 
 /// Drops a `PyCapsule` containing a `CVec` structure.

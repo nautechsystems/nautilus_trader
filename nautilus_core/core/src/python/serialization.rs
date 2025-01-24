@@ -32,7 +32,7 @@ where
 {
     // Extract to JSON bytes
     use crate::python::to_pyvalue_err;
-    let json_str: String = PyModule::import_bound(py, "json")?
+    let json_str: String = PyModule::import(py, "json")?
         .call_method("dumps", (values,), None)?
         .extract()?;
 
@@ -56,7 +56,7 @@ where
     let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
 
     // Parse JSON into a Python dictionary
-    let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
+    let py_dict: Py<PyDict> = PyModule::import(py, "json")?
         .call_method("loads", (json_str,), None)?
         .extract()?;
     Ok(py_dict)

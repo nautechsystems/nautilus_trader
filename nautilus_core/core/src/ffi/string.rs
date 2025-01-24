@@ -158,7 +158,7 @@ mod tests {
     fn test_pystr_to_string() {
         pyo3::prepare_freethreaded_python();
         // Create a valid Python object pointer
-        let ptr = Python::with_gil(|py| PyString::new_bound(py, "test string1").as_ptr());
+        let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
         let result = unsafe { pystr_to_string(ptr) };
         assert_eq!(result, "test string1");
     }

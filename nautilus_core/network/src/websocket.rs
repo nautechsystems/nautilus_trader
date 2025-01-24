@@ -218,9 +218,9 @@ impl WebSocketClientInner {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
                         tracing::trace!("Received message <binary> {} bytes", data.len());
-                        if let Err(e) = Python::with_gil(|py| {
-                            handler.call1(py, (PyBytes::new_bound(py, &data),))
-                        }) {
+                        if let Err(e) =
+                            Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
+                        {
                             tracing::error!("Error calling handler: {e}");
                             break;
                         }
@@ -229,7 +229,7 @@ impl WebSocketClientInner {
                     Some(Ok(Message::Text(data))) => {
                         tracing::trace!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
-                            handler.call1(py, (PyBytes::new_bound(py, data.as_bytes()),))
+                            handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
                         }) {
                             tracing::error!("Error calling handler: {e}");
                             break;
@@ -239,9 +239,9 @@ impl WebSocketClientInner {
                     Some(Ok(Message::Ping(ping))) => {
                         tracing::trace!("Received ping: {ping:?}",);
                         if let Some(ref handler) = ping_handler {
-                            if let Err(e) = Python::with_gil(|py| {
-                                handler.call1(py, (PyBytes::new_bound(py, &ping),))
-                            }) {
+                            if let Err(e) =
+                                Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
+                            {
                                 tracing::error!("Error calling handler: {e}");
                                 break;
                             }

@@ -169,7 +169,8 @@ impl TardisMachineClient {
             }
 
             Python::with_gil(|py| {
-                let pylist = PyList::new_bound(py, bars.into_iter().map(|bar| bar.into_py(py)));
+                let pylist = PyList::new(py, bars.into_iter().map(|bar| bar.into_py(py)))
+                    .expect("Invalid `ExactSizeIterator`");
                 Ok(pylist.into_py(py))
             })
         })

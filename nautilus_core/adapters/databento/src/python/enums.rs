@@ -24,7 +24,7 @@ use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 impl DatabentoStatisticType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value).map_err(to_pyvalue_err)
     }
 
@@ -152,7 +152,7 @@ impl DatabentoStatisticType {
 impl DatabentoStatisticUpdateAction {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value).map_err(to_pyvalue_err)
     }
 

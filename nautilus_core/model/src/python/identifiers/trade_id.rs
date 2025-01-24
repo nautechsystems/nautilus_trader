@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(deprecated)]
+// TODO: We still rely on `IntoPy` for now, so temporarily ignore
+// these deprecations until fully migrated to `IntoPyObject`.
+
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::CString,
@@ -57,7 +61,7 @@ impl TradeId {
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
     }
 
     #[staticmethod]

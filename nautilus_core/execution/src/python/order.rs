@@ -356,7 +356,7 @@ impl OrderStatusReport {
 
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderStatusReport))?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;

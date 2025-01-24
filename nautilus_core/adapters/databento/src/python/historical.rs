@@ -113,7 +113,7 @@ impl DatabentoHistoricalClient {
             let response = client.metadata().get_dataset_range(&dataset).await;
             match response {
                 Ok(res) => Python::with_gil(|py| {
-                    let dict = PyDict::new_bound(py);
+                    let dict = PyDict::new(py);
                     dict.set_item("start", res.start.to_string())?;
                     dict.set_item("end", res.end.to_string())?;
                     Ok(dict.to_object(py))
@@ -208,7 +208,11 @@ impl DatabentoHistoricalClient {
                     .map(|result| instrument_any_to_pyobject(py, result))
                     .collect();
 
-                py_results.map(|objs| PyList::new_bound(py, &objs).to_object(py))
+                py_results.map(|objs| {
+                    PyList::new(py, &objs)
+                        .expect("Invalid `ExactSizeIterator`")
+                        .to_object(py)
+                })
             })
         })
     }

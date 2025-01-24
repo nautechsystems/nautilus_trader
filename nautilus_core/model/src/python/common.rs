@@ -29,8 +29,8 @@ pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 /// Python iterator over the variants of an enum.
 #[pyclass]
 pub struct EnumIterator {
-    // Type erasure for code reuse. Generic types can't be exposed to Python.
-    iter: Box<dyn Iterator<Item = PyObject> + Send>,
+    // Type erasure for code reuse, generic types can't be exposed to Python
+    iter: Box<dyn Iterator<Item = PyObject> + Send + Sync>,
 }
 
 #[pymethods]
@@ -64,7 +64,7 @@ impl EnumIterator {
 }
 
 pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
 
     match val {
         Value::Object(map) => {
@@ -95,7 +95,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
             }
         }
         Value::Array(arr) => {
-            let py_list = PyList::new_bound(py, &[] as &[PyObject]);
+            let py_list = PyList::new(py, &[] as &[PyObject]).expect("Invalid `ExactSizeIterator`");
             for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
@@ -117,10 +117,11 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
     }
 
     if values.is_empty() {
-        Ok(PyNone::get_bound(py).to_owned().into_any())
+        Ok(PyNone::get(py).to_owned().into_any())
     } else {
         values.sort();
-        Ok(PyList::new_bound(py, &values).to_owned().into_any())
+        // SAFETY: Reasonable to expect `ExactSizeIterator` should be correctly implemented
+        Ok(PyList::new(py, &values).unwrap().into_any())
     }
 }
 

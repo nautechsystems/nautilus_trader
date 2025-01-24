@@ -74,7 +74,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let py_list = PyList::empty_bound(py);
+            let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
 
             let mut accumulator = TimeEventAccumulator::new();
@@ -101,7 +101,7 @@ mod tests {
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid
             // as long as `py_append` is in scope.
-            let callback = TimeEventCallback::from(py_append.into_py(py));
+            let callback = TimeEventCallback::from(py_append.into_any());
 
             let handler1 = TimeEventHandlerV2::new(time_event1.clone(), callback.clone());
             let handler2 = TimeEventHandlerV2::new(time_event2.clone(), callback.clone());

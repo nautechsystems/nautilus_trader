@@ -158,9 +158,9 @@ impl QuoteTick {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
     }
 
     #[staticmethod]
@@ -264,7 +264,7 @@ impl QuoteTick {
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
-        let py_dict = PyDict::new_bound(py);
+        let py_dict = PyDict::new(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }

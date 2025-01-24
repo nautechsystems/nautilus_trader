@@ -19,11 +19,10 @@ use crate::{
     accounts::{base::Account, cash::CashAccount, margin::MarginAccount, AccountAny},
     enums::{AccountType, LiquiditySide},
     events::account::{state::AccountState, stubs::*},
+    identifiers::stubs::{account_id, uuid4},
     instruments::InstrumentAny,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
-
-use crate::identifiers::stubs::{account_id, uuid4};
 
 impl Default for CashAccount {
     /// Creates a new default [`CashAccount`] instance.

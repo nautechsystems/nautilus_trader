@@ -38,9 +38,9 @@ macro_rules! identifier_for_python {
             }
 
             fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-                let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+                let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
                 let state = self.__getstate__(py)?;
-                Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+                Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
             }
 
             #[staticmethod]

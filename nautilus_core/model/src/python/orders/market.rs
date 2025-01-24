@@ -296,7 +296,7 @@ impl MarketOrder {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -335,12 +335,13 @@ impl MarketOrder {
         self.linked_order_ids.clone().map_or_else(
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
-                let linked_order_ids_list = PyList::new_bound(
+                let linked_order_ids_list = PyList::new(
                     py,
                     linked_order_ids
                         .iter()
                         .map(std::string::ToString::to_string),
-                );
+                )
+                .expect("Invalid `ExactSizeIterator`");
                 dict.set_item("linked_order_ids", linked_order_ids_list)
             },
         )?;
@@ -354,7 +355,7 @@ impl MarketOrder {
         )?;
         match &self.exec_algorithm_params {
             Some(exec_algorithm_params) => {
-                let py_exec_algorithm_params = PyDict::new_bound(py);
+                let py_exec_algorithm_params = PyDict::new(py);
                 for (key, value) in exec_algorithm_params {
                     py_exec_algorithm_params.set_item(key.to_string(), value.to_string())?;
                 }

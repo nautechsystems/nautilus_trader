@@ -74,7 +74,7 @@ impl MovingAverageFactory {
     pub fn create(
         moving_average_type: MovingAverageType,
         period: usize,
-    ) -> Box<dyn MovingAverage + Send> {
+    ) -> Box<dyn MovingAverage + Send + Sync> {
         let price_type = Some(PriceType::Last);
 
         match moving_average_type {

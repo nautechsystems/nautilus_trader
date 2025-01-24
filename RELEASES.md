@@ -28,6 +28,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
 - Continued porting `OrderEmulator` to Rust (#2219, #2226), thanks @Pushkarm029
 - Moved `model` crate stubs into defaults (#2235), thanks @fhill2
+- Upgraded `pyo3` crate to v0.23.4
+- Upgraded `pyo3-async-runtimes` crate to v0.23.0
 
 ### Fixes
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
