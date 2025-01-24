@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
@@ -109,8 +110,8 @@ async def main(
     node.trader.add_strategies(strategies)
 
     # Register your client factories with the node (can take user-defined factories)
-    node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-    node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
+    node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
+    node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
     node.build()
 
     try:

@@ -24,9 +24,6 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
-from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.common import merge_instrument_fields
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
@@ -55,7 +52,7 @@ class BetfairDataClient(LiveMarketDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BetfairClient
-        The betfair HttpClient
+        The Betfair HttpClient
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -64,10 +61,12 @@ class BetfairDataClient(LiveMarketDataClient):
         The clock for the client.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
+    account_currency : Currency
+        The currency for the Betfair account.
+    keep_alive_period : int, default 36_000 (10 hours)
+        The keep alive period (seconds) for the socket client.
 
     """
-
-    custom_data_types = (BetfairTicker, BSPOrderBookDelta, BetfairStartingPrice)
 
     def __init__(
         self,
@@ -89,17 +88,28 @@ class BetfairDataClient(LiveMarketDataClient):
             clock=clock,
             instrument_provider=instrument_provider,
         )
-
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
+
+        # Configuration
+        self.keep_alive_period = keep_alive_period
+        self._log.info(f"{keep_alive_period=}", LogColor.BLUE)
+
+        # Clients
         self._client: BetfairHttpClient = client
         self._stream = BetfairMarketStreamClient(
             http_client=self._client,
             message_handler=self.on_market_update,
         )
-        self.parser = BetfairParser(currency=account_currency.code)
-        self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
-        self.keep_alive_period = keep_alive_period
         self._reconnect_in_progress = False
+
+        self._parser = BetfairParser(currency=account_currency.code)
+        self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
+
+        # Async tasks
+        self._keep_alive_task: asyncio.Task | None = None
+
+        # TODO: Move heartbeat down to Rust socket
+        self._heartbeat_task: asyncio.Task | None = None
 
         # Subscriptions
         self._subscribed_instrument_ids: set[InstrumentId] = set()
@@ -110,11 +120,7 @@ class BetfairDataClient(LiveMarketDataClient):
         return self._instrument_provider
 
     async def _connect(self) -> None:
-        self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
-        self._log.info("BetfairClient login successful", LogColor.GREEN)
-
-        # Connect market data socket
         await self._stream.connect()
 
         # Pass any preloaded instruments into the engine
@@ -130,9 +136,12 @@ class BetfairDataClient(LiveMarketDataClient):
         )
 
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
-        self._log.debug("scheduling heartbeat")
-        self.create_task(self._post_connect_heartbeat())
-        self.create_task(self._keep_alive())
+        self._log.debug("Scheduling heartbeat")
+        if not self._heartbeat_task:
+            self._heartbeat_task = self.create_task(self._post_connect_heartbeat())
+
+        if not self._keep_alive_task:
+            self._keep_alive_task = self.create_task(self._keep_alive())
 
         # Check for any global filters in instrument provider to subscribe
         if self.instrument_provider._config.event_type_ids:
@@ -144,34 +153,51 @@ class BetfairDataClient(LiveMarketDataClient):
             self.subscription_status = SubscriptionStatus.SUBSCRIBED
 
     async def _post_connect_heartbeat(self) -> None:
-        for _ in range(3):
-            try:
-                await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
-                await asyncio.sleep(5)
-            except BrokenPipeError:
-                self._log.warning("Heartbeat failed, reconnecting")
-                await self._reconnect()
+        try:
+            for _ in range(3):
+                try:
+                    await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
+                    await asyncio.sleep(5)
+                except BrokenPipeError:
+                    self._log.warning("Heartbeat failed, reconnecting")
+                    await self._reconnect()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'post_connect_heartbeat'")
+            return
 
     async def _keep_alive(self) -> None:
         self._log.info(f"Starting keep-alive every {self.keep_alive_period}s")
         while True:
-            await asyncio.sleep(self.keep_alive_period)
-            self._log.info("Sending keep-alive")
-            await self._client.keep_alive()
+            try:
+                await asyncio.sleep(self.keep_alive_period)
+                self._log.info("Sending keep-alive")
+                await self._client.keep_alive()
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'keep_alive'")
+                return
 
     async def _disconnect(self) -> None:
-        # Close socket
+        # Cancel tasks
+        if self._heartbeat_task:
+            self._log.debug("Canceling task 'heartbeat'")
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+
+        if self._keep_alive_task:
+            self._log.debug("Canceling task 'keep_alive'")
+            self._keep_alive_task.cancel()
+            self._keep_alive_task = None
+
         self._log.info("Closing streaming socket")
         await self._stream.disconnect()
 
-        # Ensure client closed
         self._log.info("Closing BetfairClient")
         await self._client.disconnect()
 
     async def _reconnect(self) -> None:
         self._log.info("Attempting reconnect")
         if self._stream.is_connected:
-            self._log.info("Stream connected, disconnecting")
+            self._log.info("Stream connected: disconnecting")
             await self._stream.disconnect()
         await self._stream.connect()
         self._reconnect_in_progress = False
@@ -334,7 +360,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _on_market_update(self, mcm: MCM) -> None:
         self._check_stream_unhealthy(update=mcm)
-        updates = self.parser.parse(mcm=mcm)
+        updates = self._parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data=}")
             PyCondition.type(data, Data, "data")

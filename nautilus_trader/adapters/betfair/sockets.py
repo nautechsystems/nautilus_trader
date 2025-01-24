@@ -67,10 +67,10 @@ class BetfairStreamClient:
             await self._http_client.connect()
 
         if self.is_connected:
-            self._log.info("Socket already connected.")
+            self._log.info("Socket already connected")
             return
 
-        self._log.info("Connecting betfair socket client..")
+        self._log.info("Connecting betfair socket client...")
         config = SocketConfig(
             url=f"{self.host}:{self.port}",
             handler=self.handler,
@@ -91,10 +91,10 @@ class BetfairStreamClient:
         await self.post_connection()
 
         self.is_connected = True
-        self._log.info("Connected.")
+        self._log.info("Connected")
 
     async def disconnect(self):
-        self._log.info("Disconnecting .. ")
+        self._log.info("Disconnecting...")
         self.disconnecting = True
         if self._client is None:
             self._log.warning("Cannot disconnect: not connected")
