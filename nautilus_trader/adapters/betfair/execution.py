@@ -288,7 +288,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id is not None or client_order_id is not None
         ), "Require one of venue_order_id or client_order_id"
         if venue_order_id is not None:
-            bet_id = BetId(venue_order_id.value)  # type: ignore (`Annotated` not callable)
+            bet_id = BetId(venue_order_id.value)
             orders = await self._client.list_current_orders(bet_ids={bet_id})
         else:
             customer_order_ref = make_customer_order_ref(client_order_id)
