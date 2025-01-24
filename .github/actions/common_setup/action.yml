@@ -37,8 +37,8 @@ runs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
 
-      # > --------------------------------------------------
-      # > sccache
+    # > --------------------------------------------------
+    # > sccache
     - name: Set sccache env vars (common)
       shell: bash
       run: |

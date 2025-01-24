@@ -43,6 +43,160 @@ jobs:
           echo "Pre-commit checks failed, exiting"
           exit 1
 
+  build:
+    name: build - python ${{ matrix.python-version }} (${{ matrix.os }}) HIGH_PRECISION (${{ matrix.HIGH_PRECISION }})
+    needs:
+      - pre-commit
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILD_MODE: release
+      HIGH_PRECISION: true
+      RUST_BACKTRACE: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-22.04
+          - macos-latest
+          - windows-latest
+        python-version:
+          - "3.11"
+          - "3.12"
+        include:
+          - os: windows-latest
+            env:
+              BUILD_MODE: debug # Not building wheels, so debug
+              HIGH_PRECISION: false
+              PARALLEL_BUILD: false
+    runs-on: ${{ matrix.os }}
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Common setup
+        uses: ./.github/actions/common_setup
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cached test data
+        id: cached-testdata-large
+        uses: actions/cache@v4
+        with:
+          path: tests/test_data/large
+          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+          restore-keys: ${{ runner.os }}-large-files-
+
+      - name: Install Nautilus CLI and run init postgres
+        if: runner.os == 'Linux'
+        run: |
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Run nautilus_core tests
+        run: make cargo-test
+
+      - name: Update version in pyproject.toml
+        run: |
+          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+          if [[ -z "$current_version" ]]; then
+            echo "Error: Failed to extract version from pyproject.toml" >&2
+            exit 1
+          fi
+
+          branch_name="${GITHUB_REF_NAME}"  # Get the branch name
+          echo "Branch name: ${branch_name}"
+          base_version=$(echo "$current_version" | sed -E 's/(\.dev[0-9]{8}\+[0-9]+|a[0-9]{8})$//')
+
+          suffix=""
+          if [[ "$branch_name" == "develop" ]]; then
+            # Develop branch: use dev versioning with build number
+            suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
+          elif [[ "$branch_name" == "nightly" ]]; then
+            # Nightly branch: use alpha versioning
+            suffix="a$(date +%Y%m%d)"
+          else
+            echo "Not modifying version"
+          fi
+
+          if [[ -n "$suffix" && "$current_version" != *"$suffix"* ]]; then
+            new_version="${base_version}${suffix}"
+            if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
+              echo "Version updated to ${new_version}"
+              rm -f pyproject.toml.bak
+            else
+              echo "Error: Failed to update version in pyproject.toml" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Generate updated lock file
+        run: poetry lock --no-update
+
+      - name: Build Python wheel
+        run: |
+          poetry build --format wheel
+          ls -lh dist/
+
+      - name: Install Python wheel
+        run: |
+          python -m pip install --upgrade poetry-plugin-export
+          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+          python -m pip install -r requirements-test.txt
+          pip install "$(ls dist/*.whl)"
+
+      - name: Run tests
+        run: |
+          poetry run pytest --ignore=tests/performance_tests
+
+      - name: Set release output
+        if: github.event_name == 'push' && runner.os != 'Windows'
+        id: vars
+        run: |
+          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+          cd dist
+          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+
+      - name: Upload wheel artifact
+        if: github.event_name == 'push' && runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATH }}
+
   build-linux-standard-precision:
     strategy:
       fail-fast: false
@@ -130,294 +284,294 @@ jobs:
       - name: Run tests
         run: pytest --ignore=tests/performance_tests
 
-  build-linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04]
-        python-version: ["3.11", "3.12"]
-    defaults:
-      run:
-        shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: [pre-commit]
-    env:
-      BUILD_MODE: release
-      RUST_BACKTRACE: 1
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: nautilus
-        ports:
-          - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+  # build-linux:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ubuntu-22.04]
+  #       python-version: ["3.11", "3.12"]
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   needs: [pre-commit]
+  #   env:
+  #     BUILD_MODE: release
+  #     RUST_BACKTRACE: 1
+  #   services:
+  #     redis:
+  #       image: redis
+  #       ports:
+  #         - 6379:6379
+  #       options: >-
+  #         --health-cmd "redis-cli ping"
+  #         --health-interval 10s
+  #         --health-timeout 5s
+  #         --health-retries 5
+  #     postgres:
+  #       image: postgres
+  #       env:
+  #         POSTGRES_USER: postgres
+  #         POSTGRES_PASSWORD: pass
+  #         POSTGRES_DB: nautilus
+  #       ports:
+  #         - 5432:5432
+  #       options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Common setup
-        uses: ./.github/actions/common_setup
-        with:
-          python-version: ${{ matrix.python-version }}
+  #     - name: Common setup
+  #       uses: ./.github/actions/common_setup
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
 
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
+  #     - name: Cached test data
+  #       id: cached-testdata-large
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: tests/test_data/large
+  #         key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+  #         restore-keys: ${{ runner.os }}-large-files-
 
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USERNAME: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DATABASE: nautilus
+  #     - name: Install Nautilus CLI and run init postgres
+  #       run: |
+  #         make install-cli
+  #         nautilus database init --schema ${{ github.workspace }}/schema/sql
+  #       env:
+  #         POSTGRES_HOST: localhost
+  #         POSTGRES_PORT: 5432
+  #         POSTGRES_USERNAME: postgres
+  #         POSTGRES_PASSWORD: pass
+  #         POSTGRES_DATABASE: nautilus
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
+  #     - name: Install cargo-nextest
+  #       uses: taiki-e/install-action@v2
+  #       with:
+  #         tool: nextest
 
-      - name: Run nautilus_core tests
-        run: make cargo-test
+  #     - name: Run nautilus_core tests
+  #       run: make cargo-test
 
-      - name: Update version in pyproject.toml
-        run: |
-          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
-          if [[ -z "$current_version" ]]; then
-            echo "Error: Failed to extract version from pyproject.toml" >&2
-            exit 1
-          fi
+  #     - name: Update version in pyproject.toml
+  #       run: |
+  #         current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+  #         if [[ -z "$current_version" ]]; then
+  #           echo "Error: Failed to extract version from pyproject.toml" >&2
+  #           exit 1
+  #         fi
 
-          branch_name="${GITHUB_REF_NAME}"  # Get the branch name
-          echo "Branch name: ${branch_name}"
-          base_version=$(echo "$current_version" | sed -E 's/(\.dev[0-9]{8}\+[0-9]+|a[0-9]{8})$//')
+  #         branch_name="${GITHUB_REF_NAME}"  # Get the branch name
+  #         echo "Branch name: ${branch_name}"
+  #         base_version=$(echo "$current_version" | sed -E 's/(\.dev[0-9]{8}\+[0-9]+|a[0-9]{8})$//')
 
-          suffix=""
-          if [[ "$branch_name" == "develop" ]]; then
-            # Develop branch: use dev versioning with build number
-            suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
-          elif [[ "$branch_name" == "nightly" ]]; then
-            # Nightly branch: use alpha versioning
-            suffix="a$(date +%Y%m%d)"
-          else
-            echo "Not modifying version"
-          fi
+  #         suffix=""
+  #         if [[ "$branch_name" == "develop" ]]; then
+  #           # Develop branch: use dev versioning with build number
+  #           suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
+  #         elif [[ "$branch_name" == "nightly" ]]; then
+  #           # Nightly branch: use alpha versioning
+  #           suffix="a$(date +%Y%m%d)"
+  #         else
+  #           echo "Not modifying version"
+  #         fi
 
-          if [[ -n "$suffix" && "$current_version" != *"$suffix"* ]]; then
-            new_version="${base_version}${suffix}"
-            if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
-              echo "Version updated to ${new_version}"
-              rm -f pyproject.toml.bak
-            else
-              echo "Error: Failed to update version in pyproject.toml" >&2
-              exit 1
-            fi
-          fi
+  #         if [[ -n "$suffix" && "$current_version" != *"$suffix"* ]]; then
+  #           new_version="${base_version}${suffix}"
+  #           if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
+  #             echo "Version updated to ${new_version}"
+  #             rm -f pyproject.toml.bak
+  #           else
+  #             echo "Error: Failed to update version in pyproject.toml" >&2
+  #             exit 1
+  #           fi
+  #         fi
 
-      - name: Generate updated lock file
-        run: poetry lock --no-update
+  #     - name: Generate updated lock file
+  #       run: poetry lock --no-update
 
-      - name: Build Python wheel
-        run: |
-          poetry build --format wheel
-          ls -lh dist/
+  #     - name: Build Python wheel
+  #       run: |
+  #         poetry build --format wheel
+  #         ls -lh dist/
 
-      - name: Install Python wheel
-        run: |
-          python -m pip install --upgrade poetry-plugin-export
-          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-          python -m pip install -r requirements-test.txt
-          pip install "$(ls dist/*.whl)"
+  #     - name: Install Python wheel
+  #       run: |
+  #         python -m pip install --upgrade poetry-plugin-export
+  #         poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+  #         python -m pip install -r requirements-test.txt
+  #         pip install "$(ls dist/*.whl)"
 
-      - name: Run tests
-        run: pytest --ignore=tests/performance_tests
+  #     - name: Run tests
+  #       run: pytest --ignore=tests/performance_tests
 
-      - name: Set release output
-        if: github.event_name == 'push'
-        id: vars
-        run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+  #     - name: Set release output
+  #       if: github.event_name == 'push'
+  #       id: vars
+  #       run: |
+  #         echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+  #         cd dist
+  #         echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
 
-      - name: Upload wheel artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ASSET_NAME }}
-          path: ${{ env.ASSET_PATH }}
+  #     - name: Upload wheel artifact
+  #       if: github.event_name == 'push'
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ${{ env.ASSET_NAME }}
+  #         path: ${{ env.ASSET_PATH }}
 
-  build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-        python-version: ["3.11", "3.12"]
-    defaults:
-      run:
-        shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    # Pause macOS jobs on develop branch for now (they take 1-1.5 hrs again)
-    if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
-    needs: [pre-commit]
-    env:
-      BUILD_MODE: release
-      RUST_BACKTRACE: 1
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  # build-macos:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [macos-latest]
+  #       python-version: ["3.11", "3.12"]
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   # Pause macOS jobs on develop branch for now (they take 1-1.5 hrs again)
+  #   if: >
+  #     !( (github.event_name == 'push' && github.ref_name == 'develop')
+  #     || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
+  #   needs: [pre-commit]
+  #   env:
+  #     BUILD_MODE: release
+  #     RUST_BACKTRACE: 1
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Common setup
-        uses: ./.github/actions/common_setup
-        with:
-          python-version: ${{ matrix.python-version }}
+  #     - name: Common setup
+  #       uses: ./.github/actions/common_setup
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
 
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
+  #     - name: Cached test data
+  #       id: cached-testdata-large
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: tests/test_data/large
+  #         key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+  #         restore-keys: ${{ runner.os }}-large-files-
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
+  #     - name: Install cargo-nextest
+  #       uses: taiki-e/install-action@v2
+  #       with:
+  #         tool: nextest
 
-      - name: Run nautilus_core tests
-        run: make cargo-test
+  #     - name: Run nautilus_core tests
+  #       run: make cargo-test
 
-      - name: Update version in pyproject.toml
-        run: |
-          current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
-          if [[ -z "$current_version" ]]; then
-            echo "Error: Failed to extract version from pyproject.toml" >&2
-            exit 1
-          fi
+  #     - name: Update version in pyproject.toml
+  #       run: |
+  #         current_version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+  #         if [[ -z "$current_version" ]]; then
+  #           echo "Error: Failed to extract version from pyproject.toml" >&2
+  #           exit 1
+  #         fi
 
-          branch_name="${GITHUB_REF_NAME}"  # Get the branch name
-          echo "Branch name: ${branch_name}"
-          base_version=$(echo "$current_version" | sed -E 's/(\.dev[0-9]{8}\+[0-9]+|a[0-9]{8})$//')
+  #         branch_name="${GITHUB_REF_NAME}"  # Get the branch name
+  #         echo "Branch name: ${branch_name}"
+  #         base_version=$(echo "$current_version" | sed -E 's/(\.dev[0-9]{8}\+[0-9]+|a[0-9]{8})$//')
 
-          suffix=""
-          if [[ "$branch_name" == "develop" ]]; then
-            # Develop branch: use dev versioning with build number
-            suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
-          elif [[ "$branch_name" == "nightly" ]]; then
-            # Nightly branch: use alpha versioning
-            suffix="a$(date +%Y%m%d)"
-          else
-            echo "Not modifying version"
-          fi
+  #         suffix=""
+  #         if [[ "$branch_name" == "develop" ]]; then
+  #           # Develop branch: use dev versioning with build number
+  #           suffix=".dev$(date +%Y%m%d)+${{ github.run_number }}"
+  #         elif [[ "$branch_name" == "nightly" ]]; then
+  #           # Nightly branch: use alpha versioning
+  #           suffix="a$(date +%Y%m%d)"
+  #         else
+  #           echo "Not modifying version"
+  #         fi
 
-          if [[ -n "$suffix" && "$current_version" != *"$suffix"* ]]; then
-            new_version="${base_version}${suffix}"
-            if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
-              echo "Version updated to ${new_version}"
-              rm -f pyproject.toml.bak
-            else
-              echo "Error: Failed to update version in pyproject.toml" >&2
-              exit 1
-            fi
-          fi
+  #         if [[ -n "$suffix" && "$current_version" != *"$suffix"* ]]; then
+  #           new_version="${base_version}${suffix}"
+  #           if sed -i.bak "s/^version = \".*\"/version = \"${new_version}\"/" pyproject.toml; then
+  #             echo "Version updated to ${new_version}"
+  #             rm -f pyproject.toml.bak
+  #           else
+  #             echo "Error: Failed to update version in pyproject.toml" >&2
+  #             exit 1
+  #           fi
+  #         fi
 
-      - name: Generate updated lock file
-        run: poetry lock --no-update
+  #     - name: Generate updated lock file
+  #       run: poetry lock --no-update
 
-      - name: Build Python wheel
-        run: |
-          poetry build --format wheel
-          ls -lh dist/
+  #     - name: Build Python wheel
+  #       run: |
+  #         poetry build --format wheel
+  #         ls -lh dist/
 
-      - name: Install Python wheel
-        run: |
-          python -m pip install --upgrade poetry-plugin-export
-          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-          python -m pip install -r requirements-test.txt
-          pip install "$(ls dist/*.whl)"
+  #     - name: Install Python wheel
+  #       run: |
+  #         python -m pip install --upgrade poetry-plugin-export
+  #         poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+  #         python -m pip install -r requirements-test.txt
+  #         pip install "$(ls dist/*.whl)"
 
-      - name: Run tests
-        run: pytest --ignore=tests/performance_tests
+  #     - name: Run tests
+  #       run: pytest --ignore=tests/performance_tests
 
-      - name: Set release output
-        if: github.event_name == 'push'
-        id: vars
-        run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+  #     - name: Set release output
+  #       if: github.event_name == 'push'
+  #       id: vars
+  #       run: |
+  #         echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+  #         cd dist
+  #         echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
 
-      - name: Upload wheel artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ASSET_NAME }}
-          path: ${{ env.ASSET_PATH }}
+  #     - name: Upload wheel artifact
+  #       if: github.event_name == 'push'
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ${{ env.ASSET_NAME }}
+  #         path: ${{ env.ASSET_PATH }}
 
-  build-windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest]
-        python-version: ["3.11", "3.12"]
-    defaults:
-      run:
-        shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: [pre-commit]
-    env:
-      BUILD_MODE: debug # Not building wheels, so debug is fine
-      HIGH_PRECISION: false
-      PARALLEL_BUILD: false
-      RUST_BACKTRACE: 1
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  # build-windows:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [windows-latest]
+  #       python-version: ["3.11", "3.12"]
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   needs: [pre-commit]
+  #   env:
+  #     BUILD_MODE: debug # Not building wheels, so debug is fine
+  #     HIGH_PRECISION: false
+  #     PARALLEL_BUILD: false
+  #     RUST_BACKTRACE: 1
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Common setup
-        uses: ./.github/actions/common_setup
-        with:
-          python-version: ${{ matrix.python-version }}
+  #     - name: Common setup
+  #       uses: ./.github/actions/common_setup
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
 
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
+  #     - name: Cached test data
+  #       id: cached-testdata-large
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: tests/test_data/large
+  #         key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+  #         restore-keys: ${{ runner.os }}-large-files-
 
-      # Run tests without parallel build (avoids linker errors)
-      - name: Run tests
-        run: |
-          poetry install --with test --all-extras
-          poetry run pytest --ignore=tests/performance_tests
+  #     # Run tests without parallel build (avoids linker errors)
+  #     - name: Run tests
+  #       run: |
+  #         poetry install --with test --all-extras
+  #         poetry run pytest --ignore=tests/performance_tests
 
   publish-wheels:
     name: publish-packages
