@@ -5,12 +5,35 @@ inputs:
   python-version:
     description: The Python version to setup
     required: true
+  free-disk-space:
+    description: Free disk space
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
   steps:
     # > --------------------------------------------------
     # > OS
+    - name: Free disk space (Ubuntu)
+      if: inputs.free-disk-space == 'true' && runner.os == 'Linux'
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: true
+        android: false
+        dotnet: false
+        haskell: false
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: Free disk space (Windows)
+      if: inputs.free-disk-space == 'true' && runner.os == 'Windows'
+      shell: bash
+      run: |
+        rm -rf "/c/Program Files/dotnet"
+        rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+
     - name: Install runner dependencies
       if: runner.os == 'Linux'
       shell: bash

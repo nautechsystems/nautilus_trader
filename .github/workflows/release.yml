@@ -18,17 +18,6 @@ jobs:
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -38,6 +27,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.11"
+          free-disk-space: "true"
 
       - name: Install
         run: poetry install
@@ -74,17 +64,6 @@ jobs:
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -92,6 +71,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.11"
+          free-disk-space: "true"
 
       - name: Install / Build
         run: |
@@ -138,24 +118,6 @@ jobs:
     env:
       BUILD_MODE: release
     steps:
-      - name: Free disk space (Ubuntu)
-        if: runner.os == 'Linux'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Free disk space (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          rm -rf "/c/Program Files/dotnet"
-          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -163,6 +125,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
 
       - name: Install / Build
         run: |
