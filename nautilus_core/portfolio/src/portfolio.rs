@@ -1053,7 +1053,7 @@ impl Portfolio {
                 continue; // Nothing to calculate
             }
 
-            if position.side == PositionSide::Flat {
+            if position.realized_pnl.is_none() {
                 continue; // Nothing to calculate
             }
 
