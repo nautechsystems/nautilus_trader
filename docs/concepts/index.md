@@ -14,12 +14,12 @@ of NautilusTrader.
 
 ## [Actors](actors.md)
 
-`Actor`s provide the foundation for user-defined components that can interact with the trading system.
+The `Actor` serves as the foundational component for interacting with the trading system.
 The **Actors** guide covers capabilities and implementation specifics.
 
 ## [Strategies](strategies.md)
 
-`Strategy` is at the heart of the NautilusTrader user experience when writing and working with
+The `Strategy` is at the heart of the NautilusTrader user experience when writing and working with
 trading strategies. The **Strategies** guide covers how to implement trading strategies for the platform.
 
 ## [Instruments](instruments.md)
