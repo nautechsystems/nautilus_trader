@@ -55,7 +55,7 @@ impl RedisCacheDatabase {
             Ok(result) => {
                 let vec_py_bytes = result
                     .into_iter()
-                    .map(|r| PyBytes::new_bound(py, r.as_ref()).into())
+                    .map(|r| PyBytes::new(py, r.as_ref()).into())
                     .collect::<Vec<PyObject>>();
                 Ok(vec_py_bytes)
             }

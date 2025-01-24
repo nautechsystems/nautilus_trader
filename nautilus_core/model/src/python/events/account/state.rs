@@ -142,7 +142,7 @@ impl AccountState {
 
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountState))?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("account_type", self.account_type.to_string())?;
@@ -155,7 +155,7 @@ impl AccountState {
         dict.set_item("margins", margins_dict?)?;
         dict.set_item("reported", self.is_reported)?;
         dict.set_item("event_id", self.event_id.to_string())?;
-        dict.set_item("info", PyDict::new_bound(py))?;
+        dict.set_item("info", PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.base_currency {

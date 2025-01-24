@@ -31,6 +31,10 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 // #![deny(clippy::missing_errors_doc)]
 
+// TODO: We still rely on `IntoPy` for now, so temporarily ignore
+// these deprecations until fully migrated to `IntoPyObject`.
+#![allow(deprecated)]
+
 pub mod http;
 pub mod socket;
 pub mod websocket;

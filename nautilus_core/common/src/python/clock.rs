@@ -207,7 +207,7 @@ mod tests {
 
     pub fn test_callback() -> TimeEventCallback {
         Python::with_gil(|py| {
-            let py_list = PyList::empty_bound(py);
+            let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
             TimeEventCallback::from(py_append.into_py(py))
         })

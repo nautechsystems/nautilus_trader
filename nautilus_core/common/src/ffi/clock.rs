@@ -119,9 +119,11 @@ pub extern "C" fn test_clock_timer_names(clock: &TestClock_API) -> *mut ffi::PyO
         let names: Vec<Py<PyString>> = clock
             .get_timers()
             .keys()
-            .map(|k| PyString::new_bound(py, k).into())
+            .map(|k| PyString::new(py, k).into())
             .collect();
-        PyList::new_bound(py, names).into()
+        PyList::new(py, names)
+            .expect("Invalid `ExactSizeIterator`")
+            .into()
     })
     .as_ptr()
 }
@@ -329,9 +331,11 @@ pub extern "C" fn live_clock_timer_names(clock: &LiveClock_API) -> *mut ffi::PyO
         let names: Vec<Py<PyString>> = clock
             .get_timers()
             .keys()
-            .map(|k| PyString::new_bound(py, k).into())
+            .map(|k| PyString::new(py, k).into())
             .collect();
-        PyList::new_bound(py, names).into()
+        PyList::new(py, names)
+            .expect("Invalid `ExactSizeIterator`")
+            .into()
     })
     .as_ptr()
 }

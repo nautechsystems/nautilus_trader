@@ -331,7 +331,7 @@ impl Bar {
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
-        let py_dict = PyDict::new_bound(py);
+        let py_dict = PyDict::new(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }

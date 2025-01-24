@@ -51,15 +51,15 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add error classes
     m.add(
         <WebSocketClientError as PyTypeCheck>::NAME,
-        m.py().get_type_bound::<WebSocketClientError>(),
+        m.py().get_type::<WebSocketClientError>(),
     )?;
     m.add(
         <HttpError as PyTypeCheck>::NAME,
-        m.py().get_type_bound::<HttpError>(),
+        m.py().get_type::<HttpError>(),
     )?;
     m.add(
         <HttpTimeoutError as PyTypeCheck>::NAME,
-        m.py().get_type_bound::<HttpTimeoutError>(),
+        m.py().get_type::<HttpTimeoutError>(),
     )?;
 
     Ok(())

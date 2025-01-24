@@ -41,7 +41,7 @@ use pyo3::prelude::*;
 /// refer: https://github.com/PyO3/pyo3/issues/2644
 #[pymodule]
 fn nautilus_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    let sys = PyModule::import_bound(py, "sys")?;
+    let sys = PyModule::import(py, "sys")?;
     let modules = sys.getattr("modules")?;
     let sys_modules: &Bound<'_, PyAny> = modules.downcast()?;
     let module_name = "nautilus_trader.core.nautilus_pyo3";

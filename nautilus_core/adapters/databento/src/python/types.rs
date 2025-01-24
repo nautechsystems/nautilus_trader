@@ -144,7 +144,7 @@ impl DatabentoImbalance {
     // TODO
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", stringify!(DatabentoImbalance))?;
         Ok(dict.into())
     }
@@ -277,7 +277,7 @@ impl DatabentoStatistics {
     // TODO
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", stringify!(DatabentoStatistics))?;
         Ok(dict.into())
     }

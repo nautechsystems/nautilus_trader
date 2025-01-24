@@ -543,7 +543,7 @@ fn call_python_with_time_event(
     Python::with_gil(|py| {
         // Create new time event
         let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
-        let capsule: PyObject = PyCapsule::new_bound(py, event, None)
+        let capsule: PyObject = PyCapsule::new(py, event, None)
             .expect("Error creating `PyCapsule`")
             .into_py(py);
 

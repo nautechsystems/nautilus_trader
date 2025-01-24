@@ -18,7 +18,7 @@ use pyo3::{prelude::*, types::PyTuple};
 #[must_use]
 pub fn get_python_version() -> String {
     Python::with_gil(|py| {
-        let sys = match py.import_bound("sys") {
+        let sys = match py.import("sys") {
             Ok(mod_sys) => mod_sys,
             Err(_) => return "Unavailable (failed to import sys)".to_string(),
         };
@@ -58,7 +58,7 @@ pub fn get_python_version() -> String {
 
 #[must_use]
 pub fn get_python_package_version(package_name: &str) -> String {
-    Python::with_gil(|py| match py.import_bound(package_name) {
+    Python::with_gil(|py| match py.import(package_name) {
         Ok(package) => match package.getattr("__version__") {
             Ok(version_attr) => match version_attr.extract::<String>() {
                 Ok(version) => version,

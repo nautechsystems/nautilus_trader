@@ -19,7 +19,7 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
-    types::{PyLong, PyString, PyTuple},
+    types::{PyInt, PyString, PyTuple},
 };
 use ustr::Ustr;
 
@@ -46,13 +46,10 @@ impl Currency {
                 .downcast::<PyString>()?
                 .extract::<&str>()?,
         );
-        self.precision = py_tuple
-            .get_item(1)?
-            .downcast::<PyLong>()?
-            .extract::<u8>()?;
+        self.precision = py_tuple.get_item(1)?.downcast::<PyInt>()?.extract::<u8>()?;
         self.iso4217 = py_tuple
             .get_item(2)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<u16>()?;
         self.name = Ustr::from(
             py_tuple
@@ -84,7 +81,7 @@ impl Currency {
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
     }
 
     #[staticmethod]

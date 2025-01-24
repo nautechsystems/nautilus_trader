@@ -67,7 +67,7 @@ pub fn py_load_tardis_deltas_as_pycapsule(
     let deltas: Vec<Data> = deltas.into_iter().map(Data::Delta).collect();
 
     let cvec: CVec = deltas.into();
-    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
     Ok(capsule.into_py(py))
 }
 
@@ -111,7 +111,7 @@ pub fn py_load_tardis_depth10_from_snapshot5_as_pycapsule(
     let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
 
     let cvec: CVec = depths.into();
-    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
     Ok(capsule.into_py(py))
 }
 
@@ -155,7 +155,7 @@ pub fn py_load_tardis_depth10_from_snapshot25_as_pycapsule(
     let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
 
     let cvec: CVec = depths.into();
-    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
     Ok(capsule.into_py(py))
 }
 
@@ -199,7 +199,7 @@ pub fn py_load_tardis_quotes_as_pycapsule(
     let quotes: Vec<Data> = quotes.into_iter().map(Data::Quote).collect();
 
     let cvec: CVec = quotes.into();
-    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
     Ok(capsule.into_py(py))
 }
 
@@ -243,6 +243,6 @@ pub fn py_load_tardis_trades_as_pycapsule(
     let trades: Vec<Data> = trades.into_iter().map(Data::Trade).collect();
 
     let cvec: CVec = trades.into();
-    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
     Ok(capsule.into_py(py))
 }

@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
 )]
 pub struct Pressure {
     pub period: usize,
