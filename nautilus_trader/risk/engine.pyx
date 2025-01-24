@@ -427,7 +427,7 @@ cdef class RiskEngine(Component):
         if instrument is None:
             self._deny_command(
                 command=command,
-                reason=f"Instrument for {command.instrument_id} not found",
+                reason=f"Instrument for {order.instrument_id} not found",
             )
             return  # Denied
 

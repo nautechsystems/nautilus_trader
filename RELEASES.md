@@ -43,6 +43,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
 - Fixed memory leak in network PyO3 layer caused by the `gil-refs` feature (#2229), thanks for reporting @davidsblom
 - Fixed reconnect handling for Betfair (#2232), thanks @limx0
+- Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
+- Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
 
 ### Documentation Updates
 - Added Databento overview (#2233), thanks @stefansimik
