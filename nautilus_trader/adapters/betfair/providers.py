@@ -127,11 +127,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
         return self._account_currency
 
 
-def _parse_date(s, tz):
-    # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
-    return pd.Timestamp(s, tz=tz)
-
-
 def market_catalog_to_instruments(
     market_catalog: MarketCatalogue,
     currency: str,
@@ -234,6 +229,7 @@ def make_instruments(
             ts_init=ts_init,
         )
     else:
+        # Unreachable unless code changes
         raise TypeError(type(market))
 
 

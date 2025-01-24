@@ -81,24 +81,24 @@ class BSPOrderBookDelta(OrderBookDelta):
         return data
 
     @staticmethod
-    def to_batch(self: BSPOrderBookDelta) -> pa.RecordBatch:
+    def to_batch(obj: BSPOrderBookDelta) -> pa.RecordBatch:
         metadata = {
-            b"instrument_id": self.instrument_id.value.encode(),
-            b"price_precision": str(self.order.price.precision).encode(),
-            b"size_precision": str(self.order.size.precision).encode(),
+            b"instrument_id": obj.instrument_id.value.encode(),
+            b"price_precision": str(obj.order.price.precision).encode(),
+            b"size_precision": str(obj.order.size.precision).encode(),
         }
         schema = BSPOrderBookDelta.schema().with_metadata(metadata)
         return pa.RecordBatch.from_pylist(
             [
                 {
-                    "action": self.action,
-                    "side": self.order.side,
-                    "price": self.order.price.raw,
-                    "size": self.order.size.raw,
-                    "order_id": self.order.order_id,
-                    "flags": self.flags,
-                    "ts_event": self.ts_event,
-                    "ts_init": self.ts_init,
+                    "action": obj.action,
+                    "side": obj.order.side,
+                    "price": obj.order.price.raw,
+                    "size": obj.order.size.raw,
+                    "order_id": obj.order.order_id,
+                    "flags": obj.flags,
+                    "ts_event": obj.ts_event,
+                    "ts_init": obj.ts_init,
                 },
             ],
             schema=schema,
@@ -208,16 +208,16 @@ class BetfairTicker(Data):
         )
 
     @staticmethod
-    def to_dict(self: BetfairTicker):
+    def to_dict(obj: BetfairTicker):
         return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "ts_event": self._ts_event,
-            "ts_init": self._ts_init,
-            "last_traded_price": self.last_traded_price,
-            "traded_volume": self.traded_volume,
-            "starting_price_near": self.starting_price_near,
-            "starting_price_far": self.starting_price_far,
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
+            "last_traded_price": obj.last_traded_price,
+            "traded_volume": obj.traded_volume,
+            "starting_price_near": obj.starting_price_near,
+            "starting_price_far": obj.starting_price_far,
         }
 
     def __repr__(self):
@@ -291,13 +291,13 @@ class BetfairStartingPrice(Data):
         )
 
     @staticmethod
-    def to_dict(self):
+    def to_dict(obj):
         return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "ts_event": self.ts_event,
-            "ts_init": self.ts_init,
-            "bsp": self.bsp,
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+            "bsp": obj.bsp,
         }
 
 
