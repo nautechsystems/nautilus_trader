@@ -1,0 +1,37 @@
+name: Common tests
+description: Run tests
+
+runs:
+  using: "composite"
+  steps:
+    - name: Cached test data
+      id: cached-testdata-large
+      uses: actions/cache@v4
+      with:
+        path: tests/test_data/large
+        key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        restore-keys: ${{ runner.os }}-large-files-
+
+    # > --------------------------------------------------
+    # > non-Windows
+    - name: Install cargo-nextest
+      if: runner.os != 'Windows'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: nextest
+
+    - name: Build Python wheel
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        poetry build --format wheel
+        ls -lh dist/
+
+    - name: Install Python wheel
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        python -m pip install --upgrade poetry-plugin-export
+        poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+        python -m pip install -r requirements-test.txt
+        pip install "$(ls dist/*.whl)"

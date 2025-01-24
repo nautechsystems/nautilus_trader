@@ -10,21 +10,6 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
-      # > --------------------------------------------------
-      # > sccache
-      # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_IDLE_TIMEOUT: 0
-      SCCACHE_DIRECT: "true"
-      SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
-      RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang++"
-      # Incrementally compiled crates cannot be cached by sccache
-      # https://github.com/mozilla/sccache#rust
-      CARGO_INCREMENTAL: 0
-      # > --------------------------------------------------
-
     services:
       redis:
         image: redis
@@ -46,94 +31,16 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Install runner dependencies
-        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cached sccache
-        id: cached-sccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-            sccache-${{ runner.os }}-${{ github.workflow }}-
-            sccache-${{ runner.os }}-
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Set up Rust toolchain
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v5
+      - name: Common setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: "3.12"
 
-      - name: Get Python version
-        run: |
-          version=$(bash scripts/python-version.sh)
-          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Get Poetry version from poetry-version
-        run: |
-          version=$(cat poetry-version)
-          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-
-      - name: Install build and dev dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          poetry install --only dev --no-root
-
-      - name: Cached pre-commit
-        id: cached-pre-commit
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-
       - name: Run pre-commit # Runs again here to check on Python 3.12
         run: make pre-commit
-
-      - name: Cached cargo
-        id: cached-cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Cache Python site-packages
-        id: cached-site-packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-site-packages
-          restore-keys: |
-            ${{ runner.os }}-site-packages-
-
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
 
       - name: Install Nautilus CLI and run init postgres
         run: |
@@ -146,25 +53,11 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
+      - name: Common tests
+        uses: ./.github/actions/common-tests
 
       - name: Run nautilus_core tests
         run: make cargo-test
-
-      - name: Build Python wheel
-        run: |
-          poetry build --format wheel
-          ls -lh dist/
-
-      - name: Install Python wheel
-        run: |
-          python -m pip install --upgrade poetry-plugin-export
-          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-          python -m pip install -r requirements-test.txt
-          pip install "$(ls dist/*.whl)"
 
       # Run codspeed once only
       - name: Run benchmarks

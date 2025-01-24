@@ -1,0 +1,68 @@
+name: Publish wheels (R2)
+description: Publish wheels to Cloudflare R2
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        path: dist/
+        pattern: "*.whl"
+
+    - name: Configure AWS CLI for Cloudflare R2
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Configuring AWS CLI for Cloudflare R2..."
+
+        # Install specific AWS CLI version known to work with R2
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+
+        mkdir -p ~/.aws
+        envsubst < .github/aws/credentials.ini > ~/.aws/credentials
+        envsubst < .github/aws/config.ini > ~/.aws/config
+
+    - name: Upload new wheels to Cloudflare R2
+      shell: bash
+      run: |
+        bash ./scripts/ci/publish-wheels-r2-upload-new-wheels.sh
+
+    - name: Remove old wheels from Cloudflare R2
+      shell: bash
+      run: |
+        bash ./scripts/ci/publish-wheels-r2-remove-old-wheels.sh
+
+    - name: Generate index.html
+      shell: bash
+      run: |
+        bash ./scripts/ci/publish-wheels-generate-index.sh
+
+    - name: Upload index.html to Cloudflare R2
+      shell: bash
+      run: |
+        bash ./scripts/ci/publish-wheels-r2-upload-index.sh
+
+    - name: Verify uploaded files in Cloudflare R2
+      shell: bash
+      run: |
+        bash ./scripts/ci/publish-wheels-r2-verify-files.sh
+
+    - name: Clean up local artifacts
+      shell: bash
+      run: |
+        set -euo pipefail
+        ls -lh dist/ || echo "No dist directory found"
+        rm -rf dist/* 2>/dev/null || true
+        echo "Cleanup completed"
+
+    - name: Fetch and delete artifacts for current run
+      if: success()
+      shell: bash
+      run: |
+        bash ./scripts/ci/publish-wheels-delete-artifacts.sh
