@@ -407,30 +407,23 @@ class TradingNode:
                 self.kernel.logger.info("Shutting down executor")
                 self.kernel.executor.shutdown(wait=True, cancel_futures=True)
 
-            self.kernel.logger.info("Stopping event loop")
-            self.kernel.cancel_all_tasks()
-            self.kernel.loop.stop()
+            loop = self.kernel.loop
+
+            if not loop.is_closed():
+                if loop.is_running():
+                    self.kernel.logger.info("Stopping event loop")
+                    self.kernel.cancel_all_tasks()
+                    loop.stop()
+                else:
+                    self.kernel.logger.info("Closing event loop")
+                    loop.close()
+            else:
+                self.kernel.logger.info("Event loop already closed (normal with asyncio.run)")
         except (asyncio.CancelledError, RuntimeError) as e:
             self.kernel.logger.exception("Error on dispose", e)
         finally:
-            if self.kernel.loop.is_running():
-                self.kernel.logger.warning("Cannot close a running event loop")
-            else:
-                self.kernel.logger.info("Closing event loop")
-                self.kernel.loop.close()
-
-            # Check and log if event loop is running
-            if self.kernel.loop.is_running():
-                self.kernel.logger.warning(f"loop.is_running={self.kernel.loop.is_running()}")
-            else:
-                self.kernel.logger.info(f"loop.is_running={self.kernel.loop.is_running()}")
-
-            # Check and log if event loop is closed
-            if not self.kernel.loop.is_closed():
-                self.kernel.logger.warning(f"loop.is_closed={self.kernel.loop.is_closed()}")
-            else:
-                self.kernel.logger.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
-
+            self.kernel.logger.info(f"loop.is_running={self.kernel.loop.is_running()}")
+            self.kernel.logger.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
             self.kernel.logger.info("DISPOSED")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
