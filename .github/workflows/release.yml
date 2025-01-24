@@ -17,95 +17,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
-    env:
-      # > --------------------------------------------------
-      # > sccache
-      # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
-      SCCACHE_IDLE_TIMEOUT: 0
-      SCCACHE_DIRECT: "true"
-      SCCACHE_CACHE_MULTIARCH: 1
-      RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang++"
-      # Incrementally compiled crates cannot be cached by sccache
-      # https://github.com/mozilla/sccache#rust
-      CARGO_INCREMENTAL: 0
-      # > --------------------------------------------------
-
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Install runner dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Cached sccache
-        id: cached-sccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-            sccache-${{ runner.os }}-${{ github.workflow }}-
-            sccache-${{ runner.os }}-
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Set up Rust toolchain
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v5
+      - name: Common setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: "3.11"
-
-      - name: Get Python version
-        run: |
-          version=$(bash scripts/python-version.sh)
-          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Get Poetry version from poetry-version
-        run: |
-          version=$(cat poetry-version)
-          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-
-      - name: Install build and dev dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          poetry install --only dev --no-root
-
-      - name: Set poetry cache-dir
-        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Cached poetry
-        id: cached-poetry
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          free-disk-space: "true"
 
       - name: Install
         run: poetry install
@@ -141,91 +63,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
-      # > --------------------------------------------------
-      # > sccache
-      # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_IDLE_TIMEOUT: 0
-      SCCACHE_DIRECT: "true"
-      SCCACHE_CACHE_MULTIARCH: 1
-      SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
-      RUSTC_WRAPPER: "sccache"
-      CC: "sccache clang"
-      CXX: "sccache clang++"
-      # Incrementally compiled crates cannot be cached by sccache
-      # https://github.com/mozilla/sccache#rust
-      CARGO_INCREMENTAL: 0
-      # > --------------------------------------------------
-
     steps:
-      - name: Free disk space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Install runner dependencies
-        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cached sccache
-        id: cached-sccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-            sccache-${{ runner.os }}-${{ github.workflow }}-
-            sccache-${{ runner.os }}-
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Set up Rust toolchain
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v5
+      - name: Common setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: "3.11"
-
-      - name: Get Python version
-        run: |
-          version=$(bash scripts/python-version.sh)
-          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Get Poetry version from poetry-version
-        run: |
-          version=$(cat poetry-version)
-          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-
-      - name: Install build and dev dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          poetry install --only dev --no-root
-
-      - name: Set poetry cache-dir
-        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Cached poetry
-        id: cached-poetry
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          free-disk-space: "true"
 
       - name: Install / Build
         run: |
@@ -271,111 +117,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: release
-      # > --------------------------------------------------
-      # > sccache
-      # https://github.com/Mozilla-Actions/sccache-action
-      SCCACHE_IDLE_TIMEOUT: 0
-      SCCACHE_DIRECT: "true"
-      SCCACHE_CACHE_MULTIARCH: 1
-      # Incrementally compiled crates cannot be cached by sccache
-      # https://github.com/mozilla/sccache#rust
-      CARGO_INCREMENTAL: 0
-      # > --------------------------------------------------
-
     steps:
-      - name: Free disk space (Ubuntu)
-        if: runner.os == 'Linux'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Free disk space (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          rm -rf "/c/Program Files/dotnet"
-          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
-
-      - name: Install runner dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set sccache env vars (non-Windows)
-        if: runner.os != 'Windows'
-        run: |
-          echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-          echo "CC=sccache clang" >> $GITHUB_ENV
-          echo "CXX=sccache clang++" >> $GITHUB_ENV
-
-      - name: Set sccache env vars (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
-          echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
-          echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-          echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-
-      - name: Cached sccache
-        id: cached-sccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-            sccache-${{ runner.os }}-${{ github.workflow }}-
-            sccache-${{ runner.os }}-
-
-      - name: Run sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Set up Rust toolchain
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v5
+      - name: Common setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Get Python version
-        run: |
-          version=$(bash scripts/python-version.sh)
-          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Get Poetry version from poetry-version
-        run: |
-          version=$(cat poetry-version)
-          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-
-      - name: Install build and dev dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          poetry install --only dev --no-root
-
-      - name: Set poetry cache-dir
-        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Cached poetry
-        id: cached-poetry
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          free-disk-space: "true"
 
       - name: Install / Build
         run: |
