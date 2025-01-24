@@ -26,6 +26,9 @@ IS_MACOS = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 IS_ARM64 = platform.machine() == "arm64"
 
+# Use clang as the default compiler
+os.environ["CC"] = os.getenv("CC", "clang")
+os.environ["CXX"] = os.getenv("CXX", "clang++")
 
 # The Rust toolchain to use for builds
 RUST_TOOLCHAIN = os.getenv("RUST_TOOLCHAIN", "stable")
