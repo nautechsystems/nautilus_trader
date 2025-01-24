@@ -44,7 +44,8 @@ jobs:
           exit 1
 
   build:
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }}) HIGH_PRECISION (${{ matrix.HIGH_PRECISION }})
+    # name: build - python ${{ matrix.python-version }} (${{ matrix.os }}) HIGH_PRECISION (${{ matrix.high_precision }})
+    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     needs:
       - pre-commit
     defaults:
@@ -65,6 +66,9 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+        # high_precision:
+        #   - true
+        #   - false
         include:
           - os: windows-latest
             env:
