@@ -20,6 +20,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `OrderBookDeltaTestBuilder` in Rust to improve testing (#2234), thanks @filipmacek
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
+- Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
