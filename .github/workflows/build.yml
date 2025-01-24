@@ -577,7 +577,9 @@ jobs:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
     # needs: [build-linux, build-macos]  # Reinstate this when macos runs on every build again
-    needs: [build-linux]
+    # needs: [build-linux]
+    needs:
+      - build
     # if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/nightly' || github.ref == 'refs/heads/master')
     if: >
       github.event_name == 'push' &&
@@ -955,7 +957,9 @@ jobs:
   publish-wheels:
     name: publish-wheels
     runs-on: ubuntu-latest
-    needs: [build-linux, build-macos]
+    # needs: [build-linux, build-macos]
+    needs:
+      - build
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/nightly' || github.ref == 'refs/heads/master')
@@ -965,6 +969,7 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -1295,35 +1300,4 @@ jobs:
       - name: Fetch and delete artifacts for current run
         if: success()
         run: |
-          set -euo pipefail
-          echo "Fetching artifacts for the current run"
-
-          response=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
-
-          # Extract artifact IDs
-          ids=$(echo "$response" | jq -r '.artifacts[].id // empty')
-          if [[ -z "$ids" ]]; then
-            echo "No artifact IDs found for the current run"
-            exit 0
-          fi
-
-          echo "Artifact IDs to delete: $ids"
-
-          # Delete artifacts
-          for id in $ids; do
-            echo "Deleting artifact ID $id"
-            response=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id)
-
-            if [ "$response" -ne 204 ]; then
-              echo "Warning: Failed to delete artifact ID $id (HTTP $response)"
-            else
-              echo "Successfully deleted artifact ID $id"
-            fi
-          done
-
-          echo "Artifact deletion process completed"
+          ./scripts/ci/publish-wheels-delete-artifacts.sh
