@@ -166,13 +166,13 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Common setup
         uses: ./.github/actions/common_setup
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Cached test data
         id: cached-testdata-large
@@ -288,13 +288,13 @@ jobs:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Common setup
         uses: ./.github/actions/common_setup
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Cached test data
         id: cached-testdata-large

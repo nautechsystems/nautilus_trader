@@ -87,6 +87,7 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Common setup
         uses: ./.github/actions/common_setup
         with:
