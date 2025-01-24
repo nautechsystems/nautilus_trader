@@ -20,7 +20,7 @@ runs:
         echo "Configuring AWS CLI for Cloudflare R2..."
 
         # Install specific AWS CLI version known to work with R2
-        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.34.zip" -o "awscliv2.zip"
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
 
