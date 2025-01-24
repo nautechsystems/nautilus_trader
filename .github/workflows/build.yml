@@ -826,11 +826,15 @@ jobs:
           poetry install --with test --all-extras
           poetry run pytest --ignore=tests/performance_tests
 
-  publish-wheels:
-    name: publish-packages
+  publish-wheels-develop:
+    name: publish-wheels-develop
     runs-on: ubuntu-latest
-    needs: [build-linux, build-macos]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/nightly' || github.ref == 'refs/heads/master')
+    # needs: [build-linux, build-macos]  # Reinstate this when macos runs on every build again
+    needs: [build-linux]
+    # if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/nightly' || github.ref == 'refs/heads/master')
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop'
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -853,14 +857,391 @@ jobs:
           set -euo pipefail
           echo "Configuring AWS CLI for Cloudflare R2..."
 
+          # Install specific AWS CLI version known to work with R2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.34.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+
           mkdir -p ~/.aws
-          echo "[default]" > ~/.aws/credentials
-          echo "aws_access_key_id=${{ env.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
-          echo "aws_secret_access_key=${{ env.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
-          echo "[default]" > ~/.aws/config
-          echo "region=${{ env.CLOUDFLARE_R2_REGION }}" >> ~/.aws/config
-          echo "output=json" >> ~/.aws/config
-          echo "AWS CLI configuration completed"
+          envsubst < .github/aws/credentials.ini > ~/.aws/credentials
+          envsubst < .github/aws/config.ini > ~/.aws/config
+
+      - name: Upload new wheels to Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Uploading new wheels to Cloudflare R2..."
+
+          echo "Initial dist/ contents:"
+          ls -la dist/
+          find dist/ -type f -name "*.whl" -ls
+
+          # Create clean directory for real files
+          mkdir -p dist/all
+
+          # Copy all files into dist/all/ to resolve symlinks
+          find dist/ -type f -name "*.whl" -exec cp -L {} dist/all/ \;
+
+          # First check for any wheels
+          if ! find dist/all/ -type f -name "*.whl" >/dev/null 2>&1; then
+            echo "No wheels found in dist/all/, exiting"
+            exit 1
+          fi
+
+          echo "Contents of dist/all/:"
+          ls -la dist/all/
+
+          wheel_count=0
+          for file in dist/all/*.whl; do
+            echo "File details for $file:"
+            ls -l "$file"
+            file "$file"
+
+            if [ ! -f "$file" ]; then
+              echo "Warning: '$file' is not a regular file, skipping"
+              continue
+            fi
+
+            wheel_count=$((wheel_count + 1))
+            echo "Found wheel: $file"
+            echo "sha256:$(sha256sum "$file" | awk '{print $1}')"
+
+            echo "Uploading $file..."
+            for i in {1..3}; do
+              if aws s3 cp "$file" "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/" \
+                --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }} \
+                --content-type "application/zip"; then
+                echo "Successfully uploaded $file"
+                break
+              else
+                echo "Upload failed for $file, retrying ($i/3)..."
+                sleep 5
+              fi
+
+              if [ $i -eq 3 ]; then
+                echo "Failed to upload $file after 3 attempts"
+              fi
+            done
+          done
+
+          if [ "$wheel_count" -eq 0 ]; then
+            echo "No wheel files found in dist directory"
+            exit 1
+          fi
+
+          echo "Successfully uploaded $wheel_count wheel files"
+
+      - name: Remove old wheels from Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Cleaning up old wheels in Cloudflare R2..."
+
+          branch_name="${GITHUB_REF_NAME}"  # Get the current branch
+          files=$(aws s3 ls "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }} | awk '{print $4}')
+          if [ -z "$files" ]; then
+            echo "No files found for cleanup"
+            exit 0
+          fi
+
+          echo "Current wheels:"
+          echo "$files"
+          echo "---"
+
+          # Skip index.html
+          files=$(echo "$files" | grep -v "^index\.html$")
+
+          # Clean up dev wheels on the develop branch
+          if [[ "$branch_name" == "develop" ]]; then
+            echo "Cleaning up .dev wheels for the develop branch..."
+            echo "All files before filtering:"
+            echo "$files"
+
+            # First find unique platform suffixes
+            platform_tags=$(echo "$files" | grep "\.dev" | sed -E 's/.*-(cp[^.]+).whl$/\1/' | sort -u)
+            echo "Found platform tags:"
+            echo "$platform_tags"
+
+            for platform_tag in $platform_tags; do
+              echo "Processing platform: $platform_tag"
+
+              # Get all dev wheels for this platform
+              matching_files=$(echo "$files" | grep "\.dev.*-${platform_tag}\.whl$" | sort -t'+' -k2 -V)
+
+              echo "Matching files:"
+              echo "$matching_files"
+
+              # Keep only the latest version
+              latest=$(echo "$matching_files" | tail -n 1)
+              echo "Latest version to keep: $latest"
+
+              # Delete all but the latest
+              for file in $matching_files; do
+                if [[ "$file" != "$latest" ]]; then
+                  echo "Deleting old .dev wheel: $file"
+                  if ! aws s3 rm "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/$file" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+                    echo "Warning: Failed to delete $file, skipping..."
+                  fi
+                else
+                  echo "Keeping wheel: $file"
+                fi
+              done
+            done
+            echo "Finished cleaning up .dev wheels"
+          fi
+
+          # Clean up alpha (.a) wheels on the nightly branch
+          if [[ "$branch_name" == "nightly" ]]; then
+            echo "Cleaning up alpha wheels for the nightly branch..."
+            echo "All files before filtering:"
+            echo "$files"
+
+            # First find unique platform suffixes
+            platform_tags=$(echo "$files" | grep -E "a[0-9]{8}" | sed -E 's/.*-(cp[^.]+).whl$/\1/' | sort -u)
+            echo "Found platform tags:"
+            echo "$platform_tags"
+
+            for platform_tag in $platform_tags; do
+              echo "Processing platform: $platform_tag"
+
+              # Get all alpha wheels for this platform
+              matching_files=$(echo "$files" | grep -E "a[0-9]{8}.*-${platform_tag}\.whl$" | sort -t'a' -k2 -V)
+
+              echo "Matching files:"
+              echo "$matching_files"
+
+              # Extract unique versions (dates) from matching files
+              versions=$(echo "$matching_files" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+a([0-9]{8})-.+\.whl$/\1/" | sort -n)
+              echo "Unique versions (dates) for platform: $versions"
+
+              # Retain only the last 3 versions
+              versions_to_keep=$(echo "$versions" | tail -n 3)
+              echo "Versions to keep: $versions_to_keep"
+
+              # Delete files not in the last 3 versions
+              for file in $matching_files; do
+                file_version=$(echo "$file" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+a([0-9]{8})-.+\.whl$/\1/")
+                if echo "$versions_to_keep" | grep -qx "$file_version"; then
+                  echo "Keeping wheel: $file"
+                else
+                  echo "Deleting old .a wheel: $file"
+                  if ! aws s3 rm "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/$file" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+                    echo "Warning: Failed to delete $file, skipping..."
+                  fi
+                fi
+              done
+            done
+            echo "Finished cleaning up .a wheels"
+          fi
+
+      - name: Generate index.html
+        run: |
+          set -euo pipefail
+          echo "Generating package index..."
+
+          bucket_path="s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/"
+          index_file="index.html"
+
+          # Create a temporary directory for downloads
+          TEMP_DIR=$(mktemp -d)
+          trap 'rm -rf "$TEMP_DIR"' EXIT
+
+          # Download existing index.html if it exists
+          if aws s3 ls "${bucket_path}${index_file}" --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}" >/dev/null 2>&1; then
+            echo "Existing index.html found, downloading..."
+            aws s3 cp "${bucket_path}${index_file}" . --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}"
+          else
+            echo "No existing index.html found, creating a new one..."
+            echo '<!DOCTYPE html>' > "$index_file"
+            echo '<html><head><title>NautilusTrader Packages</title></head>' >> "$index_file"
+            echo '<body><h1>Packages for nautilus_trader</h1></body></html>' >> "$index_file"
+          fi
+
+          # Extract existing hashes from index.html
+          declare -A existing_hashes=()
+          if [[ -f "$index_file" ]]; then
+            echo "Extracting existing hashes from index.html..."
+            while IFS= read -r line; do
+              if [[ $line =~ href=\"([^\"#]+)#sha256=([a-f0-9]{64}) ]]; then
+                file="${BASH_REMATCH[1]}"
+                hash="${BASH_REMATCH[2]}"
+                existing_hashes["$file"]="$hash"
+                echo "Found existing hash for $file"
+              fi
+            done < "$index_file"
+          fi
+
+          # Create new index.html
+          echo '<!DOCTYPE html>' > "${index_file}.new"
+          echo '<html><head><title>NautilusTrader Packages</title></head>' >> "${index_file}.new"
+          echo '<body><h1>Packages for nautilus_trader</h1>' >> "${index_file}.new"
+
+          # Map to store final hashes we'll use
+          declare -A final_hashes=()
+
+          # First, calculate hashes for all new/updated wheels
+          # These will override any existing hashes for the same filename
+          for file in dist/all/*.whl; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              hash=$(sha256sum "$file" | awk '{print $1}')
+              final_hashes["$filename"]="$hash"
+              echo "Calculated hash for new/updated wheel $filename: $hash"
+            fi
+          done
+
+          # Get list of all wheel files in bucket
+          existing_files=$(aws s3 ls "${bucket_path}" --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}" | grep '\.whl$' | awk '{print $4}')
+
+          # For existing files, use hash from index if we don't have a new one
+          for file in $existing_files; do
+            if [[ -z "${final_hashes[$file]:-}" ]]; then  # Only if we don't have a new hash
+              if [[ -n "${existing_hashes[$file]:-}" ]]; then
+                final_hashes["$file"]="${existing_hashes[$file]}"
+                echo "Using existing hash for $file: ${existing_hashes[$file]}"
+              else
+                # Only download and calculate if we have no hash at all
+                echo "No existing hash found, downloading wheel to compute hash for $file..."
+                tmpfile="$TEMP_DIR/$file"
+                if aws s3 cp "${bucket_path}${file}" "$tmpfile" \
+                  --endpoint-url="${{ secrets.CLOUDFLARE_R2_URL }}"; then
+                  hash=$(sha256sum "$tmpfile" | awk '{print $1}')
+                  final_hashes["$file"]="$hash"
+                  echo "Calculated hash for missing file $file: $hash"
+                else
+                  echo "Warning: Could not download $file for hashing, skipping..."
+                fi
+              fi
+            fi
+          done
+
+          # Sort files for consistent ordering
+          readarray -t sorted_files < <(printf '%s\n' "${!final_hashes[@]}" | sort)
+
+          # Generate index entries using sorted list
+          for file in "${sorted_files[@]}"; do
+            hash="${final_hashes[$file]}"
+            escaped_file=$(echo "$file" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g')
+            echo "<a href=\"$escaped_file#sha256=$hash\">$escaped_file</a><br>" >> "${index_file}.new"
+          done
+
+          echo '</body></html>' >> "${index_file}.new"
+          mv "${index_file}.new" "$index_file"
+          echo "Index generation complete"
+
+      - name: Upload index.html to Cloudflare R2
+        run: |
+          for i in {1..3}; do
+            if aws s3 cp index.html "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/index.html" \
+              --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }} \
+              --content-type "text/html; charset=utf-8"; then
+              echo "Successfully uploaded index.html"
+              break
+            else
+              echo "Failed to upload index.html, retrying ($i/3)..."
+              sleep 5
+            fi
+          done
+
+          if [ $i -eq 3 ]; then
+            echo "Failed to upload index.html after 3 attempts"
+            exit 1
+          fi
+
+      - name: Verify uploaded files in Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Verifying uploaded files in Cloudflare R2..."
+
+          if ! aws s3 ls "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+            echo "Failed to list files in R2 bucket"
+          fi
+
+          # Verify index.html exists
+          if ! aws s3 ls "s3://${{ env.CLOUDFLARE_R2_BUCKET_NAME }}/simple/nautilus-trader/index.html" --endpoint-url=${{ secrets.CLOUDFLARE_R2_URL }}; then
+            echo "index.html not found in R2 bucket"
+          fi
+          echo "Verification completed successfully"
+
+      - name: Clean up local artifacts
+        run: |
+          set -euo pipefail
+          ls -lh dist/ || echo "No dist directory found"
+          rm -rf dist/* 2>/dev/null || true
+          echo "Cleanup completed"
+
+      - name: Fetch and delete artifacts for current run
+        if: success()
+        run: |
+          set -euo pipefail
+          echo "Fetching artifacts for the current run"
+
+          response=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
+
+          # Extract artifact IDs
+          ids=$(echo "$response" | jq -r '.artifacts[].id // empty')
+          if [[ -z "$ids" ]]; then
+            echo "No artifact IDs found for the current run"
+            exit 0
+          fi
+
+          echo "Artifact IDs to delete: $ids"
+
+          # Delete artifacts
+          for id in $ids; do
+            echo "Deleting artifact ID $id"
+            response=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id)
+
+            if [ "$response" -ne 204 ]; then
+              echo "Warning: Failed to delete artifact ID $id (HTTP $response)"
+            else
+              echo "Successfully deleted artifact ID $id"
+            fi
+          done
+
+          echo "Artifact deletion process completed"
+
+  # Temporary additional publish step while macos wheels are paused on develop branch
+  publish-wheels:
+    name: publish-wheels
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos]
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/nightly' || github.ref == 'refs/heads/master')
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      CLOUDFLARE_R2_REGION: "auto"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download built wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: "*.whl"
+
+      - name: Configure AWS CLI for Cloudflare R2
+        run: |
+          set -euo pipefail
+          echo "Configuring AWS CLI for Cloudflare R2..."
+
+          # Install specific AWS CLI version known to work with R2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.34.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+
+          mkdir -p ~/.aws
+          envsubst < .github/aws/credentials.ini > ~/.aws/credentials
+          envsubst < .github/aws/config.ini > ~/.aws/config
 
       - name: Upload new wheels to Cloudflare R2
         run: |
