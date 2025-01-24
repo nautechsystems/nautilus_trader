@@ -4,9 +4,17 @@
 We are currently working on this guide.
 :::
 
-The `Actor` class provides the foundation for components that can interact with the trading system,
-including `Strategy` which inherits from it and additionally provides order management
-methods on top.
+The `Actor` serves as the foundational component for interacting with the trading system.
+It provides core functionality for receiving market data, handling events, and managing state within
+the trading environment. The `Strategy` class inherits from Actor and extends its capabilities with
+order management methods.
+
+**Key capabilities**:
+
+- Event subscription and handling
+- Market data reception
+- State management
+- System interaction primitives
 
 ## Basic example
 
