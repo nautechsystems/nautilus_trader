@@ -151,7 +151,7 @@ runs:
     - name: Install build and dev dependencies
       shell: bash
       run: |
-        python -m pip install --upgrade pip setuptools wheel
+        python -m pip install --upgrade pip setuptools tomllib wheel
         poetry install --only dev --no-root
 
     # > --------------------------------------------------
