@@ -284,6 +284,9 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Publish wheels
         uses: ./.github/actions/publish-wheels
 
@@ -306,5 +309,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Publish wheels
         uses: ./.github/actions/publish-wheels
