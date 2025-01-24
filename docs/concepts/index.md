@@ -12,9 +12,14 @@ The architecture guide dives deep into the foundational principles, structures, 
 the platform. Whether you're a developer, system architect, or just curious about the inner workings
 of NautilusTrader.
 
+## [Actors](actors.md)
+
+`Actor`s provide the foundation for user-defined components that can interact with the trading system.
+The **Actors** guide covers capabilities and implementation specifics.
+
 ## [Strategies](strategies.md)
 
-The heart of the NautilusTrader user experience is in writing and working with
+`Strategy` is at the heart of the NautilusTrader user experience when writing and working with
 trading strategies. The **Strategies** guide covers how to implement trading strategies for the platform.
 
 ## [Instruments](instruments.md)

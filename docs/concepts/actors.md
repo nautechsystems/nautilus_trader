@@ -6,10 +6,9 @@ We are currently working on this guide.
 
 The `Actor` class provides the foundation for components that can interact with the trading system,
 including `Strategy` which inherits from it and additionally provides order management
-methods on top. This means everything discussed in the [Strategies](../strategies.md) guide
-also applies to actors.
+methods on top.
 
-## Basic Example
+## Basic example
 
 Just like strategies, actors support configuration through very similar pattern.
 
@@ -41,20 +40,22 @@ class MyActor(Actor):
         self.count_of_processed_bars += 1
 ```
 
-## Data Handling and Callbacks
+## Data handling and callbacks
 
-When working with data in Nautilus, it's important to understand the relationship between data requests/subscriptions and their corresponding callback handlers. The system uses different handlers depending on whether the data is historical or real-time.
+When working with data in Nautilus, it's important to understand the relationship between data
+*requests/subscriptions* and their corresponding callback handlers. The system uses different handlers
+depending on whether the data is historical or real-time.
 
 ### Historical vs Real-time Data
 
 The system distinguishes between two types of data flow:
 
-1. **Historical Data** (from requests):
+1. **Historical data** (from *requests*):
    - Obtained through methods like `request_bars()`, `request_quote_ticks()`, etc.
    - Processed through the `on_historical_data()` handler.
    - Used for initial data loading and historical analysis.
 
-2. **Real-time Data** (from subscriptions):
+2. **Real-time data** (from *subscriptions*):
    - Obtained through methods like `subscribe_bars()`, `subscribe_quote_ticks()`, etc.
    - Processed through specific handlers like `on_bar()`, `on_quote_tick()`, etc.
    - Used for live data processing.
@@ -63,14 +64,14 @@ The system distinguishes between two types of data flow:
 
 Here's how different data operations map to their handlers:
 
-| Operation | Method | Handler | Purpose |
-|:----------|:---------|:---------|:----------|
-| `request_bars()` | Historical request | `on_historical_data()` | Process historical bars |
-| `subscribe_bars()` | Real-time subscription | `on_bar()` | Process live bar updates |
-| `request_quote_ticks()` | Historical request | `on_historical_data()` | Process historical quotes |
-| `subscribe_quote_ticks()` | Real-time subscription | `on_quote_tick()` | Process live quote updates |
-| `request_trade_ticks()` | Historical request | `on_historical_data()` | Process historical trades |
-| `subscribe_trade_ticks()` | Real-time subscription | `on_trade_tick()` | Process live trade updates |
+| Operation                 | Method                 | Handler                | Purpose |
+|:--------------------------|:-----------------------|:-----------------------|:--------|
+| `request_bars()`          | Historical request     | `on_historical_data()` | Process historical bars |
+| `subscribe_bars()`        | Real-time subscription | `on_bar()`             | Process live bar updates |
+| `request_quote_ticks()`   | Historical request     | `on_historical_data()` | Process historical quotes |
+| `subscribe_quote_ticks()` | Real-time subscription | `on_quote_tick()`      | Process live quote updates |
+| `request_trade_ticks()`   | Historical request     | `on_historical_data()` | Process historical trades |
+| `subscribe_trade_ticks()` | Real-time subscription | `on_trade_tick()`      | Process live trade updates |
 
 ### Example
 
@@ -85,7 +86,7 @@ from nautilus_trader.model.identifiers import ClientId, InstrumentId
 
 
 class MyActorConfig(ActorConfig):
-    instrument_id: InstrumentId   # example value: "AAPL.NASDAQ"
+    instrument_id: InstrumentId  # example value: "AAPL.NASDAQ"
     bar_type: BarType            # example value: "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"
 
 
@@ -99,20 +100,20 @@ class MyActor(Actor):
         self.request_bars(
             bar_type=self.bar_type,
             # Many optional parameters
-            start=None,           # datetime, optional
-            end=None,             # datetime, optional
-            callback=None,        # custom handler function, optional
-            update_catalog=False, # bool, default False
-            params=None,          # dict[str, Any], optional
+            start=None,            # datetime, optional
+            end=None,              # datetime, optional
+            callback=None,         # custom handler function, optional
+            update_catalog=False,  # bool, default False
+            params=None,           # dict[str, Any], optional
         )
 
         # Subscribe to real-time data - will be processed by on_bar() handler
         self.subscribe_bars(
             bar_type=self.bar_type,
             # Many optional parameters
-            client_id=None,      # ClientId, optional
-            await_partial=False, # bool, default False
-            params=None,         # dict[str, Any], optional
+            client_id=None,       # ClientId, optional
+            await_partial=False,  # bool, default False
+            params=None,          # dict[str, Any], optional
         )
 
     def on_historical_data(self, data: Data) -> None:
@@ -125,8 +126,8 @@ class MyActor(Actor):
         self.log.info(f"Received real-time bar: {bar}")
 ```
 
-This separation between historical and real-time data handlers allows for different processing logic based on the data
-context. For example, you might want to:
+This separation between historical and real-time data handlers allows for different processing logic
+based on the data context. For example, you might want to:
 
 - Use historical data to initialize indicators or establish baseline metrics.
 - Process real-time data differently for live trading decisions.
