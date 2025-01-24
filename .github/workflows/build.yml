@@ -102,15 +102,15 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Common tests
+      - name: Run nautilus_core tests (with standard-precision)
+        run: make cargo-test-standard-precision
+
+      - name: Common test setup
         uses: ./.github/actions/common-tests
 
       - name: Run tests
         run: |
           pytest --ignore=tests/performance_tests
-
-      - name: Run nautilus_core tests (with standard-precision)
-        run: make cargo-test-standard-precision
 
   build-linux:
     strategy:
@@ -171,15 +171,15 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Common tests
+      - name: Run nautilus_core tests
+        run: make cargo-test
+
+      - name: Common test setup
         uses: ./.github/actions/common-tests
 
       - name: Run tests
         run: |
           pytest --ignore=tests/performance_tests
-
-      - name: Run nautilus_core tests
-        run: make cargo-test
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -216,15 +216,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Common tests
+      - name: Common test setup
         uses: ./.github/actions/common-tests
+
+      - name: Run nautilus_core tests
+        run: make cargo-test
 
       - name: Run tests
         run: |
           pytest --ignore=tests/performance_tests
-
-      - name: Run nautilus_core tests
-        run: make cargo-test
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel

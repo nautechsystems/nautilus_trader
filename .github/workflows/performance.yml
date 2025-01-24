@@ -53,11 +53,11 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Common tests
-        uses: ./.github/actions/common-tests
-
       - name: Run nautilus_core tests
         run: make cargo-test
+
+      - name: Common test setup
+        uses: ./.github/actions/common-tests
 
       # Run codspeed once only
       - name: Run benchmarks
