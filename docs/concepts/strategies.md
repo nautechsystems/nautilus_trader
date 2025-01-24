@@ -4,6 +4,13 @@ The heart of the NautilusTrader user experience is in writing and working with
 trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class,
 and implementing the methods required by the users trading strategy logic.
 
+`Strategy` inherits from `Actor` and additionally provides order management functionality.
+
+:::note
+Everything discussed in the [Actors](actors.md) guide also applies to strategies, and should
+be read first.
+:::
+
 Strategies can be added to Nautilus systems with any [environment context](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
 events based on their logic as soon as the system starts.
 
