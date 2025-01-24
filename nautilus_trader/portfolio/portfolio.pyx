@@ -1220,7 +1220,7 @@ cdef class Portfolio(PortfolioFacade):
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
 
-            if position.side == PositionSide.FLAT:
+            if position.realized_pnl is None:
                 continue  # Nothing to calculate
 
             pnl = position.realized_pnl.as_f64_c()
