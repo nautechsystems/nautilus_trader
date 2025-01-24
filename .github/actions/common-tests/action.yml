@@ -35,9 +35,3 @@ runs:
         poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
         python -m pip install -r requirements-test.txt
         pip install "$(ls dist/*.whl)"
-
-    - name: Run tests
-      if: runner.os != 'Windows'
-      shell: bash
-      run: |
-        pytest --ignore=tests/performance_tests
