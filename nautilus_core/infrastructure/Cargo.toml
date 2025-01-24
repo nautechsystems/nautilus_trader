@@ -32,7 +32,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-redis = { version = "0.28.1", features = [
+redis = { version = "0.28.2", features = [
   "connection-manager",
   "keep-alive",
   "sentinel",
