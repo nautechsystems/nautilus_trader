@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Common setup
-        uses: ./.github/actions/common_setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: "3.11"
 
@@ -47,14 +47,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.12"]
+        os:
+          - ubuntu-latest
+        python-version:
+          - "3.12"
     defaults:
       run:
         shell: bash
-    name: build standard-precision (${{ matrix.os }})
+    name: build - standard-precision (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [pre-commit]
+    needs:
+      - pre-commit
     env:
       BUILD_MODE: debug
       HIGH_PRECISION: false
@@ -84,17 +87,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Common setup
-        uses: ./.github/actions/common_setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
 
       - name: Install Nautilus CLI and run init postgres
         run: |
@@ -107,41 +102,28 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
+      - name: Common tests
+        uses: ./.github/actions/common-tests
 
       - name: Run nautilus_core tests (with standard-precision)
         run: make cargo-test-standard-precision
-
-      - name: Build Python wheel
-        run: |
-          poetry build --format wheel
-          ls -lh dist/
-
-      - name: Install Python wheel
-        run: |
-          python -m pip install --upgrade poetry-plugin-export
-          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-          python -m pip install -r requirements-test.txt
-          pip install "$(ls dist/*.whl)"
-
-      - name: Run tests
-        run: pytest --ignore=tests/performance_tests
 
   build-linux:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04]
-        python-version: ["3.11", "3.12"]
+        os:
+          - ubuntu-22.04
+        python-version:
+          - "3.11"
+          - "3.12"
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [pre-commit]
+    needs:
+      - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -170,17 +152,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Common setup
-        uses: ./.github/actions/common_setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
 
       - name: Install Nautilus CLI and run init postgres
         run: |
@@ -193,57 +167,24 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
+      - name: Common tests
+        uses: ./.github/actions/common-tests
 
       - name: Run nautilus_core tests
         run: make cargo-test
 
-      - name: Update version in pyproject.toml
-        run: |
-          bash ./scripts/ci/build-update-pyproject-version.sh
-
-      - name: Generate updated lock file
-        run: poetry lock --no-update
-
-      - name: Build Python wheel
-        run: |
-          poetry build --format wheel
-          ls -lh dist/
-
-      - name: Install Python wheel
-        run: |
-          python -m pip install --upgrade poetry-plugin-export
-          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-          python -m pip install -r requirements-test.txt
-          pip install "$(ls dist/*.whl)"
-
-      - name: Run tests
-        run: pytest --ignore=tests/performance_tests
-
-      - name: Set release output
-        if: github.event_name == 'push'
-        id: vars
-        run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
-
       - name: Upload wheel artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ASSET_NAME }}
-          path: ${{ env.ASSET_PATH }}
+        uses: ./.github/actions/upload-artifact-wheel
 
   build-macos:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
-        python-version: ["3.11", "3.12"]
+        os:
+          - macos-latest
+        python-version:
+          - "3.11"
+          - "3.12"
     defaults:
       run:
         shell: bash
@@ -253,7 +194,8 @@ jobs:
     if: >
       !( (github.event_name == 'push' && github.ref_name == 'develop')
       || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
-    needs: [pre-commit]
+    needs:
+      - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -262,75 +204,35 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Common setup
-        uses: ./.github/actions/common_setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
+      - name: Common tests
+        uses: ./.github/actions/common-tests
 
       - name: Run nautilus_core tests
         run: make cargo-test
 
-      - name: Update version in pyproject.toml
-        run: |
-          bash ./scripts/ci/build-update-pyproject-version.sh
-
-      - name: Generate updated lock file
-        run: poetry lock --no-update
-
-      - name: Build Python wheel
-        run: |
-          poetry build --format wheel
-          ls -lh dist/
-
-      - name: Install Python wheel
-        run: |
-          python -m pip install --upgrade poetry-plugin-export
-          poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-          python -m pip install -r requirements-test.txt
-          pip install "$(ls dist/*.whl)"
-
-      - name: Run tests
-        run: pytest --ignore=tests/performance_tests
-
-      - name: Set release output
-        if: github.event_name == 'push'
-        id: vars
-        run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
-
       - name: Upload wheel artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ASSET_NAME }}
-          path: ${{ env.ASSET_PATH }}
+        uses: ./.github/actions/upload-artifact-wheel
 
   build-windows:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
-        python-version: ["3.11", "3.12"]
+        os:
+          - windows-latest
+        python-version:
+          - "3.11"
+          - "3.12"
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [pre-commit]
+    needs:
+      - pre-commit
     env:
       BUILD_MODE: debug # Not building wheels, so debug is fine
       HIGH_PRECISION: false
@@ -341,17 +243,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Common setup
-        uses: ./.github/actions/common_setup
+        uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
 
       # Run tests without parallel build (avoids linker errors)
       - name: Run tests
