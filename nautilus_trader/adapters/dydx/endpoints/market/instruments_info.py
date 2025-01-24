@@ -78,6 +78,7 @@ class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=Tr
     oraclePrice: str | None = None
     openInterestLowerCap: str | None = None
     openInterestUpperCap: str | None = None
+    defaultFundingRate1H: str | None = None
 
     def parse_base_currency(self) -> Currency:
         """
