@@ -1282,11 +1282,11 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(SIM) == {}
         assert self.portfolio.unrealized_pnls(SIM) == {}
-        assert self.portfolio.realized_pnls(SIM) == {USD: Money(0, USD)}
+        assert self.portfolio.realized_pnls(SIM) == {USD: Money(6, USD)}
         assert self.portfolio.margins_maint(SIM) == {}
         assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(0, USD)
         assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(0, USD)
-        assert self.portfolio.realized_pnl(AUDUSD_SIM.id) == Money(0, USD)
+        assert self.portfolio.realized_pnl(AUDUSD_SIM.id) == Money(6, USD)
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
         assert not self.portfolio.is_net_long(AUDUSD_SIM.id)
         assert not self.portfolio.is_net_short(AUDUSD_SIM.id)
@@ -1421,7 +1421,7 @@ class TestPortfolio:
 
         # Assert
         assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(-38998.00, USD)}
-        assert self.portfolio.realized_pnls(SIM) == {USD: Money(-4.00, USD)}
+        assert self.portfolio.realized_pnls(SIM) == {USD: Money(92.00, USD)}
         assert self.portfolio.net_exposures(SIM) == {USD: Money(161002.00, USD)}
         assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(161002.00, USD)
         assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-38998.00, USD)
