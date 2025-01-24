@@ -21,6 +21,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
+- Refactored CI with composite actions (#2242), thanks @sunlei
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
@@ -45,6 +46,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed reconnect handling for Betfair (#2232), thanks @limx0
 - Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
 - Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
+- Fixed realized pnl bug in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
 
 ### Documentation Updates
 - Added Databento overview (#2233), thanks @stefansimik
