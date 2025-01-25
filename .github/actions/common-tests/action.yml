@@ -31,7 +31,7 @@ runs:
       if: runner.os != 'Windows'
       shell: bash
       run: |
-        poetry env use python${{ env.PYTHON_VERSION }}
+        poetry env use python${{ inputs.python-version }}
         poetry build --format wheel
         ls -lh dist/
 
