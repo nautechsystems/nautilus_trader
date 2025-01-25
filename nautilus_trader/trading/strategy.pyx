@@ -738,6 +738,7 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id = None,
         ClientId client_id = None,
+        dict[str, object] params = None,
     ):
         """
         Submit the given order with optional position ID, execution algorithm
@@ -759,6 +760,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         Raises
         ------
@@ -801,6 +804,7 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
             client_id=client_id,
+            params=params,
         )
 
         if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
@@ -818,7 +822,8 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
-        ClientId client_id = None
+        ClientId client_id = None,
+        dict[str, object] params = None,
     ):
         """
         Submit the given order list with optional position ID, execution algorithm
@@ -840,6 +845,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         Raises
         ------
@@ -896,6 +903,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
+            params=params,
         )
 
         if self.manage_gtd_expiry:
@@ -918,6 +926,7 @@ cdef class Strategy(Actor):
         Price price = None,
         Price trigger_price = None,
         ClientId client_id = None,
+        dict[str, object] params = None,
     ):
         """
         Modify the given order with optional parameters and routing instructions.
@@ -945,6 +954,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         Raises
         ------
@@ -972,6 +983,7 @@ cdef class Strategy(Actor):
             price=price,
             trigger_price=trigger_price,
             client_id=client_id,
+            params=params,
         )
         if command is None:
             return
@@ -981,7 +993,7 @@ cdef class Strategy(Actor):
         else:
             self._manager.send_risk_command(command)
 
-    cpdef void cancel_order(self, Order order, ClientId client_id = None):
+    cpdef void cancel_order(self, Order order, ClientId client_id = None,dict[str, object] params = None):
         """
         Cancel the given order with optional routing instructions.
 
@@ -995,6 +1007,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         """
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
@@ -1003,6 +1017,7 @@ cdef class Strategy(Actor):
         cdef CancelOrder command = self._create_cancel_order(
             order=order,
             client_id=client_id,
+            params=params,
         )
         if command is None:
             return
@@ -1019,7 +1034,7 @@ cdef class Strategy(Actor):
             if order.time_in_force == TimeInForce.GTD and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
 
-    cpdef void cancel_orders(self, list orders, ClientId client_id = None):
+    cpdef void cancel_orders(self, list orders, ClientId client_id = None, dict[str, object] params = None):
         """
         Batch cancel the given list of orders with optional routing instructions.
 
@@ -1035,6 +1050,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         Raises
         ------
@@ -1089,6 +1106,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
+            params=params,
         )
 
         self._manager.send_exec_command(command)
@@ -1098,6 +1116,7 @@ cdef class Strategy(Actor):
         InstrumentId instrument_id,
         OrderSide order_side = OrderSide.NO_ORDER_SIDE,
         ClientId client_id = None,
+        dict[str, object] params = None,
     ):
         """
         Cancel all orders for this strategy for the given instrument ID.
@@ -1114,6 +1133,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         """
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
@@ -1176,6 +1197,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
+            params=params,
         )
 
         # Cancel all execution algorithm orders
@@ -1198,6 +1220,7 @@ cdef class Strategy(Actor):
         ClientId client_id = None,
         list[str] tags = None,
         bint reduce_only = True,
+        dict[str, object] params = None,
     ):
         """
         Close the given position.
@@ -1217,6 +1240,8 @@ cdef class Strategy(Actor):
         reduce_only : bool, default True
             If the market order to close the position should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         """
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
@@ -1244,7 +1269,7 @@ cdef class Strategy(Actor):
             tags=tags,
         )
 
-        self.submit_order(order, position_id=position.id, client_id=client_id)
+        self.submit_order(order, position_id=position.id, client_id=client_id, params=params)
 
     cpdef void close_all_positions(
         self,
@@ -1253,6 +1278,7 @@ cdef class Strategy(Actor):
         ClientId client_id = None,
         list[str] tags = None,
         bint reduce_only = True,
+        dict[str, object] params = None,
     ):
         """
         Close all positions for the given instrument ID for this strategy.
@@ -1271,6 +1297,8 @@ cdef class Strategy(Actor):
         reduce_only : bool, default True
             If the market orders to close positions should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         """
         # instrument_id can be None
@@ -1297,9 +1325,9 @@ cdef class Strategy(Actor):
 
         cdef Position position
         for position in positions_open:
-            self.close_position(position, client_id, tags, reduce_only)
+            self.close_position(position, client_id, tags, reduce_only, params)
 
-    cpdef void query_order(self, Order order, ClientId client_id = None):
+    cpdef void query_order(self, Order order, ClientId client_id = None,dict[str, object] params = None):
         """
         Query the given order with optional routing instructions.
 
@@ -1315,6 +1343,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         """
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
@@ -1329,6 +1359,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
+            params=params,
         )
 
         self._manager.send_exec_command(command)
@@ -1340,6 +1371,7 @@ cdef class Strategy(Actor):
         Price price = None,
         Price trigger_price = None,
         ClientId client_id = None,
+        dict[str, object] params = None,
     ):
         cdef bint updating = False  # Set validation flag (must become true)
 
@@ -1408,9 +1440,10 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
+            params=params,
         )
 
-    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id = None):
+    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot cancel order: state is {order.status_string_c()}, {order}",
@@ -1445,6 +1478,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
+            params=params,
         )
 
     cpdef void cancel_gtd_expiry(self, Order order):

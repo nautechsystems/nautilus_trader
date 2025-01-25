@@ -38,6 +38,8 @@ cdef class TradingCommand(Command):
     """The strategy ID associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the command.\n\n:returns: `InstrumentId`"""
+    cdef readonly dict[str, object] params
+    """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
 
 
 cdef class SubmitOrder(TradingCommand):
