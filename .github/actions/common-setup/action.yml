@@ -48,9 +48,9 @@ runs:
         MOLD_VERSION: 2.36.0
       shell: bash
       run: |
-        curl -sSL --retry 10 \
+        sudo curl -sSL --retry 10 \
           "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(uname -m)-linux.tar.gz" \
-          | tar -C /usr/local --strip-components=1 -xzf -
+          | sudo tar -C /usr/local --strip-components=1 -xzf -
 
     # > --------------------------------------------------
     # > Rust
