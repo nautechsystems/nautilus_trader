@@ -27,7 +27,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::messages::CancelOrder;
+use nautilus_execution::messages::{CancelAllOrders, CancelOrder};
 use nautilus_model::{
     data::{stubs::OrderBookDeltaTestBuilder, BookOrder},
     enums::{
@@ -39,8 +39,8 @@ use nautilus_model::{
         OrderRejected,
     },
     identifiers::{
-        stubs::account_id, AccountId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId,
-        TraderId, VenueOrderId,
+        stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
     instruments::{
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
@@ -1500,4 +1500,141 @@ fn test_process_cancel_command_order_not_found(
         order_rejected.reason,
         Ustr::from(format!("Order {client_order_id} not found").as_str())
     );
+}
+
+#[rstest]
+fn test_process_cancel_all_command(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        Some(cache.clone()),
+        None,
+        None,
+    );
+
+    // add SELL limit orderbook delta to have ask initialized
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // create 3 limit orders which are not filled (2 from the same instrument and 1 from different instrument)
+    // and update the cache
+    // as orders opened from cancel_all command will be read from open_orders cache function
+
+    let client_order_id_1 = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order_1 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_1)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(limit_order_1.clone(), None, None, false)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order_1, account_id);
+    cache.borrow_mut().update_order(&limit_order_1).unwrap();
+
+    let client_order_id_2 = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1496.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_2)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(limit_order_2.clone(), None, None, false)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order_2, account_id);
+    cache.borrow_mut().update_order(&limit_order_2).unwrap();
+
+    let client_order_id_3 = ClientOrderId::from("O-19700101-000000-001-001-3");
+    let mut limit_order_3 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(InstrumentId::from("BTCUSDT-PERP.BINANCE")) // <- different instrument
+        .side(OrderSide::Buy)
+        .price(Price::from("1497.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_3)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(limit_order_3.clone(), None, None, false)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order_3, account_id);
+    cache.borrow_mut().update_order(&limit_order_3).unwrap();
+
+    // create cancel all order which related to only ETHUSDT-PERP.BINANCE instrument
+    let cancel_all_command = CancelAllOrders::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        OrderSide::Buy,
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    engine_l2.process_cancel_all(&cancel_all_command, account_id);
+
+    // check we have received 3 OrderAccepted and 2 OrderCanceled events
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 5);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_1);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_accepted = match order_event_second {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in second message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_2);
+    let order_event_third = saved_messages.get(2).unwrap();
+    let order_accepted = match order_event_third {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in third message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_3);
+    let order_event_fourth = saved_messages.get(3).unwrap();
+    let order_canceled_1 = match order_event_fourth {
+        OrderEventAny::Canceled(order_canceled) => order_canceled,
+        _ => panic!("Expected OrderCanceled event in fourth message"),
+    };
+    let order_event_fifth = saved_messages.get(4).unwrap();
+    let order_canceled_2 = match order_event_fifth {
+        OrderEventAny::Canceled(order_canceled) => order_canceled,
+        _ => panic!("Expected OrderCanceled event in fifth message"),
+    };
+    // because of nondeterministic order of events we need to check both client order ids
+    let ids = vec![
+        order_canceled_1.client_order_id,
+        order_canceled_2.client_order_id,
+    ];
+    assert!(ids.contains(&client_order_id_1));
+    assert_eq!(order_canceled_1.instrument_id, instrument_eth_usdt.id());
+    assert!(ids.contains(&client_order_id_2));
+    assert_eq!(order_canceled_2.instrument_id, instrument_eth_usdt.id());
 }
