@@ -20,11 +20,18 @@ runs:
       with:
         tool: nextest
 
+    - name: Get Python version
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        version=$(bash scripts/python-version.sh)
+        echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+
     - name: Build Python wheel
       if: runner.os != 'Windows'
       shell: bash
       run: |
-        poetry env use python${{ inputs.python-version }}
+        poetry env use python${{ env.PYTHON_VERSION }}
         poetry build --format wheel
         ls -lh dist/
 
