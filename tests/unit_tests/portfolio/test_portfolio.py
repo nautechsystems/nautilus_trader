@@ -27,6 +27,8 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -673,6 +675,92 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last)
         self.portfolio.update_quote_tick(last)
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+
+        # Act
+        self.cache.add_position(position, OmsType.HEDGING)
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
+
+        # Assert
+        assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
+        assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(100.00000000, USDT)}
+        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-105.00000000, USDT)}
+        assert self.portfolio.margins_maint(BINANCE) == {
+            BTCUSDT_BINANCE.id: Money(105.00000000, USDT),
+        }
+        assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(105100.00000000, USDT)
+        assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(100.00000000, USDT)
+        assert self.portfolio.realized_pnl(BTCUSDT_BINANCE.id) == Money(-105.00000000, USDT)
+        assert self.portfolio.net_position(order.instrument_id) == Decimal("10.00000000")
+        assert self.portfolio.is_net_long(order.instrument_id)
+        assert not self.portfolio.is_net_short(order.instrument_id)
+        assert not self.portfolio.is_flat(order.instrument_id)
+        assert not self.portfolio.is_completely_flat()
+
+    def test_opening_one_long_position_updates_portfolio_with_bar(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
+                ),
+                AccountBalance(
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
+                ),
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("10.000000"),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-001"),
+            account_id=account_id,
+            position_id=PositionId("P-123456"),
+            last_px=Price.from_str("10500.00"),
+        )
+
+        last = Bar(
+            bar_type=BarType.from_str(f"{BTCUSDT_BINANCE.id}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("10510.00"),
+            high=Price.from_str("10510.00"),
+            low=Price.from_str("10510.00"),
+            close=Price.from_str("10510.00"),
+            volume=Quantity.from_str("1.000000"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_bar(last)
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
