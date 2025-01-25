@@ -9,6 +9,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
 - Added additional limit parameters for `BettingInstrument` constructor
 - Added `venue_position_id` parameter for `OrderStatusReport`
+- Added bars update support for `Portfolio` PnLs (#2239), thanks @faysou
+- Added optional `params` for `Strategy` order management methods (symmetry with `Actor` data methods) (#2251), thanks @faysou
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
@@ -25,7 +27,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
-- Ported process cancel for OrderMatchingEngine in Rust (#2231), thanks @filipmacek
+- Ported `CancelOrder` processing for `OrderMatchingEngine` in Rust (#2231), thanks @filipmacek
+- Ported `CancelAllOrders` processing for `OrderMatchingEngine` in Rust (#2253), thanks @filipmacek
 - Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
 - Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
 - Continued porting `OrderEmulator` to Rust (#2219, #2226), thanks @Pushkarm029
@@ -47,9 +50,10 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
 - Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
 - Fixed realized pnl bug in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
+- Fixed update order in `Cache` for Rust (#2248), thanks @filipmacek
 
 ### Documentation Updates
-- Added Databento overview (#2233), thanks @stefansimik
+- Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
 - Added docs for Actor (#2233), thanks @stefansimik
 - Added docs for Portfolio limitations with bar data (#2233), thanks @stefansimik
 - Improved docstrings for Actor subscription and request methods
