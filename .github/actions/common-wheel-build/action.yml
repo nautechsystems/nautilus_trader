@@ -10,8 +10,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-
-
     - name: Update version in pyproject.toml
       shell: bash
       run: |

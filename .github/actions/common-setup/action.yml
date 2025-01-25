@@ -157,6 +157,7 @@ runs:
       shell: bash
       run: |
         python -m pip install --upgrade pip setuptools wheel
+        poetry env use python${{ inputs.python-version }}
         poetry install --only dev --no-root
 
     # > --------------------------------------------------
