@@ -128,13 +128,6 @@ runs:
         restore-keys: |
           ${{ runner.os }}-site-packages-
 
-    - name: Install build and dev dependencies
-      shell: bash
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
-        poetry env use python${{ inputs.python-version }}
-        poetry install --only dev --no-root
-
     # > --------------------------------------------------
     # > Poetry
     - name: Get Poetry version from poetry-version
@@ -159,6 +152,13 @@ runs:
       with:
         path: ${{ env.POETRY_CACHE_DIR }}
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+
+    # > --------------------------------------------------
+    - name: Install build and dev dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        poetry install --only dev --no-root
 
     # > --------------------------------------------------
     # > pre-commit
