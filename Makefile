@@ -87,7 +87,7 @@ clippy-nightly:
 
 .PHONY: cargo-build
 cargo-build:
-	(cd nautilus_core && cargo build --release --all-features)
+	(cd nautilus_core && cargo -v build --release --all-features)
 
 .PHONY: cargo-update
 cargo-update:
@@ -180,7 +180,7 @@ test-examples:
 
 .PHONY: install-cli
 install-cli:
-	(cd nautilus_core && cargo install --path cli --bin nautilus --force)
+	(cd nautilus_core && cargo -v install --path cli --bin nautilus --force)
 
 .PHONY: install-talib
 install-talib:
