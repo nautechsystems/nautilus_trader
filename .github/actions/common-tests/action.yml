@@ -1,6 +1,12 @@
 name: Common tests
 description: Run tests
 
+inputs:
+  python-version:
+    description: The Python version to setup
+    required: true
+
+# This action runs for linux and macos only
 runs:
   using: "composite"
   steps:
@@ -12,23 +18,12 @@ runs:
         key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
         restore-keys: ${{ runner.os }}-large-files-
 
-    # > --------------------------------------------------
-    # > non-Windows
     - name: Install cargo-nextest
-      if: runner.os != 'Windows'
       uses: taiki-e/install-action@v2
       with:
         tool: nextest
 
-    - name: Get Python version
-      if: runner.os != 'Windows'
-      shell: bash
-      run: |
-        version=$(bash scripts/python-version.sh)
-        echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
-
     - name: Build Python wheel
-      if: runner.os != 'Windows'
       shell: bash
       run: |
         poetry env use python${{ inputs.python-version }}
@@ -36,7 +31,6 @@ runs:
         ls -lh dist/
 
     - name: Install Python wheel
-      if: runner.os != 'Windows'
       shell: bash
       run: |
         python -m pip install --upgrade poetry-plugin-export
