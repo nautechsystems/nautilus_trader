@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run pre-commit # Runs again here to check on Python 3.12
+      - name: Run pre-commit # Runs again here to check pre-commit with Python 3.12
         run: make pre-commit
 
       - name: Install Nautilus CLI and run init postgres
@@ -56,8 +56,10 @@ jobs:
       - name: Run nautilus_core tests
         run: make cargo-test
 
-      - name: Common test setup
-        uses: ./.github/actions/common-tests
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
 
       # Run codspeed once only
       - name: Run benchmarks

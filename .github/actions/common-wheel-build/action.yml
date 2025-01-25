@@ -1,5 +1,5 @@
-name: Common tests
-description: Run tests
+name: common-wheel-build
+description: Common wheel build and install
 
 inputs:
   python-version:
