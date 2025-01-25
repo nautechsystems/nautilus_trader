@@ -1,5 +1,5 @@
-name: Common setup
-description: Setup necessary environments
+name: common-setup
+description: Common environment setup
 
 inputs:
   python-version:

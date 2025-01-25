@@ -105,8 +105,10 @@ jobs:
       - name: Run nautilus_core tests (with standard-precision)
         run: make cargo-test-standard-precision
 
-      - name: Common test setup
-        uses: ./.github/actions/common-tests
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Run tests
         run: |
@@ -174,8 +176,10 @@ jobs:
       - name: Run nautilus_core tests
         run: make cargo-test
 
-      - name: Common test setup
-        uses: ./.github/actions/common-tests
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Run tests
         run: |
@@ -219,8 +223,10 @@ jobs:
       - name: Run nautilus_core tests
         run: make cargo-test
 
-      - name: Common test setup
-        uses: ./.github/actions/common-tests
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Run tests
         run: |
