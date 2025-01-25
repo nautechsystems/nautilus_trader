@@ -23,8 +23,8 @@ runs:
     - name: Build Python wheel
       shell: bash
       run: |
-        poetry env remove --all
-        poetry env use python${{ inputs.python-version }}
+        # poetry env remove --all
+        # poetry env use python${{ inputs.python-version }}
         poetry build --format wheel
         ls -lh dist/
 
