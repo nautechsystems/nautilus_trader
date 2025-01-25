@@ -46,7 +46,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict[InstrumentId, Money] _realized_pnls
     cdef dict[InstrumentId, Decimal] _net_positions
     cdef set[InstrumentId] _pending_calcs
-    cdef dict[InstrumentId, Price] _bar_close_price
+    cdef dict[InstrumentId, Price] _bar_close_prices
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
