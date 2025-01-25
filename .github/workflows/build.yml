@@ -110,6 +110,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Check mold
+        run: |
+          tree nautilus_core/target
+
       - name: Run tests
         run: |
           pytest --ignore=tests/performance_tests
