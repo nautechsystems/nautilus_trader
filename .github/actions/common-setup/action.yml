@@ -107,31 +107,6 @@ runs:
       uses: mozilla-actions/sccache-action@v0.0.7
 
     # > --------------------------------------------------
-    # > Poetry
-    - name: Get Poetry version from poetry-version
-      shell: bash
-      run: |
-        version=$(cat poetry-version)
-        echo "POETRY_VERSION=$version" >> $GITHUB_ENV
-
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-      with:
-        version: ${{ env.POETRY_VERSION }}
-
-    - name: Set poetry cache-dir
-      shell: bash
-      run: |
-        echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-    - name: Cached poetry
-      id: cached-poetry
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.POETRY_CACHE_DIR }}
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
-
-    # > --------------------------------------------------
     # > Python
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -159,6 +134,31 @@ runs:
         python -m pip install --upgrade pip setuptools wheel
         poetry env use python${{ inputs.python-version }}
         poetry install --only dev --no-root
+
+    # > --------------------------------------------------
+    # > Poetry
+    - name: Get Poetry version from poetry-version
+      shell: bash
+      run: |
+        version=$(cat poetry-version)
+        echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+
+    - name: Set poetry cache-dir
+      shell: bash
+      run: |
+        echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+    - name: Cached poetry
+      id: cached-poetry
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.POETRY_CACHE_DIR }}
+        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
     # > --------------------------------------------------
     # > pre-commit
