@@ -216,11 +216,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Common test setup
-        uses: ./.github/actions/common-tests
-
       - name: Run nautilus_core tests
         run: make cargo-test
+
+      - name: Common test setup
+        uses: ./.github/actions/common-tests
 
       - name: Run tests
         run: |
