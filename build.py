@@ -2,6 +2,7 @@
 
 import datetime as dt
 import itertools
+import logging
 import os
 import platform
 import re
@@ -19,6 +20,8 @@ from Cython.Compiler.Version import version as cython_compiler_version
 from setuptools import Distribution
 from setuptools import Extension
 
+
+logging.basicConfig(level=logging.DEBUG)
 
 # Platform constants
 IS_LINUX = platform.system() == "Linux"
