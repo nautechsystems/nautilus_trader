@@ -19,12 +19,9 @@ runs:
       shell: bash
       run: poetry lock --no-update
 
-    # TODO: Temporarily clear all previous venvs
     - name: Build Python wheel
       shell: bash
       run: |
-        poetry env remove --all
-        poetry env use python${{ inputs.python-version }}
         poetry build --format wheel
         ls -lh dist/
 
