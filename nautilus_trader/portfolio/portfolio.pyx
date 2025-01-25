@@ -42,8 +42,8 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -94,6 +94,7 @@ cdef class Portfolio(PortfolioFacade):
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
+        bint portfolio_bar_updates = True,
     ):
         self._clock = clock
         self._log = Logger(name=type(self).__name__)
@@ -110,6 +111,7 @@ cdef class Portfolio(PortfolioFacade):
         self._realized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._pending_calcs: set[InstrumentId] = set()
+        self._bar_close_price: dict[InstrumentId, Price] = {}
 
         self.analyzer = PortfolioAnalyzer()
 
@@ -140,6 +142,8 @@ cdef class Portfolio(PortfolioFacade):
         self._msgbus.subscribe(topic="events.order.*", handler=self.update_order, priority=10)
         self._msgbus.subscribe(topic="events.position.*", handler=self.update_position, priority=10)
         self._msgbus.subscribe(topic="events.account.*", handler=self.update_account, priority=10)
+        if portfolio_bar_updates:
+            self._msgbus.subscribe(topic="data.bars.*EXTERNAL", handler=self.update_bar, priority=10)
 
         self.initialized = False
 
@@ -300,8 +304,16 @@ cdef class Portfolio(PortfolioFacade):
         self.initialized = initialized
 
     cpdef void update_quote_tick(self, QuoteTick tick):
+        self.update_instrument_id(tick.instrument_id)
+
+    cpdef void update_bar(self, Bar bar):
+        cdef InstrumentId instrument_id = bar.bar_type.instrument_id
+        self._bar_close_price[instrument_id] = bar.close
+        self.update_instrument_id(instrument_id)
+
+    cpdef void update_instrument_id(self, InstrumentId instrument_id):
         """
-        Update the portfolio with the given tick.
+        Update the portfolio for the given instrument_id.
 
         Clears the unrealized PnL for the quoting instrument, and
         performs any initialization calculations which may have been pending
@@ -309,39 +321,39 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        tick : QuoteTick
-            The tick to update with.
+        instrument_id : InstrumentId
+            The instrument_id to update the pnls of.
 
         """
-        Condition.not_none(tick, "tick")
+        Condition.not_none(instrument_id, "instrument_id")
 
-        self._unrealized_pnls.pop(tick.instrument_id, None)
+        self._unrealized_pnls.pop(instrument_id, None)
 
         if self.initialized:
             return
 
-        if tick.instrument_id not in self._pending_calcs:
+        if instrument_id not in self._pending_calcs:
             return
 
-        cdef Account account = self._cache.account_for_venue(self._venue or tick.instrument_id.venue)
+        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
         if account is None:
             self._log.error(
                 f"Cannot update tick: "
-                f"no account registered for {tick.instrument_id.venue}"
+                f"no account registered for {instrument_id.venue}"
             )
             return  # No account registered
 
-        cdef Instrument instrument = self._cache.instrument(self._venue or tick.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(self._venue or instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot update tick: "
-                f"no instrument found for {tick.instrument_id}"
+                f"no instrument found for {instrument_id}"
             )
             return  # No instrument found
 
         cdef list orders_open = self._cache.orders_open(
             venue=None,  # Faster query filtering
-            instrument_id=tick.instrument_id,
+            instrument_id=instrument_id,
         )
 
         cdef:
@@ -358,7 +370,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.is_margin_account:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
-                instrument_id=tick.instrument_id,
+                instrument_id=instrument_id,
             )
 
             # Initialize maintenance (position) margin
@@ -370,11 +382,11 @@ cdef class Portfolio(PortfolioFacade):
             )
 
         # Calculate unrealized PnL
-        cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(tick.instrument_id)
+        cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(instrument_id)
 
         # Check portfolio initialization
         if result_init is not None and (account.is_cash_account or (result_maint is not None and result_unrealized_pnl)):
-            self._pending_calcs.discard(tick.instrument_id)
+            self._pending_calcs.discard(instrument_id)
             if not self._pending_calcs:
                 self.initialized = True
 
@@ -1257,14 +1269,14 @@ cdef class Portfolio(PortfolioFacade):
                 f"invalid `PositionSide`, was {position_side_to_str(position.side)}",
             )
 
-        cdef Price price
+        cdef InstrumentId instrument_id = position.instrument_id
         return self._cache.price(
-            instrument_id=position.instrument_id,
+            instrument_id=instrument_id,
             price_type=price_type,
         ) or self._cache.price(
-            instrument_id=position.instrument_id,
+            instrument_id=instrument_id,
             price_type=PriceType.LAST,
-        )
+        ) or self._bar_close_price.get(instrument_id)
 
     cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
         if account.base_currency is not None:

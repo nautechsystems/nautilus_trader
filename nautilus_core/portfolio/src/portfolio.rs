@@ -44,7 +44,7 @@ use nautilus_common::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Data, QuoteTick},
+    data::{Bar, Data, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
     events::{position::PositionEvent, AccountState, OrderEventAny},
     identifiers::{InstrumentId, Venue},
@@ -74,6 +74,26 @@ impl MessageHandler for UpdateQuoteTickHandler {
 
     fn handle(&self, msg: &dyn Any) {
         (self.callback)(msg.downcast_ref::<&QuoteTick>().unwrap());
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct UpdateBarHandler {
+    id: Ustr,
+    callback: Box<dyn Fn(&Bar)>,
+}
+
+impl MessageHandler for UpdateBarHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &dyn Any) {
+        (self.callback)(msg.downcast_ref::<&Bar>().unwrap());
     }
     fn handle_response(&self, _resp: DataResponse) {}
     fn handle_data(&self, _data: Data) {}
@@ -149,6 +169,7 @@ struct PortfolioState {
     realized_pnls: HashMap<InstrumentId, Money>,
     net_positions: HashMap<InstrumentId, Decimal>,
     pending_calcs: HashSet<InstrumentId>,
+    bar_close_price: HashMap<InstrumentId, Price>,
     initialized: bool,
 }
 
@@ -179,6 +200,7 @@ impl PortfolioState {
             realized_pnls: HashMap::new(),
             net_positions: HashMap::new(),
             pending_calcs: HashSet::new(),
+            bar_close_price: HashMap::new(),
             initialized: false,
         }
     }
@@ -206,6 +228,7 @@ impl Portfolio {
         msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
+        portfolio_bar_updates: bool,
     ) -> Self {
         let inner = Rc::new(RefCell::new(PortfolioState::new(
             clock.clone(),
@@ -217,6 +240,7 @@ impl Portfolio {
             cache.clone(),
             clock.clone(),
             inner.clone(),
+            portfolio_bar_updates,
         );
 
         Self {
@@ -232,6 +256,7 @@ impl Portfolio {
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         inner: Rc<RefCell<PortfolioState>>,
+        portfolio_bar_updates: bool,
     ) {
         let update_account_handler = {
             let cache = cache.clone();
@@ -281,6 +306,25 @@ impl Portfolio {
             }))
         };
 
+        let update_bar_handler = {
+            let cache = cache.clone();
+            let msgbus = msgbus.clone();
+            let clock = clock.clone();
+            let inner = inner.clone();
+            ShareableMessageHandler(Rc::new(UpdateBarHandler {
+                id: Ustr::from(&Uuid::new_v4().to_string()),
+                callback: Box::new(move |bar: &Bar| {
+                    update_bar(
+                        cache.clone(),
+                        msgbus.clone(),
+                        clock.clone(),
+                        inner.clone(),
+                        bar,
+                    );
+                }),
+            }))
+        };
+
         let update_order_handler = {
             let cache = cache;
             let msgbus = msgbus.clone();
@@ -304,6 +348,9 @@ impl Portfolio {
         borrowed_msgbus.register("Portfolio.update_account", update_account_handler.clone());
 
         borrowed_msgbus.subscribe("data.quotes.*", update_quote_handler, Some(10));
+        if portfolio_bar_updates {
+            borrowed_msgbus.subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
+        }
         borrowed_msgbus.subscribe("events.order.*", update_order_handler, Some(10));
         borrowed_msgbus.subscribe("events.position.*", update_position_handler, Some(10));
         borrowed_msgbus.subscribe("events.account.*", update_account_handler, Some(10));
@@ -877,6 +924,16 @@ impl Portfolio {
         );
     }
 
+    pub fn update_bar(&mut self, bar: &Bar) {
+        update_bar(
+            self.cache.clone(),
+            self.msgbus.clone(),
+            self.clock.clone(),
+            self.inner.clone(),
+            bar,
+        );
+    }
+
     pub fn update_account(&mut self, event: &AccountState) {
         update_account(self.cache.clone(), event);
     }
@@ -1091,9 +1148,17 @@ impl Portfolio {
 
         let borrowed_cache = self.cache.borrow();
 
+        let instrument_id = &position.instrument_id;
         borrowed_cache
-            .price(&position.instrument_id, price_type)
-            .or_else(|| borrowed_cache.price(&position.instrument_id, PriceType::Last))
+            .price(instrument_id, price_type)
+            .or_else(|| borrowed_cache.price(instrument_id, PriceType::Last))
+            .or_else(|| {
+                self.inner
+                    .borrow()
+                    .bar_close_price
+                    .get(instrument_id)
+                    .cloned()
+            })
     }
 
     fn calculate_xrate_to_base(
@@ -1142,12 +1207,46 @@ fn update_quote_tick(
     inner: Rc<RefCell<PortfolioState>>,
     quote: &QuoteTick,
 ) {
+    update_instrument_id(
+        cache.clone(),
+        msgbus.clone(),
+        clock.clone(),
+        inner.clone(),
+        &quote.instrument_id,
+    );
+}
+
+fn update_bar(
+    cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<dyn Clock>>,
+    inner: Rc<RefCell<PortfolioState>>,
+    bar: &Bar,
+) {
+    let instrument_id = bar.bar_type.instrument_id();
     inner
         .borrow_mut()
-        .unrealized_pnls
-        .remove(&quote.instrument_id);
+        .bar_close_price
+        .insert(instrument_id, bar.close);
+    update_instrument_id(
+        cache.clone(),
+        msgbus.clone(),
+        clock.clone(),
+        inner.clone(),
+        &instrument_id,
+    );
+}
 
-    if inner.borrow().initialized || !inner.borrow().pending_calcs.contains(&quote.instrument_id) {
+fn update_instrument_id(
+    cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<dyn Clock>>,
+    inner: Rc<RefCell<PortfolioState>>,
+    instrument_id: &InstrumentId,
+) {
+    inner.borrow_mut().unrealized_pnls.remove(instrument_id);
+
+    if inner.borrow().initialized || !inner.borrow().pending_calcs.contains(instrument_id) {
         return;
     }
 
@@ -1156,37 +1255,37 @@ fn update_quote_tick(
 
     let account = {
         let borrowed_cache = cache.borrow();
-        let account =
-            if let Some(account) = borrowed_cache.account_for_venue(&quote.instrument_id.venue) {
-                account
-            } else {
-                log::error!(
-                    "Cannot update tick: no account registered for {}",
-                    quote.instrument_id.venue
-                );
-                return;
-            };
+        let account = if let Some(account) = borrowed_cache.account_for_venue(&instrument_id.venue)
+        {
+            account
+        } else {
+            log::error!(
+                "Cannot update tick: no account registered for {}",
+                instrument_id.venue
+            );
+            return;
+        };
 
         let mut borrowed_cache = cache.borrow_mut();
-        let instrument = if let Some(instrument) = borrowed_cache.instrument(&quote.instrument_id) {
+        let instrument = if let Some(instrument) = borrowed_cache.instrument(instrument_id) {
             instrument.clone()
         } else {
             log::error!(
                 "Cannot update tick: no instrument found for {}",
-                quote.instrument_id
+                instrument_id
             );
             return;
         };
 
         // Clone the orders and positions to own the data
         let orders_open: Vec<OrderAny> = borrowed_cache
-            .orders_open(None, Some(&quote.instrument_id), None, None)
+            .orders_open(None, Some(instrument_id), None, None)
             .iter()
             .map(|o| (*o).clone())
             .collect();
 
         let positions_open: Vec<Position> = borrowed_cache
-            .positions_open(None, Some(&quote.instrument_id), None, None)
+            .positions_open(None, Some(instrument_id), None, None)
             .iter()
             .map(|p| (*p).clone())
             .collect();
@@ -1221,16 +1320,13 @@ fn update_quote_tick(
     };
 
     let result_unrealized_pnl: Option<Money> =
-        portfolio_clone.calculate_unrealized_pnl(&quote.instrument_id);
+        portfolio_clone.calculate_unrealized_pnl(instrument_id);
 
     if result_init.is_some()
         && (matches!(account, AccountAny::Cash(_))
             || (result_maint.is_some() && result_unrealized_pnl.is_some()))
     {
-        inner
-            .borrow_mut()
-            .pending_calcs
-            .remove(&quote.instrument_id);
+        inner.borrow_mut().pending_calcs.remove(instrument_id);
         if inner.borrow().pending_calcs.is_empty() {
             inner.borrow_mut().initialized = true;
         }
@@ -1491,7 +1587,7 @@ mod tests {
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
     use nautilus_core::{UnixNanos, UUID4};
     use nautilus_model::{
-        data::QuoteTick,
+        data::{Bar, BarType, QuoteTick},
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{
             account::stubs::cash_account_state,
@@ -1578,6 +1674,7 @@ mod tests {
             Rc::new(RefCell::new(msgbus)),
             Rc::new(RefCell::new(simple_cache)),
             Rc::new(RefCell::new(clock)),
+            true,
         )
     }
 
@@ -1680,6 +1777,27 @@ mod tests {
             Price::new(ask, 0),
             Quantity::new(bid_size, 0),
             Quantity::new(ask_size, 0),
+            0.into(),
+            0.into(),
+        )
+    }
+
+    fn get_bar(
+        instrument: &InstrumentAny,
+        open: f64,
+        high: f64,
+        low: f64,
+        close: f64,
+        volume: f64,
+    ) -> Bar {
+        let bar_type_str = format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id().to_string());
+        Bar::new(
+            BarType::from(bar_type_str.as_ref()),
+            Price::new(open, 0),
+            Price::new(high, 0),
+            Price::new(low, 0),
+            Price::new(close, 0),
+            Quantity::new(volume, 0),
             0.into(),
             0.into(),
         )
@@ -2266,8 +2384,8 @@ mod tests {
             .add_position(position2, OmsType::Hedging)
             .unwrap();
         portfolio.cache.borrow_mut().add_quote(last).unwrap();
-        portfolio.initialize_positions();
         portfolio.update_quote_tick(&last);
+        portfolio.initialize_positions();
 
         // Assert
         assert!(portfolio.is_net_long(&instrument_audusd.id()));
@@ -2295,6 +2413,97 @@ mod tests {
         let last = get_quote_tick(&instrument_audusd, 10510.0, 10511.0, 1.0, 1.0);
         portfolio.cache.borrow_mut().add_quote(last).unwrap();
         portfolio.update_quote_tick(&last);
+
+        let position = Position::new(&instrument_audusd, fill);
+
+        // Act
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_position(position.clone(), OmsType::Hedging)
+            .unwrap();
+
+        let position_opened = get_open_position(&position);
+        portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
+
+        // Assert
+        assert_eq!(
+            portfolio
+                .net_exposures(&Venue::from("SIM"))
+                .unwrap()
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            10510.0
+        );
+        assert_eq!(
+            portfolio
+                .unrealized_pnls(&Venue::from("SIM"))
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            -6445.89
+        );
+        assert_eq!(
+            portfolio
+                .realized_pnls(&Venue::from("SIM"))
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            0.0
+        );
+        assert_eq!(
+            portfolio
+                .net_exposure(&instrument_audusd.id())
+                .unwrap()
+                .as_f64(),
+            10510.0
+        );
+        assert_eq!(
+            portfolio
+                .unrealized_pnl(&instrument_audusd.id())
+                .unwrap()
+                .as_f64(),
+            -6445.89
+        );
+        assert_eq!(
+            portfolio
+                .realized_pnl(&instrument_audusd.id())
+                .unwrap()
+                .as_f64(),
+            0.0
+        );
+        assert_eq!(
+            portfolio.net_position(&instrument_audusd.id()),
+            Decimal::new(561, 3)
+        );
+        assert!(portfolio.is_net_long(&instrument_audusd.id()));
+        assert!(!portfolio.is_net_short(&instrument_audusd.id()));
+        assert!(!portfolio.is_flat(&instrument_audusd.id()));
+        assert!(!portfolio.is_completely_flat());
+    }
+
+    #[rstest]
+    fn test_opening_one_long_position_updates_portfolio_with_bar(
+        mut portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let account_state = get_margin_account(None);
+        portfolio.update_account(&account_state);
+
+        // Create Order
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.00"))
+            .build();
+
+        let mut fill = fill_order(&order);
+        fill.position_id = Some(PositionId::new("SSD"));
+
+        // Update the last quote
+        let last = get_bar(&instrument_audusd, 10510.0, 10510.0, 10510.0, 10510.0, 0.0);
+        portfolio.update_bar(&last);
 
         let position = Position::new(&instrument_audusd, fill);
 

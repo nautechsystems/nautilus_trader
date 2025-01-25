@@ -20,6 +20,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -45,6 +46,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict[InstrumentId, Money] _realized_pnls
     cdef dict[InstrumentId, Decimal] _net_positions
     cdef set[InstrumentId] _pending_calcs
+    cdef dict[InstrumentId, Price] _bar_close_price
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -52,6 +54,8 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)
+    cpdef void update_bar(self, Bar bar)
+    cpdef void update_instrument_id(self, InstrumentId instrument_id)
     cpdef void update_account(self, AccountState event)
     cpdef void update_order(self, OrderEvent event)
     cpdef void update_position(self, PositionEvent event)

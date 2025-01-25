@@ -1320,7 +1320,7 @@ mod tests {
             max_notional_per_order: HashMap::new(),
         });
         let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
-        let portfolio = Portfolio::new(msgbus.clone(), cache.clone(), clock.clone());
+        let portfolio = Portfolio::new(msgbus.clone(), cache.clone(), clock.clone(), true);
         RiskEngine::new(config, portfolio, clock, cache, msgbus)
     }
 
