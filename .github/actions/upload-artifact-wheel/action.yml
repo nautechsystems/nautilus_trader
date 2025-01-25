@@ -4,15 +4,6 @@ description: Upload wheel artifact to GitHub Actions
 runs:
   using: "composite"
   steps:
-    - name: Update version in pyproject.toml
-      shell: bash
-      run: |
-        bash ./scripts/ci/build-update-pyproject-version.sh
-
-    - name: Generate updated lock file
-      shell: bash
-      run: poetry lock --no-update
-
     - name: Set release output
       shell: bash
       if: github.event_name == 'push'
