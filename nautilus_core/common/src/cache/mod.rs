@@ -1518,6 +1518,9 @@ impl Cache {
             // }
         }
 
+        // update the order in the cache
+        self.orders.insert(client_order_id, order.clone());
+
         Ok(())
     }
 

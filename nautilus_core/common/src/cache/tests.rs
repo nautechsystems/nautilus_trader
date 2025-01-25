@@ -143,6 +143,10 @@ mod tests {
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         cache.update_order(&order).unwrap();
 
+        // check the status change of the cached order
+        let cached_order = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Submitted);
+
         let result = cache.order(&order.client_order_id()).unwrap();
 
         assert_eq!(order.status(), OrderStatus::Submitted);
@@ -182,6 +186,10 @@ mod tests {
         let rejected = OrderRejected::default();
         order.apply(OrderEventAny::Rejected(rejected)).unwrap();
         cache.update_order(&order).unwrap();
+
+        // check the status change of the cached order
+        let cached_order = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Rejected);
 
         let result = cache.order(&order.client_order_id()).unwrap();
 
