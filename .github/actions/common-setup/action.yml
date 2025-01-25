@@ -154,12 +154,6 @@ runs:
         python -m pip install --upgrade pip setuptools wheel
         poetry install --only dev --no-root
 
-    - name: Install tomllib (if Python < 3.11)
-      shell: bash
-      run: |
-        python -c "import sys; sys.exit(0) if sys.version_info >= (3, 11) else sys.exit(1)" || \
-          python -m pip install tomllib
-
     # > --------------------------------------------------
     # > pre-commit
     - name: Cached pre-commit

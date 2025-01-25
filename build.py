@@ -4,11 +4,11 @@ import datetime as dt
 import itertools
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import sysconfig
-import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -291,6 +291,19 @@ def _copy_rust_dylibs_to_project() -> None:
     print(f"Copied {src} to {dst}")
 
 
+def _get_nautilus_version() -> str:
+    with open("pyproject.toml", encoding="utf-8") as f:
+        pyproject_content = f.read().strip()
+    if not pyproject_content:
+        raise ValueError("pyproject.toml is empty or not properly formatted")
+
+    version_match = re.search(r'version\s*=\s*"(.*?)"', pyproject_content)
+    if not version_match:
+        raise ValueError("Version not found in pyproject.toml")
+
+    return version_match.group(1)
+
+
 def _get_clang_version() -> str:
     try:
         result = subprocess.run(
@@ -381,12 +394,9 @@ def build() -> None:
 
 
 if __name__ == "__main__":
-    with open("pyproject.toml", "rb") as f:
-        pyproject_data = tomllib.load(f)
-    nautilus_trader_version = pyproject_data["tool"]["poetry"]["version"]
     print("\033[36m")
     print("=====================================================================")
-    print(f"Nautilus Builder {nautilus_trader_version}")
+    print(f"Nautilus Builder {_get_nautilus_version()}")
     print("=====================================================================\033[0m")
     print(f"System: {platform.system()} {platform.machine()}")
     print(f"Clang:  {_get_clang_version()}")
