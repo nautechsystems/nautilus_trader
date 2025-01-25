@@ -733,8 +733,24 @@ impl OrderMatchingEngine {
         }
     }
 
-    pub fn process_cancel_all(&self, command: &CancelAllOrders, account_id: AccountId) {
-        todo!("implement process_cancel_all")
+    pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
+        let open_orders = self
+            .cache
+            .borrow()
+            .orders_open(None, Some(&command.instrument_id), None, None)
+            .into_iter()
+            .cloned()
+            .collect::<Vec<OrderAny>>();
+        for order in open_orders {
+            if command.order_side != OrderSide::NoOrderSide
+                && command.order_side != order.order_side()
+            {
+                continue;
+            }
+            if order.is_inflight() || order.is_open() {
+                self.cancel_order(&order, None);
+            }
+        }
     }
 
     pub fn process_batch_cancel(&self, command: &BatchCancelOrders, account_id: AccountId) {
