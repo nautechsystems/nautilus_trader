@@ -340,6 +340,9 @@ class NautilusKernel:
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
+            portfolio_bar_updates=(
+                (config.exec_engine and config.exec_engine.portfolio_bar_updates) or True
+            ),
         )
 
         ########################################################################
