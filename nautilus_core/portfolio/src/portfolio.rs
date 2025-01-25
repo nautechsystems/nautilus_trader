@@ -169,7 +169,7 @@ struct PortfolioState {
     realized_pnls: HashMap<InstrumentId, Money>,
     net_positions: HashMap<InstrumentId, Decimal>,
     pending_calcs: HashSet<InstrumentId>,
-    bar_close_price: HashMap<InstrumentId, Price>,
+    bar_close_prices: HashMap<InstrumentId, Price>,
     initialized: bool,
 }
 
@@ -200,7 +200,7 @@ impl PortfolioState {
             realized_pnls: HashMap::new(),
             net_positions: HashMap::new(),
             pending_calcs: HashSet::new(),
-            bar_close_price: HashMap::new(),
+            bar_close_prices: HashMap::new(),
             initialized: false,
         }
     }
@@ -1155,7 +1155,7 @@ impl Portfolio {
             .or_else(|| {
                 self.inner
                     .borrow()
-                    .bar_close_price
+                    .bar_close_prices
                     .get(instrument_id)
                     .cloned()
             })
@@ -1226,7 +1226,7 @@ fn update_bar(
     let instrument_id = bar.bar_type.instrument_id();
     inner
         .borrow_mut()
-        .bar_close_price
+        .bar_close_prices
         .insert(instrument_id, bar.close);
     update_instrument_id(
         cache.clone(),

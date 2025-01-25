@@ -111,7 +111,7 @@ cdef class Portfolio(PortfolioFacade):
         self._realized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._pending_calcs: set[InstrumentId] = set()
-        self._bar_close_price: dict[InstrumentId, Price] = {}
+        self._bar_close_prices: dict[InstrumentId, Price] = {}
 
         self.analyzer = PortfolioAnalyzer()
 
@@ -308,7 +308,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef void update_bar(self, Bar bar):
         cdef InstrumentId instrument_id = bar.bar_type.instrument_id
-        self._bar_close_price[instrument_id] = bar.close
+        self._bar_close_prices[instrument_id] = bar.close
         self.update_instrument_id(instrument_id)
 
     cpdef void update_instrument_id(self, InstrumentId instrument_id):
@@ -1276,7 +1276,7 @@ cdef class Portfolio(PortfolioFacade):
         ) or self._cache.price(
             instrument_id=instrument_id,
             price_type=PriceType.LAST,
-        ) or self._bar_close_price.get(instrument_id)
+        ) or self._bar_close_prices.get(instrument_id)
 
     cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
         if account.base_currency is not None:
