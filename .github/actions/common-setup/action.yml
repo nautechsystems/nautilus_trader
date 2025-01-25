@@ -47,6 +47,11 @@ runs:
       run: |
         rustup toolchain add --profile minimal stable --component clippy,rustfmt
 
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: nextest
+
     - name: Cached cargo
       id: cached-cargo
       uses: actions/cache@v4

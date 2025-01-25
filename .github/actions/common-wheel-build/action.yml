@@ -10,22 +10,22 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Cached test data
-      id: cached-testdata-large
-      uses: actions/cache@v4
-      with:
-        path: tests/test_data/large
-        key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-        restore-keys: ${{ runner.os }}-large-files-
 
-    - name: Install cargo-nextest
-      uses: taiki-e/install-action@v2
-      with:
-        tool: nextest
 
+    - name: Update version in pyproject.toml
+      shell: bash
+      run: |
+        bash ./scripts/ci/update-pyproject-version.sh
+
+    - name: Generate updated lock file
+      shell: bash
+      run: poetry lock --no-update
+
+    # TODO: Temporarily clear all previous venvs
     - name: Build Python wheel
       shell: bash
       run: |
+        poetry env remove --all
         poetry env use python${{ inputs.python-version }}
         poetry build --format wheel
         ls -lh dist/
@@ -37,3 +37,12 @@ runs:
         poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
         python -m pip install -r requirements-test.txt
         pip install "$(ls dist/*.whl)"
+
+    # TODO: Temporarily locate this here for now
+    - name: Cached test data
+      id: cached-testdata-large
+      uses: actions/cache@v4
+      with:
+        path: tests/test_data/large
+        key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        restore-keys: ${{ runner.os }}-large-files-
