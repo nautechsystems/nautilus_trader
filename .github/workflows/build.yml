@@ -112,12 +112,12 @@ jobs:
 
       - name: Check mold
         run: |
-          readelf -p .comment nautilus_core/target/debug/libnautilus_pyo3.d
+          # readelf -p .comment nautilus_core/target/debug/libnautilus_pyo3.d
           readelf -p .comment nautilus_core/target/debug/libnautilus_pyo3.dylib
           readelf -p .comment nautilus_core/target/debug/libnautilus_network.a
-          readelf -p .comment nautilus_core/target/debug/libnautilus_network.d
+          # readelf -p .comment nautilus_core/target/debug/libnautilus_network.d
           readelf -p .comment nautilus_core/target/debug/libnautilus_network.dylib
-          readelf -p .comment nautilus_core/target/debug/libnautilus_network.rlib
+          # readelf -p .comment nautilus_core/target/debug/libnautilus_network.rlib
 
       - name: Run tests
         run: |
