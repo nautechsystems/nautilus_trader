@@ -115,14 +115,14 @@ impl ParquetDataCatalog {
             info!("Writing metadata to {:?}", metadata_path);
             let metadata_file = std::fs::File::create(&metadata_path)
                 .unwrap_or_else(|_| panic!("Failed to create metadata file at {metadata_path:?}"));
-            serde_json::to_writer(metadata_file, &metadata)
+            serde_json::to_writer_pretty(metadata_file, &metadata)
                 .unwrap_or_else(|_| panic!("Failed to write metadata to JSON"));
         }
 
         let file = std::fs::File::create(&json_path)
             .unwrap_or_else(|_| panic!("Failed to create JSON file at {json_path:?}"));
 
-        serde_json::to_writer(file, &serde_json::to_value(data).unwrap())
+        serde_json::to_writer_pretty(file, &serde_json::to_value(data).unwrap())
             .unwrap_or_else(|_| panic!("Failed to write {type_name} to JSON"));
 
         json_path
