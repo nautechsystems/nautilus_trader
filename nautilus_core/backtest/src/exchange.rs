@@ -504,22 +504,22 @@ impl SimulatedExchange {
             };
             match command {
                 TradingCommand::SubmitOrder(mut command) => {
-                    matching_engine.process_order(&mut command.order, account_id)
+                    matching_engine.process_order(&mut command.order, account_id);
                 }
                 TradingCommand::ModifyOrder(ref command) => {
-                    matching_engine.process_modify(command, account_id)
+                    matching_engine.process_modify(command, account_id);
                 }
                 TradingCommand::CancelOrder(ref command) => {
-                    matching_engine.process_cancel(command, account_id)
+                    matching_engine.process_cancel(command, account_id);
                 }
                 TradingCommand::CancelAllOrders(ref command) => {
-                    matching_engine.process_cancel_all(command, account_id)
+                    matching_engine.process_cancel_all(command, account_id);
                 }
                 TradingCommand::BatchCancelOrders(ref command) => {
-                    matching_engine.process_batch_cancel(command, account_id)
+                    matching_engine.process_batch_cancel(command, account_id);
                 }
                 TradingCommand::QueryOrder(ref command) => {
-                    matching_engine.process_query_order(command, account_id)
+                    matching_engine.process_query_order(command, account_id);
                 }
                 TradingCommand::SubmitOrderList(mut command) => {
                     for order in &mut command.order_list.orders {

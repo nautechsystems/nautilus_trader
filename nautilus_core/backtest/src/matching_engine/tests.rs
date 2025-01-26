@@ -1629,7 +1629,7 @@ fn test_process_cancel_all_command(
         _ => panic!("Expected OrderCanceled event in fifth message"),
     };
     // because of nondeterministic order of events we need to check both client order ids
-    let ids = vec![
+    let ids = [
         order_canceled_1.client_order_id,
         order_canceled_2.client_order_id,
     ];
@@ -1655,7 +1655,7 @@ fn test_process_batch_cancel_command(
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
         Rc::new(RefCell::new(msgbus)),
-        Some(cache.clone()),
+        Some(cache),
         None,
         None,
     );

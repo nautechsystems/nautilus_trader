@@ -1157,7 +1157,7 @@ impl Portfolio {
                     .borrow()
                     .bar_close_prices
                     .get(instrument_id)
-                    .cloned()
+                    .copied()
             })
     }
 
@@ -1207,13 +1207,7 @@ fn update_quote_tick(
     inner: Rc<RefCell<PortfolioState>>,
     quote: &QuoteTick,
 ) {
-    update_instrument_id(
-        cache.clone(),
-        msgbus.clone(),
-        clock.clone(),
-        inner.clone(),
-        &quote.instrument_id,
-    );
+    update_instrument_id(cache, msgbus, clock.clone(), inner, &quote.instrument_id);
 }
 
 fn update_bar(
@@ -1228,13 +1222,7 @@ fn update_bar(
         .borrow_mut()
         .bar_close_prices
         .insert(instrument_id, bar.close);
-    update_instrument_id(
-        cache.clone(),
-        msgbus.clone(),
-        clock.clone(),
-        inner.clone(),
-        &instrument_id,
-    );
+    update_instrument_id(cache, msgbus, clock.clone(), inner, &instrument_id);
 }
 
 fn update_instrument_id(
@@ -1790,7 +1778,7 @@ mod tests {
         close: f64,
         volume: f64,
     ) -> Bar {
-        let bar_type_str = format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id().to_string());
+        let bar_type_str = format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id());
         Bar::new(
             BarType::from(bar_type_str.as_ref()),
             Price::new(open, 0),
