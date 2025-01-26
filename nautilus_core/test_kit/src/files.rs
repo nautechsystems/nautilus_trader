@@ -147,7 +147,7 @@ fn update_sha256_checksums(
         .truncate(true)
         .open(checksums_file)?;
     let writer = BufWriter::new(file);
-    serde_json::to_writer(writer, &serde_json::Value::Object(checksums_map))?;
+    serde_json::to_writer_pretty(writer, &serde_json::Value::Object(checksums_map))?;
 
     Ok(())
 }
