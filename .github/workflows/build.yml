@@ -112,7 +112,7 @@ jobs:
 
       - name: Verify mold
         run: |
-          find "$directory" -type f | while read -r file; do
+          find nautilus_core/target -type f | while read -r file; do
             echo "Processing: $file"
             readelf -p .comment "$file" || true
           done
