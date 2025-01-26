@@ -43,7 +43,7 @@ use futures_util::{
 use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
-use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
+use tokio::{net::TcpStream, sync::Mutex};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{client::IntoClientRequest, http::HeaderValue, Error, Message},
@@ -81,6 +81,7 @@ pub struct WebSocketConfig {
     pub heartbeat: Option<u64>,
     pub heartbeat_msg: Option<String>,
     pub ping_handler: Option<Arc<PyObject>>,
+    pub reconnect_timeout_secs: Option<u64>,
     pub max_reconnection_tries: Option<u64>,
 }
 
@@ -101,11 +102,12 @@ pub struct WebSocketConfig {
 /// frequently - than the required amount.
 struct WebSocketClientInner {
     config: WebSocketConfig,
-    read_task: Option<task::JoinHandle<()>>,
-    heartbeat_task: Option<task::JoinHandle<()>>,
+    read_task: Option<tokio::task::JoinHandle<()>>,
+    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedMessageWriter,
     reconnection_lock: Arc<Mutex<()>>,
     connection_state: Arc<AtomicU8>,
+    reconnect_timeout_secs: u64,
 }
 
 impl WebSocketClientInner {
@@ -121,6 +123,7 @@ impl WebSocketClientInner {
             headers,
             heartbeat_msg,
             ping_handler,
+            reconnect_timeout_secs,
             max_reconnection_tries,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
@@ -128,18 +131,22 @@ impl WebSocketClientInner {
 
         let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
         let reconnection_lock = Arc::new(Mutex::new(()));
+        let reconnect_timeout_secs = reconnect_timeout_secs.unwrap_or(30);
 
         // Only spawn read task if handler is provided
         let read_task = handler
             .as_ref()
             .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
 
-        let heartbeat_task = Self::spawn_heartbeat_task(
-            connection_state.clone(),
-            *heartbeat,
-            heartbeat_msg.clone(),
-            writer.clone(),
-        );
+        // Optionally spawn a heartbeat task to periodically ping server
+        let heartbeat_task = heartbeat.as_ref().map(|heartbeat_secs| {
+            Self::spawn_heartbeat_task(
+                connection_state.clone(),
+                *heartbeat_secs,
+                heartbeat_msg.clone(),
+                writer.clone(),
+            )
+        });
 
         Ok(Self {
             config,
@@ -148,6 +155,7 @@ impl WebSocketClientInner {
             writer,
             reconnection_lock,
             connection_state,
+            reconnect_timeout_secs,
         })
     }
 
@@ -171,49 +179,99 @@ impl WebSocketClientInner {
         connect_async(request).await.map(|resp| resp.0.split())
     }
 
-    /// Optionally spawn a hearbeat task to periodically ping the server.
-    pub fn spawn_heartbeat_task(
-        connection_state: Arc<AtomicU8>,
-        heartbeat: Option<u64>,
-        message: Option<String>,
-        writer: SharedMessageWriter,
-    ) -> Option<task::JoinHandle<()>> {
-        tracing::debug!("Started task 'heartbeat'");
+    /// Reconnect with server.
+    ///
+    /// Make a new connection with server. Use the new read and write halves
+    /// to update self writer and read and heartbeat tasks.
+    pub async fn reconnect(&mut self) -> Result<(), Error> {
+        tracing::debug!("Reconnecting client");
 
-        heartbeat.map(|duration| {
-            task::spawn(async move {
-                let duration = Duration::from_secs(duration);
-                while connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
-                    sleep(duration).await;
-                    if connection_state.load(Ordering::SeqCst) != CONNECTION_ACTIVE {
-                        break;
-                    }
-                    let mut guard = writer.lock().await;
-                    // Only send if still active
-                    if connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
-                        let guard_send_response = match message.clone() {
-                            Some(msg) => guard.send(Message::Text(msg.into())).await,
-                            None => guard.send(Message::Ping(vec![].into())).await,
-                        };
+        let timeout = Duration::from_secs(self.reconnect_timeout_secs);
+        tokio::time::timeout(timeout, async {
+            let state_guard = {
+                let guard = self.reconnection_lock.lock().await;
+                self.connection_state
+                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
+                guard
+            };
 
-                        match guard_send_response {
-                            Ok(()) => tracing::trace!("Sent ping"),
-                            Err(e) => tracing::error!("Error sending ping: {e}"),
-                        }
-                    }
-                }
-            })
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            shutdown(
+                self.read_task.take(),
+                self.heartbeat_task.take(),
+                self.writer.clone(),
+            )
+            .await;
+
+            let (new_writer, reader) =
+                Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
+
+            {
+                let mut guard = self.writer.lock().await;
+                *guard = new_writer;
+                drop(guard);
+            }
+
+            // Spawn new read task
+            if let Some(ref handler) = self.config.handler {
+                self.read_task = Some(Self::spawn_read_task(
+                    reader,
+                    handler.clone(),
+                    self.config.ping_handler.clone(),
+                ));
+            }
+
+            // Optionally spawn new heartbeat task
+            self.heartbeat_task = self.config.heartbeat.as_ref().map(|heartbeat_secs| {
+                Self::spawn_heartbeat_task(
+                    self.connection_state.clone(),
+                    *heartbeat_secs,
+                    self.config.heartbeat_msg.clone(),
+                    self.writer.clone(),
+                )
+            });
+
+            self.connection_state
+                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
+            drop(state_guard);
+
+            tracing::debug!("Reconnect succeeded");
+            Ok(())
         })
+        .await
+        .map_err(|_| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("reconnection timed out after {}s", timeout.as_secs()),
+            ))
+        })?
+    }
+
+    /// Check if the client is still connected.
+    ///
+    /// The client is connected if the read task has not finished. It is expected
+    /// that in case of any failure client or server side. The read task will be
+    /// shutdown or will receive a `Close` frame which will finish it. There
+    /// might be some delay between the connection being closed and the client
+    /// detecting.
+    #[inline]
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
+        match &self.read_task {
+            Some(read_task) => !read_task.is_finished(),
+            None => true, // Stream is being used directly
+        }
     }
 
     fn spawn_read_task(
         mut reader: MessageReader,
         handler: Arc<PyObject>,
         ping_handler: Option<Arc<PyObject>>,
-    ) -> task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
 
-        task::spawn(async move {
+        tokio::task::spawn(async move {
             loop {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
@@ -252,7 +310,7 @@ impl WebSocketClientInner {
                         tracing::trace!("Received pong");
                     }
                     Some(Ok(Message::Close(_))) => {
-                        tracing::error!("Received close message - terminating");
+                        tracing::warn!("Received close message - terminating");
                         break;
                     }
                     Some(Ok(_)) => (),
@@ -263,7 +321,7 @@ impl WebSocketClientInner {
                     // Internally tungstenite considers the connection closed when polling
                     // for the next message in the stream returns None.
                     None => {
-                        tracing::error!("No message received - terminating");
+                        tracing::debug!("No message received - terminating");
                         break;
                     }
                 }
@@ -271,88 +329,38 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Reconnect with server.
-    ///
-    /// Make a new connection with server. Use the new read and write halves
-    /// to update self writer and read and heartbeat tasks.
-    pub async fn reconnect(&mut self) -> Result<(), Error> {
-        tracing::debug!("Reconnecting client");
+    fn spawn_heartbeat_task(
+        connection_state: Arc<AtomicU8>,
+        heartbeat_secs: u64,
+        message: Option<String>,
+        writer: SharedMessageWriter,
+    ) -> tokio::task::JoinHandle<()> {
+        tracing::debug!("Started task 'heartbeat'");
 
-        // TODO: Expose reconnect timeout as config option
-        let timeout = Duration::from_secs(30);
-        tokio::time::timeout(timeout, async {
-            let state_guard = {
-                let guard = self.reconnection_lock.lock().await;
-                self.connection_state
-                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
-                guard
-            };
+        tokio::task::spawn(async move {
+            let interval = Duration::from_secs(heartbeat_secs);
+            loop {
+                tokio::time::sleep(interval).await;
 
-            sleep(Duration::from_millis(100)).await;
+                match connection_state.load(Ordering::SeqCst) {
+                    CONNECTION_ACTIVE => {
+                        tracing::debug!("Sending heartbeat");
+                        let mut guard = writer.lock().await;
+                        let guard_send_response = match message.clone() {
+                            Some(msg) => guard.send(Message::Text(msg.into())).await,
+                            None => guard.send(Message::Ping(vec![].into())).await,
+                        };
 
-            shutdown(
-                self.read_task.take(),
-                self.heartbeat_task.take(),
-                self.writer.clone(),
-            )
-            .await;
-
-            let (new_writer, reader) =
-                Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
-
-            {
-                let mut guard = self.writer.lock().await;
-                *guard = new_writer;
-                drop(guard);
+                        match guard_send_response {
+                            Ok(()) => tracing::trace!("Sent ping"),
+                            Err(e) => tracing::error!("Error sending ping: {e}"),
+                        }
+                    }
+                    CONNECTION_CLOSED => break,
+                    _ => continue, // Reconnecting
+                }
             }
-
-            // Spawn new read task
-            if let Some(ref handler) = self.config.handler {
-                self.read_task = Some(Self::spawn_read_task(
-                    reader,
-                    handler.clone(),
-                    self.config.ping_handler.clone(),
-                ));
-            }
-
-            // Spawn new heartbeat task
-            self.heartbeat_task = Self::spawn_heartbeat_task(
-                self.connection_state.clone(),
-                self.config.heartbeat,
-                self.config.heartbeat_msg.clone(),
-                self.writer.clone(),
-            );
-
-            self.connection_state
-                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
-            drop(state_guard);
-
-            tracing::debug!("Reconnect succeeded");
-            Ok(())
         })
-        .await
-        .map_err(|_| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("reconnection timed out after {}s", timeout.as_secs()),
-            ))
-        })?
-    }
-
-    /// Check if the client is still connected.
-    ///
-    /// The client is connected if the read task has not finished. It is expected
-    /// that in case of any failure client or server side. The read task will be
-    /// shutdown or will receive a `Close` frame which will finish it. There
-    /// might be some delay between the connection being closed and the client
-    /// detecting.
-    #[inline]
-    #[must_use]
-    pub fn is_alive(&self) -> bool {
-        match &self.read_task {
-            Some(read_task) => !read_task.is_finished(),
-            None => true, // Stream is being used directly
-        }
     }
 }
 
@@ -366,8 +374,8 @@ impl WebSocketClientInner {
 ///
 /// This sequence ensures proper protocol compliance and clean resource cleanup.
 async fn shutdown(
-    read_task: Option<task::JoinHandle<()>>,
-    heartbeat_task: Option<task::JoinHandle<()>>,
+    read_task: Option<tokio::task::JoinHandle<()>>,
+    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedMessageWriter,
 ) {
     tracing::debug!("Closing");
@@ -377,11 +385,12 @@ async fn shutdown(
         // Send close frame first
         let mut write_half = writer.lock().await;
         if let Err(e) = write_half.send(Message::Close(None)).await {
-            tracing::error!("Error sending close frame: {e}");
+            // Close frame errors during shutdown are expected
+            tracing::debug!("Error sending close frame: {e}");
         }
         drop(write_half);
 
-        sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Abort tasks
         if let Some(task) = read_task {
@@ -439,18 +448,20 @@ impl Drop for WebSocketClientInner {
 )]
 pub struct WebSocketClient {
     pub(crate) writer: SharedMessageWriter,
-    pub(crate) controller_task: task::JoinHandle<()>,
+    pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
 }
 
 impl WebSocketClient {
     /// Creates a websocket client that returns a stream for reading messages.
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect_stream(
         url: String,
         headers: Vec<(String, String)>,
         heartbeat: Option<u64>,
         heartbeat_msg: Option<String>,
+        reconnect_timeout_secs: Option<u64>,
         max_reconnection_tries: Option<u64>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
@@ -469,6 +480,7 @@ impl WebSocketClient {
                 heartbeat,
                 heartbeat_msg,
                 ping_handler: None,
+                reconnect_timeout_secs,
                 max_reconnection_tries,
             }
         };
@@ -552,7 +564,7 @@ impl WebSocketClient {
 
         match tokio::time::timeout(Duration::from_secs(5), async {
             while !self.is_disconnected() {
-                sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -594,14 +606,14 @@ impl WebSocketClient {
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         max_reconnection_tries: Option<u64>,
-    ) -> task::JoinHandle<()> {
-        task::spawn(async move {
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::task::spawn(async move {
             let check_interval = Duration::from_millis(10);
             let retry_interval = Duration::from_millis(1000);
             let mut retry_counter: u64 = 0;
 
             loop {
-                sleep(check_interval).await;
+                tokio::time::sleep(check_interval).await;
 
                 // Check if client needs to disconnect
                 let disconnect = disconnect_mode.load(Ordering::SeqCst);
@@ -638,7 +650,7 @@ impl WebSocketClient {
                                 );
                             }
 
-                            sleep(retry_interval).await;
+                            tokio::time::sleep(retry_interval).await;
                         }
                     },
                     (true, true) => {
@@ -808,6 +820,7 @@ mod tests {
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: None,
         };
         WebSocketClient::connect(config, None, None, None, vec![], None)
@@ -848,6 +861,7 @@ mod tests {
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: Some(2),
         };
         let res = WebSocketClient::connect(config, None, None, None, vec![], None).await;
@@ -888,6 +902,7 @@ mod tests {
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: None,
         };
 

@@ -3227,7 +3227,8 @@ class WebSocketConfig:
         heartbeat: int | None = None,
         heartbeat_msg: str | None = None,
         ping_handler: Callable[..., Any] | None = None,
-        max_reconnection_tries: int | None = None,
+        reconnect_timeout_secs: int | None = 30,
+        max_reconnection_tries: int | None = 3,
     ) -> None: ...
 
 class WebSocketClient:
@@ -3255,7 +3256,8 @@ class SocketConfig:
         suffix: bytes,
         handler: Callable[..., Any],
         heartbeat: tuple[int, list[int]] | None = None,
-        max_reconnection_tries: int | None = None,
+        reconnect_timeout_secs: int | None = 30,
+        max_reconnection_tries: int | None = 3,
     ) -> None: ...
 
 class SocketClient:
