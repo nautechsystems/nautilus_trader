@@ -27,6 +27,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
 - Refactored CI with composite actions (#2242), thanks @sunlei
+- Changed to use `mold` as the linker in CI (#2254), thanks @sunlei
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
 - Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
