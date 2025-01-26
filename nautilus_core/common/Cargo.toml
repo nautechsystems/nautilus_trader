@@ -37,8 +37,8 @@ sysinfo = "0.33.1"
 mimalloc = { version = "0.1", optional = true }
 
 # Jemallocator does not work on aarch64 with musl
-[target.'cfg(all(target_family="unix", not(all(target_arch = "aarch64", target_env = "musl"))))'.dependencies]
-tikv-jemallocator = { version = "0.6", optional = true }
+# [target.'cfg(all(target_family="unix", not(all(target_arch = "aarch64", target_env = "musl"))))'.dependencies]
+# tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
