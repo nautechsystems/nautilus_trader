@@ -46,9 +46,9 @@ async def test_connect_and_disconnect(socket_server):
     client = await SocketClient.connect(config)
 
     # Act, Assert
-    await eventually(lambda: client.is_alive())
-    await client.disconnect()
-    await eventually(lambda: not client.is_alive())
+    await eventually(lambda: client.is_active())
+    await client.close()
+    await eventually(lambda: not client.is_active())
 
 
 @pytest.mark.asyncio()
@@ -58,7 +58,7 @@ async def test_client_send_recv(socket_server):
     config = _config(socket_server, store.append)
     client = await SocketClient.connect(config)
 
-    await eventually(lambda: client.is_alive())
+    await eventually(lambda: client.is_active())
 
     # Act
     num_messages = 3
@@ -66,8 +66,8 @@ async def test_client_send_recv(socket_server):
         await client.send(b"Hello")
     await asyncio.sleep(0.1)
 
-    await client.disconnect()
-    await eventually(lambda: not client.is_alive())
+    await client.close()
+    await eventually(lambda: not client.is_active())
 
     # Assert
     await eventually(lambda: store == [b"connected"] + [b"hello"] * 2)
@@ -103,7 +103,7 @@ async def test_reconnect_after_close(closing_socket_server):
     config = _config(closing_socket_server, store.append)
     client = await SocketClient.connect(config)
 
-    await eventually(lambda: client.is_alive())
+    await eventually(lambda: client.is_active())
 
     # Act
     await asyncio.sleep(2)

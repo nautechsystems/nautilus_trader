@@ -596,7 +596,7 @@ impl WebSocketClient {
         max_reconnection_tries: Option<u64>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let check_interval = Duration::from_millis(100);
+            let check_interval = Duration::from_millis(10);
             let retry_interval = Duration::from_millis(1000);
             let mut retry_counter: u64 = 0;
 
