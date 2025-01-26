@@ -38,7 +38,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
     subscription_delay_secs : PositiveInt, default 3
-        The delay (seconds) to delay sending the *initial* subscription message.
+        The delay (seconds) before sending the *initial* subscription message.
     keep_alive_secs : PositiveInt, default 36_000 (10 hours)
         The keep alive interval (seconds) for the HTTP client.
 
