@@ -56,8 +56,8 @@ jobs:
         shell: bash
     name: build - standard-precision (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # needs:
-    #   - pre-commit
+    needs:
+      - pre-commit
     env:
       BUILD_MODE: debug
       HIGH_PRECISION: false
@@ -91,35 +91,24 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # - name: Install Nautilus CLI and run init postgres
-      #   run: |
-      #     make install-cli
-      #     nautilus database init --schema ${{ github.workspace }}/schema/sql
-      #   env:
-      #     POSTGRES_HOST: localhost
-      #     POSTGRES_PORT: 5432
-      #     POSTGRES_USERNAME: postgres
-      #     POSTGRES_PASSWORD: pass
-      #     POSTGRES_DATABASE: nautilus
+      - name: Install Nautilus CLI and run init postgres
+        run: |
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
 
-      # - name: Run Rust tests (with standard-precision)
-      #   run: make cargo-test-standard-precision
+      - name: Run Rust tests (with standard-precision)
+        run: make cargo-test-standard-precision
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Verify mold
-        run: |
-          find . -type f | while read -r file; do
-              if file "$file" | grep -q "ELF"; then
-                  echo "Processing ELF file: $file"
-                  readelf -p .comment "$file" || true
-              # else
-              #     echo "Skipping non-ELF file: $file"
-              fi
-          done
 
       - name: Run tests
         run: |
