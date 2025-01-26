@@ -75,7 +75,37 @@ impl SocketClient {
         })
     }
 
-    /// Closes the client heart beat and reader task.
+    /// Check if the client is still alive.
+    ///
+    /// Even if the connection is disconnected the client will still be alive
+    /// and trying to reconnect. Only when reconnect fails the client will
+    /// terminate.
+    ///
+    /// This is particularly useful for check why a `send` failed. It could
+    /// be because the connection disconnected and the client is still alive
+    /// and reconnecting. In such cases the send can be retried after some
+    /// delay
+    #[pyo3(name = "is_active")]
+    fn py_is_active(slf: PyRef<'_, Self>) -> bool {
+        slf.is_active()
+    }
+
+    #[pyo3(name = "is_reconnecting")]
+    fn py_is_reconnecting(slf: PyRef<'_, Self>) -> bool {
+        slf.is_reconnecting()
+    }
+
+    #[pyo3(name = "is_disconnecting")]
+    fn py_is_disconnecting(slf: PyRef<'_, Self>) -> bool {
+        slf.is_disconnecting()
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(slf: PyRef<'_, Self>) -> bool {
+        slf.is_closed()
+    }
+
+    /// Close the client.
     ///
     /// The connection is not completely closed until all references
     /// to the client are gone and the client is dropped.
@@ -84,28 +114,13 @@ impl SocketClient {
     ///
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
-    #[pyo3(name = "disconnect")]
-    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "close")]
+    fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
-    }
-
-    /// Check if the client is still alive.
-    ///
-    /// Even if the connection is disconnected the client will still be alive
-    /// and try to reconnect. Only when reconnect fails the client will
-    /// terminate.
-    ///
-    /// This is particularly useful for check why a `send` failed. It could
-    /// be because the connection disconnected and the client is still alive
-    /// and reconnecting. In such cases the send can be retried after some
-    /// delay
-    #[pyo3(name = "is_alive")]
-    fn py_is_alive(slf: PyRef<'_, Self>) -> bool {
-        !slf.controller_task.is_finished()
     }
 
     /// Send bytes data to the connection.

@@ -331,7 +331,7 @@ mod tests {
     }
 
     fn create_test_handler() -> (PyObject, PyObject) {
-        let code = r#"
+        let code_raw = r#"
 class Counter:
     def __init__(self):
         self.count = 0
@@ -353,7 +353,7 @@ class Counter:
 counter = Counter()
 "#;
 
-        let code = CString::new(code).unwrap();
+        let code = CString::new(code_raw).unwrap();
         let filename = CString::new("test".to_string()).unwrap();
         let module = CString::new("test".to_string()).unwrap();
         Python::with_gil(|py| {

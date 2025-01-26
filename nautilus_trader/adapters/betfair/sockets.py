@@ -26,7 +26,6 @@ from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 
 
 HOST = "stream-api.betfair.com"
-# HOST = "stream-api-integration.betfair.com"
 PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
@@ -48,19 +47,21 @@ class BetfairStreamClient:
         crlf: bytes | None = None,
         encoding: str | None = None,
     ) -> None:
-        self._http_client = http_client
-        self._log = Logger(type(self).__name__)
         self.handler = message_handler
         self.host = host or HOST
         self.port = port or PORT
         self.crlf = crlf or CRLF
         self.use_ssl = USE_SSL
         self.encoding = encoding or ENCODING
+
+        self._loop = asyncio.get_event_loop()
+        self._http_client = http_client
         self._client: SocketClient | None = None
+        self._log = Logger(type(self).__name__)
+
         self.unique_id = next(UNIQUE_ID)
         self.is_connected: bool = False
         self.disconnecting: bool = False
-        self._loop = asyncio.get_event_loop()
 
     async def connect(self):
         if not self._http_client.session_token:
@@ -70,7 +71,7 @@ class BetfairStreamClient:
             self._log.info("Socket already connected")
             return
 
-        self._log.info("Connecting betfair socket client...")
+        self._log.info("Connecting Betfair socket client...")
         config = SocketConfig(
             url=f"{self.host}:{self.port}",
             handler=self.handler,
@@ -100,13 +101,13 @@ class BetfairStreamClient:
             self._log.warning("Cannot disconnect: not connected")
             return
 
-        await self._client.disconnect()
+        await self._client.close()
 
         self._log.debug("Running post disconnect")
         await self.post_disconnection()
 
         self.is_connected = False
-        self._log.info("Disconnected.")
+        self._log.info("Disconnected")
 
     async def post_connection(self) -> None:
         """
@@ -127,8 +128,21 @@ class BetfairStreamClient:
         self._log.debug(f"[SEND] {message.decode()}")
         if self._client is None:
             raise RuntimeError("Cannot send message: no client")
-        await self._client.send(message)
-        self._log.debug("[SENT]")
+
+        # If the client is not currently active (e.g. in the middle of a reconnection),
+        # waits up to 2 seconds for it to become active before sending. This handles the case
+        # where a reconnection was triggered right before or during a send operation.
+        timeout = 2.0
+
+        try:
+            async with asyncio.timeout(timeout):
+                while not self._client.is_active():
+                    await asyncio.sleep(0.01)
+
+            await self._client.send(message)
+            self._log.debug("[SENT]")
+        except TimeoutError:
+            raise RuntimeError(f"Client did not become active within {timeout}s timeout")
 
     def auth_message(self):
         return {

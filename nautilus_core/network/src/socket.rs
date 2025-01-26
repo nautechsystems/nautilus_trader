@@ -74,6 +74,7 @@ pub struct SocketConfig {
     pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
+    /// The maximum reconnection attempts before closing the client.
     pub max_reconnection_tries: Option<u64>,
 }
 
@@ -156,6 +157,18 @@ impl SocketClientInner {
         tcp_tls(&request, mode, stream, None).await.map(split)
     }
 
+    /// Check if the client is still alive.
+    ///
+    /// The client is connected if the read task has not finished. It is expected
+    /// that in case of any failure client or server side. The read task will be
+    /// shutdown. There might be some delay between the connection being closed
+    /// and the client detecting it.
+    #[inline]
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
+        !self.read_task.is_finished()
+    }
+
     #[must_use]
     fn spawn_read_task(
         mut reader: TcpReader,
@@ -212,20 +225,24 @@ impl SocketClientInner {
         writer: SharedTcpWriter,
         suffix: Vec<u8>,
     ) -> Option<task::JoinHandle<()>> {
-        heartbeat.map(|(duration, mut message)| {
+        heartbeat.map(|(interval, mut message)| {
             task::spawn(async move {
-                let duration = Duration::from_secs(duration);
+                let interval = Duration::from_secs(interval);
                 message.extend(suffix);
-                while connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE {
-                    sleep(duration).await;
-                    if connection_state.load(Ordering::SeqCst) != CONNECTION_ACTIVE {
-                        break;
-                    }
-                    tracing::debug!("Sending heartbeat");
-                    let mut guard = writer.lock().await;
-                    match guard.write_all(&message).await {
-                        Ok(()) => tracing::debug!("Sent heartbeat"),
-                        Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
+                loop {
+                    sleep(interval).await;
+                    let state = connection_state.load(Ordering::SeqCst);
+                    match state {
+                        CONNECTION_ACTIVE => {
+                            tracing::debug!("Sending heartbeat");
+                            let mut guard = writer.lock().await;
+                            match guard.write_all(&message).await {
+                                Ok(()) => tracing::debug!("Sent heartbeat"),
+                                Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
+                            }
+                        }
+                        CONNECTION_CLOSED => break,
+                        _ => continue, // Reconnecting
                     }
                 }
             })
@@ -302,18 +319,6 @@ impl SocketClientInner {
             ))
         })?
     }
-
-    /// Check if the client is still connected.
-    ///
-    /// The client is connected if the read task has not finished. It is expected
-    /// that in case of any failure client or server side. The read task will be
-    /// shutdown. There might be some delay between the connection being closed
-    /// and the client detecting it.
-    #[inline]
-    #[must_use]
-    pub fn is_alive(&self) -> bool {
-        !self.read_task.is_finished()
-    }
 }
 
 /// Shutdown socket connection.
@@ -384,6 +389,7 @@ pub struct SocketClient {
     pub(crate) writer: SharedTcpWriter,
     pub(crate) controller_task: task::JoinHandle<()>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
+    pub(crate) connection_state: Arc<AtomicU8>,
     pub(crate) suffix: Vec<u8>,
 }
 
@@ -399,6 +405,7 @@ impl SocketClient {
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(AtomicBool::new(false));
+        let connection_state = inner.connection_state.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
@@ -419,20 +426,67 @@ impl SocketClient {
             writer,
             controller_task,
             disconnect_mode,
+            connection_state,
             suffix,
         })
     }
 
-    /// Set disconnect mode to true.
+    /// Check if the client connection is active.
+    ///
+    /// Returns `true` if the client is connected and has not been signalled to disconnect.
+    /// The client will automatically retry connection based on its configuration.
+    #[inline]
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        let disconnect = self.disconnect_mode.load(Ordering::SeqCst);
+        self.connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE && !disconnect
+    }
+
+    /// Check if the client is reconnecting.
+    ///
+    /// Returns `true` if the client lost connection and is attempting to reestablish it.
+    /// The client will automatically retry connection based on its configuration.
+    #[inline]
+    #[must_use]
+    pub fn is_reconnecting(&self) -> bool {
+        self.connection_state.load(Ordering::SeqCst) == CONNECTION_RECONNECTING
+    }
+
+    /// Check if the client is disconnecting.
+    ///
+    /// Returns `true` if the client is in disconnect mode.
+    #[inline]
+    #[must_use]
+    pub fn is_disconnecting(&self) -> bool {
+        self.disconnect_mode.load(Ordering::SeqCst)
+    }
+
+    /// Check if the client is closed.
+    ///
+    /// Returns `true` if the client has been explicitly disconnected or reached
+    /// maximum reconnection attempts. In this state, the client cannot be reused
+    /// and a new client must be created for further connections.
+    #[inline]
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.connection_state.load(Ordering::SeqCst) == CONNECTION_CLOSED
+    }
+
+    /// Close the client.
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
-    pub async fn disconnect(&self) {
+    pub async fn close(&self) {
         self.disconnect_mode.store(true, Ordering::SeqCst);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
-            while !self.is_disconnected() {
+            while !self.is_closed() {
                 sleep(Duration::from_millis(10)).await;
+            }
+
+            if !self.controller_task.is_finished() {
+                self.controller_task.abort();
+                tracing::debug!("Aborted controller task");
             }
         })
         .await
@@ -447,14 +501,38 @@ impl SocketClient {
     }
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
+        if self.is_closed() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Not connected",
+            ));
+        }
+
+        let timeout = Duration::from_secs(2);
+        let check_interval = Duration::from_millis(1);
+
+        if !self.is_active() {
+            tracing::debug!("Waiting for client to become active before sending (2s)...");
+            match tokio::time::timeout(timeout, async {
+                while !self.is_active() {
+                    sleep(check_interval).await;
+                }
+            })
+            .await
+            {
+                Ok(_) => tracing::debug!("Client now active"),
+                Err(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Client did not become active within timeout",
+                    ))
+                }
+            }
+        }
+
         let mut writer = self.writer.lock().await;
         writer.write_all(data).await?;
         writer.write_all(&self.suffix).await
-    }
-
-    #[must_use]
-    pub fn is_disconnected(&self) -> bool {
-        self.controller_task.is_finished()
     }
 
     fn spawn_controller_task(
@@ -465,7 +543,7 @@ impl SocketClient {
         max_reconnection_tries: Option<u64>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let check_interval = Duration::from_millis(100);
+            let check_interval = Duration::from_millis(10);
             let retry_interval = Duration::from_millis(1000);
             let mut retry_counter: u64 = 0;
 
@@ -569,7 +647,7 @@ mod tests {
     use super::*;
 
     fn create_handler() -> PyObject {
-        let code = r#"
+        let code_raw = r#"
 class Counter:
     def __init__(self):
         self.count = 0
@@ -590,8 +668,7 @@ class Counter:
 
 counter = Counter()
 "#;
-
-        let code = CString::new(code).unwrap();
+        let code = CString::new(code_raw).unwrap();
         let filename = CString::new("test".to_string()).unwrap();
         let module = CString::new("test".to_string()).unwrap();
         Python::with_gil(|py| {
@@ -676,7 +753,7 @@ counter = Counter()
 
         client.send_bytes(b"close").await.unwrap();
         server_task.await.unwrap();
-        assert!(!client.is_disconnected());
+        assert!(!client.is_closed());
     }
 
     #[tokio::test]
@@ -734,8 +811,8 @@ counter = Counter()
             .await
             .unwrap();
 
-        client.disconnect().await;
-        assert!(client.is_disconnected());
+        client.close().await;
+        assert!(client.is_closed());
         server_task.abort();
     }
 
@@ -803,62 +880,65 @@ counter = Counter()
             );
         }
 
-        client.disconnect().await;
+        client.close().await;
         server_task.abort();
     }
 
-    //     #[tokio::test]
-    //     async fn test_python_handler_error() {
-    //         prepare_freethreaded_python();
-    //
-    //         let (port, listener) = bind_test_server();
-    //         let server_task = task::spawn(async move {
-    //             let (socket, _) = tokio::net::TcpListener::from_std(listener)
-    //                 .unwrap()
-    //                 .accept()
-    //                 .await
-    //                 .unwrap();
-    //             run_echo_server(socket).await;
-    //         });
-    //
-    //         let handler = Python::with_gil(|py| {
-    //             let code = r#"
-    // def handler(bytes_data):
-    //     txt = bytes_data.decode()
-    //     if "ERR" in txt:
-    //         raise ValueError("Simulated error in handler")
-    //     return
-    // "#;
-    //             let module =
-    //                 PyModule::from_code(py, code, "error_handler.py", "error_handler").unwrap();
-    //             let func = module.getattr("handler").unwrap();
-    //             Arc::new(func.into_py(py))
-    //         });
-    //
-    //         let config = SocketConfig {
-    //             url: format!("127.0.0.1:{port}"),
-    //             mode: Mode::Plain,
-    //             suffix: b"\r\n".to_vec(),
-    //             handler,
-    //             heartbeat: None,
-    //             max_reconnection_tries: Some(1),
-    //         };
-    //
-    //         let client = SocketClient::connect(config, None, None, None)
-    //             .await
-    //             .expect("Client connect failed unexpectedly");
-    //
-    //         client.send_bytes(b"hello").await.unwrap();
-    //         sleep(Duration::from_millis(100)).await;
-    //
-    //         client.send_bytes(b"ERR").await.unwrap();
-    //         sleep(Duration::from_secs(1)).await;
-    //
-    //         assert!(!client.is_disconnected());
-    //
-    //         client.disconnect().await;
-    //
-    //         assert!(client.is_disconnected());
-    //         server_task.abort();
-    //     }
+    #[tokio::test]
+    async fn test_python_handler_error() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        let server_task = task::spawn(async move {
+            let (socket, _) = tokio::net::TcpListener::from_std(listener)
+                .unwrap()
+                .accept()
+                .await
+                .unwrap();
+            run_echo_server(socket).await;
+        });
+
+        let code_raw = r#"
+def handler(bytes_data):
+    txt = bytes_data.decode()
+    if "ERR" in txt:
+        raise ValueError("Simulated error in handler")
+    return
+"#;
+        let code = CString::new(code_raw).unwrap();
+        let filename = CString::new("test".to_string()).unwrap();
+        let module = CString::new("test".to_string()).unwrap();
+
+        let handler = Python::with_gil(|py| {
+            let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
+            let func = pymod.getattr("handler").unwrap();
+            Arc::new(func.into_py(py))
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler,
+            heartbeat: None,
+            max_reconnection_tries: Some(1),
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .expect("Client connect failed unexpectedly");
+
+        client.send_bytes(b"hello").await.unwrap();
+        sleep(Duration::from_millis(100)).await;
+
+        client.send_bytes(b"ERR").await.unwrap();
+        sleep(Duration::from_secs(1)).await;
+
+        assert!(client.is_active());
+
+        client.close().await;
+
+        assert!(client.is_closed());
+        server_task.abort();
+    }
 }
