@@ -41,6 +41,21 @@ runs:
         sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
     # > --------------------------------------------------
+    # > mold https://github.com/rui314/mold
+    # - name: Install mold
+    #   if: runner.os == 'Linux'
+    #   env:
+    #     MOLD_VERSION: 2.36.0
+    #   shell: bash
+    #   run: |
+    #     curl -sSL --retry 10 \
+    #       "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(uname -m)-linux.tar.gz" \
+    #       | sudo tar -C /usr/local --strip-components=1 -xzf -
+
+    - name: Install mold
+      uses: rui314/setup-mold@v1
+
+    # > --------------------------------------------------
     # > Rust
     - name: Set up Rust toolchain
       shell: bash
