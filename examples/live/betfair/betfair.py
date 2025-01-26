@@ -30,6 +30,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -71,6 +72,13 @@ async def main(
         timeout_disconnection=30.0,
         timeout_post_stop=30.0,
         logging=LoggingConfig(log_level=log_level, use_pyo3=True),
+        exec_engine=LiveExecEngineConfig(
+            reconciliation=True,
+            # snapshot_orders=True,
+            # snapshot_positions=True,
+            # snapshot_positions_interval_secs=5.0,
+            # open_check_interval_secs=5.0,
+        ),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
                 account_currency=account.currency_code,

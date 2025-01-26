@@ -27,11 +27,9 @@ use std::{
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::prelude::*;
 use tokio::{
-    io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
+    io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
     sync::Mutex,
-    task,
-    time::sleep,
 };
 use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, stream::Mode, Error},
@@ -74,6 +72,8 @@ pub struct SocketConfig {
     pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
+    /// The timeout (seconds) for reconnects.
+    pub reconnect_timeout_secs: Option<u64>,
     /// The maximum reconnection attempts before closing the client.
     pub max_reconnection_tries: Option<u64>,
 }
@@ -81,17 +81,17 @@ pub struct SocketConfig {
 /// Creates a TcpStream with the server.
 ///
 /// The stream can be encrypted with TLS or Plain. The stream is split into
-/// read and write ends.
-/// * The read end is passed to task that keeps receiving
+/// read and write ends:
+/// - The read end is passed to the task that keeps receiving
 ///   messages from the server and passing them to a handler.
-/// * The write end is wrapped in an Arc Mutex and used to send messages
-///   or heart beats
+/// - The write end is wrapped in an `Arc<Mutex>` and used to send messages
+///   or heart beats.
 ///
 /// The heartbeat is optional and can be configured with an interval and data to
 /// send.
 ///
 /// The client uses a suffix to separate messages on the byte stream. It is
-/// appended to all sent messages and heartbeats. It is also used the split
+/// appended to all sent messages and heartbeats. It is also used to split
 /// the received byte stream.
 #[cfg_attr(
     feature = "python",
@@ -99,11 +99,12 @@ pub struct SocketConfig {
 )]
 struct SocketClientInner {
     config: SocketConfig,
-    read_task: Arc<task::JoinHandle<()>>,
-    heartbeat_task: Option<task::JoinHandle<()>>,
+    read_task: Arc<tokio::task::JoinHandle<()>>,
+    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedTcpWriter,
     reconnection_lock: Arc<Mutex<()>>,
     connection_state: Arc<AtomicU8>,
+    reconnect_timeout_secs: u64,
 }
 
 impl SocketClientInner {
@@ -116,6 +117,7 @@ impl SocketClientInner {
             heartbeat,
             suffix,
             handler,
+            reconnect_timeout_secs,
             max_reconnection_tries: _,
         } = &config;
         let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
@@ -123,18 +125,20 @@ impl SocketClientInner {
 
         let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
         let reconnection_lock = Arc::new(Mutex::new(()));
+        let reconnect_timeout_secs = reconnect_timeout_secs.unwrap_or(30);
 
-        let handler1 = Python::with_gil(|py| handler.clone_ref(py));
-        // Keep receiving messages from socket pass them as arguments to handler
-        let read_task = Arc::new(Self::spawn_read_task(reader, handler1, suffix.clone()));
+        let handler = Python::with_gil(|py| handler.clone_ref(py));
+        let read_task = Arc::new(Self::spawn_read_task(reader, handler, suffix.clone()));
 
-        // Optionally create heartbeat task
-        let heartbeat_task = Self::spawn_heartbeat_task(
-            connection_state.clone(),
-            heartbeat.clone(),
-            writer.clone(),
-            suffix.clone(),
-        );
+        // Optionally spawn a heartbeat task to periodically ping server
+        let heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
+            Self::spawn_heartbeat_task(
+                connection_state.clone(),
+                heartbeat.clone(),
+                writer.clone(),
+                suffix.clone(),
+            )
+        });
 
         Ok(Self {
             config,
@@ -143,6 +147,7 @@ impl SocketClientInner {
             writer,
             reconnection_lock,
             connection_state,
+            reconnect_timeout_secs,
         })
     }
 
@@ -154,7 +159,81 @@ impl SocketClientInner {
         let stream = TcpStream::connect(url).await?;
         tracing::debug!("Making TLS connection");
         let request = url.into_client_request()?;
-        tcp_tls(&request, mode, stream, None).await.map(split)
+        tcp_tls(&request, mode, stream, None)
+            .await
+            .map(tokio::io::split)
+    }
+
+    /// Reconnect with server.
+    ///
+    /// Make a new connection with server. Use the new read and write halves
+    /// to update the shared writer and the read and heartbeat tasks.
+    async fn reconnect(&mut self) -> Result<(), Error> {
+        tracing::debug!("Reconnecting client");
+
+        let timeout = Duration::from_secs(self.reconnect_timeout_secs);
+        tokio::time::timeout(timeout, async {
+            let state_guard = {
+                let guard = self.reconnection_lock.lock().await;
+                self.connection_state
+                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
+                guard
+            };
+
+            // Clean up existing tasks
+            shutdown(
+                self.read_task.clone(),
+                self.heartbeat_task.take(),
+                self.writer.clone(),
+            )
+            .await;
+
+            let SocketConfig {
+                url,
+                mode,
+                heartbeat,
+                suffix,
+                handler,
+                reconnect_timeout_secs: _,
+                max_reconnection_tries: _,
+            } = &self.config;
+            // Create a fresh connection
+            let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
+            let writer = Arc::new(Mutex::new(writer));
+            self.writer = writer.clone();
+
+            // Spawn new read task
+            let handler_for_read = Python::with_gil(|py| handler.clone_ref(py));
+            self.read_task = Arc::new(Self::spawn_read_task(
+                reader,
+                handler_for_read,
+                suffix.clone(),
+            ));
+
+            // Optionally spawn new heartbeat task
+            self.heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
+                Self::spawn_heartbeat_task(
+                    self.connection_state.clone(),
+                    heartbeat.clone(),
+                    writer.clone(),
+                    suffix.clone(),
+                )
+            });
+
+            drop(state_guard);
+            self.connection_state
+                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
+
+            tracing::debug!("Reconnect succeeded");
+            Ok(())
+        })
+        .await
+        .map_err(|_| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("reconnection timed out after {}s", timeout.as_secs()),
+            ))
+        })?
     }
 
     /// Check if the client is still alive.
@@ -174,21 +253,21 @@ impl SocketClientInner {
         mut reader: TcpReader,
         handler: PyObject,
         suffix: Vec<u8>,
-    ) -> task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
 
-        task::spawn(async move {
+        tokio::task::spawn(async move {
             let mut buf = Vec::new();
 
             loop {
                 match reader.read_buf(&mut buf).await {
                     // Connection has been terminated or vector buffer is complete
                     Ok(0) => {
-                        tracing::error!("Cannot read anymore bytes");
+                        tracing::debug!("Connection closed by server");
                         break;
                     }
                     Err(e) => {
-                        tracing::error!("Failed with error: {e}");
+                        tracing::debug!("Connection ended: {e}");
                         break;
                     }
                     // Received bytes of data
@@ -218,106 +297,36 @@ impl SocketClientInner {
         })
     }
 
-    /// Optionally spawn a heartbeat task to periodically ping the server.
     fn spawn_heartbeat_task(
         connection_state: Arc<AtomicU8>,
-        heartbeat: Option<(u64, Vec<u8>)>,
+        heartbeat: (u64, Vec<u8>),
         writer: SharedTcpWriter,
         suffix: Vec<u8>,
-    ) -> Option<task::JoinHandle<()>> {
-        heartbeat.map(|(interval, mut message)| {
-            task::spawn(async move {
-                let interval = Duration::from_secs(interval);
-                message.extend(suffix);
-                loop {
-                    sleep(interval).await;
-                    let state = connection_state.load(Ordering::SeqCst);
-                    match state {
-                        CONNECTION_ACTIVE => {
-                            tracing::debug!("Sending heartbeat");
-                            let mut guard = writer.lock().await;
-                            match guard.write_all(&message).await {
-                                Ok(()) => tracing::debug!("Sent heartbeat"),
-                                Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
-                            }
+    ) -> tokio::task::JoinHandle<()> {
+        tracing::debug!("Started task 'heartbeat'");
+        let (interval_secs, mut message) = heartbeat;
+
+        tokio::task::spawn(async move {
+            let interval = Duration::from_secs(interval_secs);
+            message.extend(suffix);
+
+            loop {
+                tokio::time::sleep(interval).await;
+
+                match connection_state.load(Ordering::SeqCst) {
+                    CONNECTION_ACTIVE => {
+                        tracing::debug!("Sending heartbeat");
+                        let mut guard = writer.lock().await;
+                        match guard.write_all(&message).await {
+                            Ok(()) => tracing::debug!("Sent heartbeat"),
+                            Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
                         }
-                        CONNECTION_CLOSED => break,
-                        _ => continue, // Reconnecting
                     }
+                    CONNECTION_CLOSED => break,
+                    _ => continue, // Reconnecting
                 }
-            })
+            }
         })
-    }
-
-    /// Reconnect with server.
-    ///
-    /// Make a new connection with server. Use the new read and write halves
-    /// to update the shared writer and the read and heartbeat tasks.
-    async fn reconnect(&mut self) -> Result<(), Error> {
-        // TODO: Expose reconnect timeout as config option
-        let timeout = Duration::from_secs(30);
-        tracing::debug!("Reconnecting client");
-
-        tokio::time::timeout(timeout, async {
-            let state_guard = {
-                let guard = self.reconnection_lock.lock().await;
-                self.connection_state
-                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
-                guard
-            };
-
-            // Clean up existing tasks
-            shutdown(
-                self.read_task.clone(),
-                self.heartbeat_task.take(),
-                self.writer.clone(),
-            )
-            .await;
-
-            let SocketConfig {
-                url,
-                mode,
-                heartbeat,
-                suffix,
-                handler,
-                max_reconnection_tries: _,
-            } = &self.config;
-            // Create a fresh connection
-            let (reader, new_writer) = Self::tls_connect_with_server(url, *mode).await?;
-
-            let new_writer_arc = Arc::new(Mutex::new(new_writer));
-            self.writer = new_writer_arc.clone();
-
-            // Spawn new read task
-            let handler_for_read = Python::with_gil(|py| handler.clone_ref(py));
-            self.read_task = Arc::new(Self::spawn_read_task(
-                reader,
-                handler_for_read,
-                suffix.clone(),
-            ));
-
-            // Spawn new heartbeat task
-            self.heartbeat_task = Self::spawn_heartbeat_task(
-                self.connection_state.clone(),
-                heartbeat.clone(),
-                new_writer_arc,
-                suffix.clone(),
-            );
-
-            drop(state_guard);
-            self.connection_state
-                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
-
-            tracing::debug!("Reconnect succeeded");
-            Ok(())
-        })
-        .await
-        .map_err(|_| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("reconnection timed out after {}s", timeout.as_secs()),
-            ))
-        })?
     }
 }
 
@@ -328,8 +337,8 @@ impl SocketClientInner {
 /// Closing the connection is an async call which cannot be done by the
 /// drop method so it must be done explicitly.
 async fn shutdown(
-    read_task: Arc<task::JoinHandle<()>>,
-    heartbeat_task: Option<task::JoinHandle<()>>,
+    read_task: Arc<tokio::task::JoinHandle<()>>,
+    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedTcpWriter,
 ) {
     tracing::debug!("Closing");
@@ -343,7 +352,7 @@ async fn shutdown(
         }
         drop(writer);
 
-        sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Abort tasks
         if !read_task.is_finished() {
@@ -387,7 +396,7 @@ impl Drop for SocketClientInner {
 )]
 pub struct SocketClient {
     pub(crate) writer: SharedTcpWriter,
-    pub(crate) controller_task: task::JoinHandle<()>,
+    pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
     pub(crate) connection_state: Arc<AtomicU8>,
     pub(crate) suffix: Vec<u8>,
@@ -481,7 +490,7 @@ impl SocketClient {
 
         match tokio::time::timeout(Duration::from_secs(5), async {
             while !self.is_closed() {
-                sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
 
             if !self.controller_task.is_finished() {
@@ -515,7 +524,7 @@ impl SocketClient {
             tracing::debug!("Waiting for client to become active before sending (2s)...");
             match tokio::time::timeout(timeout, async {
                 while !self.is_active() {
-                    sleep(check_interval).await;
+                    tokio::time::sleep(check_interval).await;
                 }
             })
             .await
@@ -541,14 +550,14 @@ impl SocketClient {
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         max_reconnection_tries: Option<u64>,
-    ) -> task::JoinHandle<()> {
-        task::spawn(async move {
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::task::spawn(async move {
             let check_interval = Duration::from_millis(10);
             let retry_interval = Duration::from_millis(1000);
             let mut retry_counter: u64 = 0;
 
             loop {
-                sleep(check_interval).await;
+                tokio::time::sleep(check_interval).await;
 
                 // Check if client needs to disconnect
                 let disconnect = disconnect_mode.load(Ordering::SeqCst);
@@ -585,7 +594,7 @@ impl SocketClient {
                                 );
                             }
 
-                            sleep(retry_interval).await;
+                            tokio::time::sleep(retry_interval).await;
                         }
                     },
                     (true, true) => {
@@ -738,6 +747,7 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler()),
             heartbeat: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: Some(1),
         };
 
@@ -769,6 +779,7 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler()),
             heartbeat: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: Some(2),
         };
 
@@ -804,6 +815,7 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler()),
             heartbeat: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: None,
         };
 
@@ -858,6 +870,7 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler().into()),
             heartbeat,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: None,
         };
 
@@ -921,6 +934,7 @@ def handler(bytes_data):
             suffix: b"\r\n".to_vec(),
             handler,
             heartbeat: None,
+            reconnect_timeout_secs: None,
             max_reconnection_tries: Some(1),
         };
 

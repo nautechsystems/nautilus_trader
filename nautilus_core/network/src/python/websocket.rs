@@ -35,7 +35,8 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
-    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, max_reconnection_tries=3))]
+    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_secs=30, max_reconnection_tries=3))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         url: String,
         handler: PyObject,
@@ -43,6 +44,7 @@ impl WebSocketConfig {
         heartbeat: Option<u64>,
         heartbeat_msg: Option<String>,
         ping_handler: Option<PyObject>,
+        reconnect_timeout_secs: Option<u64>,
         max_reconnection_tries: Option<u64>,
     ) -> Self {
         Self {
@@ -52,6 +54,7 @@ impl WebSocketConfig {
             heartbeat,
             heartbeat_msg,
             ping_handler: ping_handler.map(Arc::new),
+            reconnect_timeout_secs,
             max_reconnection_tries,
         }
     }
@@ -387,6 +390,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
         let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
             .await
@@ -460,6 +464,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
         );

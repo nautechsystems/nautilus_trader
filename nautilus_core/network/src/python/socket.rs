@@ -25,13 +25,14 @@ use crate::socket::{SocketClient, SocketConfig};
 #[pymethods]
 impl SocketConfig {
     #[new]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, max_reconnection_tries=3))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_secs=30, max_reconnection_tries=3))]
     fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
         handler: PyObject,
         heartbeat: Option<(u64, Vec<u8>)>,
+        reconnect_timeout_secs: Option<u64>,
         max_reconnection_tries: Option<u64>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
@@ -41,6 +42,7 @@ impl SocketConfig {
             suffix,
             handler: Arc::new(handler),
             heartbeat,
+            reconnect_timeout_secs,
             max_reconnection_tries,
         }
     }
