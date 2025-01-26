@@ -56,8 +56,8 @@ jobs:
         shell: bash
     name: build - standard-precision (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs:
-      - pre-commit
+    # needs:
+    #   - pre-commit
     env:
       BUILD_MODE: debug
       HIGH_PRECISION: false
