@@ -112,9 +112,13 @@ jobs:
 
       - name: Verify mold
         run: |
-          find nautilus_core/target -type f | while read -r file; do
-            echo "Processing: $file"
-            readelf -p .comment "$file" || true
+          find . -type f | while read -r file; do
+              if file "$file" | grep -q "ELF"; then
+                  echo "Processing ELF file: $file"
+                  readelf -p .comment "$file" || true
+              # else
+              #     echo "Skipping non-ELF file: $file"
+              fi
           done
 
       - name: Run tests
