@@ -74,9 +74,10 @@ class BetfairStreamClient:
         self._log.info("Connecting Betfair socket client...")
         config = SocketConfig(
             url=f"{self.host}:{self.port}",
-            handler=self.handler,
             ssl=self.use_ssl,
             suffix=self.crlf,
+            handler=self.handler,
+            heartbeat=(10, msgspec.json.encode({"op": "heartbeat"})),
         )
         self._client = await SocketClient.connect(
             config,

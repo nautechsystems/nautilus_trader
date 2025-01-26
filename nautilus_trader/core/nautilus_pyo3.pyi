@@ -3255,7 +3255,7 @@ class SocketConfig:
         ssl: bool,
         suffix: bytes,
         handler: Callable[..., Any],
-        heartbeat: tuple[int, list[int]] | None = None,
+        heartbeat: tuple[int, bytes] | None = None,
         reconnect_timeout_secs: int | None = 30,
         max_reconnection_tries: int | None = 3,
     ) -> None: ...
