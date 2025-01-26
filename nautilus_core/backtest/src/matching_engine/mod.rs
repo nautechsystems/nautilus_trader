@@ -755,7 +755,7 @@ impl OrderMatchingEngine {
 
     pub fn process_batch_cancel(&mut self, command: &BatchCancelOrders, account_id: AccountId) {
         for order in &command.cancels {
-            self.process_cancel(order, account_id)
+            self.process_cancel(order, account_id);
         }
     }
 
