@@ -753,8 +753,10 @@ impl OrderMatchingEngine {
         }
     }
 
-    pub fn process_batch_cancel(&self, command: &BatchCancelOrders, account_id: AccountId) {
-        todo!("implement process_batch_cancel")
+    pub fn process_batch_cancel(&mut self, command: &BatchCancelOrders, account_id: AccountId) {
+        for order in &command.cancels {
+            self.process_cancel(order, account_id)
+        }
     }
 
     pub fn process_query_order(&self, command: &QueryOrder, account_id: AccountId) {
