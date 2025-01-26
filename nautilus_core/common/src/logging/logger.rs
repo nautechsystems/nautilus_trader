@@ -305,14 +305,14 @@ impl Log for Logger {
                 message: format!("{}", record.args()),
             };
             if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-                eprintln!("Error sending log event: {line}");
+                eprintln!("Error sending log event (receiver closed): {line}");
             }
         }
     }
 
     fn flush(&self) {
         if let Err(e) = self.tx.send(LogEvent::Flush) {
-            eprintln!("Error sending flush log event: {e}");
+            eprintln!("Error sending flush log event (receiver closed): {e}");
         }
     }
 }
