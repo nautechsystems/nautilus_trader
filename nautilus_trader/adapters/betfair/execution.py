@@ -42,6 +42,7 @@ from betfair_parser.spec.streaming import stream_decode
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import OrderSideParser
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -102,8 +103,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BetfairHttpClient
         The Betfair HttpClient.
-    account_currency : Currency
-        The account base currency for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -112,8 +111,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : BetfairInstrumentProvider
         The instrument provider.
-    request_account_state_period : int
-        The period (seconds) between checking account state.
+    config : BetfairExecClientConfig
+        The configuration for the client.
 
     """
 
@@ -121,12 +120,11 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BetfairHttpClient,
-        account_currency: Currency,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BetfairInstrumentProvider,
-        request_account_state_period: int,
+        config: BetfairExecClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -134,7 +132,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             venue=BETFAIR_VENUE,
             oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
-            base_currency=account_currency,
+            base_currency=Currency.from_str(config.account_currency),
             instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
@@ -145,8 +143,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
         # Configuration
-        self.request_account_state_period = request_account_state_period or 300
-        self._log.info(f"{self.request_account_state_period=}", LogColor.BLUE)
+        self.config = config
+        self._log.info(f"{config.account_currency=}", LogColor.BLUE)
+        self._log.info(f"{config.request_account_state_secs=}", LogColor.BLUE)
 
         # Clients
         self._client: BetfairHttpClient = client
@@ -241,7 +240,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         while not self._is_closing:
             try:
                 await update_account_state()
-                await asyncio.sleep(self.request_account_state_period)
+                await asyncio.sleep(self.config.request_account_state_secs)
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'account_state_updates'")
 

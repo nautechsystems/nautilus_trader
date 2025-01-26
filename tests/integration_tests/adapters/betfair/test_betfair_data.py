@@ -91,7 +91,6 @@ def instrument_list(mock_load_markets_metadata):
 @pytest.mark.asyncio()
 async def test_connect(mocker, data_client, instrument):
     # Arrange
-    mocker.patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
     mocker.patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
     mocker.patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
 

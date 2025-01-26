@@ -50,18 +50,18 @@ class TestBetfairFactory:
     @pytest.mark.asyncio()
     def test_create(self):
         data_config = BetfairDataClientConfig(
+            account_currency="GBP",
             username="SOME_BETFAIR_USERNAME",
             password="SOME_BETFAIR_PASSWORD",
             app_key="SOME_BETFAIR_APP_KEY",
             cert_dir="SOME_BETFAIR_CERT_DIR",
-            account_currency="GBP",
         )
         exec_config = BetfairExecClientConfig(
+            account_currency="GBP",
             username="SOME_BETFAIR_USERNAME",
             password="SOME_BETFAIR_PASSWORD",
             app_key="SOME_BETFAIR_APP_KEY",
             cert_dir="SOME_BETFAIR_CERT_DIR",
-            account_currency="GBP",
         )
 
         data_client = BetfairLiveDataClientFactory.create(

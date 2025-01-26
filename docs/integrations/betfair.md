@@ -82,6 +82,7 @@ config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         "BETFAIR": {
+            "account_currency": "AUD",
             # username=None, # 'BETFAIR_USERNAME' env var
             # password=None, # 'BETFAIR_PASSWORD' env var
             # app_key=None, # 'BETFAIR_APP_KEY' env var
@@ -90,11 +91,11 @@ config = TradingNodeConfig(
     },
     exec_clients={
         "BETFAIR": {
+            "account_currency": "AUD",
             # username=None, # 'BETFAIR_USERNAME' env var
             # password=None, # 'BETFAIR_PASSWORD' env var
             # app_key=None, # 'BETFAIR_APP_KEY' env var
             # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
-            "base_currency": "AUD",
         },
     }
 )

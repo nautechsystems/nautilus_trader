@@ -30,7 +30,6 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.model.objects import Currency
 
 
 @lru_cache(1)
@@ -161,7 +160,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            account_currency=Currency.from_str(config.account_currency),
+            config=config,
         )
         return data_client
 
@@ -217,11 +216,10 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            account_currency=Currency.from_str(config.account_currency),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            request_account_state_period=config.request_account_state_period,
+            config=config,
         )
         return exec_client
