@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
@@ -24,14 +25,22 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
+    account_currency : str
+        The currency for the Betfair account.
     username : str, optional
         The Betfair account username.
     password : str, optional
         The Betfair account password.
     app_key : str, optional
-        The betfair application key.
+        The Betfair application key.
     cert_dir : str, optional
-        The local directory that contains the betfair certificates.
+        The local directory that contains the Betfair certificates.
+    instrument_config : BetfairInstrumentProviderConfig, None
+        The Betfair instrument provider config.
+    subscription_delay_secs : PositiveInt, default 3
+        The delay (seconds) to delay sending the *initial* subscription message.
+    keep_alive_secs : PositiveInt, default 36_000 (10 hours)
+        The keep alive interval (seconds) for the HTTP client.
 
     """
 
@@ -41,6 +50,8 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     app_key: str | None = None
     cert_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
+    subscription_delay_secs: PositiveInt | None = 3
+    keep_alive_secs: PositiveInt = 36_000  # 10 hours
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
@@ -49,14 +60,20 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
+    account_currency : str
+        The currency for the Betfair account.
     username : str, optional
         The Betfair account username.
     password : str, optional
         The Betfair account password.
     app_key : str, optional
-        The betfair application key.
+        The Betfair application key.
     cert_dir : str, optional
-        The local directory that contains the betfair certificates.
+        The local directory that contains the Betfair certificates.
+    instrument_config : BetfairInstrumentProviderConfig, None
+        The Betfair instrument provider config.
+    request_account_state_secs : PositiveInt, default 300 (5 minutes)
+        The request interval (seconds) for account state checks.
 
     """
 
@@ -66,4 +83,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     app_key: str | None = None
     cert_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
-    request_account_state_period: int | None = None
+    request_account_state_secs: PositiveInt = 300

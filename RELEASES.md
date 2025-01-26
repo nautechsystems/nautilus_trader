@@ -11,9 +11,11 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `venue_position_id` parameter for `OrderStatusReport`
 - Added bars update support for `Portfolio` PnLs (#2239), thanks @faysou
 - Added optional `params` for `Strategy` order management methods (symmetry with `Actor` data methods) (#2251), thanks @faysou
+- Improved Betfair clients configuration
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
+- Renamed `BetfairExecClientConfig.request_account_state_period` to `request_account_state_secs`
 - Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
 - Changed `BettingInstrument` default `min_notional` to `None`
 

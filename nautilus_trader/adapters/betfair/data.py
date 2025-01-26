@@ -16,13 +16,13 @@
 import asyncio
 from typing import Any
 
-import msgspec
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.common import merge_instrument_fields
@@ -40,7 +40,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.objects import Currency
 
 
 class BetfairDataClient(LiveMarketDataClient):
@@ -61,10 +60,8 @@ class BetfairDataClient(LiveMarketDataClient):
         The clock for the client.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
-    account_currency : Currency
-        The currency for the Betfair account.
-    keep_alive_period : int, default 36_000 (10 hours)
-        The keep alive period (seconds) for the socket client.
+    config : BetfairDataClientConfig
+        The configuration for the client.
 
     """
 
@@ -76,8 +73,7 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BetfairInstrumentProvider,
-        account_currency: Currency,
-        keep_alive_period: int = 3600 * 10,  # 10 hours
+        config: BetfairDataClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -91,8 +87,10 @@ class BetfairDataClient(LiveMarketDataClient):
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
 
         # Configuration
-        self.keep_alive_period = keep_alive_period
-        self._log.info(f"{keep_alive_period=}", LogColor.BLUE)
+        self.config = config
+        self._log.info(f"{config.account_currency=}", LogColor.BLUE)
+        self._log.info(f"{config.subscription_delay_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.keep_alive_secs=}", LogColor.BLUE)
 
         # Clients
         self._client: BetfairHttpClient = client
@@ -102,16 +100,13 @@ class BetfairDataClient(LiveMarketDataClient):
         )
         self._reconnect_in_progress = False
 
-        self._parser = BetfairParser(currency=account_currency.code)
-        self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
+        self._parser = BetfairParser(currency=config.account_currency)
 
         # Async tasks
         self._keep_alive_task: asyncio.Task | None = None
 
-        # TODO: Move heartbeat down to Rust socket
-        self._heartbeat_task: asyncio.Task | None = None
-
         # Subscriptions
+        self._subscription_status = SubscriptionStatus.UNSUBSCRIBED
         self._subscribed_instrument_ids: set[InstrumentId] = set()
         self._subscribed_market_ids: set[InstrumentId] = set()
 
@@ -135,11 +130,6 @@ class BetfairDataClient(LiveMarketDataClient):
             f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments",
         )
 
-        # Schedule a heartbeat in 10s to give us a little more time to load instruments
-        self._log.debug("Scheduling heartbeat")
-        if not self._heartbeat_task:
-            self._heartbeat_task = self.create_task(self._post_connect_heartbeat())
-
         if not self._keep_alive_task:
             self._keep_alive_task = self.create_task(self._keep_alive())
 
@@ -150,26 +140,13 @@ class BetfairDataClient(LiveMarketDataClient):
                 country_codes=self.instrument_provider._config.country_codes,
                 market_types=self.instrument_provider._config.market_types,
             )
-            self.subscription_status = SubscriptionStatus.SUBSCRIBED
-
-    async def _post_connect_heartbeat(self) -> None:
-        try:
-            for _ in range(3):
-                try:
-                    await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
-                    await asyncio.sleep(5)
-                except BrokenPipeError:
-                    self._log.warning("Heartbeat failed, reconnecting")
-                    await self._reconnect()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'post_connect_heartbeat'")
-            return
+            self._subscription_status = SubscriptionStatus.SUBSCRIBED
 
     async def _keep_alive(self) -> None:
-        self._log.info(f"Starting keep-alive every {self.keep_alive_period}s")
+        self._log.info(f"Starting keep-alive every {self.config.keep_alive_secs}s")
         while True:
             try:
-                await asyncio.sleep(self.keep_alive_period)
+                await asyncio.sleep(self.config.keep_alive_secs)
                 self._log.info("Sending keep-alive")
                 await self._client.keep_alive()
             except asyncio.CancelledError:
@@ -178,11 +155,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         # Cancel tasks
-        if self._heartbeat_task:
-            self._log.debug("Canceling task 'heartbeat'")
-            self._heartbeat_task.cancel()
-            self._heartbeat_task = None
-
         if self._keep_alive_task:
             self._log.debug("Canceling task 'keep_alive'")
             self._keep_alive_task.cancel()
@@ -216,6 +188,13 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
+    async def _delayed_subscribe(self, delay: int = 0) -> None:
+        self._log.debug(f"Scheduling subscribe for delay={delay}")
+        await asyncio.sleep(delay)
+        self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
+        await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
+        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
+
     async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
@@ -234,7 +213,7 @@ class BetfairDataClient(LiveMarketDataClient):
             )
             return
 
-        if self.subscription_status == SubscriptionStatus.SUBSCRIBED:
+        if self._subscription_status == SubscriptionStatus.SUBSCRIBED:
             self._log.debug("Already subscribed")
             return
 
@@ -243,24 +222,18 @@ class BetfairDataClient(LiveMarketDataClient):
         # their subscriptions (every change triggers a full snapshot).
         self._subscribed_market_ids.add(instrument.market_id)
         self._subscribed_instrument_ids.add(instrument.id)
-        if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
-            self.create_task(self.delayed_subscribe(delay=3))
-            self.subscription_status = SubscriptionStatus.PENDING_STARTUP
-        elif self.subscription_status == SubscriptionStatus.PENDING_STARTUP:
+        if self._subscription_status == SubscriptionStatus.UNSUBSCRIBED:
+            delay = self.config.subscription_delay_secs or 0
+            self.create_task(self._delayed_subscribe(delay=delay))
+            self._subscription_status = SubscriptionStatus.PENDING_STARTUP
+        elif self._subscription_status == SubscriptionStatus.PENDING_STARTUP:
             pass
-        elif self.subscription_status == SubscriptionStatus.RUNNING:
-            self.create_task(self.delayed_subscribe(delay=0))
+        elif self._subscription_status == SubscriptionStatus.RUNNING:
+            self.create_task(self._delayed_subscribe(delay=0))
 
         self._log.info(
             f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data",
         )
-
-    async def delayed_subscribe(self, delay=0) -> None:
-        self._log.debug(f"Scheduling subscribe for delay={delay}")
-        await asyncio.sleep(delay)
-        self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
-        await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
-        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
 
     async def _subscribe_instrument(
         self,
