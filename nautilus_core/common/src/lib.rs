@@ -41,6 +41,7 @@
 #![allow(deprecated)]
 
 pub mod actor;
+pub mod allocator;
 pub mod cache;
 pub mod clock;
 pub mod component;

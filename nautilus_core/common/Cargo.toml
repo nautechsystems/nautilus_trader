@@ -34,6 +34,11 @@ ustr = { workspace = true }
 uuid = { workspace = true }
 bincode = "1.3.3"
 sysinfo = "0.33.1"
+mimalloc = { version = "0.1", optional = true }
+
+# Jemallocator does not work on aarch64 with musl
+[target.'cfg(all(target_family="unix", not(all(target_arch = "aarch64", target_env = "musl"))))'.dependencies]
+tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -52,3 +57,5 @@ extension-module = [
 ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
 "clock_v2" = []
 python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+allocator-jemalloc = ["tikv-jemallocator"]
+allocator-mimalloc = ["mimalloc"]
