@@ -438,7 +438,13 @@ All commands should be run from the root of the `nautilus_core/persistence/` cra
 
 #### Migrating from standard-precision (64-bit) to high-precision (128-bit)
 
-This example describes a scenario where you want to migrate from standard-precision schema data to high-precision schema data.
+This example describes a scenario where you want to migrate from standard-precision schema to high-precision schema.
+
+:::note
+If you're migrating from a catalog that used the `Int64` and `UInt64` Arrow data types for prices and sizes,
+be sure to check out commit [e284162](https://github.com/nautechsystems/nautilus_trader/commit/e284162cf27a3222115aeb5d10d599c8cf09cf50)
+**before** compiling the code that writes the initial JSON.
+:::
 
 **1. Convert from standard-precision Parquet to JSON**:
 
