@@ -315,10 +315,9 @@ impl SocketClientInner {
 
                 match connection_state.load(Ordering::SeqCst) {
                     CONNECTION_ACTIVE => {
-                        tracing::debug!("Sending heartbeat");
                         let mut guard = writer.lock().await;
                         match guard.write_all(&message).await {
-                            Ok(()) => tracing::debug!("Sent heartbeat"),
+                            Ok(()) => tracing::trace!("Sent heartbeat"),
                             Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
                         }
                     }

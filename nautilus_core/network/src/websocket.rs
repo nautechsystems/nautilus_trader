@@ -344,7 +344,6 @@ impl WebSocketClientInner {
 
                 match connection_state.load(Ordering::SeqCst) {
                     CONNECTION_ACTIVE => {
-                        tracing::debug!("Sending heartbeat");
                         let mut guard = writer.lock().await;
                         let guard_send_response = match message.clone() {
                             Some(msg) => guard.send(Message::Text(msg.into())).await,
