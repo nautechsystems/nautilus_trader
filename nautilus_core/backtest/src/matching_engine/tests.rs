@@ -27,7 +27,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::messages::{CancelAllOrders, CancelOrder};
+use nautilus_execution::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder};
 use nautilus_model::{
     data::{stubs::OrderBookDeltaTestBuilder, BookOrder},
     enums::{
@@ -1637,4 +1637,121 @@ fn test_process_cancel_all_command(
     assert_eq!(order_canceled_1.instrument_id, instrument_eth_usdt.id());
     assert!(ids.contains(&client_order_id_2));
     assert_eq!(order_canceled_2.instrument_id, instrument_eth_usdt.id());
+}
+
+#[rstest]
+fn test_process_batch_cancel_command(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        Some(cache.clone()),
+        None,
+        None,
+    );
+
+    // add SELL limit orderbook delta to have ask initialized
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // create 2 limits order which will be canceled with batch cancel command
+    let client_order_id_1 = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order_1 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_1)
+        .build();
+    let client_order_id_2 = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1496.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_2)
+        .build();
+
+    engine_l2.process_order(&mut limit_order_1, account_id);
+    engine_l2.process_order(&mut limit_order_2, account_id);
+
+    let cancel_1 = CancelOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id_1,
+        VenueOrderId::from("V1"),
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let cancel_2 = CancelOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id_2,
+        VenueOrderId::from("V2"),
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let batch_cancel_command = BatchCancelOrders::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        vec![cancel_1, cancel_2],
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+
+    engine_l2.process_batch_cancel(&batch_cancel_command, account_id);
+
+    // check we have received 2 OrderAccepted and 2 OrderCanceled events
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 4);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_1);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_accepted = match order_event_second {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in second message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_2);
+    let order_event_third = saved_messages.get(2).unwrap();
+    let order_canceled_1 = match order_event_third {
+        OrderEventAny::Canceled(order_canceled) => order_canceled,
+        _ => panic!("Expected OrderCanceled event in third message"),
+    };
+    let order_event_fourth = saved_messages.get(3).unwrap();
+    let order_canceled_2 = match order_event_fourth {
+        OrderEventAny::Canceled(order_canceled) => order_canceled,
+        _ => panic!("Expected OrderCanceled event in fourth message"),
+    };
+    assert_eq!(order_canceled_1.client_order_id, client_order_id_1);
 }
