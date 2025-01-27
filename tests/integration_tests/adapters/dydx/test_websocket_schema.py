@@ -209,13 +209,14 @@ def test_markets_channel_message_v8() -> None:
 
     # Act
     with Path(
-        "tests/test_data/dydx/websocket/v4_markets_channel_data_v8.json"
+        "tests/test_data/dydx/websocket/v4_markets_channel_data_v8.json",
     ).open() as file_reader:
         msg = decoder.decode(file_reader.read())
 
     # Assert
     assert msg.channel == "v4_markets"
     assert msg.type == "channel_data"
+    assert msg.contents.trading is not None
     assert msg.contents.trading["TRY-USD"].defaultFundingRate1H == "0"
 
 
