@@ -1100,48 +1100,114 @@ class NautilusKernel:
         if self._writer:
             self._writer.close()
 
-    def cancel_all_tasks(self) -> None:
+    def cancel_all_tasks(self) -> None:  # noqa: C901 (too complex)
         """
         Cancel all tasks currently running for the Nautilus kernel.
+
+        This method handles task cancellation in both synchronous and asynchronous contexts:
+        - 1. All pending tasks are identified and given a cancellation signal.
+        - 2. The kernel waits until the shutdown timeout for tasks to conclude or raise exceptions.
+        - 3. Any tasks that remain unresponsive or encounter errors are logged.
+        - 4. If the event loop is still active, the cancellation proceeds asynchronously;
+        otherwise, it's handled immediately.
 
         Raises
         ------
         RuntimeError
             If no event loop has been assigned to the kernel.
 
+        Notes
+        -----
+        - Tasks that don't respond to cancellation within timeout are logged but not forcibly terminated.
+        - CancelledError exceptions are expected and handled silently.
+        - Other exceptions from tasks are logged with full stack traces.
+        - If the loop is closed, method exits early with a warning.
+
         """
         if self.loop is None:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
-        to_cancel = asyncio.tasks.all_tasks(self.loop)
-        if not to_cancel:
-            self._log.info("All tasks canceled")
+        if self.loop.is_closed():
+            self._log.warning("Event loop already closed; cannot cancel tasks")
             return
 
-        for task in to_cancel:
-            self._log.warning(f"Canceling pending task '{task.get_name()}'")
+        # Get all tasks except the current one
+        current_task = asyncio.current_task(self.loop)
+        pending_tasks = [
+            task
+            for task in asyncio.all_tasks(self.loop)
+            if task is not current_task and not task.done()
+        ]
+
+        if not pending_tasks:
+            self._log.info("No pending tasks to cancel")
+            return
+
+        # Log tasks that are about to be cancelled
+        for task in pending_tasks:
+            self._log.info(f"Canceling pending task '{task.get_name()}' (id={id(task)})")
             task.cancel()
 
-        if self.loop and self.loop.is_running():
-            self._log.warning("Event loop still running during `cancel_all_tasks`")
-            return
-
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(*to_cancel)
-        self.loop.run_until_complete(finish_all_tasks)
-
-        self._log.debug(f"{finish_all_tasks}")
-
-        for task in to_cancel:  # pragma: no cover
-            if task.cancelled():
-                continue
-            if task.exception() is not None:
-                self.loop.call_exception_handler(
-                    {
-                        "message": "unhandled exception during `asyncio.run()` shutdown",
-                        "exception": task.exception(),
-                        "task": task,
-                    },
+        async def _cancel_and_wait_for_tasks():
+            try:
+                done, still_pending = await asyncio.wait(
+                    pending_tasks,
+                    timeout=self._config.timeout_shutdown,
+                    return_when=asyncio.ALL_COMPLETED,
                 )
+
+                # Handle any tasks that didn't complete within the timeout
+                if still_pending:
+                    self._log.warning(
+                        f"{len(still_pending)} tasks still pending after {self._config.timeout_shutdown}s timeout:",
+                    )
+                    for t in still_pending:
+                        self._log.warning(f"Task '{t.get_name()}' (id={id(t)}) still pending")
+
+                # Log any exceptions from the completed tasks
+                for d in done:
+                    try:
+                        exc = d.exception()
+                        if exc and not isinstance(exc, asyncio.CancelledError):
+                            self._log.error(
+                                f"Task '{d.get_name()}' raised unexpected exception: {exc}",
+                                exc_info=exc,
+                            )
+                    except asyncio.CancelledError:
+                        pass  # This is expected for cancelled tasks
+            except Exception as e:
+                self._log.error(
+                    f"Error during task cleanup: {e}",
+                    exc_info=True,
+                )
+
+        if self.loop.is_running():
+            # If the loop is already running, schedule the cleanup and run asynchronously
+            self._log.info("Event loop still running; scheduling task cleanup")
+            cleanup_task = self.loop.create_task(_cancel_and_wait_for_tasks())
+            cleanup_task.add_done_callback(
+                lambda t: self._log.info(
+                    (
+                        "Task cleanup completed"
+                        if not t.exception()
+                        else f"Task cleanup failed: {t.exception()}"
+                    ),
+                ),
+            )
+        else:
+            try:
+                # If the loop isn't running, we can block until cleanup completes
+                self.loop.run_until_complete(_cancel_and_wait_for_tasks())
+            except RuntimeError as e:
+                if "Event loop stopped before Future completed" in str(e):
+                    self._log.warning(
+                        "Loop stopped during cleanup; some tasks may not "
+                        "be properly canceled or awaited",
+                    )
+                else:
+                    raise
+
+        self._log.info("Task cancellation completed")
 
     def _register_executor(self) -> None:
         for actor in self.trader.actors():

@@ -285,7 +285,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                ("d7f03f1c17f3a27fe3f5f0b2f502abbc77e31853e2596daf5aa7d9c6eabca123",),
+                ("2192cd4afe663036e589b94a3c9fef2bb4ce42867b41933eeb04ddf2adad8919",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
