@@ -15,6 +15,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `min_market_start_time` and `max_market_start_time` time range filtering for `BetfairInstrumentProviderConfig`
 - Added `default_min_notional` for `BetfairInstrumentProviderConfig`
 - Added IOC time in force mapping for Betfair orders
+- Added `timeout_shutdown` config option for `NautilusKernelConfig`
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
@@ -28,6 +29,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
+- Improved `NautilusKernel` pending tasks cancellation on shutdown
 - Refactored CI with composite actions (#2242), thanks @sunlei
 - Changed to use `mold` as the linker in CI (#2254), thanks @sunlei
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek

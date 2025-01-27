@@ -45,22 +45,24 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The kernel environment context.
     trader_id : TraderId
         The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
+    instance_id : UUID4, optional
+        The unique instance identifier for the kernel.
     cache : CacheConfig, optional
         The cache configuration.
     message_bus : MessageBusConfig, optional
         The message bus configuration.
     data_engine : DataEngineConfig, optional
-        The live data engine configuration.
+        The data engine configuration.
     risk_engine : RiskEngineConfig, optional
-        The live risk engine configuration.
+        The risk engine configuration.
     exec_engine : ExecEngineConfig, optional
-        The live execution engine configuration.
+        The execution engine configuration.
     emulator : OrderEmulatorConfig, optional
         The order emulator configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
     catalogs : list[DataCatalogConfig], optional
-        The list of data catalog configs.
+        The list of data catalog configurations.
         We assume that catalogs have no duplicate data.
     actors : list[ImportableActorConfig]
         The actor configurations for the kernel.
@@ -77,7 +79,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
-        The logging config for the kernel.
+        The logging configuration for the kernel.
     timeout_connection : PositiveFloat
         The timeout (seconds) for all clients to connect and initialize.
     timeout_reconciliation : PositiveFloat
@@ -88,6 +90,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The timeout (seconds) for all engine clients to disconnect.
     timeout_post_stop : PositiveFloat
         The timeout (seconds) after stopping the node to await residual events before final shutdown.
+    timeout_shutdown : PositiveFloat
+        The timeout (seconds) to await pending tasks cancellation during shutdown.
 
     """
 
@@ -116,3 +120,4 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0
     timeout_post_stop: PositiveFloat = 10.0
+    timeout_shutdown: PositiveFloat = 5.0

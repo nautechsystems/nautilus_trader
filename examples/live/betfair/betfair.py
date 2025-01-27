@@ -70,7 +70,6 @@ async def main(
     config = TradingNodeConfig(
         timeout_connection=30.0,
         timeout_disconnection=30.0,
-        timeout_post_stop=30.0,
         logging=LoggingConfig(log_level=log_level, use_pyo3=True),
         exec_engine=LiveExecEngineConfig(
             reconciliation=True,
@@ -140,7 +139,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="AUD",
-        market_ids=["1.238639729"],
+        market_ids=["1.238745613"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()
