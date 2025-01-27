@@ -80,7 +80,7 @@ async def main(
             # open_check_interval_secs=5.0,
         ),
         data_clients={
-            "BETFAIR": BetfairDataClientConfig(
+            BETFAIR: BetfairDataClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
                 # username=None, # 'BETFAIR_USERNAME' env var
@@ -90,14 +90,14 @@ async def main(
             ),
         },
         exec_clients={
-            # # UNCOMMENT TO SEND ORDERS
-            "BETFAIR": BetfairExecClientConfig(
+            BETFAIR: BetfairExecClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
                 # username=None, # 'BETFAIR_USERNAME' env var
                 # password=None, # 'BETFAIR_PASSWORD' env var
                 # app_key=None, # 'BETFAIR_APP_KEY' env var
                 # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+                reconcile_market_ids_only=True,
             ),
         },
     )
@@ -108,6 +108,7 @@ async def main(
                 max_trade_size=Decimal(10),
                 trigger_min_size=2,
                 order_id_tag=instrument.selection_id,
+                dry_run=True,  # Change to False to submit new orders
             ),
         )
         for instrument in instruments
@@ -138,8 +139,8 @@ if __name__ == "__main__":
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
-        account_currency="GBP",
-        market_ids=["1.176878927"],
+        account_currency="AUD",
+        market_ids=["1.238639729"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()
