@@ -13,6 +13,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added optional `params` for `Strategy` order management methods (symmetry with `Actor` data methods) (#2251), thanks @faysou
 - Added heartbeats for Betfair clients to keep streams alive (more robust when initial subscription delays)
 - Added market start time range filtering for `BetfairInstrumentProviderConfig`
+- Added `default_min_notional` for `BetfairInstrumentProviderConfig`
 - Improved Betfair clients configuration
 
 ### Breaking Changes

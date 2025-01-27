@@ -212,7 +212,12 @@ def test_market_bsp(data_client, mock_data_engine_process):
     provider = data_client.instrument_provider
     for mc in stream_decode(update[0]).mc:
         market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
-        instruments = make_instruments(market=market_def, currency="GBP", ts_event=0, ts_init=0)
+        instruments = make_instruments(
+            market=market_def,
+            currency="GBP",
+            ts_event=0,
+            ts_init=0,
+        )
         provider.add_bulk(instruments)
 
     # Act

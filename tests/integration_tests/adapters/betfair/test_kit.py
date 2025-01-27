@@ -790,7 +790,15 @@ class BetfairDataProvider:
         for mc in mcm.mc:
             if mc.market_definition:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
-                instruments.extend(market_definition_to_instruments(market_def, currency, 0, 0))
+                instruments.extend(
+                    market_definition_to_instruments(
+                        market_def,
+                        currency,
+                        0,
+                        0,
+                        min_notional=Money(1, GBP),
+                    ),
+                )
         return instruments
 
     @staticmethod
@@ -878,11 +886,17 @@ def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     filename = TEST_DATA_DIR / "betfair" / "1-166564490.bz2"
 
     # Write betting instruments
-    instruments = betting_instruments_from_file(filename, currency="GBP", ts_event=0, ts_init=0)
+    instruments = betting_instruments_from_file(
+        filename,
+        currency="GBP",
+        ts_event=0,
+        ts_init=0,
+        min_notional=Money(1, GBP),
+    )
     catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(filename, currency="GBP"))
+    data = list(parse_betfair_file(filename, currency="GBP", min_notional=Money(1, GBP)))
     catalog.write_data(data)
 
     return catalog
