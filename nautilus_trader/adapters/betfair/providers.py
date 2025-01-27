@@ -35,6 +35,7 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISIO
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.common.config import PositiveFloat
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -96,18 +97,19 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    client : BetfairClient, optional
-        The client for the provider.
-    config : InstrumentProviderConfig, optional
+    client : BetfairHttpClient
+        The Betfair HTTP client for the provider.
+    config : InstrumentProviderConfig
         The configuration for the provider.
 
     """
 
     def __init__(
         self,
-        client: BetfairHttpClient | None,
+        client: BetfairHttpClient,
         config: BetfairInstrumentProviderConfig,
     ) -> None:
+        PyCondition.not_none(client, "client")
         PyCondition.not_none(config, "config")
         super().__init__(config=config)
 
@@ -162,6 +164,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         )
 
         self._log.info("Creating instruments...")
+        self._log.info(f"default_min_notional={default_min_notional}", LogColor.BLUE)
         instruments = [
             instrument
             for metadata in market_metadata
@@ -176,7 +179,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         for instrument in instruments:
             self.add(instrument=instrument)
 
-        self._log.info(f"{len(instruments)} Instruments created")
+        self._log.info(f"{len(instruments)} BettingInstrument(s) created")
 
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
