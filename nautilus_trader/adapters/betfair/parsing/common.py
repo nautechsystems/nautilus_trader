@@ -21,19 +21,16 @@ from betfair_parser.spec.common import Handicap
 from betfair_parser.spec.common import MarketId
 from betfair_parser.spec.common import OrderSide as BetSide
 from betfair_parser.spec.common import SelectionId
+from betfair_parser.spec.common import Size
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments.betting import make_symbol
 from nautilus_trader.model.instruments.betting import null_handicap
-
-
-def hash_market_trade(timestamp: int, price: float, volume: float) -> str:
-    data = (timestamp, price, volume)
-    return hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18)
 
 
 @lru_cache
@@ -65,6 +62,24 @@ def instrument_id_betfair_ids(
     )
 
 
+def merge_instrument_fields(
+    old: BettingInstrument,
+    new: BettingInstrument,
+    logger,
+) -> BettingInstrument:
+    old_dict = old.to_dict(old)
+    new_dict = new.to_dict(new)
+    for key, value in new_dict.items():
+        if key in ("type", "id", "info"):
+            continue
+        if value != old_dict[key] and value:
+            old_value = old_dict[key]
+            logger.debug(f"Got updated field for {old.id}: {key=} {value=} {old_value=}")
+            old_dict[key] = value
+
+    return BettingInstrument.from_dict(old_dict)
+
+
 def chunk(list_like, n):
     """
     Yield successive n-sized chunks from l.
@@ -91,19 +106,13 @@ def bet_side_to_order_side(side: BetSide) -> OrderSide:
         raise RuntimeError(f"Unknown side: {side}")
 
 
-def merge_instrument_fields(
-    old: BettingInstrument,
-    new: BettingInstrument,
-    logger,
-) -> BettingInstrument:
-    old_dict = old.to_dict(old)
-    new_dict = new.to_dict(new)
-    for key, value in new_dict.items():
-        if key in ("type", "id", "info"):
-            continue
-        if value != old_dict[key] and value:
-            old_value = old_dict[key]
-            logger.debug(f"Got updated field for {old.id}: {key=} {value=} {old_value=}")
-            old_dict[key] = value
+def min_fill_size(time_in_force) -> Size | None:
+    if time_in_force == TimeInForce.IOC:
+        return 0
+    else:
+        return None
 
-    return BettingInstrument.from_dict(old_dict)
+
+def hash_market_trade(timestamp: int, price: float, volume: float) -> str:
+    data = (timestamp, price, volume)
+    return hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18)

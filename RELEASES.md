@@ -12,9 +12,9 @@ This release will be the final version that uses Poetry for package and dependen
 - Added bars update support for `Portfolio` PnLs (#2239), thanks @faysou
 - Added optional `params` for `Strategy` order management methods (symmetry with `Actor` data methods) (#2251), thanks @faysou
 - Added heartbeats for Betfair clients to keep streams alive (more robust when initial subscription delays)
-- Added market start time range filtering for `BetfairInstrumentProviderConfig`
+- Added `min_market_start_time` and `max_market_start_time` time range filtering for `BetfairInstrumentProviderConfig`
 - Added `default_min_notional` for `BetfairInstrumentProviderConfig`
-- Improved Betfair clients configuration
+- Added IOC time in force mapping for Betfair orders
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`
