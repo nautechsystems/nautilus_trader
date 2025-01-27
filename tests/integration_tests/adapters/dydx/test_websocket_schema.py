@@ -200,7 +200,7 @@ def test_markets_channel_message() -> None:
     assert msg.contents.oraclePrices is not None
 
 
-def test_markets_channel_message() -> None:
+def test_markets_channel_message_v8() -> None:
     """
     Test parsing the account subscribed message.
     """
@@ -208,7 +208,9 @@ def test_markets_channel_message() -> None:
     decoder = msgspec.json.Decoder(DYDXWsMarketChannelData)
 
     # Act
-    with Path("tests/test_data/dydx/websocket/v4_markets_channel_data_v8.json").open() as file_reader:
+    with Path(
+        "tests/test_data/dydx/websocket/v4_markets_channel_data_v8.json"
+    ).open() as file_reader:
         msg = decoder.decode(file_reader.read())
 
     # Assert
