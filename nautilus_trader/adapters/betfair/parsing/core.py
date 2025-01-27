@@ -33,6 +33,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 
 
 class BetfairParser:
@@ -45,7 +46,12 @@ class BetfairParser:
         self.market_definitions: dict[str, MarketDefinition] = {}
         self.traded_volumes: dict[InstrumentId, dict[float, float]] = {}
 
-    def parse(self, mcm: MCM, ts_init: int | None = None) -> list[PARSE_TYPES]:
+    def parse(
+        self,
+        mcm: MCM,
+        ts_init: int | None = None,
+        min_notional: Money | None = None,
+    ) -> list[PARSE_TYPES]:
         if isinstance(mcm, Status | Connection | OCM):
             return []
         if mcm.is_heartbeat:
@@ -62,6 +68,7 @@ class BetfairParser:
                     currency=self.currency.code,
                     ts_event=ts_event,
                     ts_init=ts_init,
+                    min_notional=min_notional,
                 )
                 updates.extend(instruments)
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
@@ -77,6 +84,7 @@ def iter_stream(file_like: BinaryIO):
 def parse_betfair_file(
     uri: PathLike[str] | str,
     currency: str,
+    min_notional: Money | None = None,
 ) -> Generator[list[PARSE_TYPES], None, None]:
     """
     Parse a file of streaming data.
@@ -86,13 +94,15 @@ def parse_betfair_file(
     uri : PathLike[str] | str
         The fsspec-compatible URI.
     currency : str
-        The betfair account currency
+        The Betfair account currency.
+    min_notional : Money
+        The minimum notional value for instrument definitions.
 
     """
     parser = BetfairParser(currency=currency)
     with fsspec.open(uri, compression="infer") as f:
         for mcm in iter_stream(f):
-            yield from parser.parse(mcm)
+            yield from parser.parse(mcm, min_notional=min_notional)
 
 
 def betting_instruments_from_file(
@@ -100,6 +110,7 @@ def betting_instruments_from_file(
     currency: str,
     ts_event: int,
     ts_init: int,
+    min_notional: Money | None = None,
 ) -> list[BettingInstrument]:
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
@@ -116,6 +127,8 @@ def betting_instruments_from_file(
                         currency=currency,
                         ts_event=ts_event,
                         ts_init=ts_init,
+                        min_notional=min_notional,
                     )
                     instruments.extend(instruments)
+
     return list(set(instruments))

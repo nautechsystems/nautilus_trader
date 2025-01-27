@@ -110,7 +110,12 @@ class TestBetfairInstrumentProvider:
         mc: MarketChange = update.mc[0]
         market_def = mc.market_definition
         market_def = msgspec.structs.replace(market_def, market_id=mc.id)
-        instruments = make_instruments(market_def, currency="GBP", ts_event=0, ts_init=0)
+        instruments = make_instruments(
+            market_def,
+            currency="GBP",
+            ts_event=0,
+            ts_init=0,
+        )
         self.provider.add_bulk(instruments)
 
         # Act
@@ -129,7 +134,12 @@ class TestBetfairInstrumentProvider:
         market_catalogue = msgspec.json.decode(msgspec.json.encode(raw), type=MarketCatalogue)
 
         # Act
-        instruments = make_instruments(market_catalogue, currency="GBP", ts_event=0, ts_init=0)
+        instruments = make_instruments(
+            market_catalogue,
+            currency="GBP",
+            ts_event=0,
+            ts_init=0,
+        )
 
         # Assert
         result = [ins.id.value for ins in instruments]
