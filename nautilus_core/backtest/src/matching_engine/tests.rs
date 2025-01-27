@@ -17,7 +17,7 @@
 
 use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use nautilus_common::{
     cache::Cache,
     msgbus::{
@@ -29,10 +29,10 @@ use nautilus_common::{
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
 use nautilus_execution::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder};
 use nautilus_model::{
-    data::{stubs::OrderBookDeltaTestBuilder, BookOrder},
+    data::{stubs::OrderBookDeltaTestBuilder, BookOrder, TradeTick},
     enums::{
-        AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
-        OrderType, TimeInForce,
+        AccountType, AggressorSide, BookAction, BookType, ContingencyType, LiquiditySide, OmsType,
+        OrderSide, OrderType, TimeInForce,
     },
     events::{
         order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
@@ -1754,4 +1754,92 @@ fn test_process_batch_cancel_command(
         _ => panic!("Expected OrderCanceled event in fourth message"),
     };
     assert_eq!(order_canceled_1.client_order_id, client_order_id_1);
+}
+
+#[rstest]
+fn test_expire_order(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    // Create order matching engine with gtd support
+    let mut engine_config = OrderMatchingEngineConfig::default();
+    engine_config.support_gtd_orders = true;
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        Some(engine_config),
+    );
+
+    // Add SELL limit orderbook delta to have ask initialized
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create GTD LIMIT order which will expire after we process tick
+    // that has higher timestamp than expire_time
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let expire_time = DateTime::parse_from_rfc3339("2019-10-23T10:32:49.669Z")
+        .unwrap()
+        .with_timezone(&Utc)
+        .timestamp_nanos_opt()
+        .unwrap();
+    let tick_time = DateTime::parse_from_rfc3339("2025-10-23T10:32:50.000Z")
+        .unwrap()
+        .with_timezone(&Utc)
+        .timestamp_nanos_opt()
+        .unwrap();
+
+    let mut limit_order_expire = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .expire_time(UnixNanos::from(expire_time as u64))
+        .client_order_id(client_order_id)
+        .build();
+    let tick = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Buyer,
+        TradeId::new("1"),
+        UnixNanos::from(tick_time as u64),
+        UnixNanos::from(tick_time as u64),
+    );
+    engine_l2.process_order(&mut limit_order_expire, account_id);
+    engine_l2.process_trade_tick(&tick);
+
+    // Check we have received OrderAccepted and then OrderExpired event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_expired = match order_event_second {
+        OrderEventAny::Expired(order_expired) => order_expired,
+        _ => panic!("Expected OrderExpired event in second message"),
+    };
+    assert_eq!(order_expired.client_order_id, client_order_id);
 }

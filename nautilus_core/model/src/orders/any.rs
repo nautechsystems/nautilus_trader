@@ -1270,6 +1270,22 @@ impl PassiveOrderAny {
             Self::Stop(order) => order.expire_time(),
         }
     }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::Limit(order) => order.contingency_type(),
+            Self::Stop(order) => order.contingency_type(),
+        }
+    }
+
+    #[must_use]
+    pub fn to_any(&self) -> OrderAny {
+        match self {
+            Self::Limit(order) => order.clone().into(),
+            Self::Stop(order) => order.clone().into(),
+        }
+    }
 }
 
 impl PartialEq for PassiveOrderAny {
@@ -1357,6 +1373,16 @@ impl LimitOrderAny {
             Self::MarketToLimit(order) => order.expire_time,
             Self::StopLimit(order) => order.expire_time,
             Self::TrailingStopLimit(order) => order.expire_time,
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::Limit(order) => order.contingency_type,
+            Self::MarketToLimit(order) => order.contingency_type,
+            Self::StopLimit(order) => order.contingency_type,
+            Self::TrailingStopLimit(order) => order.contingency_type,
         }
     }
 }
@@ -1464,6 +1490,18 @@ impl StopOrderAny {
             Self::StopMarket(order) => order.expire_time,
             Self::TrailingStopLimit(order) => order.expire_time,
             Self::TrailingStopMarket(order) => order.expire_time,
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::LimitIfTouched(order) => order.contingency_type,
+            Self::MarketIfTouched(order) => order.contingency_type,
+            Self::StopLimit(order) => order.contingency_type,
+            Self::StopMarket(order) => order.contingency_type,
+            Self::TrailingStopLimit(order) => order.contingency_type,
+            Self::TrailingStopMarket(order) => order.contingency_type,
         }
     }
 }
