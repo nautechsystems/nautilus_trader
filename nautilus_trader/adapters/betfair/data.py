@@ -143,7 +143,8 @@ class BetfairDataClient(LiveMarketDataClient):
             self._subscription_status = SubscriptionStatus.SUBSCRIBED
 
     async def _keep_alive(self) -> None:
-        self._log.info(f"Starting keep-alive every {self.config.keep_alive_secs}s")
+        keep_alive_hrs = self.config.keep_alive_secs / (60 * 60)
+        self._log.info(f"Starting keep-alive every {keep_alive_hrs}hrs")
         while True:
             try:
                 await asyncio.sleep(self.config.keep_alive_secs)

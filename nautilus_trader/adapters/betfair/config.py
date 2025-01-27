@@ -74,6 +74,9 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         The Betfair instrument provider config.
     request_account_state_secs : PositiveInt, default 300 (5 minutes)
         The request interval (seconds) for account state checks.
+    reconcile_market_ids_only : bool, default False
+        If True, reconciliation only requests orders matching the market IDs listed
+        in the `instrument_config`. If False, all orders are reconciled.
 
     """
 
@@ -84,3 +87,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     cert_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
     request_account_state_secs: PositiveInt = 300
+    reconcile_market_ids_only: bool = False

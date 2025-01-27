@@ -995,7 +995,7 @@ async def test_generate_order_status_reports_executable(exec_client):
     reports = await exec_client.generate_order_status_reports()
 
     # Assert
-    assert len(reports) == 4
+    assert len(reports) == 2
     assert reports[0].order_side == OrderSide.SELL
     assert reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
     assert reports[0].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
@@ -1023,7 +1023,7 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     reports = await exec_client.generate_order_status_reports()
 
     # Assert
-    assert len(reports) == 4
+    assert len(reports) == 2
 
     # Back
     assert reports[0].order_side == OrderSide.SELL
