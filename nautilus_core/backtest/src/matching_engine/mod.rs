@@ -966,6 +966,7 @@ impl OrderMatchingEngine {
                     if timestamp_ns >= expire_time {
                         // SAFTEY: We know this order is in the core
                         self.core.delete_order(order).unwrap();
+                        self.cached_filled_qty.remove(&order.client_order_id());
                         self.expire_order(order);
                     }
                 }
@@ -1456,7 +1457,15 @@ impl OrderMatchingEngine {
     }
 
     fn expire_order(&mut self, order: &PassiveOrderAny) {
-        todo!("expire_order")
+        if self.config.support_contingent_orders
+            && order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+        {
+            self.cancel_contingent_orders(&OrderAny::from(order.clone()));
+        }
+
+        self.generate_order_expired(&order.to_any());
     }
 
     fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {
