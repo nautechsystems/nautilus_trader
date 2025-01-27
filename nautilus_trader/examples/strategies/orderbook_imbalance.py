@@ -60,6 +60,8 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
         The order book type for the strategy.
     use_quote_ticks : bool, default False
         If quotes should be used.
+    dry_run : bool, default False
+        If dry run mode is active. If True, then no new orders will be submitted.
 
     """
 
@@ -70,6 +72,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     min_seconds_between_triggers: NonNegativeFloat = 1.0
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = False
+    dry_run: bool = False
 
 
 class OrderBookImbalance(Strategy):
@@ -134,7 +137,7 @@ class OrderBookImbalance(Strategy):
         """
         self.check_trigger()
 
-    def check_trigger(self) -> None:
+    def check_trigger(self) -> None:  # noqa: C901 (too complex)
         """
         Check for trigger conditions.
         """
@@ -186,8 +189,10 @@ class OrderBookImbalance(Strategy):
                 )
                 self._last_trigger_timestamp = self.clock.utc_now()
                 self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
+                if self.config.dry_run:
+                    self.log.warning("Dry run mode is active; skipping new order submission")
+                    return
                 self.submit_order(order)
-
             else:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
@@ -199,6 +204,9 @@ class OrderBookImbalance(Strategy):
                 )
                 self._last_trigger_timestamp = self.clock.utc_now()
                 self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
+                if self.config.dry_run:
+                    self.log.warning("Dry run mode is active; skipping new order submission")
+                    return
                 self.submit_order(order)
 
     def on_stop(self) -> None:
