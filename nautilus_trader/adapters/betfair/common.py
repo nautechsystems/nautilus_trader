@@ -57,6 +57,7 @@ class OrderSideParser:
 
 N2B_TIME_IN_FORCE = {
     TimeInForce.FOK: BetfairTimeInForce.FILL_OR_KILL,
+    TimeInForce.IOC: BetfairTimeInForce.FILL_OR_KILL,  # min_fill_size 0 also needed
 }
 
 N2B_PERSISTENCE = {

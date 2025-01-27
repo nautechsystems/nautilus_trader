@@ -50,6 +50,7 @@ from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.parsing.common import min_fill_size
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -113,6 +114,7 @@ def nautilus_limit_to_place_instructions(
                 PersistenceType.LAPSE,
             ),
             time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
+            min_fill_size=min_fill_size(command.order.time_in_force),
         ),
         customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
@@ -169,6 +171,7 @@ def nautilus_market_to_place_instructions(
                 PersistenceType.LAPSE,
             ),
             time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
+            min_fill_size=min_fill_size(command.order.time_in_force),
         ),
         customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
@@ -418,20 +421,30 @@ def bet_to_order_status_report(
 
 def determine_order_status(order: CurrentOrderSummary) -> OrderStatus:
     order_size = order.price_size.size
+
     if order.status == BetfairOrderStatus.EXECUTION_COMPLETE:
         if order_size == order.size_matched:
             return OrderStatus.FILLED
-        elif order.size_cancelled > 0.0:
+        elif order.size_cancelled and order.size_cancelled > 0.0:
             return OrderStatus.CANCELED
         else:
             return OrderStatus.PARTIALLY_FILLED
     elif order.status == BetfairOrderStatus.EXECUTABLE:
         if order.size_matched == 0.0:
             return OrderStatus.ACCEPTED
-        elif order.size_matched > 0.0:
+        elif order.size_matched and order.size_matched > 0.0:
             return OrderStatus.PARTIALLY_FILLED
-    else:
-        raise ValueError(f"Unknown order status {order.status=}")
+    elif order.status == BetfairOrderStatus.EXPIRED:
+        # Time in force requirement resulted in a cancel
+        if order.size_matched == 0.0:
+            return OrderStatus.CANCELED
+        else:
+            return OrderStatus.PARTIALLY_FILLED
+    elif order.status == BetfairOrderStatus.PENDING:
+        # Accepted, but yet to be processed
+        return OrderStatus.ACCEPTED
+
+    raise ValueError(f"Unknown order status {order.status=}")
 
 
 def create_customer_ref(command: SubmitOrder | ModifyOrder | CancelOrder) -> str:
