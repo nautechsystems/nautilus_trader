@@ -796,7 +796,7 @@ class BetfairDataProvider:
                         currency,
                         0,
                         0,
-                        min_notional=Money(1, GBP),
+                        None,
                     ),
                 )
         return instruments
@@ -896,7 +896,7 @@ def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(filename, currency="GBP", min_notional=Money(1, GBP)))
+    data = list(parse_betfair_file(filename, currency="GBP"))
     catalog.write_data(data)
 
     return catalog
