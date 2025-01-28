@@ -17,7 +17,6 @@ import asyncio
 import traceback
 from collections import defaultdict
 
-import msgspec
 import pandas as pd
 from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -63,7 +62,6 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.datetime import nanos_to_micros
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -160,7 +158,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.account_state_task: asyncio.Task | None = None
 
         # Hot caches
-        self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
         self._pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
         self._published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
 
@@ -188,7 +185,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         aws = [
             self._stream.connect(),
             self.check_account_currency(),
-            self.load_venue_id_mapping_from_cache(),
         ]
         await asyncio.gather(*aws)
 
@@ -320,7 +316,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             len(orders) == 1
         ), f"More than one order found for {venue_order_id=} {client_order_id=}"
         order: CurrentOrderSummary = orders[0]
-
         venue_order_id = VenueOrderId(str(order.bet_id))
 
         report: OrderStatusReport = bet_to_order_status_report(
@@ -359,7 +354,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 selection_handicap=order.handicap or None,
             )
             venue_order_id = VenueOrderId(str(order.bet_id))
-            client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
+            client_order_id = self._cache.client_order_id(venue_order_id)
             report = bet_to_order_status_report(
                 order=order,
                 account_id=self.account_id,
@@ -399,7 +394,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 selection_handicap=order.handicap or None,
             )
             venue_order_id = VenueOrderId(str(order.bet_id))
-            client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
+            client_order_id = self._cache.client_order_id(venue_order_id)
             report = bet_to_fill_report(
                 order=order,
                 account_id=self.account_id,
@@ -420,14 +415,17 @@ class BetfairExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
-        self._log.info("Skipping generate_position_status_reports, not implemented for Betfair")
+        self._log.info("Skipping generate_position_status_reports; not implemented for Betfair")
 
         return []
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        self._log.debug(f"Received submit_order {command}")
+        instrument = self._cache.instrument(command.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot submit order: no instrument found for {command.instrument_id}")
+            return
 
         self.generate_order_submitted(
             command.strategy_id,
@@ -435,12 +433,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             command.order.client_order_id,
             self._clock.timestamp_ns(),
         )
-        self._log.debug("Generated _generate_order_submitted")
-
-        instrument = self._cache.instrument(command.instrument_id)
-        if instrument is None:
-            self._log.error(f"Cannot submit order: no instrument found for {command.instrument_id}")
-            return
 
         client_order_id = command.order.client_order_id
 
@@ -482,7 +474,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug(
                     f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}",
                 )
-                self.set_venue_id_mapping(venue_order_id, client_order_id)
+                self._cache.add_venue_order_id(client_order_id, venue_order_id)
                 self.generate_order_accepted(
                     command.strategy_id,
                     command.instrument_id,
@@ -493,8 +485,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug("Generated order accepted")
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.debug(f"Received modify_order {command}")
-        existing_order = self._cache.order(command.client_order_id)  # type: Order
+        existing_order: Order | None = self._cache.order(command.client_order_id)
 
         if existing_order is None:
             self._log.warning(
@@ -608,7 +599,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             place_instruction = report.place_instruction_report
             venue_order_id = VenueOrderId(str(place_instruction.bet_id))
-            self.set_venue_id_mapping(venue_order_id, command.client_order_id)
+            self._cache.add_venue_order_id(command.client_order_id, venue_order_id, overwrite=True)
+
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
@@ -736,7 +728,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}",
             )
-            self.set_venue_id_mapping(venue_order_id, command.client_order_id)
+            self._cache.add_venue_order_id(command.client_order_id, venue_order_id, overwrite=True)
             self.generate_order_canceled(
                 command.strategy_id,
                 command.instrument_id,
@@ -764,29 +756,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
 
             self.cancel_order(command)
-
-    # -- CACHE  -----------------------------------------------------------------------------------
-
-    async def load_venue_id_mapping_from_cache(self) -> None:
-        self._log.info("Loading venue_id mapping from cache")
-        raw = self._cache.get("betfair_execution_client.venue_order_id_to_client_order_id") or b"{}"
-        self._log.info(f"venue_id_mapping: {raw.decode()=}")
-        self.venue_order_id_to_client_order_id = {
-            VenueOrderId(k): ClientOrderId(v) for k, v in msgspec.json.decode(raw).items()
-        }
-
-    def set_venue_id_mapping(
-        self,
-        venue_order_id: VenueOrderId,
-        client_order_id: ClientOrderId,
-    ) -> None:
-        self._log.debug(f"Updating venue_id_mapping: {venue_order_id=} {client_order_id=}")
-        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
-        self._log.debug("Updating venue_id_mapping in cache")
-        raw = msgspec.json.encode(
-            {k.value: v.value for k, v in self.venue_order_id_to_client_order_id.items()},
-        )
-        self._cache.add("betfair_execution_client.venue_order_id_to_client_order_id", raw)
 
     # -- ACCOUNT ----------------------------------------------------------------------------------
 
@@ -909,11 +878,11 @@ class BetfairExecutionClient(LiveExecutionClient):
         venue_order_id = VenueOrderId(str(unmatched_order.id))
 
         # Check if this is the first time seeing this order (backtest or replay)
-        if venue_order_id in self.venue_order_id_to_client_order_id:
+        client_order_id = self._cache.client_order_id(venue_order_id)
+        if client_order_id is not None:
             # We've already sent an accept for this order in self._submit_order
-            self._log.info(f"Skipping order_accept as order exists: {venue_order_id=}")
+            self._log.debug(f"Skipping order_accept as order exists: {venue_order_id=}")
 
-        client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
         order = self._cache.order(client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -991,6 +960,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot handle update: no instrument found for {order.instrument_id}")
             return
 
+        # TODO: Uncomment for development
+        # self._log.info(f"Received {unmatched_order}", LogColor.MAGENTA)
+
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
@@ -1045,8 +1017,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     ts_event=cancelled_ts,
                 )
-                if venue_order_id in self.venue_order_id_to_client_order_id:
-                    del self.venue_order_id_to_client_order_id[venue_order_id]
+
         # Market order will not be in self.published_executions
         if client_order_id in self._published_executions:
             # This execution is complete - no need to track this anymore
@@ -1062,28 +1033,21 @@ class BetfairExecutionClient(LiveExecutionClient):
         come back (with our bet_id).
 
         As a precaution, wait up to `timeout_seconds` for the bet_id to be added
-        to `self.order_id_to_client_order_id`.
+        to cache.
 
         """
-        assert isinstance(venue_order_id, VenueOrderId)
+        PyCondition.type(venue_order_id, VenueOrderId, "venue_order_id")
+
         start = self._clock.timestamp_ns()
         now = start
         while (now - start) < secs_to_nanos(timeout_seconds):
-            # self._log.debug(
-            #     f"checking venue_order_id={venue_order_id} in {self.venue_order_id_to_client_order_id}"
-            # )
-            if venue_order_id in self.venue_order_id_to_client_order_id:
-                client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
-                self._log.debug(
-                    f"Found order in {nanos_to_micros(now - start)}us: {client_order_id}",
-                )
+            client_order_id = self._cache.client_order_id(venue_order_id)
+            if client_order_id:
                 return client_order_id
-            now = self._clock.timestamp_ns()
             await asyncio.sleep(0.1)
+            now = self._clock.timestamp_ns()
         self._log.warning(
-            f"Failed to find venue_order_id: {venue_order_id} "
-            f"after {timeout_seconds} seconds"
-            f"\nexisting: {self.venue_order_id_to_client_order_id})",
+            f"Failed to find venue_order_id: {venue_order_id} " f"after {timeout_seconds} seconds",
         )
         return None
 
