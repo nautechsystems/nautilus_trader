@@ -166,6 +166,14 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
+        """
+        Return the instrument provider for the client.
+
+        Returns
+        -------
+        BetfairInstrumentProvider
+
+        """
         return self._instrument_provider
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
@@ -175,7 +183,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Connections and start-up checks
         self._log.debug(
-            "Connecting to stream, checking account currency and loading venue id mapping...",
+            "Connecting to stream, checking account currency and loading venue ID mapping...",
         )
         aws = [
             self._stream.connect(),
@@ -214,7 +222,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 return
 
             # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
-            # are received at "the same time" from the BF API. Simultaneous reconnection attempts
+            # are received at "the same time" from the Betfair API. Simultaneous reconnection attempts
             # will result in MAX_CONNECTION_LIMIT_EXCEEDED errors.
             self._reconnect_in_progress = True
 
@@ -312,13 +320,13 @@ class BetfairExecutionClient(LiveExecutionClient):
             len(orders) == 1
         ), f"More than one order found for {venue_order_id=} {client_order_id=}"
         order: CurrentOrderSummary = orders[0]
-        instrument = self._cache.instrument(instrument_id)
+
         venue_order_id = VenueOrderId(str(order.bet_id))
 
         report: OrderStatusReport = bet_to_order_status_report(
             order=order,
             account_id=self.account_id,
-            instrument_id=instrument.id,
+            instrument_id=instrument_id,
             venue_order_id=venue_order_id,
             client_order_id=self._cache.client_order_id(venue_order_id),
             report_id=UUID4(),
@@ -430,7 +438,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug("Generated _generate_order_submitted")
 
         instrument = self._cache.instrument(command.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
+        if instrument is None:
+            self._log.error(f"Cannot submit order: no instrument found for {command.instrument_id}")
+            return
+
         client_order_id = command.order.client_order_id
 
         place_orders: PlaceOrders = order_submit_to_place_order_params(
@@ -545,7 +556,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _modify_price(self, command: ModifyOrder, existing_order: Order) -> None:
         instrument = self._cache.instrument(command.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
+        if instrument is None:
+            self._log.error(f"Cannot modify order: no instrument found for {command.instrument_id}")
+            return
 
         # Send order to client
         replace_orders: ReplaceOrders = order_update_to_replace_order_params(
@@ -610,6 +623,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _modify_quantity(self, command: ModifyOrder, existing_order: Order) -> None:
         instrument = self._cache.instrument(command.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot modify order: no instrument found for {command.instrument_id}")
+            return
 
         size_reduction = existing_order.quantity - command.quantity
         if size_reduction <= 0:
@@ -673,18 +689,17 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Received cancel order: {command}")
         instrument = self._cache.instrument(command.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
+        if instrument is None:
+            self._log.error(f"Cannot cancel order: no instrument found for {command.instrument_id}")
+            return
 
-        # Format
         cancel_orders = order_cancel_to_cancel_order_params(
             command=command,
             instrument=instrument,
         )
         self._log.debug(f"cancel_order {cancel_orders}")
 
-        # Send to client
         try:
             result = await self._client.cancel_orders(cancel_orders)
         except Exception as e:
@@ -901,6 +916,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
         order = self._cache.order(client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot handle update: no instrument found for {order.instrument_id}")
+            return
 
         # Check for any portion executed
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
@@ -969,7 +987,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(client_order_id, "client_order_id")
         order = self._cache.order(client_order_id=client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
-        assert instrument
+        if instrument is None:
+            self._log.error(f"Cannot handle update: no instrument found for {order.instrument_id}")
+            return
 
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
@@ -1072,7 +1092,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.warning(f"Betfair connection closed: {update.error_message}")
             if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
-            elif update.error_code == "INVALID_SESSION_INFORMATION":
+            elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
                 if self._reconnect_in_progress:
                     self._log.info("Reconnect already in progress")
                     return
