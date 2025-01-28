@@ -27,7 +27,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder};
+use nautilus_execution::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder};
 use nautilus_model::{
     data::{stubs::OrderBookDeltaTestBuilder, BookOrder, TradeTick},
     enums::{
@@ -1842,4 +1842,53 @@ fn test_expire_order(
         _ => panic!("Expected OrderExpired event in second message"),
     };
     assert_eq!(order_expired.client_order_id, client_order_id);
+}
+
+#[rstest]
+fn test_process_modify_order_rejected_not_found(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    time: AtomicTime,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // Create modify order command with client order id that didn't pass through the engine
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let modify_order_command = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        VenueOrderId::from("V1"),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    engine_l2.process_modify(&modify_order_command, account_id);
+
+    // Check if we have received OrderModifyRejected event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let order_event = saved_messages.first().unwrap();
+    let order_rejected = match order_event {
+        OrderEventAny::ModifyRejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(order_rejected.client_order_id, client_order_id);
 }
