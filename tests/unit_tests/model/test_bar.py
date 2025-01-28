@@ -436,20 +436,6 @@ class TestBar:
         # Arrange, Act, Assert
         assert Bar.fully_qualified_name() == "nautilus_trader.model.data:Bar"
 
-    def test_validation_when_high_below_open_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            Bar(
-                AUDUSD_1_MIN_BID,
-                Price.from_str("1.00001"),
-                Price.from_str("1.00000"),  # <-- High below open
-                Price.from_str("1.00000"),
-                Price.from_str("1.00000"),
-                Quantity.from_int(100_000),
-                0,
-                0,
-            )
-
     def test_validation_when_high_below_low_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
@@ -459,48 +445,6 @@ class TestBar:
                 Price.from_str("1.00000"),  # <-- High below low
                 Price.from_str("1.00002"),
                 Price.from_str("1.00003"),
-                Quantity.from_int(100_000),
-                0,
-                0,
-            )
-
-    def test_validation_when_high_below_close_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            Bar(
-                AUDUSD_1_MIN_BID,
-                Price.from_str("1.00000"),
-                Price.from_str("1.00000"),  # <-- High below close
-                Price.from_str("1.00000"),
-                Price.from_str("1.00001"),
-                Quantity.from_int(100_000),
-                0,
-                0,
-            )
-
-    def test_validation_when_low_above_close_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            Bar(
-                AUDUSD_1_MIN_BID,
-                Price.from_str("1.00000"),
-                Price.from_str("1.00005"),
-                Price.from_str("1.00000"),
-                Price.from_str("0.99999"),  # <-- Close below low
-                Quantity.from_int(100_000),
-                0,
-                0,
-            )
-
-    def test_validation_when_low_above_open_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            Bar(
-                AUDUSD_1_MIN_BID,
-                Price.from_str("0.99999"),  # <-- Open below low
-                Price.from_str("1.00000"),
-                Price.from_str("1.00000"),
-                Price.from_str("1.00000"),
                 Quantity.from_int(100_000),
                 0,
                 0,

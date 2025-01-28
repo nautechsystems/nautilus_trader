@@ -951,11 +951,7 @@ cdef class Bar(Data):
         uint64_t ts_init,
         bint is_revision = False,
     ) -> None:
-        Condition.is_true(high._mem.raw >= open._mem.raw, "high was < open")
         Condition.is_true(high._mem.raw >= low._mem.raw, "high was < low")
-        Condition.is_true(high._mem.raw >= close._mem.raw, "high was < close")
-        Condition.is_true(low._mem.raw <= close._mem.raw, "low was > close")
-        Condition.is_true(low._mem.raw <= open._mem.raw, "low was > open")
 
         self._mem = bar_new(
             bar_type._mem,
