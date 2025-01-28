@@ -136,31 +136,63 @@ fn domain(request: &Request) -> Result<String, Error> {
     }
 }
 
-pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> rustls::ClientConfig {
-    // Load certificates from disk
-    let mut root_store = rustls::RootCertStore::empty();
-    let certs = load_certs(certs_dir);
-
-    // Add certificates to store
-    for cert in certs {
-        root_store.add(cert).expect("Invalid certificate");
+pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> anyhow::Result<rustls::ClientConfig> {
+    if !certs_dir.is_dir() {
+        return Err(anyhow::anyhow!(
+            "Certificate path is not a directory: {}",
+            certs_dir.display()
+        ));
     }
 
-    rustls::ClientConfig::builder()
+    let mut root_store = rustls::RootCertStore::empty();
+
+    for entry in std::fs::read_dir(certs_dir).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to read certificates directory at {}: {e}",
+            certs_dir.display(),
+        )
+    })? {
+        let entry = entry.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read directory entry in {}: {e}",
+                certs_dir.display(),
+            )
+        })?;
+        let path = entry.path();
+
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+
+        match ext.as_str() {
+            "crt" | "pem" | "cer" => {
+                let certs = load_certs(&path)?;
+                for cert in certs {
+                    root_store.add(cert).map_err(|e| {
+                        anyhow::anyhow!("Invalid certificate in file {}: {e}", path.display())
+                    })?;
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
-        .with_no_client_auth()
+        .with_no_client_auth())
 }
 
-fn load_certs(path: &Path) -> Vec<CertificateDer<'static>> {
+fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     let file = File::open(path)
-        .unwrap_or_else(|_| panic!("Failed to read certificates at: {}", path.display()));
+        .map_err(|e| anyhow::anyhow!("Failed to read certificates at {}: {e}", path.display()))?;
     let mut reader = BufReader::new(file);
-
     let mut certs = Vec::new();
     for item in rustls_pemfile::certs(&mut reader) {
-        let cert_der = item.expect("Failed to parse certificate from PEM file");
+        let cert_der =
+            item.map_err(|e| anyhow::anyhow!("Failed to parse certificate from PEM file: {e}"))?;
         certs.push(cert_der);
     }
-
-    certs
+    Ok(certs)
 }

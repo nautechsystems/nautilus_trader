@@ -3218,6 +3218,7 @@ dependencies = [
 name = "nautilus-network"
 version = "0.41.0"
 dependencies = [
+ "anyhow",
  "axum",
  "bytes",
  "criterion",
