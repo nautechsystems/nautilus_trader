@@ -25,7 +25,8 @@ use crate::socket::{SocketClient, SocketConfig};
 #[pymethods]
 impl SocketConfig {
     #[new]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_secs=30, max_reconnection_tries=3))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_secs=30, max_reconnection_tries=3, certs_dir=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         url: String,
         ssl: bool,
@@ -34,6 +35,7 @@ impl SocketConfig {
         heartbeat: Option<(u64, Vec<u8>)>,
         reconnect_timeout_secs: Option<u64>,
         max_reconnection_tries: Option<u64>,
+        certs_dir: Option<String>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
         Self {
@@ -44,6 +46,7 @@ impl SocketConfig {
             heartbeat,
             reconnect_timeout_secs,
             max_reconnection_tries,
+            certs_dir,
         }
     }
 }

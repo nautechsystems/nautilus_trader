@@ -54,14 +54,14 @@ class TestBetfairFactory:
             username="SOME_BETFAIR_USERNAME",
             password="SOME_BETFAIR_PASSWORD",
             app_key="SOME_BETFAIR_APP_KEY",
-            cert_dir="SOME_BETFAIR_CERT_DIR",
+            certs_dir="SOME_BETFAIR_CERTS_DIR",
         )
         exec_config = BetfairExecClientConfig(
             account_currency="GBP",
             username="SOME_BETFAIR_USERNAME",
             password="SOME_BETFAIR_PASSWORD",
             app_key="SOME_BETFAIR_APP_KEY",
-            cert_dir="SOME_BETFAIR_CERT_DIR",
+            certs_dir="SOME_BETFAIR_CERTS_DIR",
         )
 
         data_client = BetfairLiveDataClientFactory.create(

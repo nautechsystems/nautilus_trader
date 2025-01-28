@@ -26,6 +26,7 @@ This release will be the final version that uses Poetry for package and dependen
 ### Internal Improvements
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
 - Added `OrderBookDeltaTestBuilder` in Rust to improve testing (#2234), thanks @filipmacek
+- Added custom certificate loading for `SocketClient` TLS
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)

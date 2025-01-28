@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Module for wrapping raw socket streams with TLS encryption.
+use std::{fs::File, io::BufReader, path::Path};
 
+use rustls::pki_types::CertificateDer;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
     tungstenite::{handshake::client::Request, stream::Mode, Error},
@@ -132,4 +134,33 @@ fn domain(request: &Request) -> Result<String, Error> {
         Some(d) => Ok(d.to_string()),
         None => panic!("No host name"),
     }
+}
+
+pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> rustls::ClientConfig {
+    // Load certificates from disk
+    let mut root_store = rustls::RootCertStore::empty();
+    let certs = load_certs(certs_dir);
+
+    // Add certificates to store
+    for cert in certs {
+        root_store.add(cert).expect("Invalid certificate");
+    }
+
+    rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth()
+}
+
+fn load_certs(path: &Path) -> Vec<CertificateDer<'static>> {
+    let file = File::open(path)
+        .unwrap_or_else(|_| panic!("Failed to read certificates at: {}", path.display()));
+    let mut reader = BufReader::new(file);
+
+    let mut certs = Vec::new();
+    for item in rustls_pemfile::certs(&mut reader) {
+        let cert_der = item.expect("Failed to parse certificate from PEM file");
+        certs.push(cert_der);
+    }
+
+    certs
 }

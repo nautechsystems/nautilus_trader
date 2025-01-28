@@ -53,7 +53,7 @@ set the following environment variables:
 - `BETFAIR_USERNAME`
 - `BETFAIR_PASSWORD`
 - `BETFAIR_APP_KEY`
-- `BETFAIR_CERT_DIR`
+- `BETFAIR_CERTS_DIR`
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
@@ -86,7 +86,7 @@ config = TradingNodeConfig(
             # username=None, # 'BETFAIR_USERNAME' env var
             # password=None, # 'BETFAIR_PASSWORD' env var
             # app_key=None, # 'BETFAIR_APP_KEY' env var
-            # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+            # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
         },
     },
     exec_clients={
@@ -95,7 +95,7 @@ config = TradingNodeConfig(
             # username=None, # 'BETFAIR_USERNAME' env var
             # password=None, # 'BETFAIR_PASSWORD' env var
             # app_key=None, # 'BETFAIR_APP_KEY' env var
-            # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+            # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
         },
     }
 )
