@@ -30,6 +30,7 @@ nonzero_ext = "0.3.0"
 rustls = { version = "0.23.21", features = ["ring"] }
 rustls-pemfile = "2.2.0"
 tokio-rustls = "0.26.1"
+webpki-roots = "0.26.7"
 
 [dev-dependencies]
 axum = { workspace = true }
