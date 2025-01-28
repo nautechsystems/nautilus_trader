@@ -41,6 +41,11 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
         The delay (seconds) before sending the *initial* subscription message.
     keep_alive_secs : PositiveInt, default 36_000 (10 hours)
         The keep alive interval (seconds) for the HTTP client.
+    stream_conflate_ms : PositiveInt, optional
+        The Betfair data stream conflation setting. Default of `None` means no explicit value is
+        set for the conflation interval. Betfair interprets this as using its default behaviour for
+        conflation. The default typically applies conflation, so you need to ensure
+        stream_conflate_ms=0 is explicitly set to guarantee no conflation.
 
     """
 
@@ -52,6 +57,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     instrument_config: BetfairInstrumentProviderConfig | None = None
     subscription_delay_secs: PositiveInt | None = 3
     keep_alive_secs: PositiveInt = 36_000  # 10 hours
+    stream_conflate_ms: PositiveInt | None = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):

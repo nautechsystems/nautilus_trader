@@ -92,6 +92,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.info(f"{config.account_currency=}", LogColor.BLUE)
         self._log.info(f"{config.subscription_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.keep_alive_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.stream_conflate_ms=}", LogColor.BLUE)
 
         # Clients
         self._client: BetfairHttpClient = client
@@ -149,6 +150,7 @@ class BetfairDataClient(LiveMarketDataClient):
                 event_type_ids=self.instrument_provider._config.event_type_ids,
                 country_codes=self.instrument_provider._config.country_codes,
                 market_types=self.instrument_provider._config.market_types,
+                conflate_ms=self._config.stream_conflate_ms,
             )
             self._subscription_status = SubscriptionStatus.SUBSCRIBED
 
