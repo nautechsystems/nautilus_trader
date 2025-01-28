@@ -30,7 +30,7 @@ repos:
       - id: gitlint
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.0
+    rev: v2.4.1
     hooks:
       - id: codespell
         description: Checks for common misspellings.
@@ -95,7 +95,7 @@ repos:
         args: ["--fix"]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 6.0.0
     hooks:
       - id: isort
         name: isort (cython)

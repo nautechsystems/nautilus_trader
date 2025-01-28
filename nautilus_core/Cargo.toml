@@ -58,7 +58,7 @@ rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.25"
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.137"
+serde_json = "1.0.138"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "2.0.11"
 thousands = "0.2.0"
@@ -78,7 +78,7 @@ float-cmp = "0.10.0"
 iai = "0.1.1"
 proptest = "1.6.0"
 rstest = "0.24.0"
-tempfile = "3.15.0"
+tempfile = "3.16.0"
 tracing-test = "0.2.5"
 
 # build-dependencies
