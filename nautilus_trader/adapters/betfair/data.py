@@ -97,6 +97,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._stream = BetfairMarketStreamClient(
             http_client=self._client,
             message_handler=self.on_market_update,
+            certs_dir=config.certs_dir,
         )
         self._reconnect_in_progress = False
 

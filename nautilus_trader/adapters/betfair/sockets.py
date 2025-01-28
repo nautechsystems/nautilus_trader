@@ -15,6 +15,7 @@
 
 import asyncio
 import itertools
+import os
 from collections.abc import Callable
 
 import msgspec
@@ -30,7 +31,6 @@ PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
 UNIQUE_ID = itertools.count()
-USE_SSL = True
 
 
 class BetfairStreamClient:
@@ -46,13 +46,15 @@ class BetfairStreamClient:
         port: int | None = None,
         crlf: bytes | None = None,
         encoding: str | None = None,
+        certs_dir: str | None = None,
     ) -> None:
         self.handler = message_handler
         self.host = host or HOST
         self.port = port or PORT
         self.crlf = crlf or CRLF
-        self.use_ssl = USE_SSL
         self.encoding = encoding or ENCODING
+        self.use_ssl = True
+        self.certs_dir = certs_dir or os.environ.get("BETFAIR_CERTS_DIR")
 
         self._loop = asyncio.get_event_loop()
         self._http_client = http_client
@@ -78,6 +80,7 @@ class BetfairStreamClient:
             suffix=self.crlf,
             handler=self.handler,
             heartbeat=(10, msgspec.json.encode({"op": "heartbeat"})),
+            certs_dir=self.certs_dir,
         )
         self._client = await SocketClient.connect(
             config,
@@ -163,6 +166,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         self,
         http_client: BetfairHttpClient,
         message_handler: Callable[[bytes], None],
+        certs_dir: str | None = None,
         partition_matched_by_strategy_ref: bool = True,
         include_overall_position: str | None = None,
         customer_strategy_refs: str | None = None,
@@ -171,6 +175,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         super().__init__(
             http_client=http_client,
             message_handler=message_handler,
+            certs_dir=certs_dir,
             **kwargs,
         )
         self.order_filter = {
@@ -205,11 +210,13 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         self,
         http_client: BetfairHttpClient,
         message_handler: Callable,
+        certs_dir: str | None = None,
         **kwargs,
     ):
         super().__init__(
             http_client=http_client,
             message_handler=message_handler,
+            certs_dir=certs_dir,
             **kwargs,
         )
 

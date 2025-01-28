@@ -48,7 +48,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     username: str | None = None
     password: str | None = None
     app_key: str | None = None
-    cert_dir: str | None = None
+    certs_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
     subscription_delay_secs: PositiveInt | None = 3
     keep_alive_secs: PositiveInt = 36_000  # 10 hours
@@ -68,7 +68,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         The Betfair account password.
     app_key : str, optional
         The Betfair application key.
-    cert_dir : str, optional
+    certs_dir : str, optional
         The local directory that contains the Betfair certificates.
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
@@ -84,7 +84,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     username: str | None = None
     password: str | None = None
     app_key: str | None = None
-    cert_dir: str | None = None
+    certs_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
     request_account_state_secs: PositiveInt = 300
     reconcile_market_ids_only: bool = False

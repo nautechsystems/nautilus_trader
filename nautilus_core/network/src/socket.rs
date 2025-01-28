@@ -17,6 +17,7 @@
 //! and state management.
 
 use std::{
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
@@ -36,7 +37,7 @@ use tokio_tungstenite::{
     MaybeTlsStream,
 };
 
-use crate::tls::tcp_tls;
+use crate::tls::{create_tls_config_from_certs_dir, tcp_tls, Connector};
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
@@ -76,6 +77,8 @@ pub struct SocketConfig {
     pub reconnect_timeout_secs: Option<u64>,
     /// The maximum reconnection attempts before closing the client.
     pub max_reconnection_tries: Option<u64>,
+    /// The path to the certificates directory.
+    pub certs_dir: Option<String>,
 }
 
 /// Creates a TcpStream with the server.
@@ -99,6 +102,7 @@ pub struct SocketConfig {
 )]
 struct SocketClientInner {
     config: SocketConfig,
+    connector: Option<Connector>,
     read_task: Arc<tokio::task::JoinHandle<()>>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedTcpWriter,
@@ -119,8 +123,16 @@ impl SocketClientInner {
             handler,
             reconnect_timeout_secs,
             max_reconnection_tries: _,
+            certs_dir,
         } = &config;
-        let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
+        let connector = if let Some(dir) = certs_dir {
+            let config = create_tls_config_from_certs_dir(Path::new(dir));
+            Some(Connector::Rustls(Arc::new(config)))
+        } else {
+            None
+        };
+
+        let (reader, writer) = Self::tls_connect_with_server(url, *mode, connector.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
         let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
@@ -142,6 +154,7 @@ impl SocketClientInner {
 
         Ok(Self {
             config,
+            connector,
             read_task,
             heartbeat_task,
             writer,
@@ -154,12 +167,13 @@ impl SocketClientInner {
     pub async fn tls_connect_with_server(
         url: &str,
         mode: Mode,
+        connector: Option<Connector>,
     ) -> Result<(TcpReader, TcpWriter), Error> {
         tracing::debug!("Connecting to server");
         let stream = TcpStream::connect(url).await?;
         tracing::debug!("Making TLS connection");
         let request = url.into_client_request()?;
-        tcp_tls(&request, mode, stream, None)
+        tcp_tls(&request, mode, stream, connector)
             .await
             .map(tokio::io::split)
     }
@@ -196,9 +210,11 @@ impl SocketClientInner {
                 handler,
                 reconnect_timeout_secs: _,
                 max_reconnection_tries: _,
+                certs_dir: _,
             } = &self.config;
             // Create a fresh connection
-            let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
+            let connector = self.connector.clone();
+            let (reader, writer) = Self::tls_connect_with_server(url, *mode, connector).await?;
             let writer = Arc::new(Mutex::new(writer));
             self.writer = writer.clone();
 
@@ -748,6 +764,7 @@ counter = Counter()
             heartbeat: None,
             reconnect_timeout_secs: None,
             max_reconnection_tries: Some(1),
+            certs_dir: None,
         };
 
         let client = SocketClient::connect(config, None, None, None)
@@ -780,6 +797,7 @@ counter = Counter()
             heartbeat: None,
             reconnect_timeout_secs: None,
             max_reconnection_tries: Some(2),
+            certs_dir: None,
         };
 
         let client_res = SocketClient::connect(config, None, None, None).await;
@@ -816,6 +834,7 @@ counter = Counter()
             heartbeat: None,
             reconnect_timeout_secs: None,
             max_reconnection_tries: None,
+            certs_dir: None,
         };
 
         let client = SocketClient::connect(config, None, None, None)
@@ -871,6 +890,7 @@ counter = Counter()
             heartbeat,
             reconnect_timeout_secs: None,
             max_reconnection_tries: None,
+            certs_dir: None,
         };
 
         let client = SocketClient::connect(config, None, None, None)
@@ -935,6 +955,7 @@ def handler(bytes_data):
             heartbeat: None,
             reconnect_timeout_secs: None,
             max_reconnection_tries: Some(1),
+            certs_dir: None,
         };
 
         let client = SocketClient::connect(config, None, None, None)

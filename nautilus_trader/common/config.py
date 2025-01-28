@@ -256,7 +256,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
         The account password for the database connection.
         If a value is provided then it will be redacted in the string repr for this object.
     ssl : bool, default False
-        If database should use an SSL enabled connection.
+        If socket should use an SSL (TLS encryption) enabled connection.
     timeout : int, default 20
         The timeout (seconds) to wait for a new connection.
 

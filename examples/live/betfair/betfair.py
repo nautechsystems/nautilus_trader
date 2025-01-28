@@ -85,7 +85,7 @@ async def main(
                 # username=None, # 'BETFAIR_USERNAME' env var
                 # password=None, # 'BETFAIR_PASSWORD' env var
                 # app_key=None, # 'BETFAIR_APP_KEY' env var
-                # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+                # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
             ),
         },
         exec_clients={
@@ -95,7 +95,7 @@ async def main(
                 # username=None, # 'BETFAIR_USERNAME' env var
                 # password=None, # 'BETFAIR_PASSWORD' env var
                 # app_key=None, # 'BETFAIR_APP_KEY' env var
-                # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+                # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
                 reconcile_market_ids_only=True,
             ),
         },

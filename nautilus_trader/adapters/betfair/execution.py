@@ -151,6 +151,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._stream = BetfairOrderStreamClient(
             http_client=self._client,
             message_handler=self.handle_order_stream_update,
+            certs_dir=config.certs_dir,
         )
         self._is_closing = False
         self._reconnect_in_progress = False
