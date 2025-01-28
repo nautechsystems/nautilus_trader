@@ -485,7 +485,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug("Generated order accepted")
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        existing_order: Order | None = self._cache.order(command.client_order_id)
+        existing_order: Order | None = self._cache.order(client_order_id=command.client_order_id)
 
         if existing_order is None:
             self._log.warning(
@@ -858,15 +858,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
-        client_order_id = await self.wait_for_order(
-            venue_order_id=venue_order_id,
-            timeout_seconds=10.0,
-        )
+        client_order_id = await self.wait_for_order(venue_order_id, timeout_secs=10.0)
         if client_order_id is None:
             self._log.warning(f"Can't find client_order_id for {unmatched_order}")
             return
-        PyCondition.type(client_order_id, ClientOrderId, "client_order_id")
-        order = self._cache.order(client_order_id)
+
+        order = self._cache.order(client_order_id=client_order_id)
         PyCondition.not_none(order, "order")
         instrument = self._cache.instrument(order.instrument_id)
         PyCondition.not_none(instrument, "instrument")
@@ -876,14 +873,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         Handle update containing 'E' (executable) order update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
+        client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
+        PyCondition.not_none(client_order_id, "client_order_id")
 
-        # Check if this is the first time seeing this order (backtest or replay)
-        client_order_id = self._cache.client_order_id(venue_order_id)
-        if client_order_id is not None:
-            # We've already sent an accept for this order in self._submit_order
-            self._log.debug(f"Skipping order_accept as order exists: {venue_order_id=}")
-
-        order = self._cache.order(client_order_id)
+        order = self._cache.order(client_order_id=client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot handle update: no instrument found for {order.instrument_id}")
@@ -954,6 +947,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
         PyCondition.not_none(client_order_id, "client_order_id")
+
         order = self._cache.order(client_order_id=client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -1026,7 +1020,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def wait_for_order(
         self,
         venue_order_id: VenueOrderId,
-        timeout_seconds: float = 10.0,
+        timeout_secs: float = 10.0,
     ) -> ClientOrderId | None:
         """
         We may get an order update from the socket before our submit_order response has
@@ -1036,19 +1030,22 @@ class BetfairExecutionClient(LiveExecutionClient):
         to cache.
 
         """
-        PyCondition.type(venue_order_id, VenueOrderId, "venue_order_id")
+        try:
+            PyCondition.type(venue_order_id, VenueOrderId, "venue_order_id")
 
-        start = self._clock.timestamp_ns()
-        now = start
-        while (now - start) < secs_to_nanos(timeout_seconds):
-            client_order_id = self._cache.client_order_id(venue_order_id)
-            if client_order_id:
-                return client_order_id
-            await asyncio.sleep(0.1)
-            now = self._clock.timestamp_ns()
-        self._log.warning(
-            f"Failed to find venue_order_id: {venue_order_id} " f"after {timeout_seconds} seconds",
-        )
+            start = self._clock.timestamp_ns()
+            now = start
+            while (now - start) < secs_to_nanos(timeout_secs):
+                client_order_id = self._cache.client_order_id(venue_order_id)
+                if client_order_id:
+                    return client_order_id
+                await asyncio.sleep(0.01)
+                now = self._clock.timestamp_ns()
+            self._log.warning(
+                f"Failed to find venue_order_id: {venue_order_id} after {timeout_secs} seconds",
+            )
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'wait_for_order'")
         return None
 
     def _handle_status_message(self, update: Status) -> None:
