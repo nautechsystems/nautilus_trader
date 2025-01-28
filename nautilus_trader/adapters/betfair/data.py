@@ -19,6 +19,7 @@ from typing import Any
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Status
+from betfair_parser.spec.streaming import StatusErrorCode
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
@@ -113,6 +114,14 @@ class BetfairDataClient(LiveMarketDataClient):
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
+        """
+        Return the instrument provider for the client.
+
+        Returns
+        -------
+        BetfairInstrumentProvider
+
+        """
         return self._instrument_provider
 
     async def _connect(self) -> None:
@@ -356,22 +365,22 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
-            self._log.warning("Stream unhealthy, waiting for recovery")
+            self._log.warning("Stream unhealthy; pausing for recovery")
             self.degrade()
         if update.mc is not None:
             for mc in update.mc:
                 if mc.con:
-                    ms_delay = self._clock.timestamp_ms() - update.pt
-                    self._log.warning(f"Conflated stream - data received is delayed ({ms_delay}ms)")
+                    latency_ms = self._clock.timestamp_ms() - update.pt
+                    self._log.warning(f"Stream conflation detected: latency ~{latency_ms}ms")
 
     def _handle_status_message(self, update: Status) -> None:
         if update.is_error and update.connection_closed:
             self._log.error(f"Betfair connection closed: {update.error_message}")
-            if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
+            if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
-            elif update.error_code == "SUBSCRIPTION_LIMIT_EXCEEDED":
+            elif update.error_code == StatusErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED:
                 raise RuntimeError("Subscription request limit exceeded")
-            elif update.error_code == "INVALID_SESSION_INFORMATION":
+            elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
                 if self._reconnect_in_progress:
                     self._log.info("Reconnect already in progress")
                     return
