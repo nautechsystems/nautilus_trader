@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Final
+
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.enums import TimeInForce as BetfairTimeInForce
@@ -55,17 +57,17 @@ class OrderSideParser:
             raise ValueError(f"Unknown order_side: {order_side}")
 
 
-N2B_TIME_IN_FORCE = {
+N2B_TIME_IN_FORCE: Final[dict[TimeInForce, BetfairTimeInForce]] = {
     TimeInForce.FOK: BetfairTimeInForce.FILL_OR_KILL,
     TimeInForce.IOC: BetfairTimeInForce.FILL_OR_KILL,  # min_fill_size 0 also needed
 }
 
-N2B_PERSISTENCE = {
+N2B_PERSISTENCE: Final[dict[TimeInForce, PersistenceType]] = {
     TimeInForce.GTC: PersistenceType.PERSIST,
     TimeInForce.DAY: PersistenceType.LAPSE,
 }
 
-B2N_MARKET_SIDE = {
+B2N_MARKET_SIDE: Final[dict[str, OrderSide]] = {
     "atb": OrderSide.SELL,  # Available to Back / Sell order
     "batb": OrderSide.SELL,  # Best available to Back / Sell order
     "bdatb": OrderSide.SELL,  # Best display to Back / Sell order
@@ -77,18 +79,18 @@ B2N_MARKET_SIDE = {
 }
 
 
-B2N_TIME_IN_FORCE = {
+B2N_TIME_IN_FORCE: Final[dict[PersistenceType, TimeInForce]] = {
     PersistenceType.LAPSE: TimeInForce.DAY,
     PersistenceType.PERSIST: TimeInForce.GTC,
 }
 
-B2N_ORDER_TYPE = {
+B2N_ORDER_TYPE: Final[dict[OrderType, NautilusOrderType]] = {
     OrderType.LIMIT: NautilusOrderType.LIMIT,
     OrderType.LIMIT_ON_CLOSE: NautilusOrderType.LIMIT,
     OrderType.MARKET_ON_CLOSE: NautilusOrderType.MARKET,
 }
 
-BETFAIR_PRICE_TIERS = [
+BETFAIR_PRICE_TIERS: Final[list[tuple[float, ...]]] = [
     (1.01, 2, 0.01),
     (2, 3, 0.02),
     (3, 4, 0.05),
