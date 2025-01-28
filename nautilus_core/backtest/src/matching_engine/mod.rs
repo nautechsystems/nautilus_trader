@@ -57,8 +57,8 @@ use nautilus_model::{
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
     orderbook::OrderBook,
     orders::{
-        LimitOrderAny, OrderAny, PassiveOrderAny, StopOrderAny, TrailingStopLimitOrder,
-        TrailingStopMarketOrder,
+        LimitOrderAny, Order, OrderAny, PassiveOrderAny, StopLimitOrder, StopMarketOrder,
+        StopOrderAny, TrailingStopLimitOrder, TrailingStopMarketOrder,
     },
     position::Position,
     types::{fixed::FIXED_PRECISION, Currency, Money, Price, Quantity},
@@ -710,8 +710,26 @@ impl OrderMatchingEngine {
         }
     }
 
-    pub fn process_modify(&self, command: &ModifyOrder, account_id: AccountId) {
-        todo!("implement process_modify")
+    pub fn process_modify(&mut self, command: &ModifyOrder, account_id: AccountId) {
+        if let Some(order) = self.core.get_order(command.client_order_id) {
+            self.update_order(
+                &order.to_any(),
+                command.quantity,
+                command.price,
+                command.trigger_price,
+                None,
+            );
+        } else {
+            self.generate_order_modify_rejected(
+                command.trader_id,
+                command.strategy_id,
+                account_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+            )
+        }
     }
 
     pub fn process_cancel(&mut self, command: &CancelOrder, account_id: AccountId) {
@@ -1419,6 +1437,48 @@ impl OrderMatchingEngine {
         todo!("Check for contingent orders")
     }
 
+    fn update_limit_order(&mut self, order: &OrderAny, quantity: Quantity, price: Price) {
+        todo!("update_limit_order")
+    }
+
+    fn update_stop_market_order(
+        &mut self,
+        order: &StopMarketOrder,
+        quantity: Quantity,
+        trigger_price: Price,
+    ) {
+        todo!("update_stop_market_order")
+    }
+
+    fn update_stop_limit_order(
+        &mut self,
+        order: &StopLimitOrder,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+    ) {
+        todo!("update_stop_limit_order")
+    }
+
+    fn update_market_if_touched_order(
+        &mut self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Price,
+    ) {
+        todo!("update_market_if_touched_order")
+    }
+
+    fn update_limit_if_touched_order(
+        &self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+    ) {
+        todo!("update_limit_if_touched_order")
+    }
+
     fn update_trailing_stop_market(&mut self, order: &TrailingStopMarketOrder) {
         todo!()
     }
@@ -1496,8 +1556,68 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn update_order(&mut self, order: &OrderAny) {
-        todo!("update_order")
+    fn update_order(
+        &mut self,
+        order: &OrderAny,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        update_contingencies: Option<bool>,
+    ) {
+        let update_contingencies = update_contingencies.unwrap_or(true);
+        let quantity = quantity.unwrap_or(order.quantity());
+
+        match order {
+            OrderAny::Limit(_) | OrderAny::MarketToLimit(_) => {
+                let price = price.unwrap_or(order.price().unwrap());
+                self.update_limit_order(order, quantity, price);
+            }
+            OrderAny::StopMarket(stop_market_order) => {
+                let trigger_price =
+                    trigger_price.unwrap_or(stop_market_order.trigger_price().unwrap());
+                self.update_stop_market_order(stop_market_order, quantity, trigger_price);
+            }
+            OrderAny::StopLimit(stop_limit_order) => {
+                let price = price.unwrap_or(stop_limit_order.price().unwrap());
+                let trigger_price =
+                    trigger_price.unwrap_or(stop_limit_order.trigger_price().unwrap());
+                self.update_stop_limit_order(stop_limit_order, quantity, price, trigger_price);
+            }
+            OrderAny::MarketIfTouched(_) => {
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_market_if_touched_order(order, quantity, trigger_price);
+            }
+            OrderAny::LimitIfTouched(_) => {
+                let price = price.unwrap_or(order.price().unwrap());
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_limit_if_touched_order(order, quantity, price, trigger_price);
+            }
+            OrderAny::TrailingStopMarket(_) => {
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_market_if_touched_order(order, quantity, trigger_price);
+            }
+            OrderAny::TrailingStopLimit(trailing_stop_limit_order) => {
+                let price = price.unwrap_or(trailing_stop_limit_order.price().unwrap());
+                let trigger_price =
+                    trigger_price.unwrap_or(trailing_stop_limit_order.trigger_price().unwrap());
+                self.update_limit_if_touched_order(order, quantity, price, trigger_price);
+            }
+            _ => {
+                panic!(
+                    "Unsupported order type {} for update_order",
+                    order.order_type()
+                );
+            }
+        }
+
+        if self.config.support_contingent_orders
+            && order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+            && update_contingencies
+        {
+            self.update_contingent_order(order);
+        }
     }
 
     fn trigger_stop_order(&mut self, order: &OrderAny) {
