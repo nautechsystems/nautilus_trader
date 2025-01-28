@@ -923,5 +923,5 @@ class DYDXDataClient(LiveMarketDataClient):
                 for candle in candles.candles
             ]
 
-            partial: Bar = bars.pop()
-            self._handle_bars(bar_type, bars, partial, correlation_id, params)
+            partial_bar: Bar = bars.pop()
+            self._handle_bars(bar_type, bars, partial_bar, correlation_id, params)

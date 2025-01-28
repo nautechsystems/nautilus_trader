@@ -46,7 +46,7 @@ pub trait BarAggregator {
     fn bar_type(&self) -> BarType;
     /// If the aggregator is running and will receive data from the message bus.
     fn is_running(&self) -> bool;
-    fn set_await_partial(&mut self, value: bool);
+    fn set_await_partial_bar(&mut self, value: bool);
     fn set_is_running(&mut self, value: bool);
     /// Updates theaggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
@@ -79,7 +79,7 @@ pub struct BarBuilder {
     initialized: bool,
     ts_last: UnixNanos,
     count: usize,
-    partial_set: bool,
+    partial_bar_set: bool,
     last_close: Option<Price>,
     open: Option<Price>,
     high: Option<Price>,
@@ -113,7 +113,7 @@ impl BarBuilder {
             initialized: false,
             ts_last: UnixNanos::default(),
             count: 0,
-            partial_set: false,
+            partial_bar_set: false,
             last_close: None,
             open: None,
             high: None,
@@ -124,8 +124,8 @@ impl BarBuilder {
     }
 
     /// Set the initial values for a partially completed bar.
-    pub fn set_partial(&mut self, partial_bar: Bar) {
-        if self.partial_set {
+    pub fn set_partial_bar(&mut self, partial_bar: Bar) {
+        if self.partial_bar_set {
             return; // Already updated
         }
 
@@ -149,7 +149,7 @@ impl BarBuilder {
             self.ts_last = partial_bar.ts_init;
         }
 
-        self.partial_set = true;
+        self.partial_bar_set = true;
         self.initialized = true;
     }
 
@@ -257,7 +257,7 @@ where
     handler: H,
     handler_backup: Option<H>,
     batch_handler: Option<Box<dyn FnMut(Bar)>>,
-    await_partial: bool,
+    await_partial_bar: bool,
     is_running: bool,
     batch_mode: bool,
 }
@@ -278,7 +278,7 @@ where
         price_precision: u8,
         size_precision: u8,
         handler: H,
-        await_partial: bool,
+        await_partial_bar: bool,
     ) -> Self {
         Self {
             bar_type,
@@ -286,14 +286,14 @@ where
             handler,
             handler_backup: None,
             batch_handler: None,
-            await_partial,
+            await_partial_bar,
             is_running: false,
             batch_mode: false,
         }
     }
 
-    pub fn set_await_partial(&mut self, value: bool) {
-        self.await_partial = value;
+    pub fn set_await_partial_bar(&mut self, value: bool) {
+        self.await_partial_bar = value;
     }
 
     pub fn set_is_running(&mut self, value: bool) {
@@ -301,8 +301,8 @@ where
     }
 
     /// Set the initial values for a partially completed bar.
-    pub fn set_partial(&mut self, partial_bar: Bar) {
-        self.builder.set_partial(partial_bar);
+    pub fn set_partial_bar(&mut self, partial_bar: Bar) {
+        self.builder.set_partial_bar(partial_bar);
     }
 
     fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
@@ -366,7 +366,7 @@ where
         price_precision: u8,
         size_precision: u8,
         handler: H,
-        await_partial: bool,
+        await_partial_bar: bool,
     ) -> Self {
         Self {
             core: BarAggregatorCore::new(
@@ -374,7 +374,7 @@ where
                 price_precision,
                 size_precision,
                 handler,
-                await_partial,
+                await_partial_bar,
             ),
             cum_value: 0.0,
         }
@@ -393,8 +393,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+    fn set_await_partial_bar(&mut self, value: bool) {
+        self.core.await_partial_bar = value;
     }
 
     fn set_is_running(&mut self, value: bool) {
@@ -476,7 +476,7 @@ where
         price_precision: u8,
         size_precision: u8,
         handler: H,
-        await_partial: bool,
+        await_partial_bar: bool,
     ) -> Self {
         Self {
             core: BarAggregatorCore::new(
@@ -484,7 +484,7 @@ where
                 price_precision,
                 size_precision,
                 handler,
-                await_partial,
+                await_partial_bar,
             ),
         }
     }
@@ -502,8 +502,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+    fn set_await_partial_bar(&mut self, value: bool) {
+        self.core.await_partial_bar = value;
     }
 
     fn set_is_running(&mut self, value: bool) {
@@ -605,7 +605,7 @@ where
         price_precision: u8,
         size_precision: u8,
         handler: H,
-        await_partial: bool,
+        await_partial_bar: bool,
     ) -> Self {
         Self {
             core: BarAggregatorCore::new(
@@ -613,7 +613,7 @@ where
                 price_precision,
                 size_precision,
                 handler,
-                await_partial,
+                await_partial_bar,
             ),
             cum_value: 0.0,
         }
@@ -638,8 +638,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+    fn set_await_partial_bar(&mut self, value: bool) {
+        self.core.await_partial_bar = value;
     }
 
     fn set_is_running(&mut self, value: bool) {
@@ -776,7 +776,7 @@ where
         size_precision: u8,
         clock: Rc<RefCell<dyn Clock>>,
         handler: H,
-        await_partial: bool,
+        await_partial_bar: bool,
         build_with_no_updates: bool,
         timestamp_on_close: bool,
         interval_type: BarIntervalType,
@@ -803,7 +803,7 @@ where
             price_precision,
             size_precision,
             handler,
-            await_partial,
+            await_partial_bar,
         );
 
         Self {
@@ -1009,8 +1009,8 @@ where
         self.core.is_running
     }
 
-    fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+    fn set_await_partial_bar(&mut self, value: bool) {
+        self.core.await_partial_bar = value;
     }
 
     fn set_is_running(&mut self, value: bool) {
@@ -1119,7 +1119,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_set_partial_update(equity_aapl: Equity) {
+    fn test_set_partial_bar_update(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_type = BarType::new(
             instrument.id(),
@@ -1143,7 +1143,7 @@ mod tests {
             UnixNanos::from(2),
         );
 
-        builder.set_partial(partial_bar);
+        builder.set_partial_bar(partial_bar);
         let bar = builder.build_now();
 
         assert_eq!(bar.open, partial_bar.open);
@@ -1214,7 +1214,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_bar_builder_set_partial_updates_bar_to_expected_properties(audusd_sim: CurrencyPair) {
+    fn test_bar_builder_set_partial_bar_updates_bar_to_expected_properties(
+        audusd_sim: CurrencyPair,
+    ) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let bar_type = BarType::new(
             instrument.id(),
@@ -1238,7 +1240,7 @@ mod tests {
             UnixNanos::from(2_000_000_000),
         );
 
-        builder.set_partial(partial_bar);
+        builder.set_partial_bar(partial_bar);
         let bar = builder.build_now();
 
         assert_eq!(bar.open, Price::from("1.00001"));
@@ -1251,7 +1253,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_bar_builder_set_partial_when_already_set_does_not_update(audusd_sim: CurrencyPair) {
+    fn test_bar_builder_set_partial_bar_when_already_set_does_not_update(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let bar_type = BarType::new(
             instrument.id(),
@@ -1286,8 +1288,8 @@ mod tests {
             UnixNanos::from(3_000_000_000),
         );
 
-        builder.set_partial(partial_bar1);
-        builder.set_partial(partial_bar2);
+        builder.set_partial_bar(partial_bar1);
+        builder.set_partial_bar(partial_bar2);
         let bar = builder.build(
             UnixNanos::from(4_000_000_000),
             UnixNanos::from(4_000_000_000),

@@ -75,7 +75,7 @@ cdef class BarBuilder:
         self.ts_last = 0
         self.count = 0
 
-        self._partial_set = False
+        self._partial_bar_set = False
         self._last_close = None
         self._open = None
         self._high = None
@@ -94,7 +94,7 @@ cdef class BarBuilder:
             f"{self.volume})"
         )
 
-    cpdef void set_partial(self, Bar partial_bar):
+    cpdef void set_partial_bar(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
 
@@ -106,7 +106,7 @@ cdef class BarBuilder:
             The partial bar with values to set.
 
         """
-        if self._partial_set:
+        if self._partial_bar_set:
             return  # Already updated
 
         self._open = partial_bar.open
@@ -125,7 +125,7 @@ cdef class BarBuilder:
         if self.ts_last == 0:
             self.ts_last = partial_bar.ts_init
 
-        self._partial_set = True
+        self._partial_bar_set = True
         self.initialized = True
 
     cpdef void update(self, Price price, Quantity size, uint64_t ts_event):
@@ -273,7 +273,7 @@ cdef class BarAggregator:
         The bar type for the aggregator.
     handler : Callable[[Bar], None]
         The bar handler for the aggregator.
-    await_partial : bool, default False
+    await_partial_bar : bool, default False
         If the aggregator should await an initial partial bar prior to aggregating.
 
     Raises
@@ -287,14 +287,14 @@ cdef class BarAggregator:
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        bint await_partial = False,
+        bint await_partial_bar = False,
     ) -> None:
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self.bar_type = bar_type
         self._handler = handler
         self._handler_backup = None
-        self._await_partial = await_partial
+        self._await_partial_bar = await_partial_bar
         self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
@@ -316,8 +316,8 @@ cdef class BarAggregator:
         self._batch_mode = False
         self._handler = self._handler_backup
 
-    def set_await_partial(self, bint value):
-        self._await_partial = value
+    def set_await_partial_bar(self, bint value):
+        self._await_partial_bar = value
 
     cpdef void handle_quote_tick(self, QuoteTick tick):
         """
@@ -331,7 +331,7 @@ cdef class BarAggregator:
         """
         Condition.not_none(tick, "tick")
 
-        if not self._await_partial:
+        if not self._await_partial_bar:
             self._apply_update(
                 price=tick.extract_price(self.bar_type.spec.price_type),
                 size=tick.extract_size(self.bar_type.spec.price_type),
@@ -350,7 +350,7 @@ cdef class BarAggregator:
         """
         Condition.not_none(tick, "tick")
 
-        if not self._await_partial:
+        if not self._await_partial_bar:
             self._apply_update(
                 price=tick.price,
                 size=tick.size,
@@ -369,14 +369,14 @@ cdef class BarAggregator:
         """
         Condition.not_none(bar, "bar")
 
-        if not self._await_partial:
+        if not self._await_partial_bar:
             self._apply_update_bar(
                 bar=bar,
                 volume=bar.volume,
                 ts_init=bar.ts_init,
             )
 
-    cpdef void set_partial(self, Bar partial_bar):
+    cpdef void set_partial_bar(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
 
@@ -388,7 +388,7 @@ cdef class BarAggregator:
             The partial bar with values to set.
 
         """
-        self._builder.set_partial(partial_bar)
+        self._builder.set_partial_bar(partial_bar)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass")

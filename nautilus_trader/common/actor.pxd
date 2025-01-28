@@ -162,7 +162,7 @@ cdef class Actor(Component):
     )
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
-    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint await_partial=*, dict[str, object] params=*)
+    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint await_partial_bar=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, dict[str, object] params=*)

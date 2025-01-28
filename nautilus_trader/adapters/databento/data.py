@@ -1096,7 +1096,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_bars(
             bar_type=bar_type,
             bars=bars,
-            partial=None,  # No partials
+            partial_bar=None,  # No partials
             correlation_id=correlation_id,
             params=params,
         )

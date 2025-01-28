@@ -1481,7 +1481,7 @@ cdef class Actor(Component):
         self,
         BarType bar_type,
         ClientId client_id = None,
-        bint await_partial = False,
+        bint await_partial_bar = False,
         dict[str, object] params = None,
     ):
         """
@@ -1497,7 +1497,7 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        await_partial : bool, default False
+        await_partial_bar : bool, default False
             If the bar aggregator should await the arrival of a historical partial bar prior
             to actively aggregating new bars.
         params : dict[str, Any], optional
@@ -1513,7 +1513,7 @@ cdef class Actor(Component):
         )
 
         params = params if params else {}
-        params["await_partial"] = await_partial
+        params["await_partial_bar"] = await_partial_bar
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,

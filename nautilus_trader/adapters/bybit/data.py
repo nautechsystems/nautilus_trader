@@ -574,8 +574,8 @@ class BybitDataClient(LiveMarketDataClient):
             limit=limit,
             ts_init=self._clock.timestamp_ns(),
         )
-        partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, params)
+        partial_bar: Bar = bars.pop()
+        self._handle_bars(bar_type, bars, partial_bar, correlation_id, params)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)

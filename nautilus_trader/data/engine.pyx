@@ -705,7 +705,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
-                command.params.get("await_partial"),
+                command.params.get("await_partial_bar"),
                 command.params,
             )
         elif command.data_type.type == InstrumentStatus:
@@ -1076,7 +1076,7 @@ cdef class DataEngine(Component):
         self,
         MarketDataClient client,
         BarType bar_type,
-        bint await_partial,
+        bint await_partial_bar,
         dict params,
     ):
         Condition.not_none(client, "client")
@@ -1085,7 +1085,7 @@ cdef class DataEngine(Component):
         if bar_type.is_internally_aggregated():
             # Internal aggregation
             if bar_type.standard() not in self._bar_aggregators or not self._bar_aggregators[bar_type.standard()].is_running:
-                self._start_bar_aggregator(client, bar_type, await_partial, params)
+                self._start_bar_aggregator(client, bar_type, await_partial_bar, params)
         else:
             # External aggregation
             if bar_type.instrument_id.is_synthetic():
@@ -1992,7 +1992,7 @@ cdef class DataEngine(Component):
             if response.data_type.metadata.get("bars_market_data_type"):
                 response.data = self._handle_aggregated_bars(response.data, response.data_type.metadata, response.params)
             else:
-                self._handle_bars(response.data, response.params.get("partial"))
+                self._handle_bars(response.data, response.params.get("partial_bar"))
 
         self._msgbus.response(response)
 
@@ -2079,18 +2079,18 @@ cdef class DataEngine(Component):
     cpdef void _handle_trade_ticks(self, list ticks):
         self._cache.add_trade_ticks(ticks)
 
-    cpdef void _handle_bars(self, list bars, Bar partial):
+    cpdef void _handle_bars(self, list bars, Bar partial_bar):
         self._cache.add_bars(bars)
 
         cdef BarAggregator aggregator
-        if partial is not None and partial.bar_type.is_internally_aggregated():
-            # Update partial time bar
-            aggregator = self._bar_aggregators.get(partial.bar_type)
-            aggregator.set_await_partial(False)
+        if partial_bar is not None and partial_bar.bar_type.is_internally_aggregated():
+            # Update partial_bar time bar
+            aggregator = self._bar_aggregators.get(partial_bar.bar_type)
+            aggregator.set_await_partial_bar(False)
 
             if aggregator:
-                self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}")
-                aggregator.set_partial(partial)
+                self._log.debug(f"Applying partial_bar bar {partial_bar} for {partial_bar.bar_type}")
+                aggregator.set_partial_bar(partial_bar)
             else:
                 if self._fsm.state == ComponentState.RUNNING:
                     # Only log this error if the component is running, because
@@ -2277,7 +2277,7 @@ cdef class DataEngine(Component):
         self,
         MarketDataClient client,
         BarType bar_type,
-        bint await_partial,
+        bint await_partial_bar,
         dict params,
     ):
         cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
@@ -2296,7 +2296,7 @@ cdef class DataEngine(Component):
             aggregator = self._create_bar_aggregator(instrument, bar_type)
 
         # Set if awaiting initial partial bar
-        aggregator.set_await_partial(await_partial)
+        aggregator.set_await_partial_bar(await_partial_bar)
 
         # Add aggregator
         self._bar_aggregators[bar_type.standard()] = aggregator
@@ -2310,7 +2310,7 @@ cdef class DataEngine(Component):
                 topic=f"data.bars.{composite_bar_type}",
                 handler=aggregator.handle_bar,
             )
-            self._handle_subscribe_bars(client, composite_bar_type, await_partial, params)
+            self._handle_subscribe_bars(client, composite_bar_type, await_partial_bar, params)
         elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"

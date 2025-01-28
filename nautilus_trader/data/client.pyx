@@ -1015,8 +1015,8 @@ cdef class MarketDataClient(DataClient):
     def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params = None):
         self._handle_trade_ticks(instrument_id, ticks, correlation_id, params)
 
-    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params = None):
-        self._handle_bars(bar_type, bars, partial, correlation_id, params)
+    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial_bar, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_bars(bar_type, bars, partial_bar, correlation_id, params)
 
     def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, dict[str, object] params = None):
         self._handle_data_response(data_type, data, correlation_id, params)
@@ -1082,11 +1082,11 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params):
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial_bar, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata=(({"bar_type": bar_type, "partial": partial}))),
+            data_type=DataType(Bar, metadata=(({"bar_type": bar_type, "partial_bars": partial_bar}))),
             data=bars,
             correlation_id=correlation_id,
             response_id=UUID4(),

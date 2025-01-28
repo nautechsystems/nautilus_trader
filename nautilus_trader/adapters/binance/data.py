@@ -726,8 +726,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=limit if limit > 0 else None,
             )
 
-        partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, params)
+        partial_bar: Bar = bars.pop()
+        self._handle_bars(bar_type, bars, partial_bar, correlation_id, params)
 
     async def _request_order_book_snapshot(
         self,

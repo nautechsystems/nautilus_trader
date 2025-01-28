@@ -82,7 +82,7 @@ class TestBarBuilder:
             == "BarBuilder(BTCUSDT.BINANCE-100-TICK-LAST-EXTERNAL,None,None,None,None,0.000000)"
         )
 
-    def test_set_partial_updates_bar_to_expected_properties(self):
+    def test_set_partial_bar_updates_bar_to_expected_properties(self):
         # Arrange
         bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
@@ -99,7 +99,7 @@ class TestBarBuilder:
         )
 
         # Act
-        builder.set_partial(partial_bar)
+        builder.set_partial_bar(partial_bar)
 
         bar = builder.build_now()
 
@@ -112,7 +112,7 @@ class TestBarBuilder:
         assert bar.ts_init == NANOSECONDS_IN_SECOND
         assert builder.ts_last == NANOSECONDS_IN_SECOND
 
-    def test_set_partial_when_already_set_does_not_update(self):
+    def test_set_partial_bar_when_already_set_does_not_update(self):
         # Arrange
         bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
@@ -140,8 +140,8 @@ class TestBarBuilder:
         )
 
         # Act
-        builder.set_partial(partial_bar1)
-        builder.set_partial(partial_bar2)
+        builder.set_partial_bar(partial_bar1)
+        builder.set_partial_bar(partial_bar2)
 
         bar = builder.build(4_000_000_000, 4_000_000_000)
 
