@@ -126,7 +126,9 @@ impl SocketClientInner {
             certs_dir,
         } = &config;
         let connector = if let Some(dir) = certs_dir {
-            let config = create_tls_config_from_certs_dir(Path::new(dir));
+            // TODO: Unwrap for now, one step away from propagating the error but need to deal
+            // with the tungstenite Error
+            let config = create_tls_config_from_certs_dir(Path::new(dir)).unwrap();
             Some(Connector::Rustls(Arc::new(config)))
         } else {
             None
