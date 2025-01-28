@@ -14,9 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Module for wrapping raw socket streams with TLS encryption.
+
 use std::{fs::File, io::BufReader, path::Path};
 
-use rustls::pki_types::CertificateDer;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
     tungstenite::{handshake::client::Request, stream::Mode, Error},
@@ -144,55 +145,79 @@ pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> anyhow::Result<rust
         ));
     }
 
+    let mut client_cert = None;
+    let mut client_key = None;
     let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-    for entry in std::fs::read_dir(certs_dir).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to read certificates directory at {}: {e}",
-            certs_dir.display(),
-        )
-    })? {
-        let entry = entry.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read directory entry in {}: {e}",
-                certs_dir.display(),
-            )
-        })?;
+    for entry in std::fs::read_dir(certs_dir)? {
+        let entry = entry?;
         let path = entry.path();
 
-        let ext = path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_lowercase();
+        if client_key.is_none() {
+            if let Ok(key) = load_private_key(&path) {
+                client_key = Some(key);
+                continue;
+            }
+        }
 
-        match ext.as_str() {
-            "crt" | "pem" | "cer" => {
-                let certs = load_certs(&path)?;
-                for cert in certs {
-                    root_store.add(cert).map_err(|e| {
-                        anyhow::anyhow!("Invalid certificate in file {}: {e}", path.display())
-                    })?;
+        if let Ok(certs) = load_certs(&path) {
+            if !certs.is_empty() {
+                if client_cert.is_none() {
+                    client_cert = Some(certs);
+                } else {
+                    for cert in certs {
+                        if let Err(e) = root_store.add(cert) {
+                            eprintln!("Warning: Invalid certificate in {}: {e}", path.display());
+                        }
+                    }
                 }
             }
-            _ => continue,
         }
     }
 
+    let (cert, key) = client_cert
+        .zip(client_key)
+        .ok_or_else(|| anyhow::anyhow!("Could not find both client certificate and private key"))?;
+
     Ok(rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
-        .with_no_client_auth())
+        .with_client_auth_cert(cert, key)?)
+}
+
+fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    let pkcs8_keys: Vec<_> = rustls_pemfile::pkcs8_private_keys(&mut reader)
+        .filter_map(|result| result.ok())
+        .collect();
+
+    if let Some(key) = pkcs8_keys.into_iter().next() {
+        return Ok(key.into());
+    }
+
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let rsa_keys: Vec<_> = rustls_pemfile::rsa_private_keys(&mut reader)
+        .filter_map(|result| result.ok())
+        .collect();
+
+    if let Some(key) = rsa_keys.into_iter().next() {
+        return Ok(key.into());
+    }
+
+    Err(anyhow::anyhow!(
+        "No valid private key found in {}",
+        path.display()
+    ))
 }
 
 fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
-    let file = File::open(path)
-        .map_err(|e| anyhow::anyhow!("Failed to read certificates at {}: {e}", path.display()))?;
+    let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    let mut certs = Vec::new();
-    for item in rustls_pemfile::certs(&mut reader) {
-        let cert_der =
-            item.map_err(|e| anyhow::anyhow!("Failed to parse certificate from PEM file: {e}"))?;
-        certs.push(cert_der);
-    }
+    let certs = rustls_pemfile::certs(&mut reader)
+        .filter_map(|result| result.ok())
+        .collect();
     Ok(certs)
 }
