@@ -201,13 +201,13 @@ files = [
 
 [[package]]
 name = "betfair-parser"
-version = "0.14.1"
+version = "0.14.2"
 description = "A betfair parser"
 optional = true
 python-versions = ">=3.10"
 files = [
-    {file = "betfair_parser-0.14.1-py3-none-any.whl", hash = "sha256:3e0a130e5b22cc0e2956abfbc9872037e9114aeb2cef0e2345bc2871a23b92eb"},
-    {file = "betfair_parser-0.14.1.tar.gz", hash = "sha256:55313435bee59d041c9c64c8927759e252484b87a3a54162509e0f44c177dabc"},
+    {file = "betfair_parser-0.14.2-py3-none-any.whl", hash = "sha256:eedde62f4f185f2ea7348ad74aeb9081df3ce5458fddb5b501194329ae90764f"},
+    {file = "betfair_parser-0.14.2.tar.gz", hash = "sha256:cf8476e5717a0ca63849c1a27a18252b7c31034d450280a1bd6c886e658f40b8"},
 ]
 
 [package.dependencies]
@@ -4127,4 +4127,4 @@ polymarket = ["py-clob-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "fccdda0f4bbc495a937b29960942a7d98e8bc1ce604b4777306ceba08fd8f4e7"
+content-hash = "ec4589e0dc64a10259feb3319bc4faf495e5ed68195221a46cf1d3a9f5587b84"
