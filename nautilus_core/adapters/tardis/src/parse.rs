@@ -140,10 +140,10 @@ pub fn parse_timestamp(value_us: u64) -> UnixNanos {
 /// Parses a Nautilus book action inferred from the given Tardis values.
 #[must_use]
 pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
-    if is_snapshot {
-        BookAction::Add
-    } else if amount == 0.0 {
+    if amount == 0.0 {
         BookAction::Delete
+    } else if is_snapshot {
+        BookAction::Add
     } else {
         BookAction::Update
     }

@@ -22,7 +22,7 @@ use nautilus_model::{
         Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
         QuoteTick, TradeTick,
     },
-    enums::{AggregationSource, OrderSide, RecordFlag},
+    enums::{AggregationSource, BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
@@ -186,6 +186,10 @@ pub fn parse_book_level(
         0
     };
     let sequence = 0; // Not available
+
+    if action != BookAction::Delete && size.is_zero() {
+        panic!("Invalid zero size for {action}");
+    }
 
     OrderBookDelta::new(
         instrument_id,
