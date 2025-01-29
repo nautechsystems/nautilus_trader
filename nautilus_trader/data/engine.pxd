@@ -28,8 +28,14 @@ from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
-from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport RequestBars
+from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestInstrument
+from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
+from nautilus_trader.data.messages cimport RequestQuoteTicks
+from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data cimport Bar
@@ -123,7 +129,7 @@ cdef class DataEngine(Component):
     cpdef void stop_clients(self)
     cpdef void execute(self, DataCommand command)
     cpdef void process(self, Data data)
-    cpdef void request(self, DataRequest request)
+    cpdef void request(self, RequestData request)
     cpdef void response(self, DataResponse response)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
@@ -155,15 +161,15 @@ cdef class DataEngine(Component):
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
     cpdef tuple[datetime, object] _catalogs_last_timestamp(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*)
-    cpdef void _handle_request(self, DataRequest request)
-    cpdef void _handle_request_instruments(self, DataRequest request, DataClient client, datetime start, datetime end, dict params)
-    cpdef void _handle_request_instrument(self, DataRequest request, DataClient client, InstrumentId instrument_id, datetime start, datetime end, dict params)
-    cpdef void _handle_request_order_book_deltas(self, DataRequest request, DataClient client, dict params)
-    cpdef void _handle_request_quote_ticks(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
-    cpdef void _handle_request_trade_ticks(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
-    cpdef void _handle_request_bars(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
-    cpdef void _handle_request_data(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now, dict params)
-    cpdef void _query_catalog(self, DataRequest request)
+    cpdef void _handle_request(self, RequestData request)
+    cpdef void _handle_request_instruments(self, RequestInstruments request, DataClient client)
+    cpdef void _handle_request_instrument(self, RequestInstrument request, DataClient client)
+    cpdef void _handle_request_order_book_snapshot(self, RequestOrderBookSnapshot request, DataClient client)
+    cpdef void _handle_request_quote_ticks(self, RequestQuoteTicks request, DataClient client)
+    cpdef void _handle_request_trade_ticks(self, RequestTradeTicks request, DataClient client)
+    cpdef void _handle_request_bars(self, RequestBars request, DataClient client)
+    cpdef void _handle_request_data(self, RequestData request, DataClient client)
+    cpdef void _query_catalog(self, RequestData request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
@@ -190,8 +196,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
     cpdef void _handle_bars(self, list bars, Bar partial)
-    cpdef dict _handle_aggregated_bars(self, list ticks, dict metadata, dict params)
-    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict metadata, dict params)
+    cpdef dict _handle_aggregated_bars(self, list ticks, dict params)
+    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict params)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 

@@ -13,11 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
+from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 
 
@@ -40,15 +44,50 @@ cdef class Unsubscribe(DataCommand):
     pass
 
 
-cdef class DataRequest(Request):
+cdef class RequestData(Request):
+    cdef readonly DataType data_type
+    """The request data type.\n\n:returns: `type`"""
+    cdef datetime start
+    """The start datetime (UTC) of request time range (inclusive)."""
+    cdef datetime end
+    """The end datetime (UTC) of request time range."""
+    cdef readonly int limit
+    """The limit on the amount of data to return for the request."""
     cdef readonly ClientId client_id
     """The data client ID for the request.\n\n:returns: `ClientId` or ``None``"""
     cdef readonly Venue venue
     """The venue for the request.\n\n:returns: `Venue` or ``None``"""
-    cdef readonly DataType data_type
-    """The request data type.\n\n:returns: `type`"""
     cdef readonly dict[str, object] params
     """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
+
+
+cdef class RequestInstrument(RequestData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the request."""
+
+
+cdef class RequestInstruments(RequestData):
+    pass
+
+
+cdef class RequestOrderBookSnapshot(RequestData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the request."""
+
+
+cdef class RequestQuoteTicks(RequestData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the request."""
+
+
+cdef class RequestTradeTicks(RequestData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the request."""
+
+
+cdef class RequestBars(RequestData):
+    cdef readonly BarType bar_type
+    """The bar type for the request."""
 
 
 cdef class DataResponse(Response):
@@ -56,7 +95,7 @@ cdef class DataResponse(Response):
     """The data client ID for the response.\n\n:returns: `ClientId` or ``None``"""
     cdef readonly Venue venue
     """The venue for the response.\n\n:returns: `Venue` or ``None``"""
-    cdef readonly DataType data_type
+    cdef DataType data_type
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""

@@ -30,8 +30,8 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
-from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
@@ -184,6 +184,9 @@ cdef class Actor(Component):
         self,
         DataType data_type,
         ClientId client_id,
+        datetime start=*,
+        datetime end=*,
+        int limit=*,
         callback=*,
         bint update_catalog=*,
         dict[str, object] params=*,
@@ -211,7 +214,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_order_book_snapshot(
         self,
         InstrumentId instrument_id,
-        int limit,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         dict[str, object] params=*,
@@ -221,6 +224,7 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         bint update_catalog=*,
@@ -231,6 +235,7 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         bint update_catalog=*,
@@ -241,6 +246,7 @@ cdef class Actor(Component):
         BarType bar_type,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         bint update_catalog=*,
@@ -251,6 +257,7 @@ cdef class Actor(Component):
         list bar_types,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         bint include_external_data=*,
@@ -298,4 +305,4 @@ cdef class Actor(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command)
-    cdef void _send_data_req(self, DataRequest request)
+    cdef void _send_data_req(self, RequestData request)
