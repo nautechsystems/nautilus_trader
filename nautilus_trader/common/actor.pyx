@@ -59,8 +59,14 @@ from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport RequestBars
+from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestInstrument
+from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
+from nautilus_trader.data.messages cimport RequestQuoteTicks
+from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -2077,6 +2083,9 @@ cdef class Actor(Component):
         self,
         DataType data_type,
         ClientId client_id,
+        datetime start = None,
+        datetime end = None,
+        int limit = 0,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
         dict[str, object] params = None,
@@ -2093,6 +2102,14 @@ cdef class Actor(Component):
         ----------
         data_type : DataType
             The data type for the request.
+        start : datetime, optional
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        limit : int, optional
+            The limit on the amount of data points received.
         client_id : ClientId
             The data client ID.
         params : dict[str, Any], optional
@@ -2121,10 +2138,13 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestData request = RequestData(
+            data_type=data_type,
+            start=start,
+            end=end,
+            limit=limit,
             client_id=client_id,
             venue=None,
-            data_type=data_type,
             callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2161,7 +2181,8 @@ cdef class Actor(Component):
         instrument_id : InstrumentId
             The instrument ID for the request.
         start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
@@ -2209,14 +2230,12 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestInstrument request = RequestInstrument(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(Instrument, metadata={
-                "instrument_id": instrument_id,
-                "start": start,
-                "end": end,
-            }),
             callback=self._handle_instrument_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2253,7 +2272,8 @@ cdef class Actor(Component):
         venue : Venue
             The venue for the request.
         start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
@@ -2301,14 +2321,11 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestInstruments request = RequestInstruments(
+            start=start,
+            end=end,
             client_id=client_id,
             venue=venue,
-            data_type=DataType(Instrument, metadata={
-                "venue": venue,
-                "start": start,
-                "end": end,
-            }),
             callback=self._handle_instruments_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2323,7 +2340,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_order_book_snapshot(
         self,
         InstrumentId instrument_id,
-        int limit,
+        int limit = 5,
         ClientId client_id=None,
         callback: Callable[[UUID4], None] | None=None,
         dict[str, object] params = None,
@@ -2370,13 +2387,10 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookDeltas, metadata={
-                "instrument_id": instrument_id,
-                "limit": limit,
-            }),
             callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2393,6 +2407,7 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime start = None,
         datetime end = None,
+        int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
@@ -2413,10 +2428,13 @@ cdef class Actor(Component):
         instrument_id : InstrumentId
             The tick instrument ID for the request.
         start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
+        limit : int
+            The limit on the amount of quote ticks received.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2461,14 +2479,13 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestQuoteTicks request = RequestQuoteTicks(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(QuoteTick, metadata={
-                "instrument_id": instrument_id,
-                "start": start,
-                "end": end,
-            }),
             callback=self._handle_quote_ticks_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2485,6 +2502,7 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime start = None,
         datetime end = None,
+        int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
@@ -2505,10 +2523,13 @@ cdef class Actor(Component):
         instrument_id : InstrumentId
             The tick instrument ID for the request.
         start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
+        limit : int
+            The limit on the amount of trade ticks received.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2553,14 +2574,13 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestTradeTicks request = RequestTradeTicks(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(TradeTick, metadata={
-                "instrument_id": instrument_id,
-                "start": start,
-                "end": end,
-            }),
             callback=self._handle_trade_ticks_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2577,6 +2597,7 @@ cdef class Actor(Component):
         BarType bar_type,
         datetime start = None,
         datetime end = None,
+        int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint update_catalog = False,
@@ -2597,10 +2618,13 @@ cdef class Actor(Component):
         bar_type : BarType
             The bar type for the request.
         start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
+        limit : int
+            The limit on the amount of bars received.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2645,14 +2669,13 @@ cdef class Actor(Component):
         params["update_catalog"] = update_catalog
 
         cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
+        cdef RequestBars request = RequestBars(
+            bar_type=bar_type,
+            start=start,
+            end=end,
+            limit=limit,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata={
-                "bar_type": bar_type,
-                "start": start,
-                "end": end,
-            }),
             callback=self._handle_bars_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
@@ -2669,6 +2692,7 @@ cdef class Actor(Component):
         list bar_types,
         datetime start = None,
         datetime end = None,
+        int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint include_external_data = False,
@@ -2697,10 +2721,13 @@ cdef class Actor(Component):
             The list of bar types for the request. Composite bars can also be used and need to
             figure in the list after a BarType on which it depends.
         start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
+            The start datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
+        limit : int
+            The limit on the amount of data received (quote ticks, trade ticks or bars).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2755,38 +2782,58 @@ cdef class Actor(Component):
                 self._log.error(f"request_aggregated_bars: {bar_type} must be internally aggregated")
                 return
 
-        first = bar_types[0]
-        bars_market_data_type = ""
-
-        if first.is_composite():
-            bars_market_data_type = "bars"
-        elif first.spec.price_type == PriceType.LAST:
-            bars_market_data_type = "trade_ticks"
-        else:
-            bars_market_data_type = "quote_ticks"
+        cdef UUID4 request_id = UUID4()
+        cdef BarType first_bar_type = bar_types[0]
 
         params = params if params else {}
+        params["bar_type"] = first_bar_type.composite()
+        params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = include_external_data
         params["update_subscriptions"] = update_subscriptions
         params["update_catalog"] = update_catalog
 
-        cdef UUID4 request_id = UUID4()
-        cdef DataRequest request = DataRequest(
-            client_id=client_id,
-            venue=first.instrument_id.venue,
-            data_type=DataType(Bar, metadata={
-                "bar_types": tuple(bar_types),
-                "bars_market_data_type": bars_market_data_type,
-                "instrument_id": first.instrument_id,
-                "bar_type": first.composite(),
-                "start": start,
-                "end": end,
-            }),
-            callback=self._handle_aggregated_bars_response,
-            request_id=request_id,
-            ts_init=self._clock.timestamp_ns(),
-            params=params,
-        )
+        if first_bar_type.is_composite():
+            params["bars_market_data_type"] = "bars"
+            request = RequestBars(
+                bar_type=first_bar_type.composite(),
+                start=start,
+                end=end,
+                limit=limit,
+                client_id=client_id,
+                venue=first_bar_type.instrument_id.venue,
+                callback=self._handle_aggregated_bars_response,
+                request_id=request_id,
+                ts_init=self._clock.timestamp_ns(),
+                params=params,
+            )
+        elif first_bar_type.spec.price_type == PriceType.LAST:
+            params["bars_market_data_type"] = "trade_ticks"
+            request = RequestTradeTicks(
+                instrument_id=first_bar_type.instrument_id,
+                start=start,
+                end=end,
+                limit=limit,
+                client_id=client_id,
+                venue=first_bar_type.instrument_id.venue,
+                callback=self._handle_aggregated_bars_response,
+                request_id=request_id,
+                ts_init=self._clock.timestamp_ns(),
+                params=params,
+            )
+        else:
+            params["bars_market_data_type"] = "quote_ticks"
+            request = RequestQuoteTicks(
+                instrument_id=first_bar_type.instrument_id,
+                start=start,
+                end=end,
+                limit=limit,
+                client_id=client_id,
+                venue=first_bar_type.instrument_id.venue,
+                callback=self._handle_aggregated_bars_response,
+                request_id=request_id,
+                ts_init=self._clock.timestamp_ns(),
+                params=params,
+            )
 
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
@@ -3374,7 +3421,7 @@ cdef class Actor(Component):
             self._log.info(f"{CMD}{SENT} {command}")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
-    cdef void _send_data_req(self, DataRequest request):
+    cdef void _send_data_req(self, RequestData request):
         if is_logging_initialized():
             self._log.info(f"{REQ}{SENT} {request}")
         self._msgbus.request(endpoint="DataEngine.request", request=request)

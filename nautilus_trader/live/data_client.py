@@ -28,8 +28,6 @@ from collections.abc import Callable
 from collections.abc import Coroutine
 from typing import Any
 
-import pandas as pd
-
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -38,9 +36,15 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.functions import format_utc_timerange
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
@@ -234,16 +238,11 @@ class LiveDataClient(DataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(
-        self,
-        data_type: DataType,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._log.debug(f"Request {data_type} {correlation_id}")
+    def request(self, request: RequestData) -> None:
+        self._log.debug(f"Request {request.data_type} {request.request_id}")
         self.create_task(
-            self._request(data_type, correlation_id, params),
-            log_msg=f"request_{data_type}",
+            self._request(request),
+            log_msg=f"request_{request.data_type}",
         )
 
     ############################################################################
@@ -269,12 +268,7 @@ class LiveDataClient(DataClient):
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
 
-    async def _request(
-        self,
-        data_type: DataType,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request(self, request: RequestData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request` coroutine",  # pragma: no cover
         )
@@ -710,152 +704,74 @@ class LiveMarketDataClient(MarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(
-        self,
-        data_type: DataType,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._log.info(f"Request {data_type}", LogColor.BLUE)
+    def request(self, request: RequestData) -> None:
+        self._log.info(f"Request {request.data_type}", LogColor.BLUE)
         self.create_task(
-            self._request(data_type, correlation_id, params),
-            log_msg=f"request: {data_type}",
+            self._request(request),
+            log_msg=f"request: {request.data_type}",
         )
 
-    def request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        time_range_str = format_utc_timerange(start, end)
-        self._log.info(f"Request {instrument_id} instrument{time_range_str}", LogColor.BLUE)
+    def request_instrument(self, request: RequestInstrument) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        self._log.info(f"Request {request.instrument_id} instrument{time_range_str}", LogColor.BLUE)
         self.create_task(
-            self._request_instrument(
-                instrument_id=instrument_id,
-                correlation_id=correlation_id,
-                start=start,
-                end=end,
-                params=params,
-            ),
-            log_msg=f"request: instrument {instrument_id}",
+            self._request_instrument(request),
+            log_msg=f"request: instrument {request.instrument_id}",
         )
 
-    def request_instruments(
-        self,
-        venue: Venue,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        time_range_str = format_utc_timerange(start, end)
+    def request_instruments(self, request: RequestInstruments) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
         self._log.info(
-            f"Request {venue} instruments for{time_range_str}",
+            f"Request {request.venue} instruments for{time_range_str}",
             LogColor.BLUE,
         )
         self.create_task(
-            self._request_instruments(
-                venue=venue,
-                correlation_id=correlation_id,
-                start=start,
-                end=end,
-                params=params,
-            ),
-            log_msg=f"request: instruments for {venue}",
+            self._request_instruments(request),
+            log_msg=f"request: instruments for {request.venue}",
         )
 
-    def request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        time_range_str = format_utc_timerange(start, end)
-        limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} quotes{time_range_str}{limit_str}", LogColor.BLUE)
+    def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} quotes{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
         self.create_task(
-            self._request_quote_ticks(
-                instrument_id=instrument_id,
-                limit=limit,
-                correlation_id=correlation_id,
-                start=start,
-                end=end,
-                params=params,
-            ),
-            log_msg=f"request: quotes {instrument_id}",
+            self._request_quote_ticks(request),
+            log_msg=f"request: quotes {request.instrument_id}",
         )
 
-    def request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        time_range_str = format_utc_timerange(start, end)
-        limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} trades{time_range_str}{limit_str}", LogColor.BLUE)
+    def request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} trades{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
         self.create_task(
-            self._request_trade_ticks(
-                instrument_id=instrument_id,
-                limit=limit,
-                correlation_id=correlation_id,
-                start=start,
-                end=end,
-                params=params,
-            ),
-            log_msg=f"request: trades {instrument_id}",
+            self._request_trade_ticks(request),
+            log_msg=f"request: trades {request.instrument_id}",
         )
 
-    def request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        time_range_str = format_utc_timerange(start, end)
-        limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {bar_type} bars{time_range_str}{limit_str}", LogColor.BLUE)
+    def request_bars(self, request: RequestBars) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(f"Request {request.bar_type} bars{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
-            self._request_bars(
-                bar_type=bar_type,
-                limit=limit,
-                correlation_id=correlation_id,
-                start=start,
-                end=end,
-                params=params,
-            ),
-            log_msg=f"request: bars {bar_type}",
+            self._request_bars(request),
+            log_msg=f"request: bars {request.bar_type}",
         )
 
-    def request_order_book_snapshot(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} order_book_snapshot{limit_str}", LogColor.BLUE)
+    def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} order_book_snapshot{limit_str}",
+            LogColor.BLUE,
+        )
         self.create_task(
-            self._request_order_book_snapshot(
-                instrument_id=instrument_id,
-                limit=limit,
-                correlation_id=correlation_id,
-                params=params,
-            ),
-            log_msg=f"request: order_book_snapshot {instrument_id}",
+            self._request_order_book_snapshot(request),
+            log_msg=f"request: order_book_snapshot {request.instrument_id}",
         )
 
     ############################################################################
@@ -1039,86 +955,37 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_unsubscribe_instrument_close` coroutine",  # pragma: no cover
         )
 
-    async def _request(
-        self,
-        data_type: DataType,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request(self, request: RequestData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
-    async def _request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _request_instruments(
-        self,
-        venue: Venue,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_instruments(self, request: RequestInstruments) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_quote_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_bars(self, request: RequestBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover
         )
 
-    async def _request_order_book_snapshot(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         raise NotImplementedError(
             "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
         )  # pra

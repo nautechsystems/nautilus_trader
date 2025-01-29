@@ -21,7 +21,6 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
@@ -47,7 +46,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model import DataType
 from nautilus_trader.model.book import OrderBook
@@ -860,39 +859,31 @@ class DYDXDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = dydx_symbol.to_instrument_id()
         return nautilus_instrument_id
 
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_bars(self, request: RequestBars) -> None:
         max_bars = 100
-
+        limit = request.limit
         if limit == 0 or limit > max_bars:
             limit = max_bars
 
-        if bar_type.is_internally_aggregated():
+        if request.bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: only historical bars with EXTERNAL aggregation available from dYdX",
+                f"Cannot request {request.bar_type} bars: only historical bars with EXTERNAL aggregation available from dYdX",
             )
             return
 
-        if not bar_type.spec.is_time_aggregated():
+        if not request.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: only time bars are aggregated by dYdX",
+                f"Cannot request {request.bar_type} bars: only time bars are aggregated by dYdX",
             )
             return
 
-        if bar_type.spec.price_type != PriceType.LAST:
+        if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type} bars: only historical bars for LAST price type available from dYdX",
+                f"Cannot request {request.bar_type} bars: only historical bars for LAST price type available from dYdX",
             )
             return
 
-        symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
+        symbol = DYDXSymbol(request.bar_type.instrument_id.symbol.value)
         instrument_id: InstrumentId = symbol.to_instrument_id()
 
         instrument = self._cache.instrument(instrument_id)
@@ -903,10 +894,10 @@ class DYDXDataClient(LiveMarketDataClient):
 
         candles = await self._http_market.get_candles(
             symbol=symbol,
-            resolution=self._enum_parser.parse_dydx_kline(bar_type),
+            resolution=self._enum_parser.parse_dydx_kline(request.bar_type),
             limit=limit,
-            start=start,
-            end=end,
+            start=request.start,
+            end=request.end,
         )
 
         if candles is not None:
@@ -914,7 +905,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
             bars = [
                 candle.parse_to_bar(
-                    bar_type=bar_type,
+                    bar_type=request.bar_type,
                     price_precision=instrument.price_precision,
                     size_precision=instrument.size_precision,
                     ts_init=ts_init,
@@ -923,4 +914,4 @@ class DYDXDataClient(LiveMarketDataClient):
             ]
 
             partial: Bar = bars.pop()
-            self._handle_bars(bar_type, bars, partial, correlation_id, params)
+            self._handle_bars(request.bar_type, bars, partial, request.id, request.params)

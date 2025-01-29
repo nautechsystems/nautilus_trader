@@ -15,8 +15,6 @@
 
 from nautilus_trader.common.config import NautilusConfig
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -26,6 +24,13 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport RequestBars
+from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestInstrument
+from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
+from nautilus_trader.data.messages cimport RequestQuoteTicks
+from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -152,20 +157,18 @@ cdef class DataClient(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id, dict[str, object] params = None):
+    cpdef void request(self, RequestData request):
         """
         Request data for the given data type.
 
         Parameters
         ----------
-        data_type : DataType
-            The data type for the subscription.
-        correlation_id : UUID4
-            The correlation ID for the response.
+        request : RequestData
+            The message for the data request.
 
         """
         self._log.error(
-            f"Cannot request {data_type}: not implemented. "
+            f"Cannot request {request.data_type}: not implemented. "
             f"You can implement by overriding the `request` method for this client",
         )
 
@@ -806,60 +809,29 @@ cdef class MarketDataClient(DataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(
-        self,
-        InstrumentId instrument_id,
-        UUID4 correlation_id,
-        datetime start = None,
-        datetime end = None,
-        dict[str, object] params = None,
-    ):
+    cpdef void request_instrument(self, RequestInstrument request):
         """
         Request `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the request.
-        correlation_id : UUID4
-            The correlation ID for the request.
-        start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
-        end : datetime, optional
-            The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
-        params : dict[str, Any], optional
-            Additional params to be sent with the request.
+        request : RequestInstrument
+            The message for the data request.
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `Instrument` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot request `Instrument` data for {request.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `request_instrument` method for this client",  # pragma: no cover  # noqa
         )
-    cpdef void request_instruments(
-        self,
-        Venue venue,
-        UUID4 correlation_id,
-        datetime start = None,
-        datetime end = None,
-        dict[str, object] params = None,
-    ):
+
+    cpdef void request_instruments(self, RequestInstruments request):
         """
         Request all `Instrument` data for the given venue.
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the request.
-        correlation_id : UUID4
-            The correlation ID for the request.
-        start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
-        end : datetime, optional
-            The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
-        params : dict[str, Any], optional
-            Additional params to be sent with the request.
+        request : RequestInstruments
+            The message for the data request.
 
         """
         self._log.error(  # pragma: no cover
@@ -867,130 +839,63 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_instruments` method for this client",  # pragma: no cover  # noqa
         )
 
-    cpdef void request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        dict[str, object] params = None,
-    ):
+    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
         """
         Request order book snapshot data.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the order book snapshot request.
-        limit : int
-            The limit on the depth of the order book snapshot.
-        correction_id : UUID4
-            The correlation ID for the request.
+        request : RequestOrderBookSnapshot
+            The message for the data request.
 
         """
         self._log.error(
-            f"Cannot request order book snapshot data for {instrument_id}: not implemented. "
+            f"Cannot request order book snapshot data for {request.instrument_id}: not implemented. "
             "You can implement by overriding the `request_order_book_snapshot` method for this client."
         )
 
-    cpdef void request_quote_ticks(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        datetime start = None,
-        datetime end = None,
-        dict[str, object] params = None,
-    ):
+    cpdef void request_quote_ticks(self, RequestQuoteTicks request):
         """
         Request historical `QuoteTick` data.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The tick instrument ID for the request.
-        limit : int
-            The limit for the number of returned ticks.
-        correlation_id : UUID4
-            The correlation ID for the request.
-        start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
-        end : datetime, optional
-            The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
-        params : dict[str, Any], optional
-            Additional params to be sent with the request.
+        request : RequestQuoteTicks
+            The message for the data request.
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `QuoteTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot request `QuoteTick` data for {request.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `request_quote_ticks` method for this client",  # pragma: no cover  # noqa
         )
 
-    cpdef void request_trade_ticks(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        datetime start = None,
-        datetime end = None,
-        dict[str, object] params = None,
-    ):
+    cpdef void request_trade_ticks(self, RequestTradeTicks request):
         """
         Request historical `TradeTick` data.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The tick instrument ID for the request.
-        limit : int
-            The limit for the number of returned ticks.
-        correlation_id : UUID4
-            The correlation ID for the request.
-        start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
-        end : datetime, optional
-            The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
-        params : dict[str, Any], optional
-            Additional params to be sent with the request.
+        request : RequestTradeTicks
+            The message for the data request.
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `TradeTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot request `TradeTick` data for {request.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `request_trade_ticks` method for this client",  # pragma: no cover  # noqa
         )
 
-    cpdef void request_bars(
-        self,
-        BarType bar_type,
-        int limit,
-        UUID4 correlation_id,
-        datetime start = None,
-        datetime end = None,
-        dict[str, object] params = None,
-    ):
+    cpdef void request_bars(self, RequestBars request):
         """
         Request historical `Bar` data. To load historical data from a catalog, you can pass a list[DataCatalogConfig] to the TradingNodeConfig or the BacktestEngineConfig.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type for the request.
-        limit : int
-            The limit for the number of returned bars.
-        correlation_id : UUID4
-            The correlation ID for the request.
-        start : datetime, optional
-            The start datetime (UTC) of request time range (inclusive).
-        end : datetime, optional
-            The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
-        params : dict[str, Any], optional
-            Additional params to be sent with the request.
+        request : RequestBars
+            The message for the data request.
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `Bar` data for {bar_type}: not implemented. "  # pragma: no cover
+            f"Cannot request `Bar` data for {request.bar_type}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `request_bars` method for this client",  # pragma: no cover  # noqa
         )
 

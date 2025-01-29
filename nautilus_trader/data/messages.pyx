@@ -16,11 +16,19 @@
 from typing import Any
 from typing import Callable
 
+from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class DataCommand(Command):
@@ -177,25 +185,32 @@ cdef class Unsubscribe(DataCommand):
         )
 
 
-cdef class DataRequest(Request):
+cdef class RequestData(Request):
     """
     Represents a request for data.
 
     Parameters
     ----------
+    data_type : type
+        The data type for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    limit : int
+        The limit on the amount of data to return for the request.
     client_id : ClientId or ``None``
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    data_type : type
-        The data type for the request.
     callback : Callable[[Any], None]
         The delegate to call with the data.
     request_id : UUID4
         The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-    params : dict[str, object], optional
+    params : dict[str, object]
         Additional parameters for the request.
 
     Raises
@@ -207,13 +222,16 @@ cdef class DataRequest(Request):
 
     def __init__(
         self,
+        DataType data_type not None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        int limit,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
-        DataType data_type not None,
         callback not None: Callable[[Any], None],
         UUID4 request_id not None,
         uint64_t ts_init,
-        dict[str, object] params: dict | None = None,
+        dict[str, object] params: dict | None,
     ):
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
@@ -222,14 +240,105 @@ cdef class DataRequest(Request):
             ts_init,
         )
 
+        self.data_type = data_type
+        self.start = start
+        self.end = end
+        self.limit = limit
         self.client_id = client_id
         self.venue = venue
-        self.data_type = data_type
         self.params = params or {}
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
+            f"data_type={self.data_type}{form_params_str(self.params)}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"data_type={self.data_type}{form_params_str(self.params)}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class RequestInstrument(RequestData):
+    """
+    Represents a request for an instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ):
+        super().__init__(
+            DataType(Instrument),
+            start,
+            end,
+            0,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"data_type={self.data_type}{form_params_str(self.params)})"
@@ -238,9 +347,432 @@ cdef class DataRequest(Request):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
-            f"data_type={self.data_type}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class RequestInstruments(RequestData):
+    """
+    Represents a request for instruments.
+
+    Parameters
+    ----------
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ):
+        super().__init__(
+            DataType(Instrument),
+            start,
+            end,
+            0,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class RequestOrderBookSnapshot(RequestData):
+    """
+    Represents a request for an order book snapshot.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the request.
+    limit : int
+        The limit on the depth of the order book snapshot (default is None).
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ):
+        super().__init__(
+            DataType(OrderBookDeltas),
+            None,
+            None,
+            limit,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class RequestQuoteTicks(RequestData):
+    """
+    Represents a request for quote ticks.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    limit : int
+        The limit on the amount of quote ticks received.
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        int limit,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ):
+        super().__init__(
+            DataType(QuoteTick),
+            start,
+            end,
+            limit,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+cdef class RequestTradeTicks(RequestData):
+    """
+    Represents a request for trade ticks.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    limit : int
+        The limit on the amount of trade ticks received.
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        int limit,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ):
+        super().__init__(
+            DataType(TradeTick),
+            start,
+            end,
+            limit,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class RequestBars(RequestData):
+    """
+    Represents a request for bars.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    limit : int
+        The limit on the amount of bars received.
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        BarType bar_type,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        int limit,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+    ):
+        super().__init__(
+            DataType(Bar),
+            start,
+            end,
+            limit,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params
+        )
+
+        self.bar_type = bar_type
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"bar_type={self.bar_type}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"bar_type={self.bar_type}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
             f"callback={self.callback}, "
             f"id={self.id}{form_params_str(self.params)})"
         )
@@ -277,15 +809,15 @@ cdef class DataResponse(Response):
     """
 
     def __init__(
-        self,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        DataType data_type,
-        data not None,
-        UUID4 correlation_id not None,
-        UUID4 response_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None = None,
+            self,
+            ClientId client_id: ClientId | None,
+            Venue venue: Venue | None,
+            DataType data_type,
+            data not None,
+            UUID4 correlation_id not None,
+            UUID4 response_id not None,
+            uint64_t ts_init,
+            dict[str, object] params: dict | None = None,
     ):
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(

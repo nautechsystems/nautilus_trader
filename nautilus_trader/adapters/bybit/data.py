@@ -48,6 +48,12 @@ from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -60,13 +66,11 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
 if TYPE_CHECKING:
-    import pandas as pd
 
     from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -423,151 +427,116 @@ class BybitDataClient(LiveMarketDataClient):
         bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
         return bybit_symbol.to_instrument_id()
 
-    async def _request(
-        self,
-        data_type: DataType,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if data_type.type == BybitTickerData:
-            symbol = data_type.metadata["symbol"]
-            await self._handle_ticker_data_request(symbol, correlation_id)
+    async def _request(self, request: RequestData) -> None:
+        if request.data_type.type == BybitTickerData:
+            symbol = request.data_type.metadata["symbol"]
+            await self._handle_ticker_data_request(symbol, request.id)
 
-    async def _request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if start is not None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
+        if request.start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if end is not None:
+        if request.end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+        instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}")
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, params)
+        self._handle_instrument(instrument, request.id, request.params)
 
-    async def _request_instruments(
-        self,
-        venue: Venue,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if start is not None:
+    async def _request_instruments(self, request: RequestInstruments) -> None:
+        if request.start is not None:
             self._log.warning(
-                f"Requesting instruments for {venue} with specified `start` which has no effect",
+                f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if end is not None:
+        if request.end is not None:
             self._log.warning(
-                f"Requesting instruments for {venue} with specified `end` which has no effect",
+                f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
 
         all_instruments = self._instrument_provider.get_all()
         target_instruments = []
         for instrument in all_instruments.values():
-            if instrument.venue == venue:
+            if instrument.venue == request.venue:
                 target_instruments.append(instrument)
 
-        self._handle_instruments(venue, target_instruments, correlation_id, params)
+        self._handle_instruments(
+            request.venue,
+            target_instruments,
+            request.id,
+            request.params,
+        )
 
-    async def _request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Bybit",
         )
 
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        limit = request.limit
+
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        if start is not None:
+        if request.start is not None:
             self._log.error(
                 "Cannot specify `start` for historical trades: Bybit only provides 'recent trades'",
             )
-        if end is not None:
+        if request.end is not None:
             self._log.error(
                 "Cannot specify `end` for historical trades: Bybit only provides 'recent trades'",
             )
 
         trades = await self._http_market.request_bybit_trades(
-            instrument_id=instrument_id,
+            instrument_id=request.instrument_id,
             limit=limit,
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_trade_ticks(instrument_id, trades, correlation_id, params)
+        self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
 
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_bars(self, request: RequestBars) -> None:
+        limit = request.limit
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        if bar_type.is_internally_aggregated():
+        if request.bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: "
+                f"Cannot request {request.bar_type} bars: "
                 f"only historical bars with EXTERNAL aggregation available from Bybit",
             )
             return
 
-        if not bar_type.spec.is_time_aggregated():
+        if not request.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: only time bars are aggregated by Bybit",
+                f"Cannot request {request.bar_type} bars: only time bars are aggregated by Bybit",
             )
             return
 
-        if bar_type.spec.price_type != PriceType.LAST:
+        if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type} bars: "
+                f"Cannot request {request.bar_type} bars: "
                 f"only historical bars for LAST price type available from Bybit",
             )
             return
 
-        bybit_interval = self._enum_parser.parse_bybit_kline(bar_type)
+        bybit_interval = self._enum_parser.parse_bybit_kline(request.bar_type)
         start_time_ms = None
-        if start is not None:
-            start_time_ms = secs_to_millis(start.timestamp())
+        if request.start is not None:
+            start_time_ms = secs_to_millis(request.start.timestamp())
         end_time_ms = None
-        if end is not None:
-            end_time_ms = secs_to_millis(end.timestamp())
+        if request.end is not None:
+            end_time_ms = secs_to_millis(request.end.timestamp())
 
         bars = await self._http_market.request_bybit_bars(
-            bar_type=bar_type,
+            bar_type=request.bar_type,
             interval=bybit_interval,
             start=start_time_ms,
             end=end_time_ms,
@@ -575,7 +544,7 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, params)
+        self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)

@@ -32,7 +32,11 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -45,7 +49,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -353,129 +356,98 @@ class TardisDataClient(LiveMarketDataClient):
         ws_client_key = get_ws_client_key(bar_type.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if start is not None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
+        if request.start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if end is not None:
+        if request.end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+        instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}")
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, params)
+        self._handle_instrument(instrument, request.id, request.params)
 
-    async def _request_instruments(
-        self,
-        venue: Venue,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if start is not None:
+    async def _request_instruments(self, request: RequestInstruments) -> None:
+        if request.start is not None:
             self._log.warning(
-                f"Requesting instruments for {venue} with specified `start` which has no effect",
+                f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if end is not None:
+        if request.end is not None:
             self._log.warning(
-                f"Requesting instruments for {venue} with specified `end` which has no effect",
+                f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
 
         all_instruments = self._instrument_provider.get_all()
         target_instruments = []
         for instrument in all_instruments.values():
-            if instrument.venue == venue:
+            if instrument.venue == request.venue:
                 target_instruments.append(instrument)
 
-        self._handle_instruments(target_instruments, venue, correlation_id, params)
-
-    async def _request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._log.error(
-            f"Cannot request historical quotes for {instrument_id}: not supported in this version",
+        self._handle_instruments(
+            target_instruments,
+            request.venue,
+            request.id,
+            request.params,
         )
 
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
-            f"Cannot request historical trades for {instrument_id}: not supported in this version",
+            f"Cannot request historical quotes for {request.instrument_id}: not supported in this version",
         )
 
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if bar_type.is_internally_aggregated():
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        self._log.error(
+            f"Cannot request historical trades for {request.instrument_id}: not supported in this version",
+        )
+
+    async def _request_bars(self, request: RequestBars) -> None:
+        if request.bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: "
+                f"Cannot request {request.bar_type} bars: "
                 f"only historical bars with EXTERNAL aggregation available from Tardis",
             )
             return
 
-        if bar_type.spec.price_type != PriceType.LAST:
+        if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type} bars: "
+                f"Cannot request {request.bar_type} bars: "
                 f"only historical bars for LAST price type available through Tardis",
             )
             return
 
-        instrument = self._cache.instrument(bar_type.instrument_id)
+        instrument = self._cache.instrument(request.bar_type.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot request bars: no instrument for {bar_type.instrument_id}")
+            self._log.error(
+                f"Cannot request bars: no instrument for {request.bar_type.instrument_id}",
+            )
             return
 
         instrument_info = create_instrument_info(instrument)
         tardis_exchange_str = instrument_info.exchange
         raw_symbol_str = instrument.raw_symbol.value
-        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
+        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(request.bar_type)
 
         self._log.info(
             f"Subscribing replay: exchange={tardis_exchange_str}, raw_symbol={raw_symbol_str}, data_type={tardis_data_type}",
             LogColor.MAGENTA,
         )
 
-        if start and start.date() == self._clock.utc_now().date():
+        if request.start and request.start.date() == self._clock.utc_now().date():
             self._log.error(
-                f"Cannot request bars: `start` cannot fall on the current UTC date, was {start.date()} (try an earlier `start`)",
+                f"Cannot request bars: `start` cannot fall on the current UTC date, was {request.start.date()} (try an earlier `start`)",
             )
             return
-        if start and end and start.date() == end.date():
+        if request.start and request.end and request.start.date() == request.end.date():
             self._log.error(
-                f"Cannot request bars: `start` and `end` cannot fall on the same date, was {start.date()} (try an earlier `start`)",
+                f"Cannot request bars: `start` and `end` cannot fall on the same date, was {request.start.date()} (try an earlier `start`)",
             )
             return
 
@@ -484,8 +456,12 @@ class TardisDataClient(LiveMarketDataClient):
         replay_request = create_replay_normalized_request_options(
             exchange=tardis_exchange_str,
             symbols=[raw_symbol_str],
-            from_date=start.date() if start is not None else date_now_utc - pd.Timedelta(days=1),
-            to_date=end.date() if end is not None else date_now_utc,
+            from_date=(
+                request.start.date()
+                if request.start is not None
+                else date_now_utc - pd.Timedelta(days=1)
+            ),
+            to_date=request.end.date() if request.end is not None else date_now_utc,
             data_types=[tardis_data_type],
         )
 
@@ -497,19 +473,19 @@ class TardisDataClient(LiveMarketDataClient):
         )
 
         self._log.debug(
-            f"Streamed {len(pyo3_bars):,} {bar_type} bars from replay",
+            f"Streamed {len(pyo3_bars):,} {request.bar_type} bars from replay",
             LogColor.MAGENTA,
         )
 
-        if limit:
-            pyo3_bars = pyo3_bars[-limit:]
+        if request.limit:
+            pyo3_bars = pyo3_bars[-request.limit :]
 
         # Apply time filter
         pyo3_bars = [
             pyo3_bar
             for pyo3_bar in pyo3_bars
-            if (start is None or pyo3_bar.ts_event >= start.value)
-            and (end is None or pyo3_bar.ts_event <= end.value)
+            if (request.start is None or pyo3_bar.ts_event >= request.start.value)
+            and (request.end is None or pyo3_bar.ts_event <= request.end.value)
         ]
 
         bars = Bar.from_pyo3_list(pyo3_bars)
@@ -519,7 +495,7 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
 
-        self._handle_bars(bar_type, bars, None, correlation_id, params)
+        self._handle_bars(request.bar_type, bars, None, request.id, request.params)
 
     def _handle_msg(
         self,
