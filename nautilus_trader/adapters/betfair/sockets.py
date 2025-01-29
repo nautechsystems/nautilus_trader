@@ -98,12 +98,29 @@ class BetfairStreamClient:
         self.is_connected = True
         self._log.info("Connected")
 
+    async def reconnect(self):
+        if self._client is None:
+            self._log.warning("Cannot reconnect: not connected")
+            return
+
+        self.is_connected = False
+        self._log.info("Reconnecting...")
+
+        await self._client.reconnect()
+
+        self._log.debug("Running post connection")
+        await self.post_connection()
+
+        self.is_connected = True
+        self._log.info("Reconnected")
+
     async def disconnect(self):
-        self._log.info("Disconnecting...")
-        self.disconnecting = True
         if self._client is None:
             self._log.warning("Cannot disconnect: not connected")
             return
+
+        self.disconnecting = True
+        self._log.info("Disconnecting...")
 
         await self._client.close()
 

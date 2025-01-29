@@ -206,8 +206,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         await self._client.disconnect()
 
     async def _reconnect(self) -> None:
-        await self._disconnect()
-        await self._connect()
+        self._log.info("Attempting reconnect")
+        await self._stream.reconnect()
         self._reconnect_in_progress = False
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
