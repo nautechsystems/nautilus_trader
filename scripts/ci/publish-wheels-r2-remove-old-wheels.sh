@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Number of wheel versions to retain on nightly branch
+NIGHTLY_LOOKBACK=10
+
 echo "Cleaning up old wheels in Cloudflare R2..."
 
 branch_name="${GITHUB_REF_NAME}" # Get the current branch
@@ -80,11 +83,11 @@ if [[ "$branch_name" == "nightly" ]]; then
     versions=$(echo "$matching_files" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+a([0-9]{8})-.+\.whl$/\1/" | sort -n)
     echo "Unique versions (dates) for platform: $versions"
 
-    # Retain only the last 3 versions
-    versions_to_keep=$(echo "$versions" | tail -n 3)
+    # Retain only the wheels in the lookback
+    versions_to_keep=$(echo "$versions" | tail -n $NIGHTLY_LOOKBACK)
     echo "Versions to keep: $versions_to_keep"
 
-    # Delete files not in the last 3 versions
+    # Delete files outside lookback
     for file in $matching_files; do
       file_version=$(echo "$file" | sed -E "s/^.+-[0-9]+\.[0-9]+\.[0-9]+a([0-9]{8})-.+\.whl$/\1/")
       if echo "$versions_to_keep" | grep -qx "$file_version"; then
