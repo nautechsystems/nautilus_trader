@@ -52,9 +52,9 @@ type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 /// Connection state transitions:
 /// ACTIVE <-> RECONNECTING: During reconnection attempts
 /// ACTIVE/RECONNECTING -> CLOSED: Only when controller task terminates
-pub const CONNECTION_ACTIVE: u8 = 0;
-pub const CONNECTION_RECONNECTING: u8 = 1;
-pub const CONNECTION_CLOSED: u8 = 2;
+const CONNECTION_ACTIVE: u8 = 0;
+const CONNECTION_RECONNECTING: u8 = 1;
+const CONNECTION_CLOSED: u8 = 2;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]

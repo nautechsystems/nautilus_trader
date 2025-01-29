@@ -182,9 +182,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _reconnect(self) -> None:
         self._log.info("Attempting reconnect")
         if self._stream.is_connected:
-            self._log.info("Stream connected: disconnecting")
-            await self._stream.disconnect()
-        await self._stream.connect()
+            await self._stream.reconnect()
         self._reconnect_in_progress = False
 
     def _reset(self) -> None:
