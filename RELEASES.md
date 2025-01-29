@@ -50,6 +50,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Upgraded `pyo3-async-runtimes` crate to v0.23.0
 
 ### Fixes
+- Fixed order book action parsing for Tardis (ensures zero sizes in snapshots work with the tighter validation for `action` vs `size`)
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
