@@ -13,14 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
-use crate::socket::{SocketClient, SocketConfig};
+use crate::socket::{SocketClient, SocketConfig, CONNECTION_CLOSED};
 
 #[pymethods]
 impl SocketConfig {
@@ -110,6 +113,19 @@ impl SocketClient {
         slf.is_closed()
     }
 
+    /// Reconnect the client.
+    #[pyo3(name = "reconnect")]
+    fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let reconnect_mode = slf.reconnect_mode.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            reconnect_mode.store(true, Ordering::SeqCst);
+            while reconnect_mode.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Ok(())
+        })
+    }
+
     /// Close the client.
     ///
     /// The connection is not completely closed until all references
@@ -122,8 +138,12 @@ impl SocketClient {
     #[pyo3(name = "close")]
     fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
+        let connection_state = slf.connection_state.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             disconnect_mode.store(true, Ordering::SeqCst);
+            while connection_state.load(Ordering::SeqCst) != CONNECTION_CLOSED {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
             Ok(())
         })
     }

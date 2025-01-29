@@ -52,9 +52,9 @@ type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 /// Connection state transitions:
 /// ACTIVE <-> RECONNECTING: During reconnection attempts
 /// ACTIVE/RECONNECTING -> CLOSED: Only when controller task terminates
-const CONNECTION_ACTIVE: u8 = 0;
-const CONNECTION_RECONNECTING: u8 = 1;
-const CONNECTION_CLOSED: u8 = 2;
+pub const CONNECTION_ACTIVE: u8 = 0;
+pub const CONNECTION_RECONNECTING: u8 = 1;
+pub const CONNECTION_CLOSED: u8 = 2;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -358,7 +358,7 @@ async fn shutdown(
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedTcpWriter,
 ) {
-    tracing::debug!("Closing");
+    tracing::debug!("Shutting down inner client");
 
     let timeout = Duration::from_secs(5);
     if tokio::time::timeout(timeout, async {
@@ -415,6 +415,7 @@ pub struct SocketClient {
     pub(crate) writer: SharedTcpWriter,
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
+    pub(crate) reconnect_mode: Arc<AtomicBool>,
     pub(crate) connection_state: Arc<AtomicU8>,
     pub(crate) suffix: Vec<u8>,
 }
@@ -431,11 +432,13 @@ impl SocketClient {
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(AtomicBool::new(false));
+        let reconnect_mode = Arc::new(AtomicBool::new(false));
         let connection_state = inner.connection_state.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
+            reconnect_mode.clone(),
             post_reconnection,
             post_disconnection,
             max_reconnection_tries,
@@ -452,6 +455,7 @@ impl SocketClient {
             writer,
             controller_task,
             disconnect_mode,
+            reconnect_mode,
             connection_state,
             suffix,
         })
@@ -564,6 +568,7 @@ impl SocketClient {
     fn spawn_controller_task(
         mut inner: SocketClientInner,
         disconnect_mode: Arc<AtomicBool>,
+        reconnect_mode: Arc<AtomicBool>, // Mininal change but modes need consolidating
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         max_reconnection_tries: Option<u64>,
@@ -576,31 +581,48 @@ impl SocketClient {
             loop {
                 tokio::time::sleep(check_interval).await;
 
-                // Check if client needs to disconnect
-                let disconnect = disconnect_mode.load(Ordering::SeqCst);
-                match (disconnect, inner.is_alive()) {
-                    (false, false) => match inner.reconnect().await {
+                let should_disconnect = disconnect_mode.load(Ordering::SeqCst);
+                let should_reconnect = reconnect_mode.load(Ordering::SeqCst);
+
+                if should_disconnect {
+                    shutdown(
+                        inner.read_task.clone(),
+                        inner.heartbeat_task.take(),
+                        inner.writer.clone(),
+                    )
+                    .await;
+
+                    if let Some(ref handler) = post_disconnection {
+                        Python::with_gil(|py| match handler.call0(py) {
+                            Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
+                            Err(e) => {
+                                tracing::error!("Error calling `post_disconnection` handler: {e}")
+                            }
+                        });
+                    }
+                    break; // Controller finished
+                }
+
+                if should_reconnect || !inner.is_alive() {
+                    match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
                             retry_counter = 0;
+                            reconnect_mode.store(false, Ordering::SeqCst);
 
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "Error calling `post_reconnection` handler: {e}"
-                                        );
-                                    }
+                                    Err(e) => tracing::error!(
+                                        "Error calling `post_reconnection` handler: {e}"
+                                    ),
                                 });
                             }
                         }
                         Err(e) => {
                             retry_counter += 1;
-
                             if let Some(max) = max_reconnection_tries {
                                 tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max}");
-
                                 if retry_counter >= max {
                                     tracing::error!("Reached max reconnection tries");
                                     break;
@@ -610,41 +632,9 @@ impl SocketClient {
                                     "Reconnect failed {e}. Retry {retry_counter} (infinite)"
                                 );
                             }
-
                             tokio::time::sleep(retry_interval).await;
                         }
-                    },
-                    (true, true) => {
-                        tracing::debug!("Shutting down inner client");
-                        shutdown(
-                            inner.read_task.clone(),
-                            inner.heartbeat_task.take(),
-                            inner.writer.clone(),
-                        )
-                        .await;
-                        if let Some(ref handler) = post_disconnection {
-                            Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Error calling `post_disconnection` handler: {e}"
-                                    );
-                                }
-                            });
-                        }
-                        break;
                     }
-                    (true, false) => {
-                        tracing::debug!("Inner client is disconnected");
-                        tracing::debug!("Shutting down inner client to clean up running tasks");
-                        shutdown(
-                            inner.read_task.clone(),
-                            inner.heartbeat_task.take(),
-                            inner.writer.clone(),
-                        )
-                        .await;
-                    }
-                    _ => (),
                 }
             }
             inner
