@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
@@ -37,6 +37,7 @@ use nautilus_model::{
     },
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use ustr::Ustr;
 
 use crate::messages::{
     BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
@@ -58,10 +59,37 @@ pub struct ExecutionClient {
 }
 
 impl ExecutionClient {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        client_id: ClientId,
+        venue: Venue,
+        oms_type: OmsType,
+        account_id: AccountId,
+        account_type: AccountType,
+        base_currency: Option<Currency>,
+        clock: &'static AtomicTime,
+        cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
+    ) -> Self {
+        Self {
+            trader_id,
+            client_id,
+            venue,
+            oms_type,
+            account_id,
+            account_type,
+            base_currency,
+            is_connected: false,
+            clock,
+            cache,
+            msgbus,
+        }
+    }
+
     #[must_use]
-    pub fn get_account(&self) -> AccountAny {
-        let cache = self.cache.as_ref().borrow();
-        cache.account(&self.account_id).unwrap().clone()
+    pub fn get_account(&self) -> Option<AccountAny> {
+        self.cache.borrow().account(&self.account_id).cloned()
     }
 
     // -- COMMAND HANDLERS ----------------------------------------------------
@@ -113,7 +141,8 @@ impl ExecutionClient {
             self.clock.get_time_ns(),
             self.base_currency,
         );
-        self.send_account_state(account_state)
+        self.send_account_state(account_state);
+        Ok(())
     }
 
     pub fn generate_order_submitted(
@@ -394,8 +423,11 @@ impl ExecutionClient {
         self.send_order_event(OrderEventAny::Filled(event));
     }
 
-    fn send_account_state(&self, account_state: AccountState) -> anyhow::Result<()> {
-        todo!()
+    fn send_account_state(&self, account_state: AccountState) {
+        let endpoint = Ustr::from("Portfolio.update_account");
+        self.msgbus
+            .borrow()
+            .send(&endpoint, &account_state as &dyn Any)
     }
 
     fn send_order_event(&self, event: OrderEventAny) {

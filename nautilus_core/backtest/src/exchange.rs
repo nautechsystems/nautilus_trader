@@ -38,9 +38,9 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orderbook::OrderBook,
     orders::PassiveOrderAny,
-    types::{Currency, Money, Price},
+    types::{AccountBalance, Currency, Money, Price},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 
 use crate::{
     matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
@@ -52,6 +52,7 @@ pub struct SimulatedExchange {
     id: Venue,
     oms_type: OmsType,
     account_type: AccountType,
+    starting_balances: Vec<Money>,
     book_type: BookType,
     default_leverage: Decimal,
     exec_client: Option<ExecutionClient>,
@@ -116,6 +117,7 @@ impl SimulatedExchange {
             id: venue,
             oms_type,
             account_type,
+            starting_balances,
             book_type,
             default_leverage,
             exec_client: None,
@@ -164,8 +166,8 @@ impl SimulatedExchange {
         log::info!("Setting latency model to {}", self.latency_model);
     }
 
-    pub fn initialize_account(&mut self, _account_id: u64) {
-        todo!("initialize account")
+    pub fn initialize_account(&mut self) {
+        self.generate_fresh_account_state();
     }
 
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
@@ -306,7 +308,7 @@ impl SimulatedExchange {
     pub fn get_account(&self) -> Option<AccountAny> {
         self.exec_client
             .as_ref()
-            .map(nautilus_execution::client::ExecutionClient::get_account)
+            .map(|client| client.get_account().unwrap())
     }
 
     pub fn adjust_account(&mut self, _adjustment: Money) {
@@ -492,7 +494,18 @@ impl SimulatedExchange {
     }
 
     pub fn reset(&mut self) {
-        todo!("reset")
+        for module in &self.modules {
+            module.reset();
+        }
+
+        self.generate_fresh_account_state();
+
+        for matching_engine in self.matching_engines.values_mut() {
+            matching_engine.reset();
+        }
+
+        // TODO Clear the inflight and message queues
+        log::info!("Resetting exchange state");
     }
 
     pub fn process_trading_command(&mut self, command: TradingCommand) {
@@ -533,7 +546,27 @@ impl SimulatedExchange {
     }
 
     pub fn generate_fresh_account_state(&self) {
-        todo!("generate fresh account state")
+        let balances: Vec<AccountBalance> = self
+            .starting_balances
+            .iter()
+            .map(|money| AccountBalance::new(*money, Money::zero(money.currency), *money))
+            .collect();
+
+        if let Some(exec_client) = &self.exec_client {
+            exec_client
+                .generate_account_state(balances, vec![], true, self.clock.get_time_ns())
+                .unwrap()
+        }
+
+        // Set leverages
+        if let Some(AccountAny::Margin(mut margin_account)) = self.get_account() {
+            margin_account.set_default_leverage(self.default_leverage.to_f64().unwrap());
+
+            // Set instrument specific leverages
+            for (instrument_id, leverage) in &self.leverages {
+                margin_account.set_leverage(*instrument_id, leverage.to_f64().unwrap());
+            }
+        }
     }
 }
 
@@ -544,9 +577,17 @@ impl SimulatedExchange {
 mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::LazyLock};
 
-    use nautilus_common::{cache::Cache, msgbus::MessageBus};
-    use nautilus_core::{AtomicTime, UnixNanos};
+    use nautilus_common::{
+        cache::Cache,
+        msgbus::{
+            stubs::{get_message_saving_handler, get_saved_messages},
+            MessageBus,
+        },
+    };
+    use nautilus_core::{AtomicTime, UnixNanos, UUID4};
+    use nautilus_execution::client::ExecutionClient;
     use nautilus_model::{
+        accounts::{AccountAny, MarginAccount},
         data::{
             Bar, BarType, BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, QuoteTick,
             TradeTick,
@@ -555,11 +596,13 @@ mod tests {
             AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
             OmsType, OrderSide,
         },
-        identifiers::{TradeId, Venue},
+        events::AccountState,
+        identifiers::{AccountId, ClientId, TradeId, TraderId, Venue},
         instruments::{stubs::crypto_perpetual_ethusdt, CryptoPerpetual, InstrumentAny},
-        types::{Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use crate::{
         exchange::SimulatedExchange,
@@ -577,8 +620,13 @@ mod tests {
         venue: Venue,
         account_type: AccountType,
         book_type: BookType,
+        msgbus: Option<Rc<RefCell<MessageBus>>>,
+        cache: Option<Rc<RefCell<Cache>>>,
     ) -> SimulatedExchange {
-        SimulatedExchange::new(
+        let msgbus = msgbus.unwrap_or(Rc::new(RefCell::new(MessageBus::default())));
+        let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
+
+        let mut exchange = SimulatedExchange::new(
             venue,
             OmsType::Netting,
             account_type,
@@ -587,8 +635,8 @@ mod tests {
             1.into(),
             HashMap::new(),
             vec![],
-            Rc::new(RefCell::new(MessageBus::default())),
-            Rc::new(RefCell::new(Cache::default())),
+            msgbus.clone(),
+            cache.clone(),
             &ATOMIC_TIME,
             FillModel::default(),
             FeeModelAny::MakerTaker(MakerTakerFeeModel),
@@ -604,7 +652,23 @@ mod tests {
             None,
             None,
         )
-        .unwrap()
+        .unwrap();
+
+        let execution_client = ExecutionClient::new(
+            TraderId::default(),
+            ClientId::default(),
+            venue,
+            OmsType::Netting,
+            AccountId::default(),
+            account_type,
+            None,
+            &ATOMIC_TIME,
+            cache,
+            msgbus,
+        );
+        exchange.register_client(execution_client);
+
+        exchange
     }
 
     #[rstest]
@@ -614,8 +678,13 @@ mod tests {
     fn test_venue_mismatch_between_exchange_and_instrument(
         crypto_perpetual_ethusdt: CryptoPerpetual,
     ) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("SIM"), AccountType::Margin, BookType::L1_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("SIM"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.add_instrument(instrument).unwrap();
     }
@@ -623,16 +692,26 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Cash account cannot trade futures or perpetuals")]
     fn test_cash_account_trading_futures_or_perpetuals(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Cash, BookType::L1_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Cash,
+            BookType::L1_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.add_instrument(instrument).unwrap();
     }
 
     #[rstest]
     fn test_exchange_process_quote_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -658,8 +737,13 @@ mod tests {
 
     #[rstest]
     fn test_exchange_process_trade_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -685,8 +769,13 @@ mod tests {
 
     #[rstest]
     fn test_exchange_process_bar_last_bar_spec(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -714,8 +803,13 @@ mod tests {
 
     #[rstest]
     fn test_exchange_process_bar_bid_ask_bar_spec(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -757,8 +851,13 @@ mod tests {
 
     #[rstest]
     fn test_exchange_process_orderbook_delta(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -805,8 +904,13 @@ mod tests {
 
     #[rstest]
     fn test_exchange_process_orderbook_deltas(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -861,9 +965,15 @@ mod tests {
         assert_eq!(best_ask_price, Some(Price::from("1000.00")));
     }
 
+    #[rstest]
     fn test_exchange_process_instrument_status(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let mut exchange: SimulatedExchange =
-            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let mut exchange: SimulatedExchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+            None,
+        );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
         // register instrument
@@ -887,5 +997,54 @@ mod tests {
             .get_matching_engine(crypto_perpetual_ethusdt.id)
             .unwrap();
         assert_eq!(matching_engine.market_status, MarketStatus::Closed);
+    }
+
+    #[rstest]
+    fn test_initialize_account() {
+        let account_type = AccountType::Margin;
+        let mut msgbus = MessageBus::default();
+        let mut cache = Cache::default();
+        let handler = get_message_saving_handler::<AccountState>(None);
+        msgbus.register(Ustr::from("Portfolio.update_account"), handler.clone());
+        let margin_account = MarginAccount::new(
+            AccountState::new(
+                AccountId::default(),
+                account_type,
+                vec![AccountBalance::new(
+                    Money::from("1000 USD"),
+                    Money::from("0 USD"),
+                    Money::from("1000 USD"),
+                )],
+                vec![],
+                false,
+                UUID4::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            false,
+        );
+        let _ = cache
+            .add_account(AccountAny::Margin(margin_account))
+            .unwrap();
+
+        let mut exchange = get_exchange(
+            Venue::new("BINANCE"),
+            account_type,
+            BookType::L2_MBP,
+            Some(Rc::new(RefCell::new(msgbus))),
+            Some(Rc::new(RefCell::new(cache))),
+        );
+        exchange.initialize_account();
+
+        // Check if account state event is received
+        let messages = get_saved_messages::<AccountState>(handler);
+        assert_eq!(messages.len(), 1);
+        let account_state = messages.first().unwrap();
+        assert_eq!(account_state.balances.len(), 1);
+        let current_balance = account_state.balances[0];
+        assert_eq!(current_balance.free, Money::new(1000.0, Currency::USD()));
+        assert_eq!(current_balance.locked, Money::new(0.0, Currency::USD()));
+        assert_eq!(current_balance.total, Money::new(1000.0, Currency::USD()));
     }
 }
