@@ -3,8 +3,8 @@
 ## Introduction
 
 This developer guide provides instructions on how to develop an integration adapter for the NautilusTrader platform.
-Adapters provide connectivity to trading venues and data providers - converting their raw API
-into a unified interface.
+Adapters provide connectivity to trading venues and data providers - translating their raw API
+into a unified interface and normalized domain model.
 
 ## Structure of an adapter
 

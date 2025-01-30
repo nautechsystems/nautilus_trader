@@ -18,9 +18,9 @@
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//!
 //! The platform is modularly designed to work with *adapters*, enabling connectivity to trading venues
-//! and data providers by converting their raw APIs into a unified interface.
+//! and data providers by translating their raw APIs into a unified interface and normalized domain
+//! model.
 //!
 //! # Feature flags
 //!

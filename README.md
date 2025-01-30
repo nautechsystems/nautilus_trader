@@ -48,7 +48,7 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 ## Features
 
 - **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
-- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence (optional).
+- **Reliable**: Type safety and thread safety through Rust. [Redis](https://redis.io)-backed performant state persistence (optional).
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
 - **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
@@ -121,7 +121,7 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 ## Integrations
 
 NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
-and data providers by converting their raw APIs into a unified interface.
+and data providers by translating their raw APIs into a unified interface and normalized domain model.
 
 The following integrations are currently supported:
 
@@ -149,6 +149,14 @@ The following integrations are currently supported:
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
 
+## Versioning and releases
+
+**NautilusTrader is still under active development**. Some features may be incomplete, and while
+the API is becoming more stable, breaking changes can occur between releases.
+We strive to document these changes in the release notes on a **best-effort basis**.
+
+We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+
 ### Branches
 
 We aim to maintain a stable, passing build across all branches.
@@ -162,14 +170,6 @@ We aim to maintain a stable, passing build across all branches.
 > Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
 > Once this milestone is reached, we plan to implement a formal deprecation process for any API changes.
 > This approach allows us to maintain a rapid development pace for now.
-
-## Versioning and releases
-
-**NautilusTrader is still under active development**. Some features may be incomplete, and while
-the API is becoming more stable, breaking changes can occur between releases.
-We strive to document these changes in the release notes on a **best-effort basis**.
-
-We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
 
 ## Precision mode
 
@@ -321,8 +321,8 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ## Redis
 
-Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
-See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
+Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+See the **Redis** section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Makefile
 
