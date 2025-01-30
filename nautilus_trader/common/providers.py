@@ -165,7 +165,7 @@ class InstrumentProvider:
 
         # Set state flag
         self._loading = True
-        self._log.info("Initializing instruments")
+        self._log.info("Initializing instruments...")
 
         if self._load_all_on_start:
             await self.load_all_async(self._filters)
