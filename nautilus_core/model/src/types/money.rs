@@ -107,6 +107,17 @@ impl Money {
         Self { raw, currency }
     }
 
+    /// Creates a new [`Money`] instance with a value of zero with the given [`Currency`].
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Money::new_checked`] for more details.
+    #[must_use]
+    pub fn zero(currency: Currency) -> Self {
+        Self::new(0.0, currency)
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
     pub fn is_zero(&self) -> bool {
@@ -404,6 +415,14 @@ mod tests {
         let result = format!("{money}");
         let expected = "1010.12 USD";
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_zero_constructor() {
+        let usd = Currency::USD();
+        let money = Money::zero(usd);
+        assert_eq!(money.raw, 0);
+        assert_eq!(money.currency, usd);
     }
 
     #[rstest]
