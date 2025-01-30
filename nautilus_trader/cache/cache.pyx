@@ -2540,7 +2540,7 @@ cdef class Cache(CacheFacade):
             bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == price_type]
 
         if aggregation_source is not None:
-            bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == aggregation_source]
+            bar_types = [bar_type for bar_type in bar_types if bar_type.aggregation_source == aggregation_source]
 
         if instrument_id and price_type:
             bar_types.sort(key=self._get_timedelta)
