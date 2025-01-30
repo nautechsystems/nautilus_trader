@@ -62,6 +62,21 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
     Ok(())
 }
 
+/// Checks if the string `s` is not empty.
+///
+/// This function performs a basic check to ensure the string has at least one character.
+/// Unlike `check_valid_string`, it does not validate ASCII characters or check for whitespace.
+///
+/// # Errors
+///
+/// This function returns an error if `s` is empty.
+pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+    if s.as_ref().is_empty() {
+        anyhow::bail!("invalid string for '{param}', was empty");
+    }
+    Ok(())
+}
+
 /// Checks the string `s` has semantic meaning and contains only ASCII characters.
 ///
 /// # Errors
@@ -73,11 +88,11 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
 
-    // Ensure string is only traversed once
     if s.is_empty() {
         anyhow::bail!("invalid string for '{param}', was empty");
     }
 
+    // Ensure string is only traversed once
     let mut has_non_whitespace = false;
     for c in s.chars() {
         if !c.is_whitespace() {
@@ -536,6 +551,24 @@ mod tests {
     fn test_check_predicate_false(#[case] predicate: bool, #[case] expected: bool) {
         let result = check_predicate_false(predicate, "the predicate was true").is_ok();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("a")]
+    #[case(" ")] // <-- whitespace is allowed
+    #[case("  ")] // <-- multiple whitespace is allowed
+    #[case("🦀")] // <-- non-ASCII is allowed
+    #[case(" a")]
+    #[case("a ")]
+    #[case("abc")]
+    fn test_check_nonempty_string_with_valid_values(#[case] s: &str) {
+        assert!(check_nonempty_string(s, "value").is_ok());
+    }
+
+    #[rstest]
+    #[case("")] // empty string
+    fn test_check_nonempty_string_with_invalid_values(#[case] s: &str) {
+        assert!(check_nonempty_string(s, "value").is_err());
     }
 
     #[rstest]
