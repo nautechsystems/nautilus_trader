@@ -960,7 +960,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             # Skip order filled message and best effort canceled message. The _handle_fill_message generates
             # a fill report.
             # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
-            self._log.debug(f"Skip order message: {order_msg}")
+            self._log.info(f"Skip order message: {order_msg}")
         else:
             message = f"Unknown order status `{order_msg.status}`"
             self._log.error(message)
