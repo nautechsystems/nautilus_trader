@@ -80,17 +80,17 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
         The logging configuration for the kernel.
-    timeout_connection : PositiveFloat
+    timeout_connection : PositiveFloat, default 60
         The timeout (seconds) for all clients to connect and initialize.
-    timeout_reconciliation : PositiveFloat
+    timeout_reconciliation : PositiveFloat, default 30
         The timeout (seconds) for execution state to reconcile.
-    timeout_portfolio : PositiveFloat
+    timeout_portfolio : PositiveFloat, default 10
         The timeout (seconds) for portfolio to initialize margins and unrealized PnLs.
-    timeout_disconnection : PositiveFloat
+    timeout_disconnection : PositiveFloat, default 10
         The timeout (seconds) for all engine clients to disconnect.
-    timeout_post_stop : PositiveFloat
+    timeout_post_stop : PositiveFloat, default 10
         The timeout (seconds) after stopping the node to await residual events before final shutdown.
-    timeout_shutdown : PositiveFloat
+    timeout_shutdown : PositiveFloat, default 5
         The timeout (seconds) to await pending tasks cancellation during shutdown.
 
     """
@@ -115,8 +115,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     loop_debug: bool = False
     logging: LoggingConfig | None = None
 
-    timeout_connection: PositiveFloat = 10.0
-    timeout_reconciliation: PositiveFloat = 10.0
+    timeout_connection: PositiveFloat = 60.0
+    timeout_reconciliation: PositiveFloat = 30.0
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0
     timeout_post_stop: PositiveFloat = 10.0
