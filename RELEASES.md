@@ -28,10 +28,12 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
 - Added `OrderBookDeltaTestBuilder` in Rust to improve testing (#2234), thanks @filipmacek
 - Added custom certificate loading for `SocketClient` TLS
+- Added `check_nonempty_string` for string validation in Rust
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
 - Improved `NautilusKernel` pending tasks cancellation on shutdown
+- Refined `Currency` `name` to accept non-ASCII characters (common for foreign currencies)
 - Refactored CI with composite actions (#2242), thanks @sunlei
 - Changed to use `mold` as the linker in CI (#2254), thanks @sunlei
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek

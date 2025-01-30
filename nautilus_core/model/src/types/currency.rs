@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_valid_string, FAILED};
+use nautilus_core::correctness::{check_nonempty_string, check_valid_string, FAILED};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -60,7 +60,7 @@ impl Currency {
     ///
     /// This function returns an error:
     /// - If `code` is not a valid string.
-    /// - If `name` is not a valid string.
+    /// - If `name` is the empty string.
     /// - If `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
@@ -76,7 +76,7 @@ impl Currency {
         let code = code.as_ref();
         let name = name.as_ref();
         check_valid_string(code, "code")?;
-        check_valid_string(name, "name")?;
+        check_nonempty_string(name, "name")?;
         check_fixed_precision(precision)?;
         Ok(Self {
             code: Ustr::from(code),
