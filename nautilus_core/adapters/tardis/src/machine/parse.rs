@@ -41,7 +41,7 @@ pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) ->
             if msg.bids.is_empty() && msg.asks.is_empty() {
                 // Skip empty book changes - these are valid messages but contain no actionable data
                 return None;
-            };
+            }
             Some(Data::Deltas(parse_book_change_msg_as_deltas(
                 msg,
                 info.price_precision,
@@ -193,9 +193,10 @@ pub fn parse_book_level(
     };
     let sequence = 0; // Not available
 
-    if action != BookAction::Delete && size.is_zero() {
-        panic!("Invalid zero size for {action}");
-    }
+    assert!(
+        !(action != BookAction::Delete && size.is_zero()),
+        "Invalid zero size for {action}"
+    );
 
     OrderBookDelta::new(
         instrument_id,

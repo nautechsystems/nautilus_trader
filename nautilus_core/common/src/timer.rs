@@ -307,7 +307,7 @@ impl TestTimer {
     /// Cancels the timer (the timer will not generate an event).
     ///
     /// Used to stop the timer before its scheduled stop time.
-    pub fn cancel(&mut self) {
+    pub const fn cancel(&mut self) {
         self.is_expired = true;
     }
 }
@@ -495,7 +495,7 @@ impl LiveTimer {
                         }
                         // Note: Clock v1 style path should not be called with Rust callback
                         TimeEventCallback::Rust(_) => {}
-                    };
+                    }
                 }
 
                 #[cfg(feature = "clock_v2")]
@@ -550,7 +550,7 @@ fn call_python_with_time_event(
         match callback.call1(py, (capsule,)) {
             Ok(_) => {}
             Err(e) => tracing::error!("Error on callback: {e:?}"),
-        };
+        }
     });
 }
 

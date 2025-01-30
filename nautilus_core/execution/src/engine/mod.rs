@@ -418,7 +418,7 @@ impl ExecutionEngine {
     fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(command) {
             log::error!("Error canceling all orders: {e}");
-        };
+        }
     }
 
     fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
@@ -665,7 +665,7 @@ impl ExecutionEngine {
                 fill.instrument_id.venue,
             );
             return;
-        };
+        }
 
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
@@ -769,7 +769,7 @@ impl ExecutionEngine {
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
             msgbus.publish(&topic, &event);
-        };
+        }
     }
 
     fn will_flip_position(&self, position: &Position, fill: OrderFilled) -> bool {
@@ -891,7 +891,7 @@ impl ExecutionEngine {
         // Open flipped position
         if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
             log::error!("Failed to open flipped position: {e:?}");
-        };
+        }
     }
 
     // -- INTERNAL ------------------------------------------------------------

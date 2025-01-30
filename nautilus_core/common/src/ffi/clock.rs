@@ -147,12 +147,11 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_as_str(name_ptr);
-    let callback = match callback_ptr == ffi::Py_None() {
-        true => None,
-        false => {
-            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(TimeEventCallback::from(callback))
-        }
+    let callback = if callback_ptr == ffi::Py_None() {
+        None
+    } else {
+        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        Some(TimeEventCallback::from(callback))
     };
 
     clock
@@ -180,12 +179,11 @@ pub unsafe extern "C" fn test_clock_set_timer(
         0 => None,
         _ => Some(stop_time_ns),
     };
-    let callback = match callback_ptr == ffi::Py_None() {
-        true => None,
-        false => {
-            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(TimeEventCallback::from(callback))
-        }
+    let callback = if callback_ptr == ffi::Py_None() {
+        None
+    } else {
+        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        Some(TimeEventCallback::from(callback))
     };
 
     clock
@@ -365,12 +363,11 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_as_str(name_ptr);
-    let callback = match callback_ptr == ffi::Py_None() {
-        true => None,
-        false => {
-            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(TimeEventCallback::from(callback))
-        }
+    let callback = if callback_ptr == ffi::Py_None() {
+        None
+    } else {
+        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        Some(TimeEventCallback::from(callback))
     };
 
     clock
@@ -405,12 +402,11 @@ pub unsafe extern "C" fn live_clock_set_timer(
         _ => Some(stop_time_ns),
     };
 
-    let callback = match callback_ptr == ffi::Py_None() {
-        true => None,
-        false => {
-            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(TimeEventCallback::from(callback))
-        }
+    let callback = if callback_ptr == ffi::Py_None() {
+        None
+    } else {
+        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        Some(TimeEventCallback::from(callback))
     };
 
     clock

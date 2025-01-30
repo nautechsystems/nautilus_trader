@@ -518,7 +518,7 @@ pub fn decode_mbo_msg(
         }
 
         return Ok((None, None));
-    };
+    }
 
     let order = BookOrder::new(
         side,

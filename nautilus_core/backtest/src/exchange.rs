@@ -555,7 +555,7 @@ impl SimulatedExchange {
         if let Some(exec_client) = &self.exec_client {
             exec_client
                 .generate_account_state(balances, vec![], true, self.clock.get_time_ns())
-                .unwrap()
+                .unwrap();
         }
 
         // Set leverages
@@ -1024,7 +1024,7 @@ mod tests {
             ),
             false,
         );
-        let _ = cache
+        let () = cache
             .add_account(AccountAny::Margin(margin_account))
             .unwrap();
 

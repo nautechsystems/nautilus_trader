@@ -38,6 +38,7 @@ fn get_currency(code: &str) -> Currency {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn create_currency_pair(
     info: &InstrumentInfo,
     instrument_id: InstrumentId,
@@ -77,6 +78,7 @@ pub fn create_currency_pair(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn create_crypto_perpetual(
     info: &InstrumentInfo,
     instrument_id: InstrumentId,
@@ -125,6 +127,7 @@ pub fn create_crypto_perpetual(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn create_crypto_future(
     info: &InstrumentInfo,
     instrument_id: InstrumentId,
@@ -172,6 +175,7 @@ pub fn create_crypto_future(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn create_options_contract(
     info: &InstrumentInfo,
     instrument_id: InstrumentId,

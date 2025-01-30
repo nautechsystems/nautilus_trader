@@ -60,7 +60,7 @@ pub struct ExecutionClient {
 
 impl ExecutionClient {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,
         venue: Venue,
@@ -427,7 +427,7 @@ impl ExecutionClient {
         let endpoint = Ustr::from("Portfolio.update_account");
         self.msgbus
             .borrow()
-            .send(&endpoint, &account_state as &dyn Any)
+            .send(&endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {

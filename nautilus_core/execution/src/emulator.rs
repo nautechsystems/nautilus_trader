@@ -567,40 +567,37 @@ impl OrderEmulatorState {
             core
         } else {
             // Handle synthetic instruments
-            let (instrument_id, price_increment) = match trigger_instrument_id.is_synthetic() {
-                true => {
-                    let synthetic = self
-                        .cache
-                        .borrow()
-                        .synthetic(&trigger_instrument_id)
-                        .cloned();
-                    if let Some(synthetic) = synthetic {
-                        (synthetic.id, synthetic.price_increment)
-                    } else {
-                        log::error!(
-                            "Cannot emulate order: no synthetic instrument {} for trigger",
-                            trigger_instrument_id
-                        );
-                        self.manager_cancel_order(order.clone());
-                        return;
-                    }
+            let (instrument_id, price_increment) = if trigger_instrument_id.is_synthetic() {
+                let synthetic = self
+                    .cache
+                    .borrow()
+                    .synthetic(&trigger_instrument_id)
+                    .cloned();
+                if let Some(synthetic) = synthetic {
+                    (synthetic.id, synthetic.price_increment)
+                } else {
+                    log::error!(
+                        "Cannot emulate order: no synthetic instrument {} for trigger",
+                        trigger_instrument_id
+                    );
+                    self.manager_cancel_order(order.clone());
+                    return;
                 }
-                false => {
-                    let instrument = self
-                        .cache
-                        .borrow()
-                        .instrument(&trigger_instrument_id)
-                        .cloned();
-                    if let Some(instrument) = instrument {
-                        (instrument.id(), instrument.price_increment())
-                    } else {
-                        log::error!(
-                            "Cannot emulate order: no instrument {} for trigger",
-                            trigger_instrument_id
-                        );
-                        self.manager_cancel_order(order.clone());
-                        return;
-                    }
+            } else {
+                let instrument = self
+                    .cache
+                    .borrow()
+                    .instrument(&trigger_instrument_id)
+                    .cloned();
+                if let Some(instrument) = instrument {
+                    (instrument.id(), instrument.price_increment())
+                } else {
+                    log::error!(
+                        "Cannot emulate order: no instrument {} for trigger",
+                        trigger_instrument_id
+                    );
+                    self.manager_cancel_order(order.clone());
+                    return;
                 }
             };
 

@@ -187,7 +187,7 @@ impl OrderMatchingEngine {
         log::info!("Reset {}", self.instrument.id());
     }
 
-    pub fn set_fill_model(&mut self, fill_model: FillModel) {
+    pub const fn set_fill_model(&mut self, fill_model: FillModel) {
         self.fill_model = fill_model;
     }
 
@@ -728,7 +728,7 @@ impl OrderMatchingEngine {
                 command.client_order_id,
                 command.venue_order_id,
                 Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
-            )
+            );
         }
     }
 
@@ -976,7 +976,7 @@ impl OrderMatchingEngine {
         for order in orders {
             if order.is_closed() {
                 continue;
-            };
+            }
 
             // Check expiration
             if self.config.support_gtd_orders {

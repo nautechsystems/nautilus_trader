@@ -199,7 +199,7 @@ impl DatabentoHistoricalClient {
                 match result {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => tracing::error!("{e:?}"),
-                };
+                }
             }
 
             Python::with_gil(|py| {
@@ -254,7 +254,7 @@ impl DatabentoHistoricalClient {
                     "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m",
                 ))
             }
-        };
+        }
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)

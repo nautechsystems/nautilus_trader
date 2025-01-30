@@ -93,7 +93,7 @@ impl AdaptiveMovingAverage {
     }
 
     #[pyo3(name = "reset")]
-    fn py_reset(&mut self) {
+    const fn py_reset(&mut self) {
         self.reset();
     }
 
