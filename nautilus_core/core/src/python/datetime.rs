@@ -158,9 +158,10 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 #[pyfunction(name = "unix_nanos_to_iso8601", signature = (timestamp_ns, nanos_precision=true))]
 pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64, nanos_precision: Option<bool>) -> String {
     let unix_nanos = timestamp_ns.into();
-    match nanos_precision.unwrap_or(true) {
-        true => unix_nanos_to_iso8601(unix_nanos),
-        false => unix_nanos_to_iso8601_millis(unix_nanos),
+    if nanos_precision.unwrap_or(true) {
+        unix_nanos_to_iso8601(unix_nanos)
+    } else {
+        unix_nanos_to_iso8601_millis(unix_nanos)
     }
 }
 

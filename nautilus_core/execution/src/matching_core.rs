@@ -118,17 +118,17 @@ impl OrderMatchingCore {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
-    pub fn set_last_raw(&mut self, last: Price) {
+    pub const fn set_last_raw(&mut self, last: Price) {
         self.last = Some(last);
         self.is_last_initialized = true;
     }
 
-    pub fn set_bid_raw(&mut self, bid: Price) {
+    pub const fn set_bid_raw(&mut self, bid: Price) {
         self.bid = Some(bid);
         self.is_bid_initialized = true;
     }
 
-    pub fn set_ask_raw(&mut self, ask: Price) {
+    pub const fn set_ask_raw(&mut self, ask: Price) {
         self.ask = Some(ask);
         self.is_ask_initialized = true;
     }

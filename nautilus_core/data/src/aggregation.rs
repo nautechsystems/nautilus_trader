@@ -292,11 +292,11 @@ where
         }
     }
 
-    pub fn set_await_partial(&mut self, value: bool) {
+    pub const fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
     }
 
-    pub fn set_is_running(&mut self, value: bool) {
+    pub const fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
     }
 

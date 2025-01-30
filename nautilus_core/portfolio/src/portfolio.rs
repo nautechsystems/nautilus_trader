@@ -1503,7 +1503,7 @@ fn update_position(
     if let Some(AccountAny::Margin(margin_account)) = account {
         if !margin_account.calculate_account_state {
             return; // Nothing to calculate
-        };
+        }
 
         let borrowed_cache = cache.borrow();
         let instrument = if let Some(instrument) = borrowed_cache.instrument(&instrument_id) {

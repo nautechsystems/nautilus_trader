@@ -57,7 +57,7 @@ impl IdsGenerator {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.position_count = 0;
         self.order_count = 0;
         self.execution_count = 0;

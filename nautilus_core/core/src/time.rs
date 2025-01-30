@@ -152,9 +152,10 @@ impl AtomicTime {
     ///   will be visible here.
     #[must_use]
     pub fn get_time_ns(&self) -> UnixNanos {
-        match self.realtime.load(Ordering::Acquire) {
-            true => self.time_since_epoch(),
-            false => UnixNanos::from(self.timestamp_ns.load(Ordering::Acquire)),
+        if self.realtime.load(Ordering::Acquire) {
+            self.time_since_epoch()
+        } else {
+            UnixNanos::from(self.timestamp_ns.load(Ordering::Acquire))
         }
     }
 

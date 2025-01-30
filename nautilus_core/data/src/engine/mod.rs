@@ -694,7 +694,7 @@ impl DataEngine {
                     anyhow::bail!(
                         "Cannot subscribe for externally aggregated synthetic instrument bar data"
                     );
-                };
+                }
             }
         }
 
@@ -763,7 +763,10 @@ impl DataEngine {
         Ok(())
     }
 
-    fn handle_unsubscribe_bars(&mut self, command: &SubscriptionCommand) -> anyhow::Result<()> {
+    const fn handle_unsubscribe_bars(
+        &mut self,
+        command: &SubscriptionCommand,
+    ) -> anyhow::Result<()> {
         // TODO: Handle aggregators
         Ok(())
     }
@@ -1005,7 +1008,7 @@ impl DataEngine {
         } else {
             // TODO: Unsubscribe `aggregator.handle_quote_tick`
             todo!()
-        };
+        }
 
         Ok(())
     }

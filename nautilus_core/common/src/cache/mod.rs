@@ -1227,7 +1227,7 @@ impl Cache {
                     otherwise this is probably a bug."
                 );
             }
-        };
+        }
 
         self.index
             .client_order_ids
@@ -1294,7 +1294,7 @@ impl Cache {
                 stringify!(orders),
             )
             .expect(FAILED);
-        };
+        }
 
         log::debug!("Adding {order:?}");
 
@@ -1482,7 +1482,7 @@ impl Cache {
             if !self.index.venue_order_ids.contains_key(&venue_order_id) {
                 // TODO: If the last event was `OrderUpdated` then overwrite should be true
                 self.add_venue_order_id(&order.client_order_id(), &venue_order_id, false)?;
-            };
+            }
         }
 
         // Update in-flight state
@@ -1643,7 +1643,7 @@ impl Cache {
                     .get(venue)
                     .map_or(HashSet::new(), |o| o.iter().copied().collect()),
             );
-        };
+        }
 
         if let Some(instrument_id) = instrument_id {
             let instrument_orders = self
@@ -1659,8 +1659,8 @@ impl Cache {
                     .collect();
             } else {
                 query = Some(instrument_orders);
-            };
-        };
+            }
+        }
 
         if let Some(strategy_id) = strategy_id {
             let strategy_orders = self
@@ -1676,8 +1676,8 @@ impl Cache {
                     .collect();
             } else {
                 query = Some(strategy_orders);
-            };
-        };
+            }
+        }
 
         query
     }
@@ -1697,7 +1697,7 @@ impl Cache {
                     .get(venue)
                     .map_or(HashSet::new(), |p| p.iter().copied().collect()),
             );
-        };
+        }
 
         if let Some(instrument_id) = instrument_id {
             let instrument_positions = self
@@ -1715,8 +1715,8 @@ impl Cache {
                 );
             } else {
                 query = Some(instrument_positions);
-            };
-        };
+            }
+        }
 
         if let Some(strategy_id) = strategy_id {
             let strategy_positions = self
@@ -1734,8 +1734,8 @@ impl Cache {
                 );
             } else {
                 query = Some(strategy_positions);
-            };
-        };
+            }
+        }
 
         query
     }
@@ -1755,7 +1755,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
             if side == OrderSide::NoOrderSide || side == order.order_side() {
                 orders.push(order);
-            };
+            }
         }
 
         orders
@@ -1776,7 +1776,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Position {position_id} not found"));
             if side == PositionSide::NoPositionSide || side == position.side {
                 positions.push(position);
-            };
+            }
         }
 
         positions

@@ -141,7 +141,7 @@ impl DatabentoFeedHandler {
             if self.msg_tx.is_closed() {
                 tracing::debug!("Message channel was closed: stopping");
                 break;
-            };
+            }
 
             match self.cmd_rx.try_recv() {
                 Ok(cmd) => {
@@ -154,9 +154,10 @@ impl DatabentoFeedHandler {
                             client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
                         }
                         LiveCommand::Start => {
-                            buffering_start = match self.replay {
-                                true => Some(clock.get_time_ns()),
-                                false => None,
+                            buffering_start = if self.replay {
+                                Some(clock.get_time_ns())
+                            } else {
+                                None
                             };
                             client.start().await.map_err(to_pyruntime_err)?;
                             running = true;
@@ -181,7 +182,7 @@ impl DatabentoFeedHandler {
 
             if !running {
                 continue;
-            };
+            }
 
             // Await the next record with a timeout
             let result = timeout(timeout_duration, client.next_record()).await;
@@ -223,7 +224,7 @@ impl DatabentoFeedHandler {
                         msg.hd.instrument_id,
                         msg.exchange()?,
                     );
-                };
+                }
                 let data = handle_instrument_def_msg(
                     msg,
                     &record,
@@ -319,15 +320,15 @@ impl DatabentoFeedHandler {
                         let deltas = OrderBookDeltas_API::new(deltas);
                         data1 = Some(Data::Deltas(deltas));
                     }
-                };
+                }
 
                 if let Some(data) = data1 {
                     self.send_msg(LiveMessage::Data(data)).await;
-                };
+                }
 
                 if let Some(data) = data2 {
                     self.send_msg(LiveMessage::Data(data)).await;
-                };
+                }
             }
         }
 

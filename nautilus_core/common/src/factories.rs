@@ -71,11 +71,11 @@ impl OrderFactory {
         }
     }
 
-    pub fn set_client_order_id_count(&mut self, count: usize) {
+    pub const fn set_client_order_id_count(&mut self, count: usize) {
         self.order_id_generator.set_count(count);
     }
 
-    pub fn set_order_list_id_count(&mut self, count: usize) {
+    pub const fn set_order_list_id_count(&mut self, count: usize) {
         self.order_list_id_generator.set_count(count);
     }
 
@@ -87,7 +87,7 @@ impl OrderFactory {
         self.order_list_id_generator.generate()
     }
 
-    pub fn reset_factory(&mut self) {
+    pub const fn reset_factory(&mut self) {
         self.order_id_generator.reset();
         self.order_list_id_generator.reset();
     }

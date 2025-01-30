@@ -101,7 +101,7 @@ impl DatabentoLiveClient {
                     // Return error to Python
                     return Err(to_pyruntime_err(e));
                 }
-            };
+            }
         }
 
         msg_rx.close();
@@ -190,7 +190,7 @@ impl DatabentoLiveClient {
             let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
                 .map_err(to_pyvalue_err)?;
             sub.start = Some(start);
-        };
+        }
         sub.use_snapshot = snapshot.unwrap_or(false);
 
         self.send_command(LiveCommand::Subscribe(sub))
@@ -205,10 +205,10 @@ impl DatabentoLiveClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
-        };
+        }
         if self.is_running {
             return Err(to_pyruntime_err("Client already running"));
-        };
+        }
 
         tracing::debug!("Starting client");
 
@@ -256,10 +256,10 @@ impl DatabentoLiveClient {
     fn py_close(&mut self) -> PyResult<()> {
         if !self.is_running {
             return Err(to_pyruntime_err("Client never started"));
-        };
+        }
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
-        };
+        }
 
         tracing::debug!("Closing client");
 

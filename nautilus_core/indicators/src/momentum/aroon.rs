@@ -157,7 +157,7 @@ impl AroonOscillator {
         self.value = self.aroon_up - self.aroon_down;
     }
 
-    fn increment_count(&mut self) {
+    const fn increment_count(&mut self) {
         self.count += 1;
 
         if !self.initialized {

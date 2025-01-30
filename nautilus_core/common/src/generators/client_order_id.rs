@@ -44,11 +44,11 @@ impl ClientOrderIdGenerator {
         }
     }
 
-    pub fn set_count(&mut self, count: usize) {
+    pub const fn set_count(&mut self, count: usize) {
         self.count = count;
     }
 
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.count = 0;
     }
 

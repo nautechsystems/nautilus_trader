@@ -425,9 +425,10 @@ impl Logger {
                     break;
                 }
                 LogEvent::Log(line) => {
-                    let timestamp = match LOGGING_REALTIME.load(Ordering::Relaxed) {
-                        true => get_atomic_clock_realtime().get_time_ns(),
-                        false => get_atomic_clock_static().get_time_ns(),
+                    let timestamp = if LOGGING_REALTIME.load(Ordering::Relaxed) {
+                        get_atomic_clock_realtime().get_time_ns()
+                    } else {
+                        get_atomic_clock_static().get_time_ns()
                     };
 
                     let component_level = component_level.get(&line.component);
