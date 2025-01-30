@@ -1445,7 +1445,6 @@ cdef class Currency:
             name=code,
             currency_type=CurrencyType.CRYPTO,
         )
-        print(f"Currency '{code}' not found, created {repr(currency)}")
         currency_register(currency._mem)
 
         return currency
