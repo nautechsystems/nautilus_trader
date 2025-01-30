@@ -98,6 +98,7 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
+        self._log.info(f"{config.ws_connection_initial_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.ws_connection_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.compute_effective_deltas=}", LogColor.BLUE)
@@ -107,15 +108,15 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         # WebSocket API
         self._ws_base_url = self._config.base_url_ws
-        self._ws_client: PolymarketWebSocketClient = self._create_websocket_client()
-        self._ws_clients: dict[InstrumentId, PolymarketWebSocketClient] = {}
+        self._ws_clients: list[PolymarketWebSocketClient] = []
+        self._ws_client_pending_connection: PolymarketWebSocketClient | None = None
+
         self._decoder_market_msg = msgspec.json.Decoder(MARKET_WS_MESSAGE)
 
         # Tasks
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
-        self._main_ws_connect_task: asyncio.Task | None = None
-        self._main_ws_delay = True
+        self._delayed_ws_client_connection_task: asyncio.Task | None = None
 
         # Hot caches
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
@@ -131,33 +132,26 @@ class PolymarketDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
-        self._main_ws_connect_task = self.create_task(self._connect_main_ws_after_delay())
-
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
-        if self._main_ws_connect_task:
-            self._log.debug("Canceling task 'connect_main_ws_after_delay'")
-            self._main_ws_connect_task.cancel()
-            self._main_ws_connect_task = None
+        if self._delayed_ws_client_connection_task:
+            self._log.debug("Canceling task 'delayed_ws_client_connection'")
+            self._delayed_ws_client_connection_task.cancel()
+            self._delayed_ws_client_connection_task = None
 
         # Shutdown websockets
         tasks: set[Coroutine[Any, Any, None]] = set()
 
-        if self._ws_client.is_connected():
-            tasks.add(self._ws_client.disconnect())
-
-        for ws_client in self._ws_clients.values():
+        for ws_client in self._ws_clients:
             if ws_client.is_connected():
                 tasks.add(ws_client.disconnect())
 
         if tasks:
             await asyncio.gather(*tasks)
-
-        self._main_ws_delay = True
 
     def _create_websocket_client(self) -> PolymarketWebSocketClient:
         self._log.info("Creating new PolymarketWebSocketClient", LogColor.MAGENTA)
@@ -169,18 +163,6 @@ class PolymarketDataClient(LiveMarketDataClient):
             handler_reconnect=None,
             loop=self._loop,
         )
-
-    async def _connect_main_ws_after_delay(self) -> None:
-        delay_secs = self._config.ws_connection_delay_secs
-        self._log.info(
-            f"Awaiting initial websocket connection delay ({delay_secs}s)...",
-            LogColor.BLUE,
-        )
-        await asyncio.sleep(delay_secs)
-        if self._ws_client.asset_subscriptions():
-            await self._ws_client.connect()
-
-        self._main_ws_delay = False
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -201,23 +183,41 @@ class PolymarketDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
 
-    async def _subscribe_asset_book(self, instrument_id):
-        token_id = get_polymarket_token_id(instrument_id)
-
-        if not self._ws_client.is_connected():
-            ws_client = self._ws_client
-            if token_id in ws_client.asset_subscriptions():
-                return  # Already subscribed
-            ws_client.subscribe_book(asset=token_id)
-            if not self._main_ws_delay:
-                await ws_client.connect()
-        else:
-            ws_client = self._create_websocket_client()
-            if token_id in ws_client.asset_subscriptions():
-                return  # Already subscribed
-            self._ws_clients[instrument_id] = ws_client
-            ws_client.subscribe_book(asset=token_id)
+    async def _delayed_ws_client_connection(
+        self,
+        ws_client: PolymarketWebSocketClient,
+        sleep_secs: int,
+    ) -> None:
+        try:
+            await asyncio.sleep(sleep_secs)
+            self._ws_clients.append(ws_client)
             await ws_client.connect()
+        finally:
+            self._ws_client_pending_connection = None
+            self._delayed_ws_client_connection_task = None
+
+    async def _subscribe_asset_book(self, instrument_id):
+        create_connect_task = False
+        if self._ws_client_pending_connection is None:
+            self._ws_client_pending_connection = self._create_websocket_client()
+            create_connect_task = True
+
+        token_id = get_polymarket_token_id(instrument_id)
+        self._ws_client_pending_connection.subscribe_book(token_id)
+
+        if create_connect_task:
+            self._delayed_ws_client_connection_task = self.create_task(
+                self._delayed_ws_client_connection(
+                    self._ws_client_pending_connection,
+                    (
+                        self._config.ws_connection_delay_secs
+                        if self._ws_clients
+                        else self._config.ws_connection_initial_delay_secs
+                    ),
+                ),
+                log_msg="Delayed start PolymarketWebSocketClient connection",
+                success_msg="Finished delaying start of PolymarketWebSocketClient connection",
+            )
 
     async def _subscribe_order_book_deltas(
         self,
