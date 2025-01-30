@@ -175,7 +175,7 @@ Use NautilusTrader only if you are prepared to adapt to these changes.
 
 ## Redis
 
-Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](../concepts/message_bus.md).
+Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](../concepts/message_bus.md).
 
 :::info
 The minimum supported Redis version is 6.2 (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
@@ -248,5 +248,5 @@ make install-debug
 ```
 
 :::info
-See the [Value Types](../concepts/overview.md#value-types) guide for more details.
+See the [Value Types](../concepts/overview.md#value-types) specifications for more details.
 :::
