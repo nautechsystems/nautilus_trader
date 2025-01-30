@@ -181,10 +181,10 @@ class DataSubscriber(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         for instrument_id in self.config.instrument_ids:
-            self.unsubscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                client_id=self.client_id,
-            )
+            # self.unsubscribe_order_book_deltas(
+            #     instrument_id=instrument_id,
+            #     client_id=self.client_id,
+            # )
             self.unsubscribe_quote_ticks(instrument_id, client_id=self.client_id)
             self.unsubscribe_trade_ticks(instrument_id, client_id=self.client_id)
 

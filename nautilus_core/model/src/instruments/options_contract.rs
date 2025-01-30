@@ -156,7 +156,7 @@ impl OptionsContract {
             price_precision,
             price_increment,
             size_precision: 0,
-            size_increment: Quantity::from("1"),
+            size_increment: Quantity::from(1),
             multiplier,
             lot_size,
             margin_init: margin_init.unwrap_or_default(),

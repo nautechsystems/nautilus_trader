@@ -149,7 +149,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
 
             let instrument_id = if normalize_symbols {
-                normalize_instrument_id(exchange, inst.id, instrument_type, inst.inverse)
+                normalize_instrument_id(exchange, inst.id, &instrument_type, inst.inverse)
             } else {
                 parse_instrument_id(exchange, inst.id)
             };
