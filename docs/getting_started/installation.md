@@ -92,7 +92,7 @@ To programmatically fetch and list available versions:
 ### Retention policies
 
 - `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`a`): Only the 3 most recent wheel builds are retained.
+- `nightly` branch wheels (`a`): Only the 10 most recent wheel builds are retained.
 
 ## From Source
 
