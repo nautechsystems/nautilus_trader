@@ -66,10 +66,11 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed reconnect handling for Betfair (#2232), thanks @limx0
 - Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
 - Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
-- Fixed realized pnl bug in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
+- Fixed realized pnl calculation in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
 - Fixed update order in `Cache` for Rust (#2248), thanks @filipmacek
 - Fixed websocket schema for market updates of dYdX (#2258), thanks @davidsblom
 - Fixed handling of empty book messages for Tardis (resulted in `deltas` cannot be empty panicking)
+- Fixed `Cache.bar_types` `aggregation_source` filtering, was incorrectly using `price_type` (#2269), thanks @faysou
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
