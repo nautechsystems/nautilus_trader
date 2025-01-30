@@ -31,9 +31,11 @@ async fn main() {
     println!("Received: {resp:?}");
 
     // Nautilus instrument definitions
-    let resp = client.instruments(Exchange::Bitmex).await;
+    let resp = client.instruments(Exchange::Okex, None, None, None).await;
     println!("Received: {resp:?}");
 
-    let resp = client.instrument(Exchange::Bitmex, "ETHUSDT").await;
+    let resp = client
+        .instrument(Exchange::Okex, "ETHUSDT", None, None, None)
+        .await;
     println!("Received: {resp:?}");
 }

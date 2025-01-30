@@ -15,7 +15,6 @@
 
 use std::{env, time::Duration};
 
-use chrono::Utc;
 use nautilus_core::{consts::USER_AGENT, UnixNanos};
 use nautilus_model::instruments::InstrumentAny;
 
@@ -131,7 +130,13 @@ impl TardisHttpClient {
 
     /// Returns all Nautilus instrument definitions for the given `exchange`.
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instruments(&self, exchange: Exchange) -> Result<Vec<InstrumentAny>> {
+    pub async fn instruments(
+        &self,
+        exchange: Exchange,
+        start: Option<u64>,
+        end: Option<u64>,
+        ts_init: Option<u64>,
+    ) -> Result<Vec<InstrumentAny>> {
         let response = self.instruments_info(exchange).await?;
 
         let infos = match response {
@@ -141,18 +146,26 @@ impl TardisHttpClient {
             }
         };
 
-        let now = Utc::now();
-        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
+        let ts_init = ts_init.map(UnixNanos::from);
 
-        infos
+        Ok(infos
             .into_iter()
-            .map(|info| Ok(parse_instrument_any(info, ts_init, self.normalize_symbols)))
-            .collect()
+            .flat_map(|info| {
+                parse_instrument_any(info, start, end, ts_init, self.normalize_symbols)
+            })
+            .collect())
     }
 
     /// Returns a Nautilus instrument definition for the given `exchange` and `symbol`.
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instrument(&self, exchange: Exchange, symbol: &str) -> Result<InstrumentAny> {
+    pub async fn instrument(
+        &self,
+        exchange: Exchange,
+        symbol: &str,
+        start: Option<u64>,
+        end: Option<u64>,
+        ts_init: Option<u64>,
+    ) -> Result<Vec<InstrumentAny>> {
         let response = self.instrument_info(exchange, symbol).await?;
 
         let info = match response {
@@ -162,9 +175,12 @@ impl TardisHttpClient {
             }
         };
 
-        let now = Utc::now();
-        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
-
-        Ok(parse_instrument_any(info, ts_init, self.normalize_symbols))
+        Ok(parse_instrument_any(
+            info,
+            start,
+            end,
+            ts_init.map(UnixNanos::from),
+            self.normalize_symbols,
+        ))
     }
 }

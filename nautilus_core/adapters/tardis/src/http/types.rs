@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -41,7 +42,7 @@ pub enum Response<T> {
 /// The changes info returned by the exchanges API.
 pub struct InstrumentChanges {
     /// Date in ISO format.
-    pub until: String,
+    pub until: DateTime<Utc>,
     /// The minimum price increment (tick size).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -76,11 +77,11 @@ pub struct InstrumentInfo {
     /// If the instrument is actively listed.
     pub active: bool,
     /// The available from date in ISO format.
-    pub available_since: String,
+    pub available_since: DateTime<Utc>,
     /// The available to date in ISO format.
-    pub available_to: Option<String>,
+    pub available_to: Option<DateTime<Utc>>,
     /// The contract expiry date in ISO format (applicable to futures and options).
-    pub expiry: Option<String>,
+    pub expiry: Option<DateTime<Utc>>,
     /// The instrument price increment.
     pub price_increment: f64,
     /// The instrument size increment.

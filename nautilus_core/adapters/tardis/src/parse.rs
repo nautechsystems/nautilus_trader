@@ -36,7 +36,7 @@ where
 pub fn normalize_symbol_str(
     symbol: Ustr,
     exchange: &Exchange,
-    instrument_type: InstrumentType,
+    instrument_type: &InstrumentType,
     is_inverse: Option<bool>,
 ) -> Ustr {
     match exchange {
@@ -45,7 +45,7 @@ pub fn normalize_symbol_str(
         | Exchange::BinanceUs
         | Exchange::BinanceDex
         | Exchange::BinanceJersey
-            if instrument_type == InstrumentType::Perpetual =>
+            if instrument_type == &InstrumentType::Perpetual =>
         {
             append_suffix(symbol, "-PERP")
         }
@@ -66,11 +66,11 @@ pub fn normalize_symbol_str(
             _ => symbol,
         },
 
-        Exchange::Dydx if instrument_type == InstrumentType::Perpetual => {
+        Exchange::Dydx if instrument_type == &InstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
-        Exchange::GateIoFutures if instrument_type == InstrumentType::Perpetual => {
+        Exchange::GateIoFutures if instrument_type == &InstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
@@ -95,7 +95,7 @@ pub fn parse_instrument_id(exchange: &Exchange, symbol: Ustr) -> InstrumentId {
 pub fn normalize_instrument_id(
     exchange: &Exchange,
     symbol: Ustr,
-    instrument_type: InstrumentType,
+    instrument_type: &InstrumentType,
     is_inverse: Option<bool>,
 ) -> InstrumentId {
     let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
@@ -268,7 +268,8 @@ mod tests {
         #[case] is_inverse: Option<bool>,
         #[case] expected: &str,
     ) {
-        let instrument_id = normalize_instrument_id(&exchange, symbol, instrument_type, is_inverse);
+        let instrument_id =
+            normalize_instrument_id(&exchange, symbol, &instrument_type, is_inverse);
         let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
         assert_eq!(instrument_id, expected_instrument_id);
     }

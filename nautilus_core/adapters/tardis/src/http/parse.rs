@@ -16,49 +16,61 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use nautilus_core::{parsing::precision_from_str, UnixNanos};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
-    enums::{AssetClass, CurrencyType},
     identifiers::Symbol,
-    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionsContract},
-    types::{Currency, Price, Quantity},
+    instruments::InstrumentAny,
+    types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use ustr::Ustr;
 
-use super::types::InstrumentInfo;
+use super::{
+    instruments::{
+        create_crypto_future, create_crypto_perpetual, create_currency_pair,
+        create_options_contract,
+    },
+    types::InstrumentInfo,
+};
 use crate::{
     enums::InstrumentType,
-    parse::{normalize_instrument_id, parse_instrument_id, parse_option_kind},
+    parse::{normalize_instrument_id, parse_instrument_id},
 };
 
 #[must_use]
 pub fn parse_instrument_any(
     info: InstrumentInfo,
-    ts_init: UnixNanos,
+    start: Option<u64>,
+    end: Option<u64>,
+    ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
-) -> InstrumentAny {
+) -> Vec<InstrumentAny> {
     match info.instrument_type {
-        InstrumentType::Spot => parse_spot_instrument(info, ts_init, normalize_symbols),
-        InstrumentType::Perpetual => parse_perp_instrument(info, ts_init, normalize_symbols),
-        InstrumentType::Future => parse_future_instrument(info, ts_init, normalize_symbols),
-        InstrumentType::Option => parse_option_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Spot => parse_spot_instrument(info, start, end, ts_init, normalize_symbols),
+        InstrumentType::Perpetual => {
+            parse_perp_instrument(info, start, end, ts_init, normalize_symbols)
+        }
+        InstrumentType::Future => {
+            parse_future_instrument(info, start, end, ts_init, normalize_symbols)
+        }
+        InstrumentType::Option => {
+            parse_option_instrument(info, start, end, ts_init, normalize_symbols)
+        }
     }
 }
 
 fn parse_spot_instrument(
     info: InstrumentInfo,
-    ts_init: UnixNanos,
+    start: Option<u64>,
+    end: Option<u64>,
+    ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
-) -> InstrumentAny {
+) -> Vec<InstrumentAny> {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, &info.instrument_type, info.inverse)
     } else {
         parse_instrument_id(&info.exchange, info.id)
     };
-
     let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
@@ -69,47 +81,78 @@ fn parse_spot_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None, // TBD
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        ts_init, // ts_event same as ts_init (no local timestamp)
-        ts_init,
-    );
+    // Filters
+    let start = start.unwrap_or(0);
+    let end = end.unwrap_or(u64::MAX);
 
-    InstrumentAny::CurrencyPair(instrument)
+    let mut instruments: Vec<InstrumentAny> = Vec::new();
+
+    if info.changes.is_none() {
+        let ts_init = ts_init.unwrap_or(UnixNanos::from(
+            Utc::now().timestamp_nanos_opt().unwrap() as u64
+        ));
+        instruments.push(create_currency_pair(
+            &info,
+            instrument_id,
+            raw_symbol,
+            price_increment,
+            size_increment,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
+            if until_ns < start || until_ns > end {
+                continue;
+            }
+
+            let price_increment =
+                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
+            let size_increment =
+                get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
+            let ts_event = UnixNanos::from(until_ns);
+
+            instruments.push(create_currency_pair(
+                &info,
+                instrument_id,
+                raw_symbol,
+                price_increment,
+                size_increment,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+    instruments
 }
 
 fn parse_perp_instrument(
     info: InstrumentInfo,
-    ts_init: UnixNanos,
+    start: Option<u64>,
+    end: Option<u64>,
+    ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
-) -> InstrumentAny {
+) -> Vec<InstrumentAny> {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, &info.instrument_type, info.inverse)
     } else {
         parse_instrument_id(&info.exchange, info.id)
     };
-
     let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
+    let multiplier = get_multiplier(info.contract_multiplier);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
     let maker_fee =
@@ -117,57 +160,82 @@ fn parse_perp_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(
-            info.settlement_currency
-                .unwrap_or(info.quote_currency)
-                .to_uppercase()
-                .as_str(),
-        ),
-        info.inverse.expect("Perpetual should have `inverse` field"),
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None, // TBD
-        None, // TBD
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        ts_init, // ts_event same as ts_init (no local timestamp)
-        ts_init,
-    );
+    // Filters
+    let start = start.unwrap_or(0);
+    let end = end.unwrap_or(u64::MAX);
+    let mut instruments = Vec::new();
 
-    InstrumentAny::CryptoPerpetual(instrument)
+    if info.changes.is_none() {
+        let ts_init = ts_init.unwrap_or(UnixNanos::from(
+            Utc::now().timestamp_nanos_opt().unwrap() as u64
+        ));
+        instruments.push(create_crypto_perpetual(
+            &info,
+            instrument_id,
+            raw_symbol,
+            price_increment,
+            size_increment,
+            multiplier,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
+            if until_ns < start || until_ns > end {
+                continue;
+            }
+
+            let price_increment =
+                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
+            let size_increment =
+                get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
+            let multiplier = get_multiplier(info.contract_multiplier);
+            let ts_event = UnixNanos::from(until_ns);
+
+            instruments.push(create_crypto_perpetual(
+                &info,
+                instrument_id,
+                raw_symbol,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+    instruments
 }
 
 fn parse_future_instrument(
     info: InstrumentInfo,
-    ts_init: UnixNanos,
+    start: Option<u64>,
+    end: Option<u64>,
+    ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
-) -> InstrumentAny {
+) -> Vec<InstrumentAny> {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, &info.instrument_type, info.inverse)
     } else {
         parse_instrument_id(&info.exchange, info.id)
     };
-
     let raw_symbol = Symbol::new(info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
-    let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
-    let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
+    let multiplier = get_multiplier(info.contract_multiplier);
+    let activation = parse_datetime_to_unix_nanos(Some(info.available_since));
+    let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
     let maker_fee =
@@ -175,53 +243,85 @@ fn parse_future_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    let instrument = CryptoFuture::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        info.inverse.expect("Future should have `inverse` field"),
-        activation,
-        expiration,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None, // TBD
-        None, // TBD
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        ts_init, // ts_event same as ts_init (no local timestamp)
-        ts_init,
-    );
+    // Filters
+    let start = start.unwrap_or(0);
+    let end = end.unwrap_or(u64::MAX);
+    let mut instruments = Vec::new();
 
-    InstrumentAny::CryptoFuture(instrument)
+    if info.changes.is_none() {
+        let ts_init = ts_init.unwrap_or(UnixNanos::from(
+            Utc::now().timestamp_nanos_opt().unwrap() as u64
+        ));
+        instruments.push(create_crypto_future(
+            &info,
+            instrument_id,
+            raw_symbol,
+            activation,
+            expiration,
+            price_increment,
+            size_increment,
+            multiplier,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
+            if until_ns < start || until_ns > end {
+                continue;
+            }
+
+            let price_increment =
+                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
+            let size_increment =
+                get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
+            let multiplier = get_multiplier(info.contract_multiplier);
+            let ts_event = UnixNanos::from(until_ns);
+
+            instruments.push(create_crypto_future(
+                &info,
+                instrument_id,
+                raw_symbol,
+                activation,
+                expiration,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+    instruments
 }
 
 fn parse_option_instrument(
     info: InstrumentInfo,
-    ts_init: UnixNanos,
+    start: Option<u64>,
+    end: Option<u64>,
+    ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
-) -> InstrumentAny {
+) -> Vec<InstrumentAny> {
     let instrument_id = if normalize_symbols {
-        normalize_instrument_id(&info.exchange, info.id, info.instrument_type, info.inverse)
+        normalize_instrument_id(&info.exchange, info.id, &info.instrument_type, info.inverse)
     } else {
         parse_instrument_id(&info.exchange, info.id)
     };
-
     let raw_symbol = Symbol::new(info.id);
+    let activation = parse_datetime_to_unix_nanos(Some(info.available_since));
+    let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let price_increment = get_price_increment(info.price_increment);
-    let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
-    let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
+    let multiplier = get_multiplier(info.contract_multiplier);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
     let maker_fee =
@@ -229,86 +329,83 @@ fn parse_option_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    let instrument = OptionsContract::new(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Cryptocurrency,
-        Some(Ustr::from(instrument_id.venue.as_str())),
-        Ustr::from(info.base_currency.to_string().to_uppercase().as_str()),
-        parse_option_kind(
-            info.option_type
-                .expect("Option should have `option_type` field"),
-        ),
-        Price::new(
-            info.strike_price
-                .expect("Option should have `strike_price` field"),
-            price_increment.precision,
-        ),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        activation,
-        expiration,
-        price_increment.precision,
-        price_increment,
-        Quantity::from(1),
-        Quantity::from(1),
-        None, // TBD
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
-        None, // TBD
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        ts_init, // ts_event same as ts_init (no local timestamp)
-        ts_init,
-    );
+    // Filters
+    let start = start.unwrap_or(0);
+    let end = end.unwrap_or(u64::MAX);
+    let mut instruments = Vec::new();
 
-    InstrumentAny::OptionsContract(instrument)
+    if info.changes.is_none() {
+        let ts_init = ts_init.unwrap_or(UnixNanos::from(
+            Utc::now().timestamp_nanos_opt().unwrap() as u64
+        ));
+        instruments.push(create_options_contract(
+            &info,
+            instrument_id,
+            raw_symbol,
+            activation,
+            expiration,
+            price_increment,
+            multiplier,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
+            if until_ns < start || until_ns > end {
+                continue;
+            }
+
+            let price_increment =
+                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
+            let multiplier = get_multiplier(info.contract_multiplier);
+            let ts_event = UnixNanos::from(until_ns);
+
+            instruments.push(create_options_contract(
+                &info,
+                instrument_id,
+                raw_symbol,
+                activation,
+                expiration,
+                price_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+    instruments
 }
 
-/// Returns the price increment from the given `value` limiting to a maximum precision of 9.
+/// Returns the price increment from the given `value`.
 fn get_price_increment(value: f64) -> Price {
-    let value_str = value.to_string();
-    let precision = precision_from_str(&value_str);
-    match precision {
-        ..9 => Price::from(value_str.as_str()),
-        _ => Price::from("0.000000001"),
-    }
+    Price::from(value.to_string())
 }
 
-/// Returns the size increment from the given `value` limiting to a maximum precision of 9.
+/// Returns the size increment from the given `value`.
 fn get_size_increment(value: f64) -> Quantity {
-    let value_str = value.to_string();
-    let precision = precision_from_str(&value_str);
-    match precision {
-        ..9 => Quantity::from(value_str.as_str()),
-        _ => Quantity::from("0.000000001"),
-    }
+    Quantity::from(value.to_string())
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
-fn get_currency(code: &str) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+fn get_multiplier(value: Option<f64>) -> Option<Quantity> {
+    value.map(|x| Quantity::from(x.to_string()))
 }
 
 /// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.
 /// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
-fn parse_datetime_to_unix_nanos(value: Option<&str>, field: &str) -> UnixNanos {
+fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
     value
-        .map(|dt| {
-            UnixNanos::from(
-                DateTime::parse_from_rfc3339(dt)
-                    .unwrap_or_else(|_| panic!("Failed to parse `{field}`"))
-                    .with_timezone(&Utc)
-                    .timestamp_nanos_opt()
-                    .unwrap_or(0) as u64,
-            )
-        })
+        .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64))
         .unwrap_or_default()
 }
 
@@ -317,7 +414,7 @@ fn parse_datetime_to_unix_nanos(value: Option<&str>, field: &str) -> UnixNanos {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_model::{identifiers::InstrumentId, types::Currency};
     use rstest::rstest;
 
     use super::*;
@@ -328,7 +425,10 @@ mod tests {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, UnixNanos::default(), false);
+        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+            .first()
+            .unwrap()
+            .clone();
 
         assert_eq!(instrument.id(), InstrumentId::from("XBTUSD.BITMEX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("XBTUSD"));
