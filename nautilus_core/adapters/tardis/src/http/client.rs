@@ -17,28 +17,38 @@ use std::{env, time::Duration};
 
 use nautilus_core::{consts::USER_AGENT, UnixNanos};
 use nautilus_model::instruments::InstrumentAny;
+use reqwest::Response;
+use serde::Deserialize;
 
-use super::{
-    parse::parse_instrument_any,
-    types::{InstrumentInfo, Response},
-    TARDIS_BASE_URL,
-};
+use super::{parse::parse_instrument_any, types::InstrumentInfo, TARDIS_BASE_URL};
 use crate::enums::Exchange;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug, Deserialize)]
+struct TardisErrorResponse {
+    code: u64,
+    message: String,
+}
+
 /// HTTP errors for the Tardis HTTP client.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// An error when sending a request to the server.
-    #[error("Error sending request: {0}")]
+    #[error("HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
-    /// An API error returned by Tardis.
-    #[error("Tardis API error {code}: {message}")]
-    ApiError { code: u64, message: String },
-    /// An error when deserializing the response from the server.
-    #[error("Error deserializing message: {0}")]
-    Deserialization(#[from] serde_json::Error),
+
+    #[error("Tardis API error [{code}]: {message}")]
+    ApiError {
+        status: u16,
+        code: u64,
+        message: String,
+    },
+
+    #[error("Failed to parse response body as JSON: {0}")]
+    JsonParse(#[from] serde_json::Error),
+
+    #[error("Failed to parse response as Tardis type: {0}")]
+    ResponseParse(String),
 }
 
 /// A Tardis HTTP API client.
@@ -88,22 +98,52 @@ impl TardisHttpClient {
         })
     }
 
+    async fn handle_error_response<T>(resp: Response) -> Result<T> {
+        let status = resp.status().as_u16();
+        let error_text = resp.text().await.unwrap_or_default();
+
+        if let Ok(error) = serde_json::from_str::<TardisErrorResponse>(&error_text) {
+            Err(Error::ApiError {
+                status,
+                code: error.code,
+                message: error.message,
+            })
+        } else {
+            Err(Error::ApiError {
+                status,
+                code: 0,
+                message: error_text,
+            })
+        }
+    }
+
     /// Returns all Tardis instrument definitions for the given `exchange`.
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instruments_info(
-        &self,
-        exchange: Exchange,
-    ) -> Result<Response<Vec<InstrumentInfo>>> {
+    pub async fn instruments_info(&self, exchange: Exchange) -> Result<Vec<InstrumentInfo>> {
         tracing::debug!("Requesting instruments for {exchange}");
 
-        Ok(self
+        let resp = self
             .client
             .get(format!("{}/instruments/{exchange}", &self.base_url))
             .bearer_auth(&self.api_key)
             .send()
-            .await?
-            .json::<Response<Vec<InstrumentInfo>>>()
-            .await?)
+            .await?;
+
+        if !resp.status().is_success() {
+            return Self::handle_error_response(resp).await;
+        }
+
+        tracing::debug!("Response status: {}", resp.status());
+        let body = resp.text().await?;
+
+        match serde_json::from_str(&body) {
+            Ok(parsed) => Ok(parsed),
+            Err(e) => {
+                tracing::error!("Failed to parse response: {}", e);
+                tracing::debug!("Response body was: {}", body);
+                Err(Error::ResponseParse(e.to_string()))
+            }
+        }
     }
 
     /// Returns the Tardis instrument definition for a given `exchange` and `symbol`.
@@ -112,10 +152,10 @@ impl TardisHttpClient {
         &self,
         exchange: Exchange,
         symbol: &str,
-    ) -> Result<Response<InstrumentInfo>> {
+    ) -> Result<InstrumentInfo> {
         tracing::debug!("Requesting instrument {exchange} {symbol}");
 
-        Ok(self
+        let resp = self
             .client
             .get(format!(
                 "{}/instruments/{exchange}/{symbol}",
@@ -123,9 +163,23 @@ impl TardisHttpClient {
             ))
             .bearer_auth(&self.api_key)
             .send()
-            .await?
-            .json::<Response<InstrumentInfo>>()
-            .await?)
+            .await?;
+
+        if !resp.status().is_success() {
+            return Self::handle_error_response(resp).await;
+        }
+
+        tracing::debug!("Response status: {}", resp.status());
+        let body = resp.text().await?;
+
+        match serde_json::from_str(&body) {
+            Ok(parsed) => Ok(parsed),
+            Err(e) => {
+                tracing::error!("Failed to parse response: {}", e);
+                tracing::debug!("Response body was: {}", body);
+                Err(Error::ResponseParse(e.to_string()))
+            }
+        }
     }
 
     /// Returns all Nautilus instrument definitions for the given `exchange`.
@@ -138,17 +192,9 @@ impl TardisHttpClient {
         ts_init: Option<u64>,
     ) -> Result<Vec<InstrumentAny>> {
         let response = self.instruments_info(exchange).await?;
-
-        let infos = match response {
-            Response::Success(data) => data,
-            Response::Error { code, message } => {
-                return Err(Error::ApiError { code, message });
-            }
-        };
-
         let ts_init = ts_init.map(UnixNanos::from);
 
-        Ok(infos
+        Ok(response
             .into_iter()
             .flat_map(|info| {
                 parse_instrument_any(info, start, end, ts_init, self.normalize_symbols)
@@ -167,19 +213,13 @@ impl TardisHttpClient {
         ts_init: Option<u64>,
     ) -> Result<Vec<InstrumentAny>> {
         let response = self.instrument_info(exchange, symbol).await?;
-
-        let info = match response {
-            Response::Success(data) => data,
-            Response::Error { code, message } => {
-                return Err(Error::ApiError { code, message });
-            }
-        };
+        let ts_init = ts_init.map(UnixNanos::from);
 
         Ok(parse_instrument_any(
-            info,
+            response,
             start,
             end,
-            ts_init.map(UnixNanos::from),
+            ts_init,
             self.normalize_symbols,
         ))
     }

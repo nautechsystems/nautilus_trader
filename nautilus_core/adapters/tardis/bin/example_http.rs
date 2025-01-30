@@ -24,18 +24,24 @@ async fn main() {
     let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
     // Tardis instrument definitions
-    let resp = client.instruments_info(Exchange::Bitmex).await;
+    let resp = client.instruments_info(Exchange::Okex).await;
     println!("Received: {resp:?}");
 
-    let resp = client.instrument_info(Exchange::Bitmex, "ETHUSDT").await;
+    let resp = client.instrument_info(Exchange::Okex, "ETH-USD").await;
     println!("Received: {resp:?}");
 
     // Nautilus instrument definitions
-    let resp = client.instruments(Exchange::Okex, None, None, None).await;
+    let resp = client
+        .instruments(Exchange::Deribit, None, None, None)
+        .await;
     println!("Received: {resp:?}");
 
+    // for inst in resp.unwrap() {
+    //     println!("{}", inst.id());
+    // }
+
     let resp = client
-        .instrument(Exchange::Okex, "ETHUSDT", None, None, None)
+        .instrument(Exchange::Okex, "BTC-USD", None, None, None)
         .await;
     println!("Received: {resp:?}");
 }

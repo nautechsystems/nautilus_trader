@@ -14,28 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use ustr::Ustr;
 
 use crate::{
     enums::{Exchange, InstrumentType, OptionType},
     parse::deserialize_uppercase,
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-/// The response format for a Tardis HTTP API request.
-pub enum Response<T> {
-    /// The error response.
-    Error {
-        /// The error code.
-        code: u64,
-        /// The error message.
-        message: String,
-    },
-    /// The success response.
-    Success(T),
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
