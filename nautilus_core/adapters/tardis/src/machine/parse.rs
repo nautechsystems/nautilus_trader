@@ -37,12 +37,18 @@ use crate::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
 #[must_use]
 pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) -> Option<Data> {
     match msg {
-        WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg_as_deltas(
-            msg,
-            info.price_precision,
-            info.size_precision,
-            info.instrument_id,
-        ))),
+        WsMessage::BookChange(msg) => {
+            if msg.bids.is_empty() && msg.asks.is_empty() {
+                // Skip empty book changes - these are valid messages but contain no actionable data
+                return None;
+            };
+            Some(Data::Deltas(parse_book_change_msg_as_deltas(
+                msg,
+                info.price_precision,
+                info.size_precision,
+                info.instrument_id,
+            )))
+        }
         WsMessage::BookSnapshot(msg) => match msg.bids.len() {
             1 => Some(Data::Quote(parse_book_snapshot_msg_as_quote(
                 msg,

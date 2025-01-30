@@ -68,6 +68,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed realized pnl bug in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
 - Fixed update order in `Cache` for Rust (#2248), thanks @filipmacek
 - Fixed websocket schema for market updates of dYdX (#2258), thanks @davidsblom
+- Fixed handling of empty book messages for Tardis (resulted in `deltas` cannot be empty panicking)
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
