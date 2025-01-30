@@ -34,6 +34,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
 - Improved `NautilusKernel` pending tasks cancellation on shutdown
+- Improved `TardisHttpClient` requests and error handling
 - Refined `Currency` `name` to accept non-ASCII characters (common for foreign currencies)
 - Refactored CI with composite actions (#2242), thanks @sunlei
 - Changed to use `mold` as the linker in CI (#2254), thanks @sunlei
@@ -71,6 +72,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed websocket schema for market updates of dYdX (#2258), thanks @davidsblom
 - Fixed handling of empty book messages for Tardis (resulted in `deltas` cannot be empty panicking)
 - Fixed `Cache.bar_types` `aggregation_source` filtering, was incorrectly using `price_type` (#2269), thanks @faysou
+- Fixed missing `combo` instrument type for Tardis integration
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik

@@ -26,6 +26,7 @@ pub enum InstrumentType {
     Perpetual,
     Future,
     Option,
+    Combo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]

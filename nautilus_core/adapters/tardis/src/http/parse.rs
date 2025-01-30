@@ -50,7 +50,7 @@ pub fn parse_instrument_any(
         InstrumentType::Perpetual => {
             parse_perp_instrument(info, start, end, ts_init, normalize_symbols)
         }
-        InstrumentType::Future => {
+        InstrumentType::Future | InstrumentType::Combo => {
             parse_future_instrument(info, start, end, ts_init, normalize_symbols)
         }
         InstrumentType::Option => {
