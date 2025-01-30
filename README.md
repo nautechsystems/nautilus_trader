@@ -43,6 +43,8 @@ The platform is also universal and asset-class-agnostic — with any REST, WebSo
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
+![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-trader.svg "nautilus-trader")
+
 ## Features
 
 - **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
@@ -255,7 +257,7 @@ To programmatically fetch and list available versions:
 #### Retention policies
 
 - `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`a`): Only the 3 most recent wheel builds are retained.
+- `nightly` branch wheels (`a`): Only the 10 most recent wheel builds are retained.
 
 ### From Source
 
