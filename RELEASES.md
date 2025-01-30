@@ -24,12 +24,14 @@ This release will be the final version that uses Poetry for package and dependen
 - Renamed `BetfairExecClientConfig.request_account_state_period` to `request_account_state_secs`
 - Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
 - Changed `BettingInstrument` default `min_notional` to `None`
+- Changed meaning of `ws_connection_delay_secs` for [PolymarketDataClientConfig](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/adapters/polymarket/config.py) to be **non-initial** delay (#2271)
 
 ### Internal Improvements
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
 - Added `OrderBookDeltaTestBuilder` in Rust to improve testing (#2234), thanks @filipmacek
 - Added custom certificate loading for `SocketClient` TLS
 - Added `check_nonempty_string` for string validation in Rust
+- Improved Polymarket WebSocket subscription handling by configurable delay (#2271), thanks @ryantam626
 - Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
@@ -46,6 +48,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Ported `BatchCancelOrders` processing for `OrderMatchingEngine` in Rust (#2256), thanks @filipmacek
 - Ported expire order processing for `OrderMatchingEngine` in Rust (#2259), thanks @filipmacek
 - Ported modify order processing for `OrderMatchingEngine` in Rust (#2261), thanks @filipmacek
+- Ported generate fresh account state for `SimulatedExchange` in Rust (#2272), thanks @filipmacek
 - Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
 - Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
 - Continued porting `OrderEmulator` to Rust (#2219, #2226), thanks @Pushkarm029
