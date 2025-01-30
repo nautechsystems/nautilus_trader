@@ -118,10 +118,6 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 > **MSRV:** NautilusTrader relies heavily on improvements in the Rust language and compiler.
 > As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the latest stable release of Rust.
 
-## Architecture (data flow)
-
-![Architecture](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/architecture-overview.png "architecture")
-
 ## Integrations
 
 NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
