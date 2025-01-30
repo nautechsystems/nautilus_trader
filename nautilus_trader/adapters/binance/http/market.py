@@ -271,7 +271,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         limit : int, optional
             The limit for the response. Default 500; max 1000.
         fromId : int, optional
-            Trade id to fetch from. Default gets most recent trades
+            Trade ID to fetch from. Default gets most recent trades
 
         """
 
@@ -329,7 +329,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
         limit : int, optional
             The limit for the response. Default 500; max 1000.
         fromId : int, optional
-            Trade id to fetch from INCLUSIVE.
+            Trade ID to fetch from INCLUSIVE.
         startTime : int, optional
             Timestamp in ms to get aggregate trades from INCLUSIVE.
         endTime : int, optional
@@ -759,7 +759,7 @@ class BinanceMarketHttpAPI:
         """
         Request TradeTicks from Binance aggregated trades.
 
-        If start_time and end_time are both specified, will fetch *all* TradeTicks in
+        If start_time and end_time are both specified, will request *all* TradeTicks in
         the interval, making multiple requests if necessary.
 
         """

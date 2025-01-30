@@ -80,7 +80,7 @@ To install a specific development wheel (e.g., `1.208.0a20241212` for December 1
 
 You can view all available versions of `nautilus_trader` on the [package index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html).
 
-To programmatically fetch and list available versions:
+To programmatically request and list available versions:
 
     curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
 
