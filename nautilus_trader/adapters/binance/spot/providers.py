@@ -112,7 +112,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                f"(this is needed to request the applicable account fee tier). {e.message}",
             )
             return
 
@@ -152,7 +152,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                f"(this is needed to request the applicable account fee tier). {e.message}",
             )
             return
 
@@ -196,7 +196,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                f"(this is needed to fetch the applicable account fee tier). {e}",
+                f"(this is needed to request the applicable account fee tier). {e}",
             )
             return
 

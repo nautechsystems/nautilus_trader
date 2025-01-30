@@ -55,7 +55,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET parameters for fetching trade fees.
+        GET parameters for requesting trade fees.
 
         Parameters
         ----------

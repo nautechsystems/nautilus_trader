@@ -358,7 +358,7 @@ async fn main() {
 ## Requesting instrument definitions
 
 You can request instrument definitions in both Python and Rust using the `TardisHttpClient`.
-This client interacts with the [Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to fetch and parse instrument metadata into Nautilus instruments.
+This client interacts with the [Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to request and parse instrument metadata into Nautilus instruments.
 
 The `TardisHttpClient` constructor accepts optional parameters for `api_key`, `base_url`, and `timeout_secs` (default is 60 seconds).
 
@@ -420,7 +420,7 @@ async fn main() {
 
 ## Instrument provider
 
-The `TardisInstrumentProvider` fetches and parses instrument definitions from Tardis through the HTTP instrument metadata API.
+The `TardisInstrumentProvider` requests and parses instrument definitions from Tardis through the HTTP instrument metadata API.
 Since there are multiple [Tardis-supported exchanges](#venues), when loading all instruments,
 you must filter for the desired venues using an `InstrumentProviderConfig`:
 
