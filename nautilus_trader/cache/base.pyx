@@ -406,3 +406,21 @@ cdef class CacheFacade:
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `strategy_id_for_position` must be implemented in the subclass")  # pragma: no cover
+
+# -- GREEKS QUERIES -----------------------------------------------------------------------------
+
+    cpdef void add_greeks(self, object greeks):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `add_greeks` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void add_interest_rate_curve(self, object interest_rate_curve):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `add_interest_rate_curve` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef object greeks(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `greeks` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef object interest_rate_curve(self, str currency):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `interest_rate_curve` must be implemented in the subclass")  # pragma: no cover

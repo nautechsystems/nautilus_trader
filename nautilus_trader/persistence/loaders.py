@@ -16,7 +16,14 @@
 from os import PathLike
 from typing import Any
 
+import numpy as np
 import pandas as pd
+
+from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.greeks_data import InterestRateCurveData
 
 
 class CSVTickDataLoader:
@@ -157,3 +164,118 @@ class ParquetBarDataLoader:
         df = pd.read_parquet(file_path)
         df = df.set_index("timestamp")
         return df
+
+
+class InterestRateProviderConfig(ActorConfig, frozen=True):
+    """
+    Configuration for the InterestRateProvider actor.
+
+    Parameters
+    ----------
+    interest_rates_file : str
+        Path to the file containing interest rate data.
+    currency : str, default "USD"
+        Name of the interest rate curve. Default is "USD_ShortTerm".
+
+    """
+
+    interest_rates_file: str
+    currency: str = "USD"
+
+
+class InterestRateProvider(Actor):
+    """
+    A provider for interest rate data.
+
+    This actor is responsible for importing interest rates from a file,
+    updating the current interest rate, and publishing interest rate data
+    on the message bus.
+
+    Parameters
+    ----------
+    interest_rates_file : str
+        Path to the file containing interest rate data.
+    curve_name : str
+        Name of the interest rate curve.
+
+    Methods
+    -------
+    on_start()
+        Initializes the interest rate data on actor start.
+    update_interest_rate(alert=None)
+        Updates and publishes the current interest rate.
+
+    """
+
+    def __init__(self, config: InterestRateProviderConfig):
+        super().__init__(config)
+        self.interest_rates_df = None
+
+    def on_start(self):
+        self.update_interest_rate()
+
+    def update_interest_rate(self, alert=None):
+        # import interest rates the first time
+        if self.interest_rates_df is None:
+            self.interest_rates_df = import_interest_rates(self.config.interest_rates_file)
+
+        # get the interest rate for the current month
+        utc_now_ns = alert.ts_init if alert is not None else self.clock.timestamp_ns()
+        utc_now = unix_nanos_to_dt(utc_now_ns)
+        month_string = f"{utc_now.year}-{str(utc_now.month).zfill(2)}"  # 2024-01
+        interest_rate_value = float(self.interest_rates_df.loc[month_string, "interest_rate"])
+
+        interest_rate_curve = InterestRateCurveData(
+            utc_now_ns,
+            utc_now_ns,
+            self.config.currency,
+            np.array([0.0]),
+            np.array([interest_rate_value]),
+        )
+
+        # caching interest rate data
+        self.cache.add_interest_rate_curve(interest_rate_curve)
+
+        # publish interest rate on message bus
+        self.publish_data(
+            DataType(InterestRateCurveData, metadata={"currency": interest_rate_curve.currency}),
+            interest_rate_curve,
+        )
+
+        # set an alert to update for the next month
+        next_month_start = next_month_start_from_timestamp(utc_now)
+        self.clock.set_time_alert(
+            "interest rate update",
+            next_month_start,
+            self.update_interest_rate,
+            override=True,
+        )
+
+
+# example file usd_short_term_rate.xml in the current repo
+# Can be downloaded from below link
+# https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/USA.M.IR3TIB.PA.....?startPeriod=2020-01
+# https://data-explorer.oecd.org/vis?lc=en&pg=0&fs[0]=Topic%2C1%7CEconomy%23ECO%23%7CShort-term%20economic%20statistics%23ECO_STS%23&fc=Frequency%20of%20observation&bp=true&snb=54&vw=tb&df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_STES%40DF_FINMARK&df[ag]=OECD.SDD.STES&df[vs]=4.0&dq=USA.M.IR3TIB.PA.....&lom=LASTNPERIODS&lo=5&to[TIME_PERIOD]=false&ly[cl]=TIME_PERIOD
+def import_interest_rates(xml_interest_rate_file):
+    import xmltodict
+
+    with open(xml_interest_rate_file) as xml_file:
+        data_dict = xmltodict.parse(xml_file.read())
+
+    interest_rates = [
+        (x["generic:ObsDimension"]["@value"], float(x["generic:ObsValue"]["@value"]))
+        for x in data_dict["message:GenericData"]["message:DataSet"]["generic:Series"][
+            "generic:Obs"
+        ]
+    ]
+
+    return (
+        pd.DataFrame(interest_rates, columns=["month", "interest_rate"])
+        .set_index("month")
+        .sort_index()
+        / 100.0
+    )
+
+
+def next_month_start_from_timestamp(timestamp):
+    return (timestamp + pd.offsets.MonthBegin(1)).floor(freq="d")

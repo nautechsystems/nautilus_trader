@@ -1,9 +1,9 @@
-<!--NSI Web Service v8.19.2.0-->
+<!--NSI Web Service v8.19.2.2-->
 <message:GenericData>
     <message:Header>
-        <message:ID>IREF029152</message:ID>
+        <message:ID>IREF009042</message:ID>
         <message:Test>false</message:Test>
-        <message:Prepared>2024-09-27T15:20:10</message:Prepared>
+        <message:Prepared>2025-01-31T12:36:14</message:Prepared>
         <message:Sender id="Disseminate_Final_DMZ"/>
         <message:Structure structureID="OECD_SDD_STES_DSD_STES_at_DF_FINMARK_4_0" dimensionAtObservation="TIME_PERIOD">
             <common:StructureUsage>
@@ -404,6 +404,34 @@
             <generic:Obs>
                 <generic:ObsDimension id="TIME_PERIOD" value="2024-08"/>
                 <generic:ObsValue value="5.12"/>
+                <generic:Attributes>
+                    <generic:Value id="OBS_STATUS" value="A"/>
+                </generic:Attributes>
+            </generic:Obs>
+            <generic:Obs>
+                <generic:ObsDimension id="TIME_PERIOD" value="2024-09"/>
+                <generic:ObsValue value="4.86"/>
+                <generic:Attributes>
+                    <generic:Value id="OBS_STATUS" value="A"/>
+                </generic:Attributes>
+            </generic:Obs>
+            <generic:Obs>
+                <generic:ObsDimension id="TIME_PERIOD" value="2024-10"/>
+                <generic:ObsValue value="4.62"/>
+                <generic:Attributes>
+                    <generic:Value id="OBS_STATUS" value="A"/>
+                </generic:Attributes>
+            </generic:Obs>
+            <generic:Obs>
+                <generic:ObsDimension id="TIME_PERIOD" value="2024-11"/>
+                <generic:ObsValue value="4.53"/>
+                <generic:Attributes>
+                    <generic:Value id="OBS_STATUS" value="A"/>
+                </generic:Attributes>
+            </generic:Obs>
+            <generic:Obs>
+                <generic:ObsDimension id="TIME_PERIOD" value="2024-12"/>
+                <generic:ObsValue value="4.46"/>
                 <generic:Attributes>
                     <generic:Value id="OBS_STATUS" value="A"/>
                 </generic:Attributes>
