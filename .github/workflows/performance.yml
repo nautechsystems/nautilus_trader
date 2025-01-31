@@ -38,6 +38,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.12"
+          free-disk-space: "true"
 
       - name: Run pre-commit # Runs again here to check pre-commit with Python 3.12
         run: make pre-commit
