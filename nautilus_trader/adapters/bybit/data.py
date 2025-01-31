@@ -134,6 +134,8 @@ class BybitDataClient(LiveMarketDataClient):
         # Configuration
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
+        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
 
         # HTTP API
         self._http_market = BybitMarketHttpAPI(

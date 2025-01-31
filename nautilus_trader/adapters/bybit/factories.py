@@ -54,6 +54,7 @@ def get_bybit_http_client(
     base_url: str | None = None,
     is_demo: bool = False,
     is_testnet: bool = False,
+    recv_window_ms: int = 5_000,
 ) -> BybitHttpClient:
     """
     Cache and return a Bybit HTTP client with the given key and secret.
@@ -74,6 +75,8 @@ def get_bybit_http_client(
         If the client is connecting to the demo API.
     is_testnet : bool, default False
         If the client is connecting to the testnet API.
+    recv_window_ms : PositiveInt, default 5000
+        The receive window (milliseconds) for Bybit HTTP requests.
 
     Returns
     -------
@@ -96,6 +99,7 @@ def get_bybit_http_client(
         api_key=key,
         api_secret=secret,
         base_url=http_base_url,
+        recv_window_ms=recv_window_ms,
         ratelimiter_quotas=ratelimiter_quotas,
         ratelimiter_default_quota=ratelimiter_default_quota,
     )
@@ -184,6 +188,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             base_url=config.base_url_http,
             is_demo=config.demo,
             is_testnet=config.testnet,
+            recv_window_ms=config.recv_window_ms,
         )
         provider = get_bybit_instrument_provider(
             client=client,
@@ -256,6 +261,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             base_url=config.base_url_http,
             is_demo=config.demo,
             is_testnet=config.testnet,
+            recv_window_ms=config.recv_window_ms,
         )
         provider = get_bybit_instrument_provider(
             client=client,

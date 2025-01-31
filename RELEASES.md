@@ -19,6 +19,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `min_market_start_time` and `max_market_start_time` time range filtering for `BetfairInstrumentProviderConfig`
 - Added `default_min_notional` config option for `BetfairInstrumentProviderConfig`
 - Added `stream_conflate_ms` config option for `BetfairDataClientConfig`
+- Added `recv_window_ms` config option for `BybitDataClientConfig` and `BybitExecClientConfig`
 
 ### Breaking Changes
 - Renamed `event_logging` config option to `log_events`

@@ -51,6 +51,8 @@ class BybitHttpClient:
         The Bybit API secret for signed requests.
     base_url : str, optional
         The base endpoint URL for the client.
+    recv_window_ms : int, default 5_000
+        The receive window (milliseconds) for Bybit HTTP requests.
     ratelimiter_quotas : list[tuple[str, Quota]], optional
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
@@ -64,6 +66,7 @@ class BybitHttpClient:
         api_key: str,
         api_secret: str,
         base_url: str,
+        recv_window_ms: int = 5_000,
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
         ratelimiter_default_quota: Quota | None = None,
     ) -> None:
@@ -71,7 +74,7 @@ class BybitHttpClient:
         self._log: Logger = Logger(name=type(self).__name__)
         self._api_key: str = api_key
         self._api_secret: str = api_secret
-        self._recv_window: int = 5_000
+        self._recv_window_ms: int = recv_window_ms
 
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
@@ -111,7 +114,7 @@ class BybitHttpClient:
                 **self._headers,
                 "X-BAPI-TIMESTAMP": timestamp,
                 "X-BAPI-SIGN": signature,
-                "X-BAPI-RECV-WINDOW": str(self._recv_window),
+                "X-BAPI-RECV-WINDOW": str(self._recv_window_ms),
             }
         else:
             headers = self._headers
@@ -170,13 +173,13 @@ class BybitHttpClient:
     def _sign_post_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = msgspec.json.encode(payload).decode()
-        result = timestamp + self._api_key + str(self._recv_window) + payload_str
+        result = timestamp + self._api_key + str(self._recv_window_ms) + payload_str
         signature = hmac_signature(self._api_secret, result)
         return [timestamp, signature]
 
     def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = parse.urlencode(payload)
-        result = timestamp + self._api_key + str(self._recv_window) + payload_str
+        result = timestamp + self._api_key + str(self._recv_window_ms) + payload_str
         signature = hmac_signature(self._api_secret, result)
         return [timestamp, signature]
