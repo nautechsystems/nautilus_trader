@@ -42,7 +42,7 @@ use nautilus_serialization::{
 use thousands::Separable;
 use ustr::Ustr;
 
-use super::{enums::Exchange, http::types::InstrumentInfo};
+use super::{enums::Exchange, http::models::InstrumentInfo};
 use crate::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
@@ -84,7 +84,7 @@ async fn gather_instruments_info(
         tracing::info!("Requesting instruments for {exchange}");
 
         async move {
-            match client.instruments_info(exchange.clone()).await {
+            match client.instruments_info(exchange.clone(), None).await {
                 Ok(instruments) => Some((exchange, instruments)),
                 Err(e) => {
                     tracing::error!("Error fetching instruments for {exchange}: {e}");

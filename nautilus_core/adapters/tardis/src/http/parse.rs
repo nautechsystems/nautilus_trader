@@ -30,7 +30,7 @@ use super::{
         create_crypto_future, create_crypto_perpetual, create_currency_pair,
         create_options_contract,
     },
-    types::InstrumentInfo,
+    models::InstrumentInfo,
 };
 use crate::{
     enums::InstrumentType,
@@ -87,10 +87,9 @@ fn parse_spot_instrument(
 
     let mut instruments: Vec<InstrumentAny> = Vec::new();
 
-    if info.changes.is_none() {
-        let ts_init = ts_init.unwrap_or(UnixNanos::from(
-            Utc::now().timestamp_nanos_opt().unwrap() as u64
-        ));
+    // Create initial version either if no changes, or up until the first change
+    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
+        let ts_init = ts_init.unwrap_or_default();
         instruments.push(create_currency_pair(
             &info,
             instrument_id,
@@ -165,10 +164,9 @@ fn parse_perp_instrument(
     let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
-    if info.changes.is_none() {
-        let ts_init = ts_init.unwrap_or(UnixNanos::from(
-            Utc::now().timestamp_nanos_opt().unwrap() as u64
-        ));
+    // Create initial version either if no changes, or up until the first change
+    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
+        let ts_init = ts_init.unwrap_or_default();
         instruments.push(create_crypto_perpetual(
             &info,
             instrument_id,
@@ -248,10 +246,9 @@ fn parse_future_instrument(
     let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
-    if info.changes.is_none() {
-        let ts_init = ts_init.unwrap_or(UnixNanos::from(
-            Utc::now().timestamp_nanos_opt().unwrap() as u64
-        ));
+    // Create initial version either if no changes, or up until the first change
+    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
+        let ts_init = ts_init.unwrap_or_default();
         instruments.push(create_crypto_future(
             &info,
             instrument_id,
@@ -334,10 +331,9 @@ fn parse_option_instrument(
     let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
-    if info.changes.is_none() {
-        let ts_init = ts_init.unwrap_or(UnixNanos::from(
-            Utc::now().timestamp_nanos_opt().unwrap() as u64
-        ));
+    // Create initial version either if no changes, or up until the first change
+    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
+        let ts_init = ts_init.unwrap_or_default();
         instruments.push(create_options_contract(
             &info,
             instrument_id,

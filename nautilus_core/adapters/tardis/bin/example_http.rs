@@ -24,7 +24,7 @@ async fn main() {
     let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
     // Tardis instrument definitions
-    let resp = client.instruments_info(Exchange::Okex).await;
+    let resp = client.instruments_info(Exchange::Okex, None).await;
     println!("Received: {resp:?}");
 
     let resp = client.instrument_info(Exchange::Okex, "ETH-USD").await;
@@ -32,7 +32,7 @@ async fn main() {
 
     // Nautilus instrument definitions
     let resp = client
-        .instruments(Exchange::Deribit, None, None, None)
+        .instruments(Exchange::Deribit, None, None, None, None)
         .await;
     println!("Received: {resp:?}");
 

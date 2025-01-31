@@ -4603,7 +4603,18 @@ class TardisHttpClient:
         normalize_symbols: bool = True,
     ) -> None: ...
     async def instrument(self, exchange: str, symbol: str, start: int | None = None, end: int | None = None, ts_init: int | None = None) -> list[Instrument]: ...  # noqa
-    async def instruments(self, exchange: str, start: int | None = None, end: int | None = None, ts_init: int | None = None) -> list[Instrument]: ...
+    async def instruments(
+        self,
+        exchange: str,
+        start: int | None = None,
+        end: int | None = None,
+        base_currency: list[str] | None = None,
+        quote_currency: list[str] | None = None,
+        instrument_type: list[str] | None = None,
+        contract_type: list[str] | None = None,
+        active: bool | None = None,
+        ts_init: int | None = None,
+    ) -> list[Instrument]: ...
 
 class ReplayNormalizedRequestOptions:
     @classmethod
