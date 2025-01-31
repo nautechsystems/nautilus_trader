@@ -311,8 +311,49 @@ impl SimulatedExchange {
             .map(|client| client.get_account().unwrap())
     }
 
-    pub fn adjust_account(&mut self, _adjustment: Money) {
-        todo!("adjust account")
+    pub fn adjust_account(&mut self, adjustment: Money) {
+        if self.frozen_account {
+            // Nothing to adjust
+            return;
+        }
+
+        if let Some(exec_client) = &self.exec_client {
+            let venue = exec_client.venue;
+            println!("Adjusting account for venue {venue}");
+            if let Some(account) = self.cache.borrow().account_for_venue(&venue) {
+                match account.balance(Some(adjustment.currency)) {
+                    Some(balance) => {
+                        let mut current_balance = *balance;
+                        current_balance.total += adjustment;
+                        current_balance.free += adjustment;
+
+                        let margins = match account {
+                            AccountAny::Margin(margin_account) => margin_account.margins.clone(),
+                            _ => HashMap::new(),
+                        };
+
+                        if let Some(exec_client) = &self.exec_client {
+                            exec_client
+                                .generate_account_state(
+                                    vec![current_balance],
+                                    margins.values().cloned().collect(),
+                                    true,
+                                    self.clock.get_time_ns(),
+                                )
+                                .unwrap()
+                        }
+                    }
+                    None => {
+                        log::error!(
+                            "Cannot adjust account: no balance for currency {}",
+                            adjustment.currency
+                        );
+                    }
+                }
+            } else {
+                log::error!("Cannot adjust account: no account for venue {venue}");
+            }
+        }
     }
 
     pub fn send(&self, _command: TradingCommand) {
@@ -1000,7 +1041,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_initialize_account() {
+    fn test_accounting() {
         let account_type = AccountType::Margin;
         let mut msgbus = MessageBus::default();
         let mut cache = Cache::default();
@@ -1008,7 +1049,7 @@ mod tests {
         msgbus.register(Ustr::from("Portfolio.update_account"), handler.clone());
         let margin_account = MarginAccount::new(
             AccountState::new(
-                AccountId::default(),
+                AccountId::from("SIM-001"),
                 account_type,
                 vec![AccountBalance::new(
                     Money::from("1000 USD"),
@@ -1027,9 +1068,11 @@ mod tests {
         let () = cache
             .add_account(AccountAny::Margin(margin_account))
             .unwrap();
+        // build indexes
+        cache.build_index();
 
         let mut exchange = get_exchange(
-            Venue::new("BINANCE"),
+            Venue::new("SIM"),
             account_type,
             BookType::L2_MBP,
             Some(Rc::new(RefCell::new(msgbus))),
@@ -1037,14 +1080,25 @@ mod tests {
         );
         exchange.initialize_account();
 
-        // Check if account state event is received
+        // Test adjust account, increase balance by 500 USD
+        exchange.adjust_account(Money::from("500 USD"));
+
+        // Check if we received two messages, one for initial account state and one for adjusted account state
         let messages = get_saved_messages::<AccountState>(handler);
-        assert_eq!(messages.len(), 1);
-        let account_state = messages.first().unwrap();
-        assert_eq!(account_state.balances.len(), 1);
-        let current_balance = account_state.balances[0];
+        assert_eq!(messages.len(), 2);
+        let account_state_first = messages.first().unwrap();
+        let account_state_second = messages.last().unwrap();
+
+        assert_eq!(account_state_first.balances.len(), 1);
+        let current_balance = account_state_first.balances[0];
         assert_eq!(current_balance.free, Money::new(1000.0, Currency::USD()));
         assert_eq!(current_balance.locked, Money::new(0.0, Currency::USD()));
         assert_eq!(current_balance.total, Money::new(1000.0, Currency::USD()));
+
+        assert_eq!(account_state_second.balances.len(), 1);
+        let current_balance = account_state_second.balances[0];
+        assert_eq!(current_balance.free, Money::new(1500.0, Currency::USD()));
+        assert_eq!(current_balance.locked, Money::new(0.0, Currency::USD()));
+        assert_eq!(current_balance.total, Money::new(1500.0, Currency::USD()));
     }
 }

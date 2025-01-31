@@ -143,6 +143,10 @@ impl Account for CashAccount {
         self.base_balances_locked()
     }
 
+    fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
+        self.base_balance(currency)
+    }
+
     fn last_event(&self) -> Option<AccountState> {
         self.base_last_event()
     }

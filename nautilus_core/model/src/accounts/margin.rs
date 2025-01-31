@@ -310,6 +310,11 @@ impl Account for MarginAccount {
     fn balances_locked(&self) -> HashMap<Currency, Money> {
         self.base_balances_locked()
     }
+
+    fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
+        self.base_balance(currency)
+    }
+
     fn last_event(&self) -> Option<AccountState> {
         self.base_last_event()
     }
