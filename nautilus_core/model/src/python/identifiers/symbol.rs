@@ -66,7 +66,10 @@ impl Symbol {
             match op {
                 CompareOp::Eq => self.eq(&other).into_py(py),
                 CompareOp::Ne => self.ne(&other).into_py(py),
-                _ => py.NotImplemented(),
+                CompareOp::Ge => self.ge(&other).into_py(py),
+                CompareOp::Gt => self.gt(&other).into_py(py),
+                CompareOp::Le => self.le(&other).into_py(py),
+                CompareOp::Lt => self.lt(&other).into_py(py),
             }
         } else {
             py.NotImplemented()
