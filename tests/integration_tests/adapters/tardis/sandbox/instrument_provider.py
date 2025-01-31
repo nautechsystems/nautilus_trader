@@ -26,21 +26,27 @@ async def run():
     http_client = get_tardis_http_client()
 
     # Test loading all instrument for specified exchanges
-    exchanges = ["bitmex", "binance", "bybit"]
-    filters = {"exchanges": frozenset(exchanges)}
+    exchanges = ["deribit"]
+    filters = {
+        "venues": frozenset(exchanges),
+        "quote_currency": frozenset(["BTC"]),
+        # "base_currency": frozenset(["USDT"]),
+        "instrument_type": frozenset(["option"]),
+    }
 
-    config = InstrumentProviderConfig(load_all=True, filters=filters)
-    provider = get_tardis_instrument_provider(http_client, config)
-
-    await provider.initialize()
+    # config = InstrumentProviderConfig(load_all=True, filters=filters)
+    # provider = get_tardis_instrument_provider(http_client, config)
+    #
+    # await provider.initialize()
 
     # Test loading only specified instruments
-    instrument_ids = [
-        "XBTUSD.BITMEX",
-        "ETHUSD.BITMEX",
-    ]
+    # instrument_ids = [
+    #     "XBT-USD.OKEX",
+    #     "ETH-USD.OKEX",
+    # ]
 
-    config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
+    # config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
+    config = InstrumentProviderConfig(load_all=True, filters=filters)
     provider = get_tardis_instrument_provider(http_client, config)
 
     await provider.initialize()
