@@ -65,6 +65,14 @@ impl BaseAccount {
     }
 
     #[must_use]
+    pub fn base_balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
+        let currency = currency
+            .or(self.base_currency)
+            .expect("Currency must be specified");
+        self.balances.get(&currency)
+    }
+
+    #[must_use]
     pub fn base_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
             .or(self.base_currency)
@@ -270,6 +278,7 @@ pub trait Account: 'static + Send {
     fn balances_free(&self) -> HashMap<Currency, Money>;
     fn balance_locked(&self, currency: Option<Currency>) -> Option<Money>;
     fn balances_locked(&self) -> HashMap<Currency, Money>;
+    fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance>;
     fn last_event(&self) -> Option<AccountState>;
     fn events(&self) -> Vec<AccountState>;
     fn event_count(&self) -> usize;
