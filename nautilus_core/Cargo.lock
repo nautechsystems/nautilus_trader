@@ -3370,6 +3370,7 @@ dependencies = [
  "chrono",
  "criterion",
  "csv",
+ "derive_builder",
  "flate2",
  "futures-util",
  "heck 0.5.0",

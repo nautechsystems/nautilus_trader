@@ -13,13 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod client;
-pub mod error;
-pub mod instruments;
-pub mod models;
-pub mod parse;
-pub mod query;
+use derive_builder::Builder;
+use serde::Serialize;
 
-pub use crate::http::client::TardisHttpClient;
-
-pub const TARDIS_BASE_URL: &str = "https://api.tardis.dev/v1";
+/// Provides an instrument metadata API filter object.
+///
+/// See <https://docs.tardis.dev/api/instruments-metadata-api>.
+#[derive(Debug, Default, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+pub struct InstrumentFilter {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_currency: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_currency: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type")]
+    pub instrument_type: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_type: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+}

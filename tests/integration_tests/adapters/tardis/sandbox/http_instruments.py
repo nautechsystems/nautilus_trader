@@ -15,20 +15,33 @@
 
 import asyncio
 
+from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 
 
 async def run():
+    init_logging(level_stdout=LogLevel.DEBUG)
+
     http_client = nautilus_pyo3.TardisHttpClient()
 
-    pyo3_instrument = await http_client.instrument("deribit", "okx")
-    print(f"Received: {pyo3_instrument}")
+    pyo3_instrument = await http_client.instrument("okex", "ETH-USDT")
+    print(f"Received: {pyo3_instrument[0].id}")
 
-    pyo3_instruments = await http_client.instruments("deribit")
-    print(f"Received: {len(pyo3_instruments)} instruments")
+    pyo3_instruments = await http_client.instruments(
+        "deribit",
+        start=None,
+        end=None,
+        base_currency=["BTC"],
+        quote_currency=["USD"],
+        instrument_type=["combo"],
+        active=True,
+    )
 
     for inst in pyo3_instruments:
         print(inst.id)
+
+    print(f"Received: {len(pyo3_instruments)} instruments")
 
 
 if __name__ == "__main__":
