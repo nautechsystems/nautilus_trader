@@ -180,10 +180,11 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
+        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
 
         self._enum_parser = BybitEnumParser()
 
