@@ -548,7 +548,7 @@ mod tests {
             todo!()
         }
 
-        fn balance(&self, _currency: Option<Currency>) -> Option<&AccountBalance> {
+        fn balance(&self, _: Option<Currency>) -> Option<&AccountBalance> {
             todo!()
         }
     }

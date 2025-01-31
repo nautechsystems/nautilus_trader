@@ -21,20 +21,21 @@ from nautilus_trader.core import nautilus_pyo3
 
 
 async def run():
-    init_logging(level_stdout=LogLevel.DEBUG)
+    nautilus_pyo3.init_tracing()
+    init_logging(level_stdout=LogLevel.TRACE)
 
     http_client = nautilus_pyo3.TardisHttpClient()
 
-    pyo3_instrument = await http_client.instrument("okex", "ETH-USDT")
-    print(f"Received: {pyo3_instrument[0].id}")
+    # pyo3_instrument = await http_client.instrument("okex", "ETH-USDT")
+    # print(f"Received: {pyo3_instrument[0].id}")
 
     pyo3_instruments = await http_client.instruments(
         "deribit",
         start=None,
         end=None,
         base_currency=["BTC"],
-        quote_currency=["USD"],
-        instrument_type=["combo"],
+        # quote_currency=["USD"],
+        instrument_type=["spot"],
         active=True,
     )
 

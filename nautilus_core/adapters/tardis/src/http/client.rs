@@ -118,13 +118,14 @@ impl TardisHttpClient {
             .bearer_auth(&self.api_key)
             .send()
             .await?;
+        tracing::debug!("Response status: {}", resp.status());
 
         if !resp.status().is_success() {
             return Self::handle_error_response(resp).await;
         }
 
-        tracing::debug!("Response status: {}", resp.status());
         let body = resp.text().await?;
+        tracing::trace!("{body}");
 
         match serde_json::from_str(&body) {
             Ok(parsed) => Ok(parsed),
@@ -153,13 +154,14 @@ impl TardisHttpClient {
             .bearer_auth(&self.api_key)
             .send()
             .await?;
+        tracing::debug!("Response status: {}", resp.status());
 
         if !resp.status().is_success() {
             return Self::handle_error_response(resp).await;
         }
 
-        tracing::debug!("Response status: {}", resp.status());
         let body = resp.text().await?;
+        tracing::trace!("{body}");
 
         match serde_json::from_str(&body) {
             Ok(parsed) => Ok(parsed),
