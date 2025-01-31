@@ -245,16 +245,17 @@ impl Instrument for CurrencyPair {
     fn instrument_class(&self) -> InstrumentClass {
         InstrumentClass::Spot
     }
+
     fn underlying(&self) -> Option<Ustr> {
         None
     }
 
-    fn quote_currency(&self) -> Currency {
-        self.quote_currency
-    }
-
     fn base_currency(&self) -> Option<Currency> {
         Some(self.base_currency)
+    }
+
+    fn quote_currency(&self) -> Currency {
+        self.quote_currency
     }
 
     fn settlement_currency(&self) -> Currency {

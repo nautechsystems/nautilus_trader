@@ -1,0 +1,22 @@
+{
+  "id": "BTC-25APR25-200000-P",
+  "datasetId": "BTC-25APR25-200000-P",
+  "exchange": "deribit",
+  "baseCurrency": "BTC",
+  "quoteCurrency": "BTC",
+  "type": "option",
+  "active": true,
+  "availableSince": "2025-01-31T00:00:00.000Z",
+  "expiry": "2025-04-25T08:00:00.000Z",
+  "priceIncrement": 0.0001,
+  "amountIncrement": 0.1,
+  "minTradeAmount": 0.1,
+  "makerFee": 0.0003,
+  "takerFee": 0.0003,
+  "inverse": true,
+  "contractType": "put_option",
+  "contractMultiplier": 1,
+  "strikePrice": 200000,
+  "optionType": "put",
+  "listing": "2025-01-31T20:38:40.000Z"
+}

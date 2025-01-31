@@ -1,0 +1,22 @@
+{
+  "id": "BTC_USDC",
+  "exchange": "deribit",
+  "baseCurrency": "BTC",
+  "quoteCurrency": "USDC",
+  "type": "spot",
+  "active": true,
+  "availableSince": "2023-04-24T00:00:00.000Z",
+  "priceIncrement": 1,
+  "amountIncrement": 0.0001,
+  "minTradeAmount": 0.0001,
+  "makerFee": 0,
+  "takerFee": 0,
+  "listing": "2023-04-24T13:00:02.000Z",
+  "changes": [
+    {
+      "until": "2024-04-02T12:10:00.000Z",
+      "priceIncrement": 0.01
+    }
+  ],
+  "datasetId": "BTC_USDC"
+}

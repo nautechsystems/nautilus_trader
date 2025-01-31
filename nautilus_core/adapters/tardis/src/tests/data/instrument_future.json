@@ -1,0 +1,21 @@
+{
+  "id": "BTC-14FEB25",
+  "datasetId": "BTC-14FEB25",
+  "exchange": "deribit",
+  "baseCurrency": "BTC",
+  "quoteCurrency": "USD",
+  "type": "future",
+  "active": true,
+  "availableSince": "2025-01-31T00:00:00.000Z",
+  "expiry": "2025-02-14T08:00:00.000Z",
+  "priceIncrement": 2.5,
+  "amountIncrement": 10,
+  "minTradeAmount": 10,
+  "makerFee": -0.0001,
+  "takerFee": 0.0005,
+  "inverse": true,
+  "contractType": "inverse_future",
+  "contractMultiplier": 1,
+  "underlyingIndex": "btc_usd",
+  "listing": "2025-01-31T08:00:21.000Z"
+}

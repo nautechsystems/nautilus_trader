@@ -266,12 +266,12 @@ impl Instrument for BinaryOption {
         None
     }
 
-    fn quote_currency(&self) -> Currency {
-        self.currency
-    }
-
     fn base_currency(&self) -> Option<Currency> {
         None
+    }
+
+    fn quote_currency(&self) -> Currency {
+        self.currency
     }
 
     fn settlement_currency(&self) -> Currency {

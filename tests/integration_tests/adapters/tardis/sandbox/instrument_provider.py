@@ -19,9 +19,14 @@ from nautilus_trader.adapters.tardis.factories import get_tardis_http_client
 from nautilus_trader.adapters.tardis.factories import get_tardis_instrument_provider
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.config import InstrumentProviderConfig
+from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.core import nautilus_pyo3
 
 
 async def run():
+    nautilus_pyo3.init_tracing()
+    init_logging(level_stdout=LogLevel.TRACE)
+
     _guard = init_logging()
     http_client = get_tardis_http_client()
 

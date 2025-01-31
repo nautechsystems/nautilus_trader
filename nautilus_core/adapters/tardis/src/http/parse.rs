@@ -87,24 +87,6 @@ fn parse_spot_instrument(
 
     let mut instruments: Vec<InstrumentAny> = Vec::new();
 
-    // Create initial version either if no changes, or up until the first change
-    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
-        let ts_init = ts_init.unwrap_or_default();
-        instruments.push(create_currency_pair(
-            &info,
-            instrument_id,
-            raw_symbol,
-            price_increment,
-            size_increment,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-            ts_init,
-        ));
-    }
-
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
@@ -133,6 +115,22 @@ fn parse_spot_instrument(
             ));
         }
     }
+
+    let ts_init = ts_init.unwrap_or_default();
+    instruments.push(create_currency_pair(
+        &info,
+        instrument_id,
+        raw_symbol,
+        price_increment,
+        size_increment,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
+        ts_init,
+        ts_init,
+    ));
+
     instruments
 }
 
@@ -164,25 +162,6 @@ fn parse_perp_instrument(
     let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
-    // Create initial version either if no changes, or up until the first change
-    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
-        let ts_init = ts_init.unwrap_or_default();
-        instruments.push(create_crypto_perpetual(
-            &info,
-            instrument_id,
-            raw_symbol,
-            price_increment,
-            size_increment,
-            multiplier,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-            ts_init,
-        ));
-    }
-
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
@@ -213,6 +192,23 @@ fn parse_perp_instrument(
             ));
         }
     }
+
+    let ts_init = ts_init.unwrap_or_default();
+    instruments.push(create_crypto_perpetual(
+        &info,
+        instrument_id,
+        raw_symbol,
+        price_increment,
+        size_increment,
+        multiplier,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
+        ts_init,
+        ts_init,
+    ));
+
     instruments
 }
 
@@ -246,27 +242,6 @@ fn parse_future_instrument(
     let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
-    // Create initial version either if no changes, or up until the first change
-    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
-        let ts_init = ts_init.unwrap_or_default();
-        instruments.push(create_crypto_future(
-            &info,
-            instrument_id,
-            raw_symbol,
-            activation,
-            expiration,
-            price_increment,
-            size_increment,
-            multiplier,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-            ts_init,
-        ));
-    }
-
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
@@ -299,6 +274,25 @@ fn parse_future_instrument(
             ));
         }
     }
+
+    let ts_init = ts_init.unwrap_or_default();
+    instruments.push(create_crypto_future(
+        &info,
+        instrument_id,
+        raw_symbol,
+        activation,
+        expiration,
+        price_increment,
+        size_increment,
+        multiplier,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
+        ts_init,
+        ts_init,
+    ));
+
     instruments
 }
 
@@ -331,26 +325,6 @@ fn parse_option_instrument(
     let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
-    // Create initial version either if no changes, or up until the first change
-    if info.changes.is_none() || info.changes.as_ref().and_then(|c| c.first()).is_some() {
-        let ts_init = ts_init.unwrap_or_default();
-        instruments.push(create_options_contract(
-            &info,
-            instrument_id,
-            raw_symbol,
-            activation,
-            expiration,
-            price_increment,
-            multiplier,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-            ts_init,
-        ));
-    }
-
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
@@ -380,6 +354,24 @@ fn parse_option_instrument(
             ));
         }
     }
+
+    let ts_init = ts_init.unwrap_or_default();
+    instruments.push(create_options_contract(
+        &info,
+        instrument_id,
+        raw_symbol,
+        activation,
+        expiration,
+        price_increment,
+        multiplier,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
+        ts_init,
+        ts_init,
+    ));
+
     instruments
 }
 
@@ -417,7 +409,39 @@ mod tests {
     use crate::tests::load_test_json;
 
     #[rstest]
-    fn test_parse_instrument_crypto_perpetual() {
+    fn test_parse_instrument_spot() {
+        let json_data = load_test_json("instrument_spot.json");
+        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+
+        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+            .first()
+            .unwrap()
+            .clone();
+
+        assert_eq!(instrument.id(), InstrumentId::from("BTC_USDC.DERIBIT"));
+        assert_eq!(instrument.raw_symbol(), Symbol::from("BTC_USDC"));
+        assert_eq!(instrument.underlying(), None);
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
+        assert_eq!(instrument.quote_currency(), Currency::USDC());
+        assert_eq!(instrument.settlement_currency(), Currency::USDC());
+        assert!(!instrument.is_inverse());
+        assert_eq!(instrument.price_precision(), 2);
+        assert_eq!(instrument.size_precision(), 4);
+        assert_eq!(instrument.price_increment(), Price::from("0.01"));
+        assert_eq!(instrument.size_increment(), Quantity::from("0.0001"));
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
+        assert_eq!(instrument.activation_ns(), None);
+        assert_eq!(instrument.expiration_ns(), None);
+        assert_eq!(instrument.min_quantity(), Some(Quantity::from("0.0001")));
+        assert_eq!(instrument.max_quantity(), None);
+        assert_eq!(instrument.min_notional(), None);
+        assert_eq!(instrument.max_notional(), None);
+        assert_eq!(instrument.maker_fee(), dec!(0));
+        assert_eq!(instrument.taker_fee(), dec!(0));
+    }
+
+    #[rstest]
+    fn test_parse_instrument_perpetual() {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
@@ -440,9 +464,134 @@ mod tests {
         assert_eq!(instrument.multiplier(), Quantity::from(1));
         assert_eq!(instrument.activation_ns(), None);
         assert_eq!(instrument.expiration_ns(), None);
+        assert_eq!(instrument.min_quantity(), Some(Quantity::from(1)));
+        assert_eq!(instrument.max_quantity(), None);
+        assert_eq!(instrument.min_notional(), None);
+        assert_eq!(instrument.max_notional(), None);
+        assert_eq!(instrument.maker_fee(), dec!(-0.00025));
+        assert_eq!(instrument.taker_fee(), dec!(0.00075));
     }
 
-    // TODO: test_parse_instrument_currency_pair
-    // TODO: test_parse_instrument_crypto_future
-    // TODO: test_parse_instrument_crypto_option
+    #[rstest]
+    fn test_parse_instrument_future() {
+        let json_data = load_test_json("instrument_future.json");
+        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+
+        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+            .first()
+            .unwrap()
+            .clone();
+
+        assert_eq!(instrument.id(), InstrumentId::from("BTC-14FEB25.DERIBIT"));
+        assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-14FEB25"));
+        assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
+        assert_eq!(instrument.base_currency(), None);
+        assert_eq!(instrument.quote_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::BTC());
+        assert!(instrument.is_inverse());
+        assert_eq!(instrument.price_precision(), 1); // from priceIncrement 2.5
+        assert_eq!(instrument.size_precision(), 0); // from amountIncrement 10
+        assert_eq!(instrument.price_increment(), Price::from("2.5"));
+        assert_eq!(instrument.size_increment(), Quantity::from(10));
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
+        assert_eq!(
+            instrument.activation_ns(),
+            Some(UnixNanos::from(1738281600000000000))
+        );
+        assert_eq!(
+            instrument.expiration_ns(),
+            Some(UnixNanos::from(1739520000000000000))
+        );
+        assert_eq!(instrument.min_quantity(), Some(Quantity::from(10)));
+        assert_eq!(instrument.max_quantity(), None);
+        assert_eq!(instrument.min_notional(), None);
+        assert_eq!(instrument.max_notional(), None);
+        // assert_eq!(instrument.maker_fee(), dec!(0.0001));  // TODO: Implement fees
+        // assert_eq!(instrument.taker_fee(), dec!(0.0005));  // TODO: Implement fees
+    }
+
+    #[rstest]
+    fn test_parse_instrument_combo() {
+        let json_data = load_test_json("instrument_combo.json");
+        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+
+        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+            .first()
+            .unwrap()
+            .clone();
+
+        assert_eq!(
+            instrument.id(),
+            InstrumentId::from("BTC-FS-28MAR25_PERP.DERIBIT")
+        );
+        assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-FS-28MAR25_PERP"));
+        assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
+        assert_eq!(instrument.base_currency(), None);
+        assert_eq!(instrument.quote_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::BTC());
+        assert!(instrument.is_inverse());
+        assert_eq!(instrument.price_precision(), 1); // from priceIncrement 0.5
+        assert_eq!(instrument.size_precision(), 0); // from amountIncrement 10
+        assert_eq!(instrument.price_increment(), Price::from("0.5"));
+        assert_eq!(instrument.size_increment(), Quantity::from(10));
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
+        assert_eq!(
+            instrument.activation_ns(),
+            Some(UnixNanos::from(1711670400000000000))
+        );
+        assert_eq!(
+            instrument.expiration_ns(),
+            Some(UnixNanos::from(1743148800000000000))
+        );
+        assert_eq!(instrument.min_quantity(), Some(Quantity::from(10)));
+        assert_eq!(instrument.max_quantity(), None);
+        assert_eq!(instrument.min_notional(), None);
+        assert_eq!(instrument.max_notional(), None);
+        assert_eq!(instrument.maker_fee(), dec!(0));
+        assert_eq!(instrument.taker_fee(), dec!(0));
+    }
+
+    #[rstest]
+    fn test_parse_instrument_option() {
+        let json_data = load_test_json("instrument_option.json");
+        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+
+        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+            .first()
+            .unwrap()
+            .clone();
+
+        assert_eq!(
+            instrument.id(),
+            InstrumentId::from("BTC-25APR25-200000-P.DERIBIT")
+        );
+        assert_eq!(
+            instrument.raw_symbol(),
+            Symbol::from("BTC-25APR25-200000-P")
+        );
+        assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
+        assert_eq!(instrument.base_currency(), None);
+        assert_eq!(instrument.quote_currency(), Currency::BTC());
+        assert_eq!(instrument.settlement_currency(), Currency::BTC());
+        // assert!(instrument.is_inverse());  // TODO: Implement inverse options
+        assert_eq!(instrument.price_precision(), 4);
+        // assert_eq!(instrument.size_precision(), 1); // from amountIncrement 0.1
+        assert_eq!(instrument.price_increment(), Price::from("0.0001"));
+        // assert_eq!(instrument.size_increment(), Quantity::from("0.1"));
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
+        assert_eq!(
+            instrument.activation_ns(),
+            Some(UnixNanos::from(1738281600000000000))
+        );
+        assert_eq!(
+            instrument.expiration_ns(),
+            Some(UnixNanos::from(1745568000000000000))
+        );
+        assert_eq!(instrument.min_quantity(), Some(Quantity::from("0.1")));
+        assert_eq!(instrument.max_quantity(), None);
+        assert_eq!(instrument.min_notional(), None);
+        assert_eq!(instrument.max_notional(), None);
+        // assert_eq!(instrument.maker_fee(), dec!(0.0003));  // TODO: Implement fees
+        // assert_eq!(instrument.taker_fee(), dec!(0.0003));  // TODO: Implement fees
+    }
 }
