@@ -41,7 +41,6 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TriggerType
-from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
@@ -126,6 +125,8 @@ cdef class Cache(CacheFacade):
         self._order_lists: dict[OrderListId, OrderList] = {}
         self._positions: dict[PositionId, Position] = {}
         self._position_snapshots: dict[PositionId, list[bytes]] = {}
+        self._greeks: dict[InstrumentId, object] = {}
+        self._interest_rate_curves: dict[str, object] = {}
 
         # Cache index
         self._index_venue_account: dict[Venue, AccountId] = {}
@@ -1688,7 +1689,72 @@ cdef class Cache(CacheFacade):
         # Update database
         self._database.add_position(position)
 
+    cpdef void add_greeks(self, object greeks):
+        """
+        Adds greeks to the cache.
+
+        Parameters
+        ----------
+        greeks : GreeksData
+            The greeks to add.
+        """
+        self._greeks[greeks.instrument_id] = greeks
+
+    cpdef void add_interest_rate_curve(self, object interest_rate_curve):
+        """
+        Adds an interest rate curve to the cache.
+
+        Parameters
+        ----------
+        interest_rate_curve : InterestRateCurveData
+            The interest rate curve to add.
+        """
+        self._interest_rate_curves[interest_rate_curve.currency] = interest_rate_curve
+
+    cpdef object greeks(self, InstrumentId instrument_id):
+        """
+        Returns the latest cached greeks for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to get the greeks for.
+
+        Returns
+        -------
+        GreeksData
+            The greeks for the given instrument ID.
+        """
+        return self._greeks.get(instrument_id)
+
+    cpdef object interest_rate_curve(self, str currency):
+        """
+        Returns the latest cached interest rate curve for the given currency.
+
+        Parameters
+        ----------
+        currency : str
+            The currency to get the interest rate curve for.
+
+        Returns
+        -------
+        InterestRateCurveData
+            The interest rate curve for the given currency.
+        """
+        return self._interest_rate_curves.get(currency)
+
     cpdef void snapshot_position(self, Position position):
+        """
+        Snapshot the given position in its current state.
+
+        The position ID will be appended with a UUID v4 string.
+
+        Parameters
+        ----------
+        position : Position
+            The position to snapshot.
+
+        """
         """
         Snapshot the given position in its current state.
 

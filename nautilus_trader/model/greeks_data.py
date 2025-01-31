@@ -31,9 +31,11 @@ class GreeksData(Data):
     is_call: bool = True
     strike: float = 0.0
     expiry: int = 0
+    expiry_in_years: float = 0.0
+    multiplier: float = 0.0
+    quantity: float = 0.0
 
     underlying_price: float = 0.0
-    expiry_in_years: float = 0.0
     interest_rate: float = 0.0
 
     vol: float = 0.0
@@ -42,8 +44,6 @@ class GreeksData(Data):
     gamma: float = 0.0
     vega: float = 0.0
     theta: float = 0.0
-
-    quantity: float = 0.0
     # in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
     itm_prob: float = 0.0
 
@@ -51,14 +51,21 @@ class GreeksData(Data):
         return (
             f"GreeksData(instrument_id={self.instrument_id}, "
             f"expiry={self.expiry}, itm_prob={self.itm_prob * 100:.2f}%, "
-            f"vol={self.vol * 100:.2f}%, price={self.price:.2f}, delta={self.delta:.2f}, "
-            f"gamma={self.gamma:.2f}, vega={self.vega:.2f}, theta={self.theta:.2f}, quantity={self.quantity}, "
-            f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
+            f"vol={self.vol * 100:.2f}%, price={self.price:,.2f}, delta={self.delta:,.2f}, "
+            f"gamma={self.gamma:,.2f}, vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
+            f"quantity={self.quantity}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     @classmethod
-    def from_delta(cls, instrument_id: InstrumentId, delta: float):
-        return GreeksData(instrument_id=instrument_id, delta=delta, quantity=1.0)
+    def from_multiplier(cls, instrument_id: InstrumentId, multiplier: float, ts_event: int = 0):
+        return GreeksData(
+            ts_event,
+            ts_event,
+            instrument_id=instrument_id,
+            multiplier=multiplier,
+            delta=multiplier,
+            quantity=1.0,
+        )
 
     def __rmul__(self, quantity):  # quantity * greeks
         return GreeksData(
@@ -68,8 +75,10 @@ class GreeksData(Data):
             self.is_call,
             self.strike,
             self.expiry,
-            self.underlying_price,
             self.expiry_in_years,
+            self.multiplier,
+            self.quantity,
+            self.underlying_price,
             self.interest_rate,
             self.vol,
             quantity * self.price,
@@ -77,13 +86,13 @@ class GreeksData(Data):
             quantity * self.gamma,
             quantity * self.vega,
             quantity * self.theta,
-            quantity * self.quantity,
             self.itm_prob,
         )
 
 
 @customdataclass
 class PortfolioGreeks(Data):
+    price: float = 0.0
     delta: float = 0.0
     gamma: float = 0.0
     vega: float = 0.0
@@ -91,7 +100,8 @@ class PortfolioGreeks(Data):
 
     def __repr__(self):
         return (
-            f"PortfolioGreeks(delta={self.delta:.2f}, gamma={self.gamma:.2f}, vega={self.vega:.2f}, theta={self.theta:.2f}, "
+            f"PortfolioGreeks(price={self.price:,.2f}, delta={self.delta:,.2f}, gamma={self.gamma:,.2f}, "
+            f"vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
@@ -99,39 +109,12 @@ class PortfolioGreeks(Data):
         return PortfolioGreeks(
             self.ts_event,
             self.ts_init,
+            self.price + other.price,
             self.delta + other.delta,
             self.gamma + other.gamma,
             self.vega + other.vega,
             self.theta + other.theta,
         )
-
-
-@customdataclass
-class InterestRateData(Data):
-    """
-    Represents interest rate data for a specific curve.
-
-    This class stores information about an interest rate, including the curve name
-    and the interest rate value. It provides methods for string representation and
-    callable functionality to return the interest rate.
-
-    Attributes:
-        curve_name (str): The name of the interest rate curve. Defaults to "USD_ShortTerm".
-        interest_rate (float): The interest rate value. Defaults to 0.05 (5%).
-
-    """
-
-    curve_name: str = "USD_ShortTerm"
-    interest_rate: float = 0.05
-
-    def __repr__(self):
-        return (
-            f"InterestRateData(curve_name={self.curve_name}, interest_rate={self.interest_rate * 100:.2f}%, "
-            f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
-        )
-
-    def __call__(self, expiry_in_years: float):
-        return self.interest_rate
 
 
 @customdataclass
@@ -153,7 +136,7 @@ class InterestRateCurveData(Data):
 
     """
 
-    curve_name: str = "USD_ShortTerm"
+    currency: str = "USD"
     tenors: np.ndarray = field(default_factory=lambda: np.array([0.5, 1.0, 1.5, 2.0, 2.5]))
     interest_rates: np.ndarray = field(
         default_factory=lambda: np.array([0.04, 0.04, 0.04, 0.04, 0.04]),
@@ -165,12 +148,15 @@ class InterestRateCurveData(Data):
             f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
-    def __call__(self, expiry_in_years: float):
+    def __call__(self, expiry_in_years: float) -> float:
+        if len(self.interest_rates) == 1:
+            return self.interest_rates[0]
+
         return quadratic_interpolation(expiry_in_years, self.tenors, self.interest_rates)
 
     def to_dict(self, to_arrow=False):
         result = {
-            "curve_name": self.curve_name,
+            "currency": self.currency,
             "tenors": self.tenors.tobytes(),
             "interest_rates": self.interest_rates.tobytes(),
             "type": "InterestRateCurveData",
