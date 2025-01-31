@@ -18,6 +18,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.11"
+          free-disk-space: "true"
 
       - name: Run pre-commit
         continue-on-error: true
@@ -90,6 +91,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
 
       - name: Install Nautilus CLI and run init postgres
         run: |
@@ -161,6 +163,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
 
       - name: Install Nautilus CLI and run init postgres
         run: |
@@ -264,6 +267,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
 
       # Run tests without parallel build (avoids linker errors)
       - name: Run tests
