@@ -133,6 +133,13 @@ impl AccountAny {
             ),
         }
     }
+
+    pub fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
+        match self {
+            AccountAny::Margin(margin) => margin.balance(currency),
+            AccountAny::Cash(cash) => cash.balance(currency),
+        }
+    }
 }
 
 impl From<AccountState> for AccountAny {
