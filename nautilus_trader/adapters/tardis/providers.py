@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
+from collections import defaultdict
+
 import msgspec
 
 from nautilus_trader.common.providers import InstrumentProvider
@@ -56,9 +59,29 @@ class TardisInstrumentProvider(InstrumentProvider):
 
         venues = filters["venues"]
 
+        filters = filters or {}
+        start = filters.get("start")
+        end = filters.get("end")
+        base_currency = filters.get("base_currency")
+        quote_currency = filters.get("quote_currency")
+        instrument_type = filters.get("instrument_type")
+        contract_type = filters.get("contract_type")
+        active = filters.get("active")
+        ts_init = time.time_ns()
+
         for venue in venues:
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
-                pyo3_instruments = await self._client.instruments(exchange.lower())
+                pyo3_instruments = await self._client.instruments(
+                    exchange=exchange.lower(),
+                    start=start,
+                    end=end,
+                    base_currency=list(base_currency) if base_currency else None,
+                    quote_currency=list(quote_currency) if quote_currency else None,
+                    instrument_type=list(instrument_type) if instrument_type else None,
+                    contract_type=list(contract_type) if contract_type else None,
+                    active=active,
+                    ts_init=ts_init,
+                )
                 instruments = instruments_from_pyo3(pyo3_instruments)
                 for instrument in instruments:
                     self.add(instrument=instrument)
@@ -72,16 +95,43 @@ class TardisInstrumentProvider(InstrumentProvider):
             self._log.warning("No instrument IDs given for loading")
             return
 
-        exchanges: set[str] = set()
+        filters = filters or {}
+        venues = filters.get("venues", [])
+
+        venue_instruments: defaultdict[str, set[str]] = defaultdict(set)
+        for venue in venues:
+            venue_instruments[venue] = set()
+
         for instrument_id in instrument_ids:
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value):
-                exchanges.add(exchange)
+                venue_instruments[exchange].add(instrument_id.symbol.value)
 
-        for exchange in exchanges:
-            pyo3_instruments = await self._client.instruments(exchange.lower())
+        start = filters.get("start")
+        end = filters.get("end")
+        base_currency = filters.get("base_currency")
+        quote_currency = filters.get("quote_currency")
+        instrument_type = filters.get("instrument_type")
+        contract_type = filters.get("contract_type")
+        active = filters.get("active")
+        ts_init = time.time_ns()
+
+        for exchange, symbols in venue_instruments.items():
+            pyo3_instruments = await self._client.instruments(
+                exchange=exchange.lower(),
+                start=start,
+                end=end,
+                base_currency=list(base_currency) if base_currency else None,
+                quote_currency=list(quote_currency) if quote_currency else None,
+                instrument_type=list(instrument_type) if instrument_type else None,
+                contract_type=list(contract_type) if contract_type else None,
+                active=active,
+                ts_init=ts_init,
+            )
             instruments = instruments_from_pyo3(pyo3_instruments)
+
             for instrument in instruments:
-                if instrument.id not in instrument_ids:
+                symbol = instrument.id.symbol.value
+                if symbols and symbol not in symbols:
                     continue  # Filter instrument ID
                 self.add(instrument=instrument)
 
