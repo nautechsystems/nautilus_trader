@@ -72,24 +72,24 @@ The system distinguishes between two types of data flow:
 
 Here's how different data operations map to their handlers:
 
-| Operation                       | Category   | Handler                  | Purpose |
-|:--------------------------------|:-----------|:-------------------------|:--------|
-| `subscribe_data()`              | Real-time  | `on_data()`              | Live data updates |
-| `subscribe_instrument()`        | Real-time  | `on_instrument()`        | Live instrument definition updates |
-| `subscribe_instruments()`       | Real-time  | `on_instrument()`        | Live instrument definition updates (for venue) |
-| `subscribe_order_book_deltas()` | Real-time  | `on_order_book_deltas()` | Live order book updates |
-| `subscribe_quote_ticks()`       | Real-time  | `on_quote_tick()`        | Live quote updates |
-| `subscribe_trade_ticks()`       | Real-time  | `on_trade_tick()`        | Live trade updates |
-| `subscribe_bars()`              | Real-time  | `on_bar()`               | Live bar updates |
-| `subscribe_instrument_status()` | Real-time  | `on_instrument_status()` | Live instrument status updates |
-| `subscribe_instrument_close()`  | Real-time  | `on_instrument_close()`  | Live instrument close updates |
-| `request_data()`                | Historical | `on_historical_data()`   | Historical data pricessing |
-| `request_instrument()`          | Historical | `on_instrument()`        | Instrument definition updates |
-| `request_instruments()`         | Historical | `on_historical_data()`   | Instrument definition updates |
-| `request_quote_ticks()`         | Historical | `on_historical_data()`   | Historical quotes processing |
-| `request_trade_ticks()`         | Historical | `on_historical_data()`   | Historical trades processing |
-| `request_bars()`                | Historical | `on_historical_data()`   | Historical bars processing |
-| `request_aggregated_bars()`     | Historical | `on_historical_data()`   | Historical aggregated bars (on-the-fly) |
+| Operation                       | Category         | Handler                  | Purpose |
+|:--------------------------------|:-----------------|:-------------------------|:--------|
+| `subscribe_data()`              | Real-time&nbsp;  | `on_data()`              | Live data updates |
+| `subscribe_instrument()`        | Real-time&nbsp;  | `on_instrument()`        | Live instrument definition updates |
+| `subscribe_instruments()`       | Real-time&nbsp;  | `on_instrument()`        | Live instrument definition updates (for venue) |
+| `subscribe_order_book_deltas()` | Real-time&nbsp;  | `on_order_book_deltas()` | Live order book updates |
+| `subscribe_quote_ticks()`       | Real-time&nbsp;  | `on_quote_tick()`        | Live quote updates |
+| `subscribe_trade_ticks()`       | Real-time&nbsp;  | `on_trade_tick()`        | Live trade updates |
+| `subscribe_bars()`              | Real-time&nbsp;  | `on_bar()`               | Live bar updates |
+| `subscribe_instrument_status()` | Real-time&nbsp;  | `on_instrument_status()` | Live instrument status updates |
+| `subscribe_instrument_close()`  | Real-time&nbsp;  | `on_instrument_close()`  | Live instrument close updates |
+| `request_data()`                | Historical       | `on_historical_data()`   | Historical data pricessing |
+| `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates |
+| `request_instruments()`         | Historical       | `on_historical_data()`   | Instrument definition updates |
+| `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing |
+| `request_trade_ticks()`         | Historical       | `on_historical_data()`   | Historical trades processing |
+| `request_bars()`                | Historical       | `on_historical_data()`   | Historical bars processing |
+| `request_aggregated_bars()`     | Historical       | `on_historical_data()`   | Historical aggregated bars (on-the-fly) |
 
 ### Example
 
@@ -104,8 +104,8 @@ from nautilus_trader.model.identifiers import ClientId, InstrumentId
 
 
 class MyActorConfig(ActorConfig):
-    instrument_id: InstrumentId  # example value: "AAPL.NASDAQ"
-    bar_type: BarType            # example value: "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"
+    instrument_id: InstrumentId  # example value: "AAPL.XNAS"
+    bar_type: BarType            # example value: "AAPL.XNAS-1-MINUTE-LAST-EXTERNAL"
 
 
 class MyActor(Actor):
@@ -120,7 +120,7 @@ class MyActor(Actor):
             # Many optional parameters
             start=None,            # datetime, optional
             end=None,              # datetime, optional
-            callback=None,         # custom handler function, optional
+            callback=None,         # called with the request ID when the response has completed
             update_catalog=False,  # bool, default False
             params=None,           # dict[str, Any], optional
         )
