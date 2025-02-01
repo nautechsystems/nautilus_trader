@@ -168,3 +168,10 @@ cdef class CacheFacade:
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id)
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id)
+
+# -- GREEKS QUERIES ---------------------------------------------------------------------------
+
+    cpdef void add_greeks(self, object greeks)
+    cpdef void add_interest_rate_curve(self, object interest_rate_curve)
+    cpdef object greeks(self, InstrumentId instrument_id)
+    cpdef object interest_rate_curve(self, str currency)
