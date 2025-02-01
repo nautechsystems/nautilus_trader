@@ -22,6 +22,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `recv_window_ms` config option for `BybitDataClientConfig` and `BybitExecClientConfig`
 
 ### Breaking Changes
+- Renamed `InstrumentClass.FUTURE_SPREAD` to `InstrumentClass.FUTURES_SPREAD` for more technically correct terminology
 - Renamed `event_logging` config option to `log_events`
 - Renamed `BetfairExecClientConfig.request_account_state_period` to `request_account_state_secs`
 - Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)

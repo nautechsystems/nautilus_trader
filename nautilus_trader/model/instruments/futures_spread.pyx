@@ -134,7 +134,7 @@ cdef class FuturesSpread(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=asset_class,
-            instrument_class=InstrumentClass.FUTURE_SPREAD,
+            instrument_class=InstrumentClass.FUTURES_SPREAD,
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,

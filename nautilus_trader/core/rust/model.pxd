@@ -164,21 +164,22 @@ cdef extern from "../includes/model.h":
         # A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
         FUTURE # = 3,
         # A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
-        FUTURE_SPREAD # = 4,
+        FUTURES_SPREAD # = 4,
         # A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
         FORWARD # = 5,
         # A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
         CFD # = 6,
         # A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
         BOND # = 7,
-        # An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+        # An option contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
         OPTION # = 8,
-        # An option spread instrument class. A strategy involving the purchase and/or sale of options on the same underlying asset with different strike prices or expiration dates to capitalize on expected market moves in a controlled cost environment.
+        # An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
         OPTION_SPREAD # = 9,
         # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
         WARRANT # = 10,
-        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        # A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
         SPORTS_BETTING # = 11,
+        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
         # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
         BINARY_OPTION # = 12,
 
