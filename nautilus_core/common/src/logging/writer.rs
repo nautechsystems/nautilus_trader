@@ -17,12 +17,16 @@ use std::{
     fs::{create_dir_all, File},
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::PathBuf,
+    sync::OnceLock,
 };
 
 use chrono::{DateTime, Utc};
 use log::LevelFilter;
+use regex::Regex;
 
 use crate::logging::logger::LogLine;
+
+static ANSI_RE: OnceLock<Regex> = OnceLock::new();
 
 pub trait LogWriter {
     /// Writes a log line.
@@ -262,6 +266,8 @@ impl LogWriter for FileWriter {
             }
         }
 
+        let line = strip_ansi_codes(line);
+
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
             Err(e) => tracing::error!("Error writing to file: {e:?}"),
@@ -278,4 +284,16 @@ impl LogWriter for FileWriter {
     fn enabled(&self, line: &LogLine) -> bool {
         line.level <= self.level
     }
+}
+
+fn strip_nonprinting_except_newline(s: &str) -> String {
+    s.chars()
+        .filter(|&c| c == '\n' || (!c.is_control() && c != '\u{7F}'))
+        .collect()
+}
+
+fn strip_ansi_codes(s: &str) -> String {
+    let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1B\[[0-9;?=]*[A-Za-z]|\x1B\].*?\x07").unwrap());
+    let no_controls = strip_nonprinting_except_newline(s);
+    re.replace_all(&no_controls, "").to_string()
 }

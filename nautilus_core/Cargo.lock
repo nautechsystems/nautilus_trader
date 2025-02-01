@@ -3025,6 +3025,7 @@ dependencies = [
  "nautilus-model",
  "proptest",
  "pyo3",
+ "regex",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",

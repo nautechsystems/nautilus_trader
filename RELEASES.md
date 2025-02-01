@@ -44,6 +44,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
 - Improved `NautilusKernel` pending tasks cancellation on shutdown
 - Improved `TardisHttpClient` requests and error handling
+- Improved log file writer to strip ANSI escape codes and unprintable chars
 - Refined `Currency` `name` to accept non-ASCII characters (common for foreign currencies)
 - Refactored CI with composite actions (#2242), thanks @sunlei
 - Refactored Option Greeks feature (#2266), thanks @faysou
