@@ -18,7 +18,7 @@ use nautilus_model::{
     currencies::CURRENCY_MAP,
     enums::{AssetClass, CurrencyType},
     identifiers::{InstrumentId, Symbol},
-    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionsContract},
+    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionContract},
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -176,7 +176,7 @@ pub fn create_crypto_future(
 
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-pub fn create_options_contract(
+pub fn create_option_contract(
     info: &InstrumentInfo,
     instrument_id: InstrumentId,
     raw_symbol: Symbol,
@@ -191,7 +191,7 @@ pub fn create_options_contract(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
-    InstrumentAny::OptionsContract(OptionsContract::new(
+    InstrumentAny::OptionContract(OptionContract::new(
         instrument_id,
         raw_symbol,
         AssetClass::Cryptocurrency,

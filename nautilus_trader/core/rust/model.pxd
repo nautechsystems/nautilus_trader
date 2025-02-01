@@ -259,7 +259,7 @@ cdef extern from "../includes/model.h":
         # Nautilus.
         HEDGING # = 2,
 
-    # The kind of options contract.
+    # The kind of option contract.
     cpdef enum OptionKind:
         # A Call option gives the holder the right, but not the obligation, to buy an underlying asset at a specified strike price within a specified period of time.
         CALL # = 1,

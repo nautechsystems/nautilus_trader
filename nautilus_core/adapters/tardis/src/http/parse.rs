@@ -27,8 +27,7 @@ use rust_decimal_macros::dec;
 
 use super::{
     instruments::{
-        create_crypto_future, create_crypto_perpetual, create_currency_pair,
-        create_options_contract,
+        create_crypto_future, create_crypto_perpetual, create_currency_pair, create_option_contract,
     },
     models::InstrumentInfo,
 };
@@ -337,7 +336,7 @@ fn parse_option_instrument(
             let multiplier = get_multiplier(info.contract_multiplier);
             let ts_event = UnixNanos::from(until_ns);
 
-            instruments.push(create_options_contract(
+            instruments.push(create_option_contract(
                 &info,
                 instrument_id,
                 raw_symbol,
@@ -356,7 +355,7 @@ fn parse_option_instrument(
     }
 
     let ts_init = ts_init.unwrap_or_default();
-    instruments.push(create_options_contract(
+    instruments.push(create_option_contract(
         &info,
         instrument_id,
         raw_symbol,

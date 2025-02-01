@@ -51,8 +51,8 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import FuturesSpread
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.model.instruments import OptionsSpread
+from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments import OptionSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
@@ -102,8 +102,8 @@ def transform_instrument_to_pyo3(instrument: Instrument):
         return nautilus_pyo3.Equity.from_dict(Equity.to_dict(instrument))
     elif isinstance(instrument, FuturesContract):
         return nautilus_pyo3.FuturesContract.from_dict(FuturesContract.to_dict(instrument))
-    elif isinstance(instrument, OptionsContract):
-        return nautilus_pyo3.OptionsContract.from_dict(OptionsContract.to_dict(instrument))
+    elif isinstance(instrument, OptionContract):
+        return nautilus_pyo3.OptionContract.from_dict(OptionContract.to_dict(instrument))
     else:
         raise ValueError(f"Unknown instrument type: {instrument}")
 
@@ -127,10 +127,10 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
         return FuturesContract.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.FuturesSpread):
         return FuturesSpread.from_pyo3(instrument_pyo3)
-    elif isinstance(instrument_pyo3, nautilus_pyo3.OptionsContract):
-        return OptionsContract.from_pyo3(instrument_pyo3)
-    elif isinstance(instrument_pyo3, nautilus_pyo3.OptionsSpread):
-        return OptionsSpread.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.OptionContract):
+        return OptionContract.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.OptionSpread):
+        return OptionSpread.from_pyo3(instrument_pyo3)
     else:
         raise ValueError(f"Unknown instrument type: {instrument_pyo3}")
 

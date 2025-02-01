@@ -21,7 +21,7 @@ use super::{
     betting::BettingInstrument, binary_option::BinaryOption, crypto_future::CryptoFuture,
     crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
     futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
+    option_contract::OptionContract, option_spread::OptionSpread, Instrument,
 };
 use crate::{
     enums::InstrumentClass,
@@ -39,8 +39,8 @@ pub enum InstrumentAny {
     Equity(Equity),
     FuturesContract(FuturesContract),
     FuturesSpread(FuturesSpread),
-    OptionsContract(OptionsContract),
-    OptionsSpread(OptionsSpread),
+    OptionContract(OptionContract),
+    OptionSpread(OptionSpread),
 }
 
 impl InstrumentAny {
@@ -56,8 +56,8 @@ impl InstrumentAny {
             Self::Equity(inst) => Box::new(inst),
             Self::FuturesContract(inst) => Box::new(inst),
             Self::FuturesSpread(inst) => Box::new(inst),
-            Self::OptionsContract(inst) => Box::new(inst),
-            Self::OptionsSpread(inst) => Box::new(inst),
+            Self::OptionContract(inst) => Box::new(inst),
+            Self::OptionSpread(inst) => Box::new(inst),
         }
     }
 
@@ -72,8 +72,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.instrument_class(),
             Self::FuturesContract(inst) => inst.instrument_class(),
             Self::FuturesSpread(inst) => inst.instrument_class(),
-            Self::OptionsContract(inst) => inst.instrument_class(),
-            Self::OptionsSpread(inst) => inst.instrument_class(),
+            Self::OptionContract(inst) => inst.instrument_class(),
+            Self::OptionSpread(inst) => inst.instrument_class(),
         }
     }
 
@@ -88,8 +88,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.id,
             Self::FuturesContract(inst) => inst.id,
             Self::FuturesSpread(inst) => inst.id,
-            Self::OptionsContract(inst) => inst.id,
-            Self::OptionsSpread(inst) => inst.id,
+            Self::OptionContract(inst) => inst.id,
+            Self::OptionSpread(inst) => inst.id,
         }
     }
 
@@ -104,8 +104,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.id.symbol,
             Self::FuturesContract(inst) => inst.id.symbol,
             Self::FuturesSpread(inst) => inst.id.symbol,
-            Self::OptionsContract(inst) => inst.id.symbol,
-            Self::OptionsSpread(inst) => inst.id.symbol,
+            Self::OptionContract(inst) => inst.id.symbol,
+            Self::OptionSpread(inst) => inst.id.symbol,
         }
     }
 
@@ -120,8 +120,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.id.venue,
             Self::FuturesContract(inst) => inst.id.venue,
             Self::FuturesSpread(inst) => inst.id.venue,
-            Self::OptionsContract(inst) => inst.id.venue,
-            Self::OptionsSpread(inst) => inst.id.venue,
+            Self::OptionContract(inst) => inst.id.venue,
+            Self::OptionSpread(inst) => inst.id.venue,
         }
     }
 
@@ -136,8 +136,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.raw_symbol(),
             Self::FuturesContract(inst) => inst.raw_symbol(),
             Self::FuturesSpread(inst) => inst.raw_symbol(),
-            Self::OptionsContract(inst) => inst.raw_symbol(),
-            Self::OptionsSpread(inst) => inst.raw_symbol(),
+            Self::OptionContract(inst) => inst.raw_symbol(),
+            Self::OptionSpread(inst) => inst.raw_symbol(),
         }
     }
 
@@ -152,8 +152,8 @@ impl InstrumentAny {
             Self::Equity(_) => None,
             Self::FuturesContract(inst) => Some(&inst.underlying),
             Self::FuturesSpread(inst) => Some(&inst.underlying),
-            Self::OptionsContract(inst) => Some(&inst.underlying),
-            Self::OptionsSpread(inst) => Some(&inst.underlying),
+            Self::OptionContract(inst) => Some(&inst.underlying),
+            Self::OptionSpread(inst) => Some(&inst.underlying),
         }
     }
 
@@ -168,8 +168,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.base_currency(),
             Self::FuturesContract(inst) => inst.base_currency(),
             Self::FuturesSpread(inst) => inst.base_currency(),
-            Self::OptionsContract(inst) => inst.base_currency(),
-            Self::OptionsSpread(inst) => inst.base_currency(),
+            Self::OptionContract(inst) => inst.base_currency(),
+            Self::OptionSpread(inst) => inst.base_currency(),
         }
     }
 
@@ -184,8 +184,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.quote_currency(),
             Self::FuturesContract(inst) => inst.quote_currency(),
             Self::FuturesSpread(inst) => inst.quote_currency(),
-            Self::OptionsContract(inst) => inst.quote_currency(),
-            Self::OptionsSpread(inst) => inst.quote_currency(),
+            Self::OptionContract(inst) => inst.quote_currency(),
+            Self::OptionSpread(inst) => inst.quote_currency(),
         }
     }
 
@@ -200,8 +200,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.settlement_currency(),
             Self::FuturesContract(inst) => inst.settlement_currency(),
             Self::FuturesSpread(inst) => inst.settlement_currency(),
-            Self::OptionsContract(inst) => inst.settlement_currency(),
-            Self::OptionsSpread(inst) => inst.settlement_currency(),
+            Self::OptionContract(inst) => inst.settlement_currency(),
+            Self::OptionSpread(inst) => inst.settlement_currency(),
         }
     }
 
@@ -216,8 +216,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.is_inverse(),
             Self::FuturesContract(inst) => inst.is_inverse(),
             Self::FuturesSpread(inst) => inst.is_inverse(),
-            Self::OptionsContract(inst) => inst.is_inverse(),
-            Self::OptionsSpread(inst) => inst.is_inverse(),
+            Self::OptionContract(inst) => inst.is_inverse(),
+            Self::OptionSpread(inst) => inst.is_inverse(),
         }
     }
 
@@ -232,8 +232,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.price_precision(),
             Self::FuturesContract(inst) => inst.price_precision(),
             Self::FuturesSpread(inst) => inst.price_precision(),
-            Self::OptionsContract(inst) => inst.price_precision(),
-            Self::OptionsSpread(inst) => inst.price_precision(),
+            Self::OptionContract(inst) => inst.price_precision(),
+            Self::OptionSpread(inst) => inst.price_precision(),
         }
     }
 
@@ -248,8 +248,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.size_precision(),
             Self::FuturesContract(inst) => inst.size_precision(),
             Self::FuturesSpread(inst) => inst.size_precision(),
-            Self::OptionsContract(inst) => inst.size_precision(),
-            Self::OptionsSpread(inst) => inst.size_precision(),
+            Self::OptionContract(inst) => inst.size_precision(),
+            Self::OptionSpread(inst) => inst.size_precision(),
         }
     }
 
@@ -264,8 +264,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.price_increment(),
             Self::FuturesContract(inst) => inst.price_increment(),
             Self::FuturesSpread(inst) => inst.price_increment(),
-            Self::OptionsContract(inst) => inst.price_increment(),
-            Self::OptionsSpread(inst) => inst.price_increment(),
+            Self::OptionContract(inst) => inst.price_increment(),
+            Self::OptionSpread(inst) => inst.price_increment(),
         }
     }
 
@@ -280,8 +280,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.size_increment(),
             Self::FuturesContract(inst) => inst.size_increment(),
             Self::FuturesSpread(inst) => inst.size_increment(),
-            Self::OptionsContract(inst) => inst.size_increment(),
-            Self::OptionsSpread(inst) => inst.size_increment(),
+            Self::OptionContract(inst) => inst.size_increment(),
+            Self::OptionSpread(inst) => inst.size_increment(),
         }
     }
 
@@ -296,8 +296,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.multiplier(),
             Self::FuturesContract(inst) => inst.multiplier(),
             Self::FuturesSpread(inst) => inst.multiplier(),
-            Self::OptionsContract(inst) => inst.multiplier(),
-            Self::OptionsSpread(inst) => inst.multiplier(),
+            Self::OptionContract(inst) => inst.multiplier(),
+            Self::OptionSpread(inst) => inst.multiplier(),
         }
     }
 
@@ -312,8 +312,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.activation_ns(),
             Self::FuturesContract(inst) => inst.activation_ns(),
             Self::FuturesSpread(inst) => inst.activation_ns(),
-            Self::OptionsContract(inst) => inst.activation_ns(),
-            Self::OptionsSpread(inst) => inst.activation_ns(),
+            Self::OptionContract(inst) => inst.activation_ns(),
+            Self::OptionSpread(inst) => inst.activation_ns(),
         }
     }
 
@@ -328,8 +328,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.expiration_ns(),
             Self::FuturesContract(inst) => inst.expiration_ns(),
             Self::FuturesSpread(inst) => inst.expiration_ns(),
-            Self::OptionsContract(inst) => inst.expiration_ns(),
-            Self::OptionsSpread(inst) => inst.expiration_ns(),
+            Self::OptionContract(inst) => inst.expiration_ns(),
+            Self::OptionSpread(inst) => inst.expiration_ns(),
         }
     }
 
@@ -343,8 +343,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.max_quantity(),
             Self::FuturesContract(inst) => inst.max_quantity(),
             Self::FuturesSpread(inst) => inst.max_quantity(),
-            Self::OptionsContract(inst) => inst.max_quantity(),
-            Self::OptionsSpread(inst) => inst.max_quantity(),
+            Self::OptionContract(inst) => inst.max_quantity(),
+            Self::OptionSpread(inst) => inst.max_quantity(),
         }
     }
 
@@ -358,8 +358,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.min_quantity(),
             Self::FuturesContract(inst) => inst.min_quantity(),
             Self::FuturesSpread(inst) => inst.min_quantity(),
-            Self::OptionsContract(inst) => inst.min_quantity(),
-            Self::OptionsSpread(inst) => inst.min_quantity(),
+            Self::OptionContract(inst) => inst.min_quantity(),
+            Self::OptionSpread(inst) => inst.min_quantity(),
         }
     }
 
@@ -373,8 +373,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.max_notional(),
             Self::FuturesContract(inst) => inst.max_notional(),
             Self::FuturesSpread(inst) => inst.max_notional(),
-            Self::OptionsContract(inst) => inst.max_notional(),
-            Self::OptionsSpread(inst) => inst.max_notional(),
+            Self::OptionContract(inst) => inst.max_notional(),
+            Self::OptionSpread(inst) => inst.max_notional(),
         }
     }
 
@@ -388,8 +388,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.min_notional(),
             Self::FuturesContract(inst) => inst.min_notional(),
             Self::FuturesSpread(inst) => inst.min_notional(),
-            Self::OptionsContract(inst) => inst.min_notional(),
-            Self::OptionsSpread(inst) => inst.min_notional(),
+            Self::OptionContract(inst) => inst.min_notional(),
+            Self::OptionSpread(inst) => inst.min_notional(),
         }
     }
 
@@ -403,8 +403,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.make_price(value),
             Self::FuturesContract(inst) => inst.make_price(value),
             Self::FuturesSpread(inst) => inst.make_price(value),
-            Self::OptionsContract(inst) => inst.make_price(value),
-            Self::OptionsSpread(inst) => inst.make_price(value),
+            Self::OptionContract(inst) => inst.make_price(value),
+            Self::OptionSpread(inst) => inst.make_price(value),
         }
     }
 
@@ -418,8 +418,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.make_qty(value),
             Self::FuturesContract(inst) => inst.make_qty(value),
             Self::FuturesSpread(inst) => inst.make_qty(value),
-            Self::OptionsContract(inst) => inst.make_qty(value),
-            Self::OptionsSpread(inst) => inst.make_qty(value),
+            Self::OptionContract(inst) => inst.make_qty(value),
+            Self::OptionSpread(inst) => inst.make_qty(value),
         }
     }
 
@@ -455,10 +455,10 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => {
                 inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
             }
-            Self::OptionsContract(inst) => {
+            Self::OptionContract(inst) => {
                 inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
             }
-            Self::OptionsSpread(inst) => {
+            Self::OptionSpread(inst) => {
                 inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
             }
         }
@@ -476,8 +476,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.maker_fee(),
             Self::FuturesContract(inst) => inst.maker_fee(),
             Self::FuturesSpread(inst) => inst.maker_fee(),
-            Self::OptionsContract(inst) => inst.maker_fee(),
-            Self::OptionsSpread(inst) => inst.maker_fee(),
+            Self::OptionContract(inst) => inst.maker_fee(),
+            Self::OptionSpread(inst) => inst.maker_fee(),
         }
     }
 
@@ -493,8 +493,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.taker_fee(),
             Self::FuturesContract(inst) => inst.taker_fee(),
             Self::FuturesSpread(inst) => inst.taker_fee(),
-            Self::OptionsContract(inst) => inst.taker_fee(),
-            Self::OptionsSpread(inst) => inst.taker_fee(),
+            Self::OptionContract(inst) => inst.taker_fee(),
+            Self::OptionSpread(inst) => inst.taker_fee(),
         }
     }
 
@@ -508,8 +508,8 @@ impl InstrumentAny {
             Self::Equity(inst) => inst.calculate_base_quantity(quantity, last_px),
             Self::FuturesContract(inst) => inst.calculate_base_quantity(quantity, last_px),
             Self::FuturesSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::OptionsContract(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::OptionsSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::OptionContract(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::OptionSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
         }
     }
 }

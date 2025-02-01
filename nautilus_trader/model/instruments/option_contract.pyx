@@ -29,6 +29,8 @@ from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.functions cimport instrument_class_from_str
 from nautilus_trader.model.functions cimport instrument_class_to_str
+from nautilus_trader.model.functions cimport option_kind_from_str
+from nautilus_trader.model.functions cimport option_kind_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -37,9 +39,9 @@ from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OptionsSpread(Instrument):
+cdef class OptionContract(Instrument):
     """
-    Represents a generic options spread instrument.
+    Represents a generic option contract instrument.
 
     Parameters
     ----------
@@ -48,9 +50,9 @@ cdef class OptionsSpread(Instrument):
     raw_symbol : Symbol
         The raw/local/native symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The options contract asset class.
+        The option contract asset class.
     currency : Currency
-        The options contract currency.
+        The option contract currency.
     price_precision : int
         The price decimal precision.
     price_increment : Price
@@ -61,8 +63,10 @@ cdef class OptionsSpread(Instrument):
         The rounded lot unit size (standard/board).
     underlying : str
         The underlying asset.
-    strategy_type : str
-        The strategy type of the spread.
+    option_kind : OptionKind
+        The kind of option (PUT | CALL).
+    strike_price : Price
+        The option strike price.
     activation_ns : uint64_t
         UNIX timestamp (nanoseconds) for contract activation.
     expiration_ns : uint64_t
@@ -86,8 +90,6 @@ cdef class OptionsSpread(Instrument):
 
     Raises
     ------
-    ValueError
-        If `strategy_type` is not a valid string.
     ValueError
         If `multiplier` is not positive (> 0).
     ValueError
@@ -116,7 +118,8 @@ cdef class OptionsSpread(Instrument):
         Quantity multiplier not None,
         Quantity lot_size not None,
         str underlying,
-        str strategy_type,
+        OptionKind option_kind,
+        Price strike_price not None,
         uint64_t activation_ns,
         uint64_t expiration_ns,
         uint64_t ts_event,
@@ -128,7 +131,6 @@ cdef class OptionsSpread(Instrument):
         str exchange = None,
         dict info = None,
     ) -> None:
-        Condition.valid_string(strategy_type, "strategy_type")
         Condition.positive_int(multiplier, "multiplier")
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
@@ -136,7 +138,7 @@ cdef class OptionsSpread(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=asset_class,
-            instrument_class=InstrumentClass.OPTION_SPREAD,
+            instrument_class=InstrumentClass.OPTION,
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
@@ -161,7 +163,8 @@ cdef class OptionsSpread(Instrument):
         )
         self.exchange = exchange
         self.underlying = underlying
-        self.strategy_type = strategy_type
+        self.option_kind = option_kind
+        self.strike_price = strike_price
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
 
@@ -173,9 +176,10 @@ cdef class OptionsSpread(Instrument):
             f"asset_class={asset_class_to_str(self.asset_class)}, "
             f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
             f"exchange={self.exchange}, "
-            f"currency={self.quote_currency}, "
+            f"quote_currency={self.quote_currency}, "
             f"underlying={self.underlying}, "
-            f"strategy_type={self.strategy_type}, "
+            f"option_kind={option_kind_to_str(self.option_kind)}, "
+            f"strike_price={self.strike_price}, "
             f"activation={format_iso8601(self.activation_utc)}, "
             f"expiration={format_iso8601(self.expiration_utc)}, "
             f"price_precision={self.price_precision}, "
@@ -215,12 +219,10 @@ cdef class OptionsSpread(Instrument):
         """
         return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
-
-
     @staticmethod
-    cdef OptionsSpread from_dict_c(dict values):
+    cdef OptionContract from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return OptionsSpread(
+        return OptionContract(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
@@ -230,9 +232,10 @@ cdef class OptionsSpread(Instrument):
             multiplier=Quantity.from_str(values["multiplier"]),
             lot_size=Quantity.from_str(values["lot_size"]),
             underlying=values["underlying"],
-            strategy_type=values["strategy_type"],
+            option_kind=option_kind_from_str(values["option_kind"]),
             activation_ns=values["activation_ns"],
             expiration_ns=values["expiration_ns"],
+            strike_price=Price.from_str(values["strike_price"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             margin_init=Decimal(values["margin_init"]),
@@ -244,14 +247,13 @@ cdef class OptionsSpread(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(OptionsSpread obj):
+    cdef dict to_dict_c(OptionContract obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "OptionsSpread",
+            "type": "OptionContract",
             "id": obj.id.to_str(),
             "raw_symbol": obj.raw_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
-            "strategy_type": obj.strategy_type,
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
@@ -264,10 +266,10 @@ cdef class OptionsSpread(Instrument):
             "min_price": str(obj.min_price) if obj.min_price is not None else None,
             "lot_size": str(obj.lot_size),
             "underlying": str(obj.underlying),
+            "option_kind": option_kind_to_str(obj.option_kind),
             "activation_ns": obj.activation_ns,
             "expiration_ns": obj.expiration_ns,
-            "margin_init": str(obj.margin_init),
-            "margin_maint": str(obj.margin_maint),
+            "strike_price": str(obj.strike_price),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "margin_init": str(obj.margin_init),
@@ -279,9 +281,9 @@ cdef class OptionsSpread(Instrument):
         }
 
     @staticmethod
-    cdef OptionsSpread from_pyo3_c(pyo3_instrument):
+    cdef OptionContract from_pyo3_c(pyo3_instrument):
         Condition.not_none(pyo3_instrument, "pyo3_instrument")
-        return OptionsSpread(
+        return OptionContract(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
             raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
             asset_class=asset_class_from_str(str(pyo3_instrument.asset_class)),
@@ -291,9 +293,10 @@ cdef class OptionsSpread(Instrument):
             multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, pyo3_instrument.multiplier.precision),
             lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
             underlying=pyo3_instrument.underlying,
-            strategy_type=pyo3_instrument.strategy_type,
+            option_kind=option_kind_from_str(str(pyo3_instrument.option_kind)),
             activation_ns=pyo3_instrument.activation_ns,
             expiration_ns=pyo3_instrument.expiration_ns,
+            strike_price=Price.from_raw_c(pyo3_instrument.strike_price.raw, pyo3_instrument.strike_price.precision),
             info=pyo3_instrument.info,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
@@ -301,7 +304,7 @@ cdef class OptionsSpread(Instrument):
         )
 
     @staticmethod
-    def from_dict(dict values) -> OptionsSpread:
+    def from_dict(dict values) -> OptionContract:
         """
         Return an instrument from the given initialization values.
 
@@ -312,13 +315,13 @@ cdef class OptionsSpread(Instrument):
 
         Returns
         -------
-        OptionsSpread
+        OptionContract
 
         """
-        return OptionsSpread.from_dict_c(values)
+        return OptionContract.from_dict_c(values)
 
     @staticmethod
-    def to_dict(OptionsSpread obj) -> dict[str, object]:
+    def to_dict(OptionContract obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 
@@ -327,21 +330,21 @@ cdef class OptionsSpread(Instrument):
         dict[str, object]
 
         """
-        return OptionsSpread.to_dict_c(obj)
+        return OptionContract.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(pyo3_instrument) -> OptionsSpread:
+    def from_pyo3(pyo3_instrument) -> OptionContract:
         """
-        Return legacy Cython options contract instrument converted from the given pyo3 Rust object.
+        Return legacy Cython option contract instrument converted from the given pyo3 Rust object.
 
         Parameters
         ----------
-        pyo3_instrument : nautilus_pyo3.OptionsSpread
-            The pyo3 Rust options contract instrument to convert from.
+        pyo3_instrument : nautilus_pyo3.OptionContract
+            The pyo3 Rust option contract instrument to convert from.
 
         Returns
         -------
-        OptionsSpread
+        OptionContract
 
         """
-        return OptionsSpread.from_pyo3_c(pyo3_instrument)
+        return OptionContract.from_pyo3_c(pyo3_instrument)

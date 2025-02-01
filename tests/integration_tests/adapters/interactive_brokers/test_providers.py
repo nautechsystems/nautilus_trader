@@ -88,7 +88,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
 
 
 @pytest.mark.asyncio()
-async def test_load_options_contract_instrument(mocker, instrument_provider):
+async def test_load_option_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
     mock_ib_contract_calls(

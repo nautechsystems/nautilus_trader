@@ -483,7 +483,7 @@ typedef enum OmsType {
 } OmsType;
 
 /**
- * The kind of options contract.
+ * The kind of option contract.
  */
 typedef enum OptionKind {
     /**

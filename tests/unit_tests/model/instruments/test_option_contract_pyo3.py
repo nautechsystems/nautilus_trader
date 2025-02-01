@@ -14,36 +14,37 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.model.instruments import OptionsSpread
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-_OPTIONS_SPREAD = TestInstrumentProviderPyo3.options_spread()
+_AAPL_OPTION = TestInstrumentProviderPyo3.aapl_option()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.options_spread()
-    item_2 = TestInstrumentProviderPyo3.options_spread()
+    item_1 = TestInstrumentProviderPyo3.aapl_option()
+    item_2 = TestInstrumentProviderPyo3.aapl_option()
     assert item_1 == item_2
 
 
 def test_hash():
-    assert hash(_OPTIONS_SPREAD) == hash(_OPTIONS_SPREAD)
+    assert hash(_AAPL_OPTION) == hash(_AAPL_OPTION)
 
 
 def test_to_dict():
-    result = _OPTIONS_SPREAD.to_dict()
-    assert nautilus_pyo3.OptionsSpread.from_dict(result) == _OPTIONS_SPREAD
+    result = _AAPL_OPTION.to_dict()
+    assert nautilus_pyo3.OptionContract.from_dict(result) == _AAPL_OPTION
     assert result == {
-        "type": "OptionsSpread",
-        "id": "UD:U$: GN 2534559.GLBX",
-        "raw_symbol": "UD:U$: GN 2534559",
-        "asset_class": "FX",
-        "exchange": "XCME",
-        "underlying": "SR3",
-        "strategy_type": "GN",
-        "activation_ns": 1699304047000000000,
-        "expiration_ns": 1708729140000000000,
+        "type": "OptionContract",
+        "id": "AAPL211217C00150000.OPRA",
+        "raw_symbol": "AAPL211217C00150000",
+        "asset_class": "EQUITY",
+        "exchange": "GMNI",
+        "underlying": "AAPL",
+        "option_kind": "CALL",
+        "activation_ns": 1631836800000000000,
+        "expiration_ns": 1639699200000000000,
+        "strike_price": "149.0",
         "currency": "USDT",
         "price_precision": 2,
         "price_increment": "0.01",
@@ -65,17 +66,19 @@ def test_to_dict():
     }
 
 
-def test_legacy_options_contract_from_pyo3():
-    option = OptionsSpread.from_pyo3(_OPTIONS_SPREAD)
+def test_legacy_option_contract_from_pyo3():
+    option = OptionContract.from_pyo3(_AAPL_OPTION)
 
-    assert option.id.value == "UD:U$: GN 2534559.GLBX"
+    assert option.id.value == "AAPL211217C00150000.OPRA"
 
 
 def test_pyo3_cython_conversion():
-    options_spread_pyo3 = TestInstrumentProviderPyo3.options_spread()
-    options_spread_pyo3_dict = options_spread_pyo3.to_dict()
-    options_spread_cython = OptionsSpread.from_pyo3(options_spread_pyo3)
-    options_spread_cython_dict = OptionsSpread.to_dict(options_spread_cython)
-    options_spread_pyo3_back = nautilus_pyo3.OptionsSpread.from_dict(options_spread_cython_dict)
-    assert options_spread_cython_dict == options_spread_pyo3_dict
-    assert options_spread_pyo3 == options_spread_pyo3_back
+    option_contract_pyo3 = TestInstrumentProviderPyo3.aapl_option()
+    option_contract_pyo3_dict = option_contract_pyo3.to_dict()
+    option_contract_cython = OptionContract.from_pyo3(option_contract_pyo3)
+    option_contract_cython_dict = OptionContract.to_dict(option_contract_cython)
+    option_contract_pyo3_back = nautilus_pyo3.OptionContract.from_dict(
+        option_contract_cython_dict,
+    )
+    assert option_contract_cython_dict == option_contract_pyo3_dict
+    assert option_contract_pyo3 == option_contract_pyo3_back

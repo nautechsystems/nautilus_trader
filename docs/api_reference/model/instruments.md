@@ -53,7 +53,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.instruments.options_contract
+.. automodule:: nautilus_trader.model.instruments.option_contract
    :show-inheritance:
    :inherited-members:
    :members:

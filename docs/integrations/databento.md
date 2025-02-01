@@ -159,11 +159,11 @@ The following Databento instrument classes are supported by NautilusTrader:
 |----------------------------|------|------------------------------|
 | Stock                      | `K`  | `Equity`                     |
 | Future                     | `F`  | `FuturesContract`            |
-| Call                       | `C`  | `OptionsContract`            |
-| Put                        | `P`  | `OptionsContract`            |
+| Call                       | `C`  | `OptionContract`             |
+| Put                        | `P`  | `OptionContract`             |
 | Future spread              | `S`  | `FuturesSpread`              |
-| Option spread              | `T`  | `OptionsSpread`              |
-| Mixed spread               | `M`  | `OptionsSpread`              |
+| Option spread              | `T`  | `OptionSpread`               |
+| Mixed spread               | `M`  | `OptionSpread`               |
 | FX spot                    | `X`  | `CurrencyPair`               |
 | Bond                       | `B`  | Not yet available            |
 

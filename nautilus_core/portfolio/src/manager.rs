@@ -183,13 +183,13 @@ impl AccountsManager {
                     instrument.make_price(position.avg_px_open),
                     None,
                 ),
-                InstrumentAny::OptionsContract(i) => account.calculate_maintenance_margin(
+                InstrumentAny::OptionContract(i) => account.calculate_maintenance_margin(
                     i,
                     position.quantity,
                     instrument.make_price(position.avg_px_open),
                     None,
                 ),
-                InstrumentAny::OptionsSpread(i) => account.calculate_maintenance_margin(
+                InstrumentAny::OptionSpread(i) => account.calculate_maintenance_margin(
                     i,
                     position.quantity,
                     instrument.make_price(position.avg_px_open),
@@ -381,10 +381,10 @@ impl AccountsManager {
                 InstrumentAny::FuturesSpread(i) => {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
-                InstrumentAny::OptionsContract(i) => {
+                InstrumentAny::OptionContract(i) => {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
-                InstrumentAny::OptionsSpread(i) => {
+                InstrumentAny::OptionSpread(i) => {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
             };
