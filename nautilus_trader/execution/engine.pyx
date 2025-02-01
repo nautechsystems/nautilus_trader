@@ -318,6 +318,49 @@ cdef class ExecutionEngine(Component):
         """
         return set(self._external_order_claims.keys())
 
+    cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders):
+        """
+        Get all execution clients for the given orders.
+
+        Parameters
+        ----------
+        order : list[Order]
+            The orders for the execution clients.
+
+        Returns
+        -------
+        list[ExecutionClient]
+
+        """
+        Condition.not_none(orders, "orders")
+
+        cdef set[ClientId] client_ids = set()
+        cdef set[Venue] venues = set()
+
+        cdef:
+            Order order
+            ClientId client_id
+            Venue venue
+            ExecutionClient client
+
+        for order in orders:
+            venues.add(order.venue)
+            client_id = self._cache.client_id(order.client_order_id)
+            if client_id is None:
+                continue
+            client_ids.add(client_id)
+
+        cdef set[ExecutionClient] clients = set()
+
+        for client_id in client_ids:
+            clients.add(self._clients[client_id])
+
+        for venue in venues:
+            client = self._routing_map.get(venue, self._default_client)
+            clients.add(client)
+
+        return clients
+
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client):
