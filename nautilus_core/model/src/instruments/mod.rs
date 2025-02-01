@@ -156,7 +156,7 @@ pub trait Instrument: 'static + Send {
 
 pub const EXPIRING_INSTRUMENT_TYPES: [InstrumentClass; 4] = [
     InstrumentClass::Future,
-    InstrumentClass::FutureSpread,
+    InstrumentClass::FuturesSpread,
     InstrumentClass::Option,
     InstrumentClass::OptionSpread,
 ];

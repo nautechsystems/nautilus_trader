@@ -256,7 +256,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn instrument_class(&self) -> InstrumentClass {
-        InstrumentClass::FutureSpread
+        InstrumentClass::FuturesSpread
     }
     fn underlying(&self) -> Option<Ustr> {
         Some(self.underlying)

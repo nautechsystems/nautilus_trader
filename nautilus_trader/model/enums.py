@@ -240,7 +240,7 @@ if TYPE_CHECKING:
         SPOT = 1
         SWAP = 2
         FUTURE = 3
-        FUTURE_SPREAD = 4
+        FUTURES_SPREAD = 4
         FORWARD = 5
         CFD = 6
         BOND = 7

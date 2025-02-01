@@ -740,7 +740,7 @@ class InstrumentClass(Enum):
     SPOT = "SPOT"
     SWAP = "SWAP"
     FUTURE = "FUTURE"
-    FUTURE_SPREAD = "FUTURE_SPREAD"
+    FUTURES_SPREAD = "FUTURES_SPREAD"
     FORWARD = "FORWARD"
     CFD = "CFD"
     BOND = "BOND"
