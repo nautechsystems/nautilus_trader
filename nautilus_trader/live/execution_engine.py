@@ -480,7 +480,10 @@ class LiveExecutionEngine(ExecutionEngine):
             if not open_orders and not self.open_check_open_only:
                 return  # Nothing further to check
 
-            clients = self.get_clients_for_orders(open_orders)
+            if self.open_check_open_only:
+                clients = self._clients.values()
+            else:
+                clients = self.get_clients_for_orders(open_orders)
 
             tasks = [
                 c.generate_order_status_reports(open_only=self.open_check_open_only)
