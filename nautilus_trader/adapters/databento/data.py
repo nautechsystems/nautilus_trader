@@ -39,6 +39,11 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -51,7 +56,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -784,22 +788,16 @@ class DatabentoDataClient(LiveMarketDataClient):
             "unsubscribing not supported by Databento.",
         )
 
-    async def _request(
-        self,
-        data_type: DataType,
-        correlation_id: UUID4,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if data_type.type == InstrumentStatus:
-            await self._request_instrument_status(data_type, correlation_id)
-        elif data_type.type == DatabentoImbalance:
-            await self._request_imbalance(data_type, correlation_id)
-        elif data_type.type == DatabentoStatistics:
-            await self._request_statistics(data_type, correlation_id)
-
+    async def _request(self, request: RequestData) -> None:
+        if request.data_type.type == InstrumentStatus:
+            await self._request_instrument_status(request.data_type, request.id)
+        elif request.data_type.type == DatabentoImbalance:
+            await self._request_imbalance(request.data_type, request.id)
+        elif request.data_type.type == DatabentoStatistics:
+            await self._request_statistics(request.data_type, request.id)
         else:
             raise NotImplementedError(
-                f"Cannot request {data_type.type} (not implemented)",
+                f"Cannot request {request.data_type.type} (not implemented)",
             )
 
     async def _request_instrument_status(
@@ -901,22 +899,15 @@ class DatabentoDataClient(LiveMarketDataClient):
             params=None,
         )
 
-    async def _request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+    async def _request_instrument(self, request: RequestInstruments) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=2)
-        end = end or available_end
+        start = request.start or available_end - pd.Timedelta(days=2)
+        end = request.end or available_end
 
         self._log.info(
-            f"Requesting {instrument_id} instrument definition: "
+            f"Requesting {request.instrument_id} instrument definition: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
@@ -924,7 +915,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         # Request single instrument
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
             start=start.value,
             end=end.value,
             use_exchange_as_venue=self._use_exchange_as_venue,
@@ -933,37 +924,35 @@ class DatabentoDataClient(LiveMarketDataClient):
         instruments = instruments_from_pyo3(pyo3_instruments)
         if not instruments:
             self._log.warning(
-                f"No instrument found for request: {instrument_id=}, {correlation_id=}",
+                f"No instrument found for request: {request.instrument_id=}, {request.id=}",
             )
             return
 
-        self._handle_instrument(instruments[0], correlation_id, params)
+        self._handle_instrument(instruments[0], request.id, request.params)
 
-    async def _request_instruments(
-        self,
-        venue: Venue,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(venue)
+    async def _request_instruments(self, request: RequestInstruments) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=2)
-        end = end or available_end
+        start = request.start or available_end - pd.Timedelta(days=2)
+        end = request.end or available_end
 
         self._log.info(
-            f"Requesting {venue} instrument definitions: "
+            f"Requesting {request.venue} instrument definitions: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
-        use_exchange_as_venue = params is not None and params.get("use_exchange_as_venue", False)
+        use_exchange_as_venue = request.params is not None and request.params.get(
+            "use_exchange_as_venue",
+            False,
+        )
 
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.{venue}"))],
+            instrument_ids=[
+                instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.{request.venue}")),
+            ],
             start=start.value,
             end=end.value,
             use_exchange_as_venue=use_exchange_as_venue,
@@ -971,34 +960,26 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
-        self._handle_instruments(instruments, venue, correlation_id, params)
+        self._handle_instruments(instruments, request.venue, request.id, request.params)
 
-    async def _request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=1)
-        end = end or available_end
+        start = request.start or available_end - pd.Timedelta(days=1)
+        end = request.end or available_end
 
-        if limit > 0:
+        if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
             )
 
         self._log.info(
-            f"Requesting {instrument_id} quotes: dataset={dataset}, start={start}, end={end}",
+            f"Requesting {request.instrument_id} quotes: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
-        schema: str | None = params.get("schema") if params else None
+        schema: str | None = request.params.get("schema") if request.params else None
         # allowed schema values: mbp-1, bbo-1s, bbo-1m
         if schema is None or schema not in [
             DatabentoSchema.MBP_1.value,
@@ -1009,7 +990,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_quotes = await self._http_client.get_range_quotes(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
             start=start.value,
             end=end.value,
             schema=schema,
@@ -1017,75 +998,59 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
 
-        self._handle_quote_ticks(instrument_id, quotes, correlation_id, params)
+        self._handle_quote_ticks(request.instrument_id, quotes, request.id, request.params)
 
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=1)
-        end = end or available_end
+        start = request.start or available_end - pd.Timedelta(days=1)
+        end = request.end or available_end
 
-        if limit > 0:
+        if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
             )
 
         self._log.info(
-            f"Requesting {instrument_id} trades: dataset={dataset}, start={start}, end={end}",
+            f"Requesting {request.instrument_id} trades: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
         pyo3_trades = await self._http_client.get_range_trades(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
             start=start.value,
             end=end.value,
         )
 
         trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(instrument_id, trades, correlation_id, params)
+        self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
 
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+    async def _request_bars(self, request: RequestBars) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=1)
-        end = end or available_end
+        start = request.start or available_end - pd.Timedelta(days=1)
+        end = request.end or available_end
 
-        if limit > 0:
+        if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
             )
 
         self._log.info(
-            f"Requesting {bar_type.instrument_id} 1 {bar_aggregation_to_str(bar_type.spec.aggregation)} bars: "
+            f"Requesting {request.bar_type.instrument_id} 1 {bar_aggregation_to_str(request.bar_type.spec.aggregation)} bars: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
         pyo3_bars = await self._http_client.get_range_bars(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(bar_type.instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(request.bar_type.instrument_id)],
             aggregation=nautilus_pyo3.BarAggregation(
-                bar_aggregation_to_str(bar_type.spec.aggregation),
+                bar_aggregation_to_str(request.bar_type.spec.aggregation),
             ),
             start=start.value,
             end=end.value,
@@ -1094,11 +1059,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         bars = Bar.from_pyo3_list(pyo3_bars)
 
         self._handle_bars(
-            bar_type=bar_type,
+            bar_type=request.bar_type,
             bars=bars,
             partial=None,  # No partials
-            correlation_id=correlation_id,
-            params=params,
+            correlation_id=request.id,
+            params=request.params,
         )
 
     def _handle_msg_pyo3(
