@@ -20,6 +20,7 @@
 # Note: Use the python extension jupytext to be able to open this python file in jupyter as a notebook
 
 # %%
+# from nautilus_trader.model.data import DataType
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
@@ -39,15 +40,13 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.greeks import GreeksData
+from nautilus_trader.model.greeks_data import GreeksData
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.risk.greeks import GreeksCalculator
-from nautilus_trader.risk.greeks import GreeksCalculatorConfig
-from nautilus_trader.risk.greeks import InterestRateProvider
-from nautilus_trader.risk.greeks import InterestRateProviderConfig
+from nautilus_trader.persistence.loaders import InterestRateProvider
+from nautilus_trader.persistence.loaders import InterestRateProviderConfig
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -125,6 +124,10 @@ class OptionStrategy(Strategy):
         bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
         self.subscribe_bars(bar_type)
 
+        if self.config.load_greeks:
+            self.greeks.subscribe_greeks("ES")
+            # self.subscribe_data(DataType(GreeksData, metadata={"instrument_id": "ES*"}))
+
     def init_portfolio(self):
         self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
         self.submit_market_order(instrument_id=self.config.option_id2, quantity=10)
@@ -132,28 +135,27 @@ class OptionStrategy(Strategy):
 
         self.start_orders_done = True
 
+    # def on_data(self, data):
+    #     self.user_log(data)
+
     def on_bar(self, bar):
-        self.user_log(f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}")
+        self.user_log(
+            f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar.close}",
+        )
 
         if not self.start_orders_done:
             self.user_log("Initializing the portfolio with some trades")
             self.init_portfolio()
             return
 
-        if self.config.load_greeks:
-            # when greeks are loaded from a catalog a small delay is needed so all greeks are updated
-            # note that loading greeks is not required, it's actually faster to just compute them every time
-            self.clock.set_time_alert(
-                "display greeks",
-                self.clock.utc_now().replace(microsecond=100),
-                self.display_greeks,
-                override=True,
-            )
-        else:
-            self.display_greeks()
+        self.display_greeks()
 
     def display_greeks(self, alert=None):
-        portfolio_greeks = self.portfolio_greeks()
+        portfolio_greeks = self.greeks.portfolio_greeks(
+            use_cached_greeks=self.config.load_greeks,
+            publish_greeks=(not self.config.load_greeks),
+            vol_shock=0.0,
+        )
         self.user_log(f"{portfolio_greeks=}")
 
     def submit_market_order(self, instrument_id, quantity):
@@ -185,17 +187,10 @@ class OptionStrategy(Strategy):
 # %%
 # BacktestEngineConfig
 
-# for saving and loading custom data greeks, use False, True then True, False below
-load_greeks, stream_data = False, False
+# for saving and loading custom data greeks, use True, False then False, True below
+stream_data, load_greeks = False, False
 
 actors = [
-    ImportableActorConfig(
-        actor_path=GreeksCalculator.fully_qualified_name(),
-        config_path=GreeksCalculatorConfig.fully_qualified_name(),
-        config={
-            "load_greeks": load_greeks,
-        },
-    ),
     ImportableActorConfig(
         actor_path=InterestRateProvider.fully_qualified_name(),
         config_path=InterestRateProviderConfig.fully_qualified_name(),
@@ -259,14 +254,16 @@ data = [
 ]
 
 if load_greeks:
-    data.append(
+    # Important note: when prepending custom data to usual market data, it will reach actors/strategies earlier
+    data = [
         BacktestDataConfig(
             data_cls=GreeksData.fully_qualified_name(),
             catalog_path=catalog.path,
             client_id="GreeksDataProvider",
             metadata={"instrument_id": "ES"},
         ),
-    )
+        *data,
+    ]
 
 venues = [
     BacktestVenueConfig(
