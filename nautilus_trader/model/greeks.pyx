@@ -67,17 +67,18 @@ cdef class GreeksCalculator:
     Theta is expressed in terms of daily changes ((dV / d(T-t)) / 365.25, where T is the expiry of an option and t is the current time).
 
     """
+
     def __init__(
         self,
-        msgbus: MessageBus,
-        cache: CacheFacade,
-        clock: Clock,
-        logger: Logger
-    ):
-        self.msgbus = msgbus
-        self.cache = cache
-        self.clock = clock
-        self.log = logger
+        MessageBus msgbus not None,
+        CacheFacade cache not None,
+        Clock clock not None,
+        Logger logger not None,
+    ) -> None:
+        self._msgbus = msgbus
+        self._cache = cache
+        self._clock = clock
+        self._log = logger
 
     def instrument_greeks(
         self,
@@ -92,7 +93,8 @@ cdef class GreeksCalculator:
         ts_event: int = 0,
         position: Position | None = None
     ) -> GreeksData:
-        """Calculate option greeks for a given instrument.
+        """
+        Calculate option greeks for a given instrument.
 
         Also allows to apply shocks to spot, volatility and time to expiry.
 
@@ -118,7 +120,7 @@ cdef class GreeksCalculator:
             Whether to publish the calculated greeks.
         ts_event : int, default 0
             Timestamp of the event triggering the calculation, by default 0.
-        position : Position, default None
+        position : Position, optional
             Optional position used to calculate the pnl of a Future when necessary.
 
         Returns
@@ -128,27 +130,27 @@ cdef class GreeksCalculator:
           Contains price, delta, gamma, vega, theta as well as additional information used for the computation.
 
         """
-        instrument_definition = self.cache.instrument(instrument_id)
+        instrument_definition = self._cache.instrument(instrument_id)
         if instrument_definition.instrument_class is not InstrumentClass.OPTION:
             if instrument_definition.instrument_class is not InstrumentClass.FUTURE:
-                self.log.error(f"instrument_greeks only works with futures for now.")
+                self._log.error(f"instrument_greeks only works with futures for now.")
                 return
 
             greeks_data = GreeksData.from_multiplier(instrument_id, float(instrument_definition.multiplier), ts_event)
 
             if position is not None:
                 # we set as price the pnl of a unit position so we can see how the price of a portfolio evolves with shocks
-                underlying_price = float(self.cache.price(instrument_definition.id, PriceType.LAST))
+                underlying_price = float(self._cache.price(instrument_definition.id, PriceType.LAST))
                 greeks_data.price = float(position.unrealized_pnl(Price.from_str(str(underlying_price + spot_shock)))) / float(position.signed_qty)
 
             return greeks_data
 
         greeks_data = None
 
-        if use_cached_greeks and (greeks_data := self.cache.greeks(instrument_id)) is not None:
+        if use_cached_greeks and (greeks_data := self._cache.greeks(instrument_id)) is not None:
             pass
         else:
-            utc_now_ns = ts_event if ts_event is not None else self.clock.timestamp_ns()
+            utc_now_ns = ts_event if ts_event is not None else self._clock.timestamp_ns()
             utc_now = unix_nanos_to_dt(utc_now_ns)
 
             expiry_utc = instrument_definition.expiration_utc
@@ -156,7 +158,7 @@ cdef class GreeksCalculator:
             expiry_in_years = min((expiry_utc - utc_now).days, 1) / 365.25
 
             currency = instrument_definition.quote_currency.code
-            if (interest_rate_curve := self.cache.interest_rate_curve(currency)) is not None:
+            if (interest_rate_curve := self._cache.interest_rate_curve(currency)) is not None:
                 interest_rate = interest_rate_curve(expiry_in_years)
             else:
                 interest_rate = flat_interest_rate
@@ -165,10 +167,10 @@ cdef class GreeksCalculator:
             is_call = instrument_definition.option_kind is OptionKind.CALL
             strike = float(instrument_definition.strike_price)
 
-            option_mid_price = float(self.cache.price(instrument_id, PriceType.MID))
+            option_mid_price = float(self._cache.price(instrument_id, PriceType.MID))
 
             underlying_instrument_id = InstrumentId.from_str(f"{instrument_definition.underlying}.{instrument_id.venue}")
-            underlying_price = float(self.cache.price(underlying_instrument_id, PriceType.LAST))
+            underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
 
             greeks = imply_vol_and_greeks(underlying_price, interest_rate, 0.0, is_call, strike, expiry_in_years, option_mid_price, multiplier)
             greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_years, multiplier, 1.0,
@@ -177,12 +179,12 @@ cdef class GreeksCalculator:
 
             # adding greeks to cache
             if cache_greeks:
-                self.cache.add_greeks(greeks_data)
+                self._cache.add_greeks(greeks_data)
 
             # publishing greeks on the message bus so they can be written to a catalog from streamed objects
             if publish_greeks:
                 data_type = DataType(GreeksData, metadata={"instrument_id": instrument_id.value})
-                self.msgbus.publish_c(topic=f"data.{data_type.topic}", msg=greeks_data)
+                self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=greeks_data)
 
         if spot_shock != 0. or vol_shock != 0. or expiry_in_years_shock != 0.:
             greeks = black_scholes_greeks(greeks_data.underlying_price + spot_shock, greeks_data.interest_rate, 0.0, greeks_data.vol + vol_shock,
@@ -205,14 +207,15 @@ cdef class GreeksCalculator:
         StrategyId strategy_id = None,
         PositionSide side = PositionSide.NO_POSITION_SIDE,
         flat_interest_rate: float = 0.05,
-        spot_shock: float = 0.,
-        vol_shock: float = 0.,
-        expiry_in_years_shock: float = 0.,
+        spot_shock: float = 0.0,
+        vol_shock: float = 0.0,
+        expiry_in_years_shock: float = 0.0,
         use_cached_greeks: bool = False,
         cache_greeks: bool = False,
         publish_greeks: bool = False,
     ) -> PortfolioGreeks:
-        """Calculate the portfolio Greeks for a given set of positions.
+        """
+        Calculate the portfolio Greeks for a given set of positions.
 
         Aggregates the Greeks data for all open positions that match the specified criteria.
         Also allows to apply shocks to spot, volatility and time to expiry.
@@ -262,9 +265,9 @@ cdef class GreeksCalculator:
         size and aggregated into portfolio-level risk metrics.
 
         """
-        ts_event = self.clock.timestamp_ns()
+        ts_event = self._clock.timestamp_ns()
         portfolio_greeks = PortfolioGreeks(ts_event, ts_event)
-        open_positions = self.cache.positions_open(venue, instrument_id, strategy_id, side)
+        open_positions = self._cache.positions_open(venue, instrument_id, strategy_id, side)
 
         for position in open_positions:
             position_instrument_id = position.instrument_id
@@ -272,13 +275,21 @@ cdef class GreeksCalculator:
             if underlying != "" and not position_instrument_id.value.startswith(underlying):
                 continue
 
-            quantity = float(position.signed_qty)
-            instrument_greeks = self.instrument_greeks(position_instrument_id, flat_interest_rate,
-                                                       spot_shock, vol_shock, expiry_in_years_shock,
-                                                       use_cached_greeks, cache_greeks, publish_greeks,
-                                                       ts_event, position)
+            quantity = position.signed_qty
+            instrument_greeks = self.instrument_greeks(
+                position_instrument_id,
+                flat_interest_rate,
+                spot_shock,
+                vol_shock,
+                expiry_in_years_shock,
+                use_cached_greeks,
+                cache_greeks,
+                publish_greeks,
+                ts_event,
+                position,
+            )
+
             position_greeks = quantity * instrument_greeks
-            # self.log.warning(f"{position_greeks=}")
             portfolio_greeks += position_greeks
 
         return portfolio_greeks
@@ -303,8 +314,8 @@ cdef class GreeksCalculator:
         None
 
         """
-        used_handler = handler or (lambda greeks: self.cache.add_greeks(greeks))
-        self.msgbus.subscribe(
+        used_handler = handler or (lambda greeks: self._cache.add_greeks(greeks))
+        self._msgbus.subscribe(
             topic=f"data.GreeksData.instrument_id={underlying}*",
-            handler=used_handler
+            handler=used_handler,
         )

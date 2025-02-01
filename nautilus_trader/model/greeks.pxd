@@ -20,11 +20,7 @@ from nautilus_trader.common.component cimport MessageBus
 
 
 cdef class GreeksCalculator:
-    cdef readonly Clock clock
-    """The actors clock.\n\n:returns: `Clock`"""
-    cdef readonly Logger log
-    """The actors logger.\n\n:returns: `Logger`"""
-    cdef readonly MessageBus msgbus
-    """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
-    cdef readonly CacheFacade cache
-    """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
+    cdef Clock _clock
+    cdef Logger _log
+    cdef MessageBus _msgbus
+    cdef CacheFacade _cache
