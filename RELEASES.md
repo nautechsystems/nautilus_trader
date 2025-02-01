@@ -20,6 +20,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `default_min_notional` config option for `BetfairInstrumentProviderConfig`
 - Added `stream_conflate_ms` config option for `BetfairDataClientConfig`
 - Added `recv_window_ms` config option for `BybitDataClientConfig` and `BybitExecClientConfig`
+- Added `open_check_open_only` config option for `LiveExecEngineConfig`
 
 ### Breaking Changes
 - Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)

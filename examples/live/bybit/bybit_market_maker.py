@@ -57,6 +57,7 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         open_check_interval_secs=5.0,
+        open_check_open_only=True,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,

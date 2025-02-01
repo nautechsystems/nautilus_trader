@@ -100,9 +100,15 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         The number of retry attempts the engine will make to verify the status of an
         in-flight order with the venue, should the initial attempt fail.
     open_check_interval_secs : PositiveFloat, optional
-        The interval (seconds) between checks to confirm if Nautilus open orders remain open on the venue.
-        A recommended setting is between 5-10 seconds, consider API rate limits and the additional request
-        weights imposed by the necessary order status requests.
+        The interval (seconds) between checks for open orders at the venue.
+        If there is a discrepancy then an order status report is generated and reconciled.
+        A recommended setting is between 5-10 seconds, consider API rate limits and the additional
+        request weights.
+        If no positive value is specified then the open order checking task is not started.
+    open_check_open_only : bool, default True
+        If True, the **check_open_orders** requests only currently open orders from the venue.
+        If False, it requests the entire order history, which can be a heavy API call.
+        This parameter only applies if the **check_open_orders** task is running.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
@@ -117,6 +123,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     inflight_check_retries: NonNegativeInt = 5
     open_check_interval_secs: PositiveFloat | None = None
+    open_check_open_only: bool = True
     qsize: PositiveInt = 100_000
 
 

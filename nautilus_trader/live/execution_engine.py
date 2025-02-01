@@ -154,6 +154,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self.inflight_check_max_retries: int = config.inflight_check_retries
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
+        self.open_check_open_only: float | None = config.open_check_open_only
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
@@ -164,6 +165,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.open_check_open_only=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -465,22 +467,37 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("Open check loop task canceled")
 
     async def _check_open_orders(self) -> None:
-        self._log.debug("Checking open orders status")
+        try:
+            self._log.debug("Checking open orders status")
 
-        open_order_ids: list[ClientOrderId] = self._cache.client_order_ids_open()
-        open_len = len(open_order_ids)
-        self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open")
+            open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()
+            open_orders: list[Order] = self._cache.orders_open()
+            open_len = len(open_orders)
+            self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open")
 
-        if not open_order_ids:
-            return  # Nothing further to check
+            # In full-history mode, if there are no cached open orders, skip the venue check
+            # In open-only mode, the venue is always queried regardless of cache state
+            if not open_orders and not self.open_check_open_only:
+                return  # Nothing further to check
 
-        tasks = [c.generate_order_status_reports(open_only=True) for c in self._clients.values()]
-        order_reports_all = await asyncio.gather(*tasks)
-        all_order_reports = [r for reports in order_reports_all for r in reports]
+            clients = self.get_clients_for_orders(open_orders)
 
-        for report in all_order_reports:
-            if not report.is_open and report.client_order_id in open_order_ids:
-                self._reconcile_order_report(report, trades=[])
+            tasks = [
+                c.generate_order_status_reports(open_only=self.open_check_open_only)
+                for c in clients
+            ]
+            order_reports_all = await asyncio.gather(*tasks)
+            all_order_reports = [r for reports in order_reports_all for r in reports]
+
+            # For each report, compare the reported open status with our cache
+            # If there's a discrepancy, reconcile the order report
+            for report in all_order_reports:
+                is_in_open_ids = report.client_order_id in open_order_ids
+                if report.is_open != is_in_open_ids:
+                    self._reconcile_order_report(report, trades=[])
+        except Exception as e:
+            # Catch all exception for error visibility in task
+            self._log.error(f"Error in check_open_orders: {e}")
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
