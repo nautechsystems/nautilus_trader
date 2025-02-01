@@ -470,14 +470,11 @@ impl LiveTimer {
             let clock = get_atomic_clock_realtime();
             let now_ns = clock.get_time_ns();
 
-            let start = if next_time_ns <= now_ns {
-                Instant::now()
-            } else {
-                // Timer initialization delay
-                let delay = Duration::from_millis(1);
-                let diff: u64 = (next_time_ns - now_ns).into();
-                Instant::now() + Duration::from_nanos(diff) - delay
-            };
+            // 1-millisecond delay to account for the overhead of initializing a tokio timer
+            let overhead = Duration::from_millis(1);
+            let delay_ns = next_time_ns.saturating_sub(now_ns.as_u64());
+            let delay = Duration::from_nanos(delay_ns).saturating_sub(overhead);
+            let start = Instant::now() + delay;
 
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
 
@@ -643,5 +640,20 @@ mod tests {
         );
         assert_eq!(timer.advance(UnixNanos::from(10)).count(), 5);
         assert!(timer.is_expired);
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_exact_boundary() {
+        let mut timer = TestTimer::new(
+            "boundary_timer",
+            NonZeroU64::new(5).unwrap(),
+            UnixNanos::from(0),
+            None,
+        );
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(5)).collect();
+        assert_eq!(events.len(), 1, "Expected one event at the 5 ns boundary");
+
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(10)).collect();
+        assert_eq!(events.len(), 1, "Expected one event at the 10 ns boundary");
     }
 }
