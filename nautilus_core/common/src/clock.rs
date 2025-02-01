@@ -556,6 +556,12 @@ impl Clock for LiveClock {
         }
 
         // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
+
+        let mut start_time_ns = start_time_ns;
+        if start_time_ns == 0 {
+            // Zero start time indicates no explicit start; we use the current time
+            start_time_ns = self.timestamp_ns();
+        }
         let interval_ns = create_valid_interval(interval_ns);
 
         #[cfg(not(feature = "clock_v2"))]
