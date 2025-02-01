@@ -46,6 +46,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `TardisHttpClient` requests and error handling
 - Refined `Currency` `name` to accept non-ASCII characters (common for foreign currencies)
 - Refactored CI with composite actions (#2242), thanks @sunlei
+- Refactored Option Greeks feature (#2266), thanks @faysou
 - Changed to use `mold` as the linker in CI (#2254), thanks @sunlei
 - Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
 - Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
