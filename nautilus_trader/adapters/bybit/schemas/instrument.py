@@ -37,7 +37,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -326,7 +326,7 @@ class BybitInstrumentOption(msgspec.Struct):
     def parse_to_instrument(
         self,
         quote_currency: Currency,
-    ) -> OptionsContract:
+    ) -> OptionContract:
         assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
         instrument_id = bybit_symbol.to_instrument_id()
@@ -343,7 +343,7 @@ class BybitInstrumentOption(msgspec.Struct):
         activation_ns = pd.Timedelta(milliseconds=int(self.launchTime)).total_seconds() * 1e9
         expiration_ns = pd.Timedelta(milliseconds=int(self.deliveryTime)).total_seconds() * 1e9
 
-        return OptionsContract(
+        return OptionContract(
             instrument_id=instrument_id,
             raw_symbol=Symbol(bybit_symbol.raw_symbol),
             asset_class=AssetClass.CRYPTOCURRENCY,

@@ -20,7 +20,7 @@ use pyo3::{IntoPy, PyObject, PyResult, Python};
 
 use crate::instruments::{
     BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
-    FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
+    FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
 };
 
 pub mod betting;
@@ -31,8 +31,8 @@ pub mod currency_pair;
 pub mod equity;
 pub mod futures_contract;
 pub mod futures_spread;
-pub mod options_contract;
-pub mod options_spread;
+pub mod option_contract;
+pub mod option_spread;
 
 pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
     match instrument {
@@ -44,8 +44,8 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
         InstrumentAny::Equity(inst) => Ok(inst.into_py(py)),
         InstrumentAny::FuturesContract(inst) => Ok(inst.into_py(py)),
         InstrumentAny::FuturesSpread(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::OptionsContract(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::OptionsSpread(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::OptionContract(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::OptionSpread(inst) => Ok(inst.into_py(py)),
     }
 }
 
@@ -73,11 +73,11 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<
         stringify!(FuturesSpread) => Ok(InstrumentAny::FuturesSpread(
             instrument.extract::<FuturesSpread>(py)?,
         )),
-        stringify!(OptionsContract) => Ok(InstrumentAny::OptionsContract(
-            instrument.extract::<OptionsContract>(py)?,
+        stringify!(OptionContract) => Ok(InstrumentAny::OptionContract(
+            instrument.extract::<OptionContract>(py)?,
         )),
-        stringify!(OptionsSpread) => Ok(InstrumentAny::OptionsSpread(
-            instrument.extract::<OptionsSpread>(py)?,
+        stringify!(OptionSpread) => Ok(InstrumentAny::OptionSpread(
+            instrument.extract::<OptionSpread>(py)?,
         )),
         _ => Err(to_pyvalue_err(
             "Error in conversion from `PyObject` to `InstrumentAny`",

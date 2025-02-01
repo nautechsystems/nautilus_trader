@@ -28,7 +28,7 @@ use nautilus_model::{
     },
     identifiers::{InstrumentId, TradeId},
     instruments::{
-        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
+        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
     types::{price::decode_raw_price_i64, Currency, Price, Quantity},
 };
@@ -390,11 +390,11 @@ pub fn decode_futures_spread_v1(
     )
 }
 
-pub fn decode_options_contract_v1(
+pub fn decode_option_contract_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<OptionsContract> {
+) -> anyhow::Result<OptionContract> {
     let currency = parse_currency_or_usd_default(msg.currency());
     let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
     let exchange = Ustr::from(msg.exchange()?);
@@ -415,7 +415,7 @@ pub fn decode_options_contract_v1(
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    OptionsContract::new_checked(
+    OptionContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -443,11 +443,11 @@ pub fn decode_options_contract_v1(
     )
 }
 
-pub fn decode_options_spread_v1(
+pub fn decode_option_spread_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<OptionsSpread> {
+) -> anyhow::Result<OptionSpread> {
     let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.underlying()?);
@@ -463,7 +463,7 @@ pub fn decode_options_spread_v1(
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    OptionsSpread::new_checked(
+    OptionSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -881,12 +881,12 @@ pub fn decode_instrument_def_msg_v1(
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(InstrumentAny::OptionsContract(decode_options_contract_v1(
+        'C' | 'P' => Ok(InstrumentAny::OptionContract(decode_option_contract_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'T' | 'M' => Ok(InstrumentAny::OptionsSpread(decode_options_spread_v1(
+        'T' | 'M' => Ok(InstrumentAny::OptionSpread(decode_option_spread_v1(
             msg,
             instrument_id,
             ts_init,
@@ -921,12 +921,12 @@ pub fn decode_instrument_def_msg(
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(InstrumentAny::OptionsContract(decode_options_contract(
+        'C' | 'P' => Ok(InstrumentAny::OptionContract(decode_option_contract(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'T' | 'M' => Ok(InstrumentAny::OptionsSpread(decode_options_spread(
+        'T' | 'M' => Ok(InstrumentAny::OptionSpread(decode_option_spread(
             msg,
             instrument_id,
             ts_init,
@@ -1053,11 +1053,11 @@ pub fn decode_futures_spread(
     )
 }
 
-pub fn decode_options_contract(
+pub fn decode_option_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<OptionsContract> {
+) -> anyhow::Result<OptionContract> {
     let currency = parse_currency_or_usd_default(msg.currency());
     let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
     let exchange = Ustr::from(msg.exchange()?);
@@ -1078,7 +1078,7 @@ pub fn decode_options_contract(
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    OptionsContract::new_checked(
+    OptionContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1106,11 +1106,11 @@ pub fn decode_options_contract(
     )
 }
 
-pub fn decode_options_spread(
+pub fn decode_option_spread(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<OptionsSpread> {
+) -> anyhow::Result<OptionSpread> {
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.underlying()?);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
@@ -1126,7 +1126,7 @@ pub fn decode_options_spread(
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    OptionsSpread::new_checked(
+    OptionSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),

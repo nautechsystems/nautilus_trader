@@ -25,7 +25,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::{
         BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
-        FuturesContract, FuturesSpread, InstrumentAny, OptionsContract, OptionsSpread,
+        FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -44,8 +44,8 @@ pub struct CurrencyPairModel(pub CurrencyPair);
 pub struct EquityModel(pub Equity);
 pub struct FuturesContractModel(pub FuturesContract);
 pub struct FuturesSpreadModel(pub FuturesSpread);
-pub struct OptionsContractModel(pub OptionsContract);
-pub struct OptionsSpreadModel(pub OptionsSpread);
+pub struct OptionContractModel(pub OptionContract);
+pub struct OptionSpreadModel(pub OptionSpread);
 
 // TBD
 impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
@@ -83,13 +83,13 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
             Ok(InstrumentAnyModel(InstrumentAny::FuturesSpread(
                 FuturesSpreadModel::from_row(row).unwrap().0,
             )))
-        } else if kind == "OPTIONS_CONTRACT" {
-            Ok(InstrumentAnyModel(InstrumentAny::OptionsContract(
-                OptionsContractModel::from_row(row).unwrap().0,
+        } else if kind == "OPTION_CONTRACT" {
+            Ok(InstrumentAnyModel(InstrumentAny::OptionContract(
+                OptionContractModel::from_row(row).unwrap().0,
             )))
-        } else if kind == "OPTIONS_SPREAD" {
-            Ok(InstrumentAnyModel(InstrumentAny::OptionsSpread(
-                OptionsSpreadModel::from_row(row).unwrap().0,
+        } else if kind == "OPTION_SPREAD" {
+            Ok(InstrumentAnyModel(InstrumentAny::OptionSpread(
+                OptionSpreadModel::from_row(row).unwrap().0,
             )))
         } else {
             panic!("Unknown instrument type")
@@ -789,7 +789,7 @@ impl<'r> FromRow<'r, PgRow> for FuturesSpreadModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
+impl<'r> FromRow<'r, PgRow> for OptionContractModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::new)?;
@@ -859,7 +859,7 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = OptionsContract::new(
+        let inst = OptionContract::new(
             id,
             raw_symbol,
             asset_class,
@@ -885,12 +885,12 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
             ts_event,
             ts_init,
         );
-        Ok(OptionsContractModel(inst))
+        Ok(OptionContractModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OptionsSpreadModel {
+impl<'r> FromRow<'r, PgRow> for OptionSpreadModel {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        todo!("Implement FromRow for OptionsSpread")
+        todo!("Implement FromRow for OptionSpread")
     }
 }

@@ -44,7 +44,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ins
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
@@ -456,4 +456,4 @@ def test_parse_instrument_future_option():
 
     # Assert
     assert instrument.id.value == "E4AN24C5655.CME"
-    assert isinstance(instrument, OptionsContract), "instrument is not a OptionContract"
+    assert isinstance(instrument, OptionContract), "instrument is not a OptionContract"

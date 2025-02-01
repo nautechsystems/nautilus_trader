@@ -179,7 +179,7 @@ impl MarginAccount {
             InstrumentAny::FuturesContract(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentAny::OptionsContract(inst) => {
+            InstrumentAny::OptionContract(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             _ => Err(to_pyvalue_err("Unsupported instrument type")),
@@ -213,7 +213,7 @@ impl MarginAccount {
             InstrumentAny::FuturesContract(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentAny::OptionsContract(inst) => {
+            InstrumentAny::OptionContract(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             _ => Err(to_pyvalue_err("Unsupported instrument type")),

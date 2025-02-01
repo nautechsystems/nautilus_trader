@@ -718,7 +718,7 @@ pub enum OmsType {
     Hedging = 2,
 }
 
-/// The kind of options contract.
+/// The kind of option contract.
 #[repr(C)]
 #[derive(
     Copy,

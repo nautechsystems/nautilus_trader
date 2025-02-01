@@ -26,12 +26,12 @@ use ustr::Ustr;
 use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    instruments::OptionsContract,
+    instruments::OptionContract,
     types::{Currency, Price, Quantity},
 };
 
 #[pymethods]
-impl OptionsContract {
+impl OptionContract {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (id, raw_symbol, asset_class, underlying, option_kind, strike_price, currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init,  max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, exchange=None))]
@@ -105,7 +105,7 @@ impl OptionsContract {
 
     #[getter]
     fn type_str(&self) -> &str {
-        stringify!(OptionsContract)
+        stringify!(OptionContract)
     }
 
     #[getter]
@@ -267,7 +267,7 @@ impl OptionsContract {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OptionsContract))?;
+        dict.set_item("type", stringify!(OptionContract))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;

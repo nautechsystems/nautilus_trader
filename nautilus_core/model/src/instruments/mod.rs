@@ -24,8 +24,8 @@ pub mod currency_pair;
 pub mod equity;
 pub mod futures_contract;
 pub mod futures_spread;
-pub mod options_contract;
-pub mod options_spread;
+pub mod option_contract;
+pub mod option_spread;
 pub mod synthetic;
 
 #[cfg(feature = "stubs")]
@@ -41,8 +41,7 @@ pub use crate::instruments::{
     any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
     crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
     equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    options_contract::OptionsContract, options_spread::OptionsSpread,
-    synthetic::SyntheticInstrument,
+    option_contract::OptionContract, option_spread::OptionSpread, synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},

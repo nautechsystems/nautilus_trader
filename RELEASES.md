@@ -22,6 +22,10 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `recv_window_ms` config option for `BybitDataClientConfig` and `BybitExecClientConfig`
 
 ### Breaking Changes
+- Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)
+- Renamed `OptionsSpread` instrument to `OptionSpread` for more technically correct terminology (singular)
+- Renamed `options_contract` modules to `option_contract` (see above)
+- Renamed `options_spread` modules to `option_spread` (see above)
 - Renamed `InstrumentClass.FUTURE_SPREAD` to `InstrumentClass.FUTURES_SPREAD` for more technically correct terminology
 - Renamed `event_logging` config option to `log_events`
 - Renamed `BetfairExecClientConfig.request_account_state_period` to `request_account_state_secs`
@@ -220,8 +224,8 @@ Released on 15th December 2024 (UTC).
 - Added `max_ws_reconnection_tries` to `BybitExecClientConfig` (#2109), thanks @sunlei
 - Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesContract`
 - Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesSpread`
-- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsContract`
-- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsSpread`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionContract`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionSpread`
 - Improved Databento symbology support for Interactive Brokers (#2113), thanks @rsmb7z
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
@@ -246,8 +250,8 @@ Released on 15th December 2024 (UTC).
 - Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
 - Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 - Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
-- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
-- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
@@ -544,9 +548,9 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Fixed `Cfd` instrument Arrow schema and serialization
 - Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
 - Fixed Databento parent and continuous contract subscriptions (using new symbol root)
-- Fixed Databento `FuturesSpread` and `OptionsSpread` instrument decoding (was not correctly handling price increments and empty underlyings)
+- Fixed Databento `FuturesSpread` and `OptionSpread` instrument decoding (was not correctly handling price increments and empty underlyings)
 - Fixed `FuturesSpread` serialization
-- Fixed `OptionsSpread` serialization
+- Fixed `OptionSpread` serialization
 
 ---
 
@@ -634,7 +638,7 @@ Released on 19th August 2024 (UTC).
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
-- Changed `OptionsContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
+- Changed `OptionContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
 - Renamed `snapshot_positions_interval` to `snapshot_positions_interval_secs` (more explicitly indicates time units)
 - Moved `snapshot_orders` config option to `ExecEngineConfig` (can now be used for all environment contexts)
 - Moved `snapshot_positions` config option to `ExecEngineConfig` (can now be used for all environment contexts)
@@ -845,7 +849,7 @@ Released on 18th May 2024 (UTC).
 ### Enhancements
 - Added Nautilus CLI (see [docs](https://nautilustrader.io/docs/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
-- Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
+- Added `OrderMatchingEngine` futures and option contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 - Added `ParquetDataCatalog` S3 support (#1620), thanks @benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks @rsmb7z
@@ -957,10 +961,10 @@ Released on 15th March 2024 (UTC).
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
 - Added `LoggingConfig.use_pyo3` config option for PyO3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
-- Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread` (optional)
+- Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionContract` and `OptionSpread` (optional)
 
 ### Breaking Changes
-- Changed Arrow schema adding `exchange` field for `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread`
+- Changed Arrow schema adding `exchange` field for `FuturesContract`, `FuturesSpread`, `OptionContract` and `OptionSpread`
 
 ### Fixes
 - Fixed `MessageBus` handling of subscriptions after a topic has been published on (was previously dropping messages for these late subscribers)
@@ -985,7 +989,7 @@ Released on 25th February 2024 (UTC).
 
 ### Enhancements
 - Added `FuturesSpread` instrument type
-- Added `OptionsSpread` instrument type
+- Added `OptionSpread` instrument type
 - Added `InstrumentClass.FUTURE_SPREAD`
 - Added `InstrumentClass.OPTION_SPREAD`
 - Added `managed` parameter to `subscribe_order_book_deltas`, default `True` to retain current behavior (if false then the data engine will not automatically manage a book)
@@ -1096,7 +1100,7 @@ Released on 22nd January 2024 (UTC).
 - Renamed `LoggerAdapter` to `Logger` (and removed old `Logger` class)
 - Renamed `Logger` `component_name` parameter to `name` (matches Python built-in `logging` API)
 - Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
-- Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
+- Renamed `OptionContract` Arrow schema field `kind` to `option_kind`
 - Changed `level_file` log level to `OFF` (file logging is off by default)
 
 ### Fixes
@@ -1245,18 +1249,18 @@ Released on 3rd November 2023 (UTC).
 - Added `support_contingent_orders` config option for venues (to simulate venues which do not support contingent orders)
 - Added `StrategyConfig.manage_contingent_orders` config option (to automatically manage **open** contingent orders)
 - Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
-- Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `FuturesContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
-- Added `OptionsContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 
 ### Breaking Changes
 - Renamed `FuturesContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
-- Renamed `OptionsContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Renamed `OptionContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Renamed `CryptoFuture.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Changed `FuturesContract` Arrow schema
-- Changed `OptionsContract` Arrow schema
+- Changed `OptionContract` Arrow schema
 - Changed `CryptoFuture` Arrow schema
 - Transformed orders will now retain the original `ts_init` timestamp
 - Removed unimplemented `batch_more` option for `Strategy.modify_order`
@@ -1543,7 +1547,7 @@ Released on 30th April 2023 (UTC).
 - Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
 - Removed redundant rate limiting from Rust logger (and associated `rate_limit` config params)
 - Renamed `Future` instrument to `FuturesContract` (avoids ambiguity)
-- Renamed `Option` instrument to `OptionsContract` (avoids ambiguity and naming conflicts in Rust)
+- Renamed `Option` instrument to `OptionContract` (avoids ambiguity and naming conflicts in Rust)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
 - Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid)
 

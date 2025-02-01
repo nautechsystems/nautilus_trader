@@ -31,9 +31,9 @@ from nautilus_trader.core.nautilus_pyo3 import FuturesContract
 from nautilus_trader.core.nautilus_pyo3 import FuturesSpread
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.core.nautilus_pyo3 import OptionContract
 from nautilus_trader.core.nautilus_pyo3 import OptionKind
-from nautilus_trader.core.nautilus_pyo3 import OptionsContract
-from nautilus_trader.core.nautilus_pyo3 import OptionsSpread
+from nautilus_trader.core.nautilus_pyo3 import OptionSpread
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -354,12 +354,12 @@ class TestInstrumentProviderPyo3:
     def aapl_option(
         activation: pd.Timestamp | None = None,
         expiration: pd.Timestamp | None = None,
-    ) -> OptionsContract:
+    ) -> OptionContract:
         if activation is None:
             activation = pd.Timestamp("2021-9-17", tz=pytz.utc)
         if expiration is None:
             expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
-        return OptionsContract(
+        return OptionContract(
             id=InstrumentId.from_str("AAPL211217C00150000.OPRA"),
             raw_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
@@ -444,15 +444,15 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
-    def options_spread(
+    def option_spread(
         activation: pd.Timestamp | None = None,
         expiration: pd.Timestamp | None = None,
-    ) -> OptionsSpread:
+    ) -> OptionSpread:
         if activation is None:
             activation = pd.Timestamp("2023-11-06T20:54:07", tz=pytz.utc)
         if expiration is None:
             expiration = pd.Timestamp("2024-02-23T22:59:00", tz=pytz.utc)
-        return OptionsSpread(
+        return OptionSpread(
             id=InstrumentId.from_str("UD:U$: GN 2534559.GLBX"),
             raw_symbol=Symbol("UD:U$: GN 2534559"),
             asset_class=AssetClass.FX,

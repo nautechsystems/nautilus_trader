@@ -35,33 +35,31 @@ use crate::{
     },
 };
 
-/// Represents a generic options contract instrument.
+/// Represents a generic option spread instrument.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct OptionsContract {
+pub struct OptionSpread {
     /// The instrument ID.
     pub id: InstrumentId,
     /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
-    /// The options contract asset class.
+    /// The option spread asset class.
     pub asset_class: AssetClass,
     /// The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
     pub exchange: Option<Ustr>,
     /// The underlying asset.
     pub underlying: Ustr,
-    /// The kind of option (PUT | CALL).
-    pub option_kind: OptionKind,
-    /// The option strike price.
-    pub strike_price: Price,
+    /// The strategy type of the spread.
+    pub strategy_type: Ustr,
     /// UNIX timestamp (nanoseconds) for contract activation.
     pub activation_ns: UnixNanos,
     /// UNIX timestamp (nanoseconds) for contract expiration.
     pub expiration_ns: UnixNanos,
-    /// The options contract currency.
+    /// The option spread currency.
     pub currency: Currency,
     /// The price decimal precision.
     pub price_precision: u8,
@@ -97,8 +95,8 @@ pub struct OptionsContract {
     pub ts_init: UnixNanos,
 }
 
-impl OptionsContract {
-    /// Creates a new [`OptionsContract`] instance with correctness checking.
+impl OptionSpread {
+    /// Creates a new [`OptionSpread`] instance with correctness checking.
     ///
     /// # Notes
     ///
@@ -110,11 +108,10 @@ impl OptionsContract {
         asset_class: AssetClass,
         exchange: Option<Ustr>,
         underlying: Ustr,
-        option_kind: OptionKind,
-        strike_price: Price,
-        currency: Currency,
+        strategy_type: Ustr,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
+        currency: Currency,
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
@@ -131,7 +128,7 @@ impl OptionsContract {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(underlying.as_str(), stringify!(underlying))?;
+        check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -148,15 +145,14 @@ impl OptionsContract {
             asset_class,
             exchange,
             underlying,
-            option_kind,
+            strategy_type,
             activation_ns,
             expiration_ns,
-            strike_price,
             currency,
             price_precision,
             price_increment,
             size_precision: 0,
-            size_increment: Quantity::from(1),
+            size_increment: Quantity::from("1"),
             multiplier,
             lot_size,
             margin_init: margin_init.unwrap_or_default(),
@@ -172,7 +168,7 @@ impl OptionsContract {
         })
     }
 
-    /// Creates a new [`OptionsContract`] instance.
+    /// Creates a new [`OptionSpread`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -180,11 +176,10 @@ impl OptionsContract {
         asset_class: AssetClass,
         exchange: Option<Ustr>,
         underlying: Ustr,
-        option_kind: OptionKind,
-        strike_price: Price,
-        currency: Currency,
+        strategy_type: Ustr,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
+        currency: Currency,
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
@@ -206,11 +201,10 @@ impl OptionsContract {
             asset_class,
             exchange,
             underlying,
-            option_kind,
-            strike_price,
-            currency,
+            strategy_type,
             activation_ns,
             expiration_ns,
+            currency,
             price_precision,
             price_increment,
             multiplier,
@@ -230,23 +224,23 @@ impl OptionsContract {
     }
 }
 
-impl PartialEq<Self> for OptionsContract {
+impl PartialEq<Self> for OptionSpread {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for OptionsContract {}
+impl Eq for OptionSpread {}
 
-impl Hash for OptionsContract {
+impl Hash for OptionSpread {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl Instrument for OptionsContract {
+impl Instrument for OptionSpread {
     fn into_any(self) -> InstrumentAny {
-        InstrumentAny::OptionsContract(self)
+        InstrumentAny::OptionSpread(self)
     }
 
     fn id(&self) -> InstrumentId {
@@ -262,7 +256,7 @@ impl Instrument for OptionsContract {
     }
 
     fn instrument_class(&self) -> InstrumentClass {
-        InstrumentClass::Option
+        InstrumentClass::OptionSpread
     }
     fn underlying(&self) -> Option<Ustr> {
         Some(self.underlying)
@@ -285,7 +279,7 @@ impl Instrument for OptionsContract {
     }
 
     fn option_kind(&self) -> Option<OptionKind> {
-        Some(self.option_kind)
+        None
     }
 
     fn exchange(&self) -> Option<Ustr> {
@@ -293,7 +287,7 @@ impl Instrument for OptionsContract {
     }
 
     fn strike_price(&self) -> Option<Price> {
-        Some(self.strike_price)
+        None
     }
 
     fn activation_ns(&self) -> Option<UnixNanos> {
@@ -372,11 +366,10 @@ impl Instrument for OptionsContract {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{stubs::*, OptionsContract};
+    use crate::instruments::{stubs::*, OptionSpread};
 
     #[rstest]
-    fn test_equality(options_contract_appl: OptionsContract) {
-        let options_contract_appl2 = options_contract_appl;
-        assert_eq!(options_contract_appl, options_contract_appl2);
+    fn test_equality(option_spread: OptionSpread) {
+        assert_eq!(option_spread, option_spread.clone());
     }
 }

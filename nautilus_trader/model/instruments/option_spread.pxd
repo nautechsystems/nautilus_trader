@@ -20,25 +20,23 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 
 
-cdef class OptionsContract(Instrument):
+cdef class OptionSpread(Instrument):
     cdef readonly str exchange
-    """The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.\n\n:returns: `str` or ``None``"""
+    """The exchang ISO 10383 Market Identifier Code (MIC) where the instrument trades.\n\n:returns: `str` or ``None``"""
     cdef readonly str underlying
     """The underlying asset for the contract.\n\n:returns: `str`"""
-    cdef readonly OptionKind option_kind
-    """The option kind (PUT | CALL) for the contract.\n\n:returns: `OptionKind`"""
-    cdef readonly Price strike_price
-    """The strike price for the contract.\n\n:returns: `Price`"""
+    cdef readonly str strategy_type
+    """The strategy type of the spread.\n\n:returns: `str`"""
     cdef readonly uint64_t activation_ns
     """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
     """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     @staticmethod
-    cdef OptionsContract from_dict_c(dict values)
+    cdef OptionSpread from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(OptionsContract obj)
+    cdef dict to_dict_c(OptionSpread obj)
 
     @staticmethod
-    cdef OptionsContract from_pyo3_c(pyo3_instrument)
+    cdef OptionSpread from_pyo3_c(pyo3_instrument)

@@ -58,7 +58,7 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import Currency
@@ -668,8 +668,8 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_option() -> OptionsContract:
-        return OptionsContract(
+    def aapl_option() -> OptionContract:
+        return OptionContract(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
             raw_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,

@@ -26,12 +26,12 @@ use ustr::Ustr;
 use crate::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
-    instruments::OptionsSpread,
+    instruments::OptionSpread,
     types::{Currency, Price, Quantity},
 };
 
 #[pymethods]
-impl OptionsSpread {
+impl OptionSpread {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (id, raw_symbol, asset_class, underlying, strategy_type, activation_ns, expiration_ns, currency, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, exchange=None))]
@@ -103,7 +103,7 @@ impl OptionsSpread {
 
     #[getter]
     fn type_str(&self) -> &str {
-        stringify!(OptionsSpread)
+        stringify!(OptionSpread)
     }
 
     #[getter]
@@ -259,7 +259,7 @@ impl OptionsSpread {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OptionsSpread))?;
+        dict.set_item("type", stringify!(OptionSpread))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;

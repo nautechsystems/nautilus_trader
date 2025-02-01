@@ -41,7 +41,7 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -200,7 +200,7 @@ def parse_instrument(
     elif security_type in ("FUT", "CONTFUT"):
         return parse_futures_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type in ("OPT", "FOP"):
-        return parse_options_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_option_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "CASH":
         return parse_forex_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "CRYPTO":
@@ -306,10 +306,10 @@ def parse_futures_contract(
     )
 
 
-def parse_options_contract(
+def parse_option_contract(
     details: IBContractDetails,
     instrument_id: InstrumentId,
-) -> OptionsContract:
+) -> OptionContract:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     asset_class = sec_type_to_asset_class(details.underSecType)
@@ -320,7 +320,7 @@ def parse_options_contract(
     expiration = expiry_timestring_to_datetime(details.contract.lastTradeDateOrContractMonth)
     activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
 
-    return OptionsContract(
+    return OptionContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,

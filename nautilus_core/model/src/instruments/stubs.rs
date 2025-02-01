@@ -22,13 +22,13 @@ use ustr::Ustr;
 
 use super::{
     betting::BettingInstrument, binary_option::BinaryOption, futures_spread::FuturesSpread,
-    options_spread::OptionsSpread, synthetic::SyntheticInstrument,
+    option_spread::OptionSpread, synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{
-        CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, OptionsContract,
+        CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, OptionContract,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -397,14 +397,14 @@ pub fn futures_spread_es() -> FuturesSpread {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// OptionsContract
+// OptionContract
 ////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
-pub fn options_contract_appl() -> OptionsContract {
+pub fn option_contract_appl() -> OptionContract {
     let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
     let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
-    OptionsContract::new(
+    OptionContract::new(
         InstrumentId::from("AAPL211217C00150000.OPRA"),
         Symbol::from("AAPL211217C00150000"),
         AssetClass::Equity,
@@ -433,14 +433,14 @@ pub fn options_contract_appl() -> OptionsContract {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// OptionsSpread
+// OptionSpread
 ////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
-pub fn options_spread() -> OptionsSpread {
+pub fn option_spread() -> OptionSpread {
     let activation = Utc.with_ymd_and_hms(2023, 11, 6, 20, 54, 7).unwrap();
     let expiration = Utc.with_ymd_and_hms(2024, 2, 23, 22, 59, 0).unwrap();
-    OptionsSpread::new(
+    OptionSpread::new(
         InstrumentId::from("UD:U$: GN 2534559.GLBX"),
         Symbol::from("UD:U$: GN 2534559"),
         AssetClass::FX,

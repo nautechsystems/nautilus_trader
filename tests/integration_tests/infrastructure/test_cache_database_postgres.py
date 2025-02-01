@@ -377,10 +377,10 @@ class TestCachePostgresAdapter:
         assert es_futures == self.database.load_instrument(es_futures.id)
 
     ################################################################################
-    # Instrument - Options Contract
+    # Instrument - Option Contract
     ################################################################################
     @pytest.mark.asyncio
-    async def test_add_instrument_options_contract(self):
+    async def test_add_instrument_option_contract(self):
         aapl_option = TestInstrumentProvider.aapl_option()
         self.database.add_currency(aapl_option.quote_currency)
 

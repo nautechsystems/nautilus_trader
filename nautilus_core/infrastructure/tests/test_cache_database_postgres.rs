@@ -41,7 +41,7 @@ mod serial_tests {
         instruments::{
             stubs::{
                 audusd_sim, binary_option, crypto_future_btcusdt, crypto_perpetual_ethusdt,
-                currency_pair_ethusdt, equity_aapl, futures_contract_es, options_contract_appl,
+                currency_pair_ethusdt, equity_aapl, futures_contract_es, option_contract_appl,
             },
             Instrument, InstrumentAny,
         },
@@ -114,7 +114,7 @@ mod serial_tests {
         let currency_pair = currency_pair_ethusdt();
         let equity = equity_aapl();
         let futures_contract = futures_contract_es(None, None);
-        let options_contract = options_contract_appl();
+        let option_contract = option_contract_appl();
 
         // Insert all instruments
         pg_cache
@@ -136,7 +136,7 @@ mod serial_tests {
             .add_instrument(&InstrumentAny::FuturesContract(futures_contract))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::OptionsContract(options_contract))
+            .add_instrument(&InstrumentAny::OptionContract(option_contract))
             .unwrap();
 
         // Wait for cache to update
@@ -243,10 +243,10 @@ mod serial_tests {
         );
         assert_eq!(
             pg_cache
-                .load_instrument(&options_contract.id())
+                .load_instrument(&option_contract.id())
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::OptionsContract(options_contract)
+            InstrumentAny::OptionContract(option_contract)
         );
 
         // Check instrument list is correct
@@ -261,7 +261,7 @@ mod serial_tests {
                 currency_pair.id(),
                 equity.id(),
                 futures_contract.id(),
-                options_contract.id()
+                option_contract.id()
             ]
             .into_iter()
             .collect::<HashSet<InstrumentId>>()

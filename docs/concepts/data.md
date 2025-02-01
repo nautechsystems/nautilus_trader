@@ -44,8 +44,8 @@ The following instrument definitions are available:
 - `FuturesContract`: Represents a generic deliverable futures contract instrument.
 - `FuturesSpread`: Represents a generic deliverable futures spread instrument.
 - `Index`: Represents a generic index instrument.
-- `OptionsContract`: Represents a generic options contract instrument.
-- `OptionsSpread`: Represents a generic options spread instrument.
+- `OptionContract`: Represents a generic option contract instrument.
+- `OptionSpread`: Represents a generic option spread instrument.
 - `Synthetic`: Represents a synthetic instrument with prices derived from component instruments using a formula.
 
 ## Bars and aggregation

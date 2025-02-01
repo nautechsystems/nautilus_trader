@@ -183,7 +183,7 @@ class DataType:
 class Position:
     def __init__(
         self,
-        instrument: CurrencyPair | CryptoPerpetual | Equity | OptionsContract | SyntheticInstrument,
+        instrument: CurrencyPair | CryptoPerpetual | Equity | OptionContract | SyntheticInstrument,
         fill: OrderFilled,
     ) -> None: ...
     @classmethod
@@ -2266,7 +2266,7 @@ class FuturesSpread:
     def from_dict(cls, values: dict[str, str]) -> FuturesSpread: ...
     def to_dict(self) -> dict[str, Any]: ...
 
-class OptionsContract:
+class OptionContract:
     def __init__(
         self,
         id: InstrumentId,
@@ -2352,10 +2352,10 @@ class OptionsContract:
     @property
     def ts_init(self) -> int: ...
     @classmethod
-    def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
+    def from_dict(cls, values: dict[str, str]) -> OptionContract: ...
     def to_dict(self) -> dict[str, Any]: ...
 
-class OptionsSpread:
+class OptionSpread:
     def __init__(
         self,
         id: InstrumentId,
@@ -2440,7 +2440,7 @@ class OptionsSpread:
     @property
     def ts_init(self) -> int: ...
     @classmethod
-    def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
+    def from_dict(cls, values: dict[str, str]) -> OptionContract: ...
     def to_dict(self) -> dict[str, Any]: ...
 
 class SyntheticInstrument:
@@ -2470,7 +2470,7 @@ Instrument: TypeAlias = Union[
     CurrencyPair,
     Equity,
     FuturesContract,
-    OptionsContract,
+    OptionContract,
     SyntheticInstrument,
 ]
 
