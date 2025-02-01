@@ -1691,29 +1691,31 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_greeks(self, object greeks):
         """
-        Adds greeks to the cache.
+        Add greeks to the cache.
 
         Parameters
         ----------
         greeks : GreeksData
             The greeks to add.
+
         """
         self._greeks[greeks.instrument_id] = greeks
 
     cpdef void add_interest_rate_curve(self, object interest_rate_curve):
         """
-        Adds an interest rate curve to the cache.
+        Add an interest rate curve to the cache.
 
         Parameters
         ----------
         interest_rate_curve : InterestRateCurveData
             The interest rate curve to add.
+
         """
         self._interest_rate_curves[interest_rate_curve.currency] = interest_rate_curve
 
     cpdef object greeks(self, InstrumentId instrument_id):
         """
-        Returns the latest cached greeks for the given instrument ID.
+        Return the latest cached greeks for the given instrument ID.
 
         Parameters
         ----------
@@ -1724,12 +1726,13 @@ cdef class Cache(CacheFacade):
         -------
         GreeksData
             The greeks for the given instrument ID.
+
         """
         return self._greeks.get(instrument_id)
 
     cpdef object interest_rate_curve(self, str currency):
         """
-        Returns the latest cached interest rate curve for the given currency.
+        Return the latest cached interest rate curve for the given currency.
 
         Parameters
         ----------
@@ -1740,21 +1743,11 @@ cdef class Cache(CacheFacade):
         -------
         InterestRateCurveData
             The interest rate curve for the given currency.
+
         """
         return self._interest_rate_curves.get(currency)
 
     cpdef void snapshot_position(self, Position position):
-        """
-        Snapshot the given position in its current state.
-
-        The position ID will be appended with a UUID v4 string.
-
-        Parameters
-        ----------
-        position : Position
-            The position to snapshot.
-
-        """
         """
         Snapshot the given position in its current state.
 
