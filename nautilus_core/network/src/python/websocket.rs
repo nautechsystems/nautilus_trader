@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
 
 use futures::SinkExt;
 use nautilus_core::python::to_pyvalue_err;
@@ -21,6 +24,7 @@ use pyo3::{create_exception, exceptions::PyException, prelude::*};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
+    mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{WebSocketClient, WebSocketConfig},
 };
@@ -35,7 +39,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
-    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_secs=30, max_reconnection_tries=3))]
+    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         url: String,
@@ -44,8 +48,11 @@ impl WebSocketConfig {
         heartbeat: Option<u64>,
         heartbeat_msg: Option<String>,
         ping_handler: Option<PyObject>,
-        reconnect_timeout_secs: Option<u64>,
-        max_reconnection_tries: Option<u64>,
+        reconnect_timeout_ms: Option<u64>,
+        reconnect_delay_initial_ms: Option<u64>,
+        reconnect_delay_max_ms: Option<u64>,
+        reconnect_backoff_factor: Option<f64>,
+        reconnect_jitter_ms: Option<u64>,
     ) -> Self {
         Self {
             url,
@@ -54,8 +61,11 @@ impl WebSocketConfig {
             heartbeat,
             heartbeat_msg,
             ping_handler: ping_handler.map(Arc::new),
-            reconnect_timeout_secs,
-            max_reconnection_tries,
+            reconnect_timeout_ms,
+            reconnect_delay_initial_ms,
+            reconnect_delay_max_ms,
+            reconnect_backoff_factor,
+            reconnect_jitter_ms,
         }
     }
 }
@@ -103,9 +113,26 @@ impl WebSocketClient {
     /// - Any auto-reconnect job should be aborted before closing the client.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let disconnect_mode = slf.disconnect_mode.clone();
+        let connection_mode = slf.connection_mode.clone();
+        let mode = connection_mode.load(Ordering::SeqCst);
+        tracing::debug!("Close from mode {mode}");
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            disconnect_mode.store(true, Ordering::SeqCst);
+            match ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst)) {
+                ConnectionMode::Closed => {
+                    tracing::warn!("WebSocket already closed");
+                }
+                ConnectionMode::Disconnect => {
+                    tracing::warn!("WebSocket already disconnecting");
+                }
+                _ => {
+                    connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    while connection_mode.load(Ordering::SeqCst) != ConnectionMode::Closed.as_u8() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }
+            }
+
             Ok(())
         })
     }
@@ -113,16 +140,30 @@ impl WebSocketClient {
     /// Check if the client is still alive.
     ///
     /// Even if the connection is disconnected the client will still be alive
-    /// and trying to reconnect. Only when reconnect fails the client will
-    /// terminate.
+    /// and trying to reconnect.
     ///
     /// This is particularly useful for checking why a `send` failed. It could
     /// be because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
     /// delay.
-    #[pyo3(name = "is_alive")]
-    fn py_is_alive(slf: PyRef<'_, Self>) -> bool {
+    #[pyo3(name = "is_active")]
+    fn py_is_active(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
+    }
+
+    #[pyo3(name = "is_reconnecting")]
+    fn py_is_reconnecting(slf: PyRef<'_, Self>) -> bool {
+        slf.is_reconnecting()
+    }
+
+    #[pyo3(name = "is_disconnecting")]
+    fn py_is_disconnecting(slf: PyRef<'_, Self>) -> bool {
+        slf.is_disconnecting()
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(slf: PyRef<'_, Self>) -> bool {
+        slf.is_closed()
     }
 
     /// Send bytes data to the server.
@@ -391,6 +432,9 @@ counter = Counter()
             None,
             None,
             None,
+            None,
+            None,
+            None,
         );
         let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
             .await
@@ -464,6 +508,9 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
+            None,
+            None,
             None,
             None,
             None,

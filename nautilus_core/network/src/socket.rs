@@ -39,36 +39,13 @@ use tokio_tungstenite::{
 
 use crate::{
     backoff::ExponentialBackoff,
+    mode::ConnectionMode,
     tls::{create_tls_config_from_certs_dir, tcp_tls, Connector},
 };
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
-
-/// Connection state for the Socket client.
-///
-/// The client can be in one of four states (managed via an atomic flag):
-///
-/// - **CONNECTION_ACTIVE (0):**
-///   The client is fully connected and operational. All tasks (reading, writing, heartbeat) are running normally.
-///
-/// - **CONNECTION_RECONNECT (1):**
-///   The client has been disconnected or has been explicitly signaled to reconnect. In this state, active tasks are paused until a new connection is established.
-///
-/// - **CONNECTION_DISCONNECT (2):**
-///   The client has been explicitly signaled to disconnect. No further reconnection attempts will be made, and cleanup procedures are initiated.
-///
-/// - **CONNECTION_CLOSED (3):**
-///   The client is permanently closed. All associated tasks have been terminated and the connection is no longer available.
-///
-/// **State Transitions:**
-/// - The client typically transitions between **CONNECTION_ACTIVE** and **CONNECTION_RECONNECT** during normal reconnection attempts.
-/// - When a disconnect is initiated (either by user action or due to an unrecoverable error), the state moves to **CONNECTION_DISCONNECT** and finally to **CONNECTION_CLOSED** once cleanup is complete.
-pub const CONNECTION_ACTIVE: u8 = 0;
-pub const CONNECTION_RECONNECT: u8 = 1;
-pub const CONNECTION_DISCONNECT: u8 = 2;
-pub const CONNECTION_CLOSED: u8 = 3;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -160,8 +137,7 @@ impl SocketClientInner {
         let (reader, writer) = Self::tls_connect_with_server(url, *mode, connector.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
-        let connection_mode = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
-        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
         let handler = Python::with_gil(|py| handler.clone_ref(py));
         let read_task = Arc::new(Self::spawn_read_task(reader, handler, suffix.clone()));
@@ -176,12 +152,13 @@ impl SocketClientInner {
             )
         });
 
+        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
         let backoff = ExponentialBackoff::new(
             Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
             Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
             reconnect_backoff_factor.unwrap_or(1.5),
             reconnect_jitter_ms.unwrap_or(100),
-            true,
+            true, // immediate-first
         );
 
         Ok(Self {
@@ -221,8 +198,8 @@ impl SocketClientInner {
             if self
                 .connection_mode
                 .compare_exchange(
-                    CONNECTION_ACTIVE,
-                    CONNECTION_RECONNECT,
+                    ConnectionMode::Active.as_u8(),
+                    ConnectionMode::Reconnect.as_u8(),
                     Ordering::SeqCst,
                     Ordering::SeqCst,
                 )
@@ -278,7 +255,7 @@ impl SocketClientInner {
             });
 
             self.connection_mode
-                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
+                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
             tracing::debug!("Reconnect succeeded");
             Ok(())
@@ -374,16 +351,16 @@ impl SocketClientInner {
             loop {
                 tokio::time::sleep(interval).await;
 
-                match connection_state.load(Ordering::SeqCst) {
-                    CONNECTION_ACTIVE => {
+                match ConnectionMode::from_u8(connection_state.load(Ordering::SeqCst)) {
+                    ConnectionMode::Active => {
                         let mut guard = writer.lock().await;
                         match guard.write_all(&message).await {
                             Ok(()) => tracing::trace!("Sent heartbeat"),
                             Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
                         }
                     }
-                    CONNECTION_DISCONNECT | CONNECTION_CLOSED => break,
-                    _ => continue, // Reconnecting
+                    ConnectionMode::Reconnect => continue,
+                    ConnectionMode::Disconnect | ConnectionMode::Closed => break,
                 }
             }
 
@@ -498,6 +475,11 @@ impl SocketClient {
         })
     }
 
+    /// Returns the current connection mode.
+    pub fn connection_mode(&self) -> ConnectionMode {
+        ConnectionMode::from_u8(self.connection_mode.load(Ordering::SeqCst))
+    }
+
     /// Check if the client connection is active.
     ///
     /// Returns `true` if the client is connected and has not been signalled to disconnect.
@@ -505,7 +487,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_active(&self) -> bool {
-        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_ACTIVE
+        self.connection_mode().is_active()
     }
 
     /// Check if the client is reconnecting.
@@ -515,7 +497,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_reconnecting(&self) -> bool {
-        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_RECONNECT
+        self.connection_mode().is_reconnect()
     }
 
     /// Check if the client is disconnecting.
@@ -524,7 +506,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_disconnecting(&self) -> bool {
-        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_DISCONNECT
+        self.connection_mode().is_disconnect()
     }
 
     /// Check if the client is closed.
@@ -535,7 +517,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_closed(&self) -> bool {
-        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_CLOSED
+        self.connection_mode().is_closed()
     }
 
     /// Close the client.
@@ -544,7 +526,7 @@ impl SocketClient {
     /// and shutdown the client if it is not alive.
     pub async fn close(&self) {
         self.connection_mode
-            .store(CONNECTION_DISCONNECT, Ordering::SeqCst);
+            .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
             while !self.is_closed() {
@@ -615,9 +597,9 @@ impl SocketClient {
 
             loop {
                 tokio::time::sleep(check_interval).await;
-                let mode = connection_mode.load(Ordering::SeqCst);
+                let mode = ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst));
 
-                if mode == CONNECTION_DISCONNECT {
+                if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
                     shutdown(
                         inner.read_task.clone(),
@@ -637,7 +619,7 @@ impl SocketClient {
                     break; // Controller finished
                 }
 
-                if mode == CONNECTION_RECONNECT || !inner.is_alive() {
+                if mode.is_reconnect() || !inner.is_alive() {
                     match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
@@ -654,9 +636,10 @@ impl SocketClient {
                         }
                         Err(e) => {
                             let duration = inner.backoff.next_duration();
-                            tracing::warn!(
-                                "Reconnect attempt failed: {e}. Backing off for {duration:?}..."
-                            );
+                            tracing::warn!("Reconnect attempt failed: {e}",);
+                            if !duration.is_zero() {
+                                tracing::warn!("Backing off for {}s...", duration.as_secs_f64());
+                            }
                             tokio::time::sleep(duration).await;
                         }
                     }
@@ -664,7 +647,7 @@ impl SocketClient {
             }
             inner
                 .connection_mode
-                .store(CONNECTION_CLOSED, Ordering::SeqCst);
+                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         })
     }
 }

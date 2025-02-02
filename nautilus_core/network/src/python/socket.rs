@@ -23,9 +23,9 @@ use pyo3::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
-use crate::socket::{
-    SocketClient, SocketConfig, CONNECTION_ACTIVE, CONNECTION_CLOSED, CONNECTION_DISCONNECT,
-    CONNECTION_RECONNECT,
+use crate::{
+    mode::ConnectionMode,
+    socket::{SocketClient, SocketConfig},
 };
 
 #[pymethods]
@@ -95,8 +95,7 @@ impl SocketClient {
     /// Check if the client is still alive.
     ///
     /// Even if the connection is disconnected the client will still be alive
-    /// and trying to reconnect. Only when reconnect fails the client will
-    /// terminate.
+    /// and trying to reconnect.
     ///
     /// This is particularly useful for check why a `send` failed. It could
     /// be because the connection disconnected and the client is still alive
@@ -130,19 +129,19 @@ impl SocketClient {
         tracing::debug!("Reconnect from mode {mode}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            match connection_mode.load(Ordering::SeqCst) {
-                CONNECTION_RECONNECT => {
+            match ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst)) {
+                ConnectionMode::Reconnect => {
                     tracing::warn!("Cannot reconnect: socket already reconnecting");
                 }
-                CONNECTION_DISCONNECT => {
+                ConnectionMode::Disconnect => {
                     tracing::warn!("Cannot reconnect: socket disconnecting");
                 }
-                CONNECTION_CLOSED => {
+                ConnectionMode::Closed => {
                     tracing::warn!("Cannot reconnect: socket closed");
                 }
                 _ => {
-                    connection_mode.store(CONNECTION_RECONNECT, Ordering::SeqCst);
-                    while connection_mode.load(Ordering::SeqCst) != CONNECTION_ACTIVE {
+                    connection_mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                    while connection_mode.load(Ordering::SeqCst) != ConnectionMode::Active.as_u8() {
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                 }
@@ -168,17 +167,17 @@ impl SocketClient {
         tracing::debug!("Close from mode {mode}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            match connection_mode.load(Ordering::SeqCst) {
-                CONNECTION_CLOSED => {
+            match ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst)) {
+                ConnectionMode::Closed => {
                     tracing::warn!("Socket already closed");
                 }
-                CONNECTION_DISCONNECT => {
+                ConnectionMode::Disconnect => {
                     tracing::warn!("Socket already disconnecting");
                 }
                 _ => {
-                    connection_mode.store(CONNECTION_DISCONNECT, Ordering::SeqCst);
-                    while connection_mode.load(Ordering::SeqCst) != CONNECTION_CLOSED {
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    while connection_mode.load(Ordering::SeqCst) != ConnectionMode::Closed.as_u8() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                 }
             }

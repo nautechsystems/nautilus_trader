@@ -135,7 +135,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
-        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
 
         # HTTP API
         self._http_market = BybitMarketHttpAPI(
@@ -157,7 +156,6 @@ class BybitDataClient(LiveMarketDataClient):
                 api_key=config.api_key or get_api_key(config.demo, config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
-                max_reconnection_tries=config.max_ws_reconnection_tries,
             )
 
         # WebSocket decoders

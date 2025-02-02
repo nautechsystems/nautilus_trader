@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! High-performance WebSocket client with automatic reconnection and state management.
-//!
+//! High-performance WebSocket client implementation with automatic reconnection
+//! with exponential backoff and state management.
+
 //! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/CLOSED)
+//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED)
 //! - Synchronized reconnection with backoff
 //! - Clean shutdown sequence
 //! - Split read/write architecture
@@ -30,7 +31,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicU8, Ordering},
         Arc,
     },
     time::Duration,
@@ -50,24 +51,15 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
+use crate::{
+    backoff::ExponentialBackoff,
+    mode::ConnectionMode,
+    ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter},
+};
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
-
-/// Connection state for the WebSocket client
-///
-/// - ACTIVE: Normal operation, all tasks running
-/// - RECONNECTING: In process of reconnecting, tasks paused
-/// - CLOSED: Connection terminated, cleanup in progress
-///
-/// Connection state transitions:
-/// ACTIVE <-> RECONNECTING: During reconnection attempts
-/// ACTIVE/RECONNECTING -> CLOSED: Only when controller task terminates
-const CONNECTION_ACTIVE: u8 = 0;
-const CONNECTION_RECONNECTING: u8 = 1;
-const CONNECTION_CLOSED: u8 = 2;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -75,14 +67,28 @@ const CONNECTION_CLOSED: u8 = 2;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketConfig {
+    /// The URL to connect to.
     pub url: String,
+    /// The default headers.
     pub headers: Vec<(String, String)>,
+    /// The Python function to handle incoming messages.
     pub handler: Option<Arc<PyObject>>,
+    /// The optional heartbeat interval (seconds).
     pub heartbeat: Option<u64>,
+    /// The optional heartbeat message.
     pub heartbeat_msg: Option<String>,
+    /// The handler for incoming pings.
     pub ping_handler: Option<Arc<PyObject>>,
-    pub reconnect_timeout_secs: Option<u64>,
-    pub max_reconnection_tries: Option<u64>,
+    /// The timeout (milliseconds) for reconnection attempts.
+    pub reconnect_timeout_ms: Option<u64>,
+    /// The initial reconnection delay (milliseconds) for reconnects.
+    pub reconnect_delay_initial_ms: Option<u64>,
+    /// The maximum reconnect delay (milliseconds) for exponential backoff.
+    pub reconnect_delay_max_ms: Option<u64>,
+    /// The exponential backoff factor for reconnection delays.
+    pub reconnect_backoff_factor: Option<f64>,
+    /// The maximum jitter (milliseconds) added to reconnection delays.
+    pub reconnect_jitter_ms: Option<u64>,
 }
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
@@ -105,9 +111,9 @@ struct WebSocketClientInner {
     read_task: Option<tokio::task::JoinHandle<()>>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedMessageWriter,
-    reconnection_lock: Arc<Mutex<()>>,
-    connection_state: Arc<AtomicU8>,
-    reconnect_timeout_secs: u64,
+    connection_mode: Arc<AtomicU8>,
+    reconnect_timeout: Duration,
+    backoff: ExponentialBackoff,
 }
 
 impl WebSocketClientInner {
@@ -123,15 +129,16 @@ impl WebSocketClientInner {
             headers,
             heartbeat_msg,
             ping_handler,
-            reconnect_timeout_secs,
-            max_reconnection_tries,
+            reconnect_timeout_ms,
+            reconnect_delay_initial_ms,
+            reconnect_delay_max_ms,
+            reconnect_backoff_factor,
+            reconnect_jitter_ms,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
-        let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
-        let reconnection_lock = Arc::new(Mutex::new(()));
-        let reconnect_timeout_secs = reconnect_timeout_secs.unwrap_or(30);
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
         // Only spawn read task if handler is provided
         let read_task = handler
@@ -141,21 +148,30 @@ impl WebSocketClientInner {
         // Optionally spawn a heartbeat task to periodically ping server
         let heartbeat_task = heartbeat.as_ref().map(|heartbeat_secs| {
             Self::spawn_heartbeat_task(
-                connection_state.clone(),
+                connection_mode.clone(),
                 *heartbeat_secs,
                 heartbeat_msg.clone(),
                 writer.clone(),
             )
         });
 
+        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
+        let backoff = ExponentialBackoff::new(
+            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
+            reconnect_backoff_factor.unwrap_or(1.5),
+            reconnect_jitter_ms.unwrap_or(100),
+            true, // immediate-first
+        );
+
         Ok(Self {
             config,
             read_task,
             heartbeat_task,
             writer,
-            reconnection_lock,
-            connection_state,
-            reconnect_timeout_secs,
+            connection_mode,
+            reconnect_timeout,
+            backoff,
         })
     }
 
@@ -184,18 +200,22 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        tracing::debug!("Reconnecting client");
+        tracing::debug!("Reconnecting");
 
-        let timeout = Duration::from_secs(self.reconnect_timeout_secs);
-        tokio::time::timeout(timeout, async {
-            let state_guard = {
-                let guard = self.reconnection_lock.lock().await;
-                self.connection_state
-                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
-                guard
-            };
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::timeout(self.reconnect_timeout, async {
+            if self
+                .connection_mode
+                .compare_exchange(
+                    ConnectionMode::Active.as_u8(),
+                    ConnectionMode::Reconnect.as_u8(),
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err()
+            {
+                tracing::warn!("Connection not in active mode for reconnect");
+                return Ok(());
+            }
 
             shutdown(
                 self.read_task.take(),
@@ -225,16 +245,15 @@ impl WebSocketClientInner {
             // Optionally spawn new heartbeat task
             self.heartbeat_task = self.config.heartbeat.as_ref().map(|heartbeat_secs| {
                 Self::spawn_heartbeat_task(
-                    self.connection_state.clone(),
+                    self.connection_mode.clone(),
                     *heartbeat_secs,
                     self.config.heartbeat_msg.clone(),
                     self.writer.clone(),
                 )
             });
 
-            self.connection_state
-                .store(CONNECTION_ACTIVE, Ordering::SeqCst);
-            drop(state_guard);
+            self.connection_mode
+                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
             tracing::debug!("Reconnect succeeded");
             Ok(())
@@ -243,7 +262,10 @@ impl WebSocketClientInner {
         .map_err(|_| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
-                format!("reconnection timed out after {}s", timeout.as_secs()),
+                format!(
+                    "reconnection timed out after {}s",
+                    self.reconnect_timeout.as_secs_f64()
+                ),
             ))
         })?
     }
@@ -310,7 +332,7 @@ impl WebSocketClientInner {
                         tracing::trace!("Received pong");
                     }
                     Some(Ok(Message::Close(_))) => {
-                        tracing::warn!("Received close message - terminating");
+                        tracing::debug!("Received close message - terminating");
                         break;
                     }
                     Some(Ok(_)) => (),
@@ -342,8 +364,8 @@ impl WebSocketClientInner {
             loop {
                 tokio::time::sleep(interval).await;
 
-                match connection_state.load(Ordering::SeqCst) {
-                    CONNECTION_ACTIVE => {
+                match ConnectionMode::from_u8(connection_state.load(Ordering::SeqCst)) {
+                    ConnectionMode::Active => {
                         let mut guard = writer.lock().await;
                         let guard_send_response = match message.clone() {
                             Some(msg) => guard.send(Message::Text(msg.into())).await,
@@ -355,10 +377,12 @@ impl WebSocketClientInner {
                             Err(e) => tracing::error!("Error sending ping: {e}"),
                         }
                     }
-                    CONNECTION_CLOSED => break,
-                    _ => continue, // Reconnecting
+                    ConnectionMode::Reconnect => continue,
+                    ConnectionMode::Disconnect | ConnectionMode::Closed => break,
                 }
             }
+
+            tracing::debug!("Completed task 'heartbeat'");
         })
     }
 }
@@ -448,52 +472,31 @@ impl Drop for WebSocketClientInner {
 pub struct WebSocketClient {
     pub(crate) writer: SharedMessageWriter,
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
+    pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
-    pub(crate) disconnect_mode: Arc<AtomicBool>,
 }
 
 impl WebSocketClient {
     /// Creates a websocket client that returns a stream for reading messages.
     #[allow(clippy::too_many_arguments)]
     pub async fn connect_stream(
-        url: String,
-        headers: Vec<(String, String)>,
-        heartbeat: Option<u64>,
-        heartbeat_msg: Option<String>,
-        reconnect_timeout_secs: Option<u64>,
-        max_reconnection_tries: Option<u64>,
+        config: WebSocketConfig,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<(MessageReader, Self), Error> {
-        let (ws_stream, _) = connect_async(url.clone().into_client_request()?).await?;
+        let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
         let (writer, reader) = ws_stream.split();
         let writer = Arc::new(Mutex::new(writer));
 
-        // Create config with minimal no-op Python handler so we incrementally
-        // move towards a more Rust-native approach.
-        let config = {
-            WebSocketConfig {
-                url,
-                handler: None,
-                headers,
-                heartbeat,
-                heartbeat_msg,
-                ping_handler: None,
-                reconnect_timeout_secs,
-                max_reconnection_tries,
-            }
-        };
-
-        let disconnect_mode = Arc::new(AtomicBool::new(false));
+        let inner = WebSocketClientInner::connect_url(config).await?;
+        let connection_mode = inner.connection_mode.clone();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
-        let inner = WebSocketClientInner::connect_url(config).await?;
         let controller_task = Self::spawn_controller_task(
             inner,
-            disconnect_mode.clone(),
+            connection_mode.clone(),
             None, // no post_reconnection
             None, // no post_disconnection
-            max_reconnection_tries,
         );
 
         Ok((
@@ -501,8 +504,8 @@ impl WebSocketClient {
             Self {
                 writer: writer.clone(),
                 controller_task,
+                connection_mode,
                 rate_limiter,
-                disconnect_mode,
             },
         ))
     }
@@ -522,14 +525,13 @@ impl WebSocketClient {
         tracing::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config.clone()).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(AtomicBool::new(false));
+        let connection_mode = inner.connection_mode.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
-            disconnect_mode.clone(),
+            connection_mode.clone(),
             post_reconnection,
             post_disconnection,
-            config.max_reconnection_tries,
         );
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
@@ -543,14 +545,60 @@ impl WebSocketClient {
         Ok(Self {
             writer,
             controller_task,
+            connection_mode: connection_mode.clone(),
             rate_limiter,
-            disconnect_mode,
         })
     }
 
+    /// Returns the current connection mode.
+    pub fn connection_mode(&self) -> ConnectionMode {
+        ConnectionMode::from_u8(self.connection_mode.load(Ordering::SeqCst))
+    }
+
+    /// Check if the client connection is active.
+    ///
+    /// Returns `true` if the client is connected and has not been signalled to disconnect.
+    /// The client will automatically retry connection based on its configuration.
+    #[inline]
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.connection_mode().is_active()
+    }
+
+    /// Check if the client is disconnected.
     #[must_use]
     pub fn is_disconnected(&self) -> bool {
         self.controller_task.is_finished()
+    }
+
+    /// Check if the client is reconnecting.
+    ///
+    /// Returns `true` if the client lost connection and is attempting to reestablish it.
+    /// The client will automatically retry connection based on its configuration.
+    #[inline]
+    #[must_use]
+    pub fn is_reconnecting(&self) -> bool {
+        self.connection_mode().is_reconnect()
+    }
+
+    /// Check if the client is disconnecting.
+    ///
+    /// Returns `true` if the client is in disconnect mode.
+    #[inline]
+    #[must_use]
+    pub fn is_disconnecting(&self) -> bool {
+        self.connection_mode().is_disconnect()
+    }
+
+    /// Check if the client is closed.
+    ///
+    /// Returns `true` if the client has been explicitly disconnected or reached
+    /// maximum reconnection attempts. In this state, the client cannot be reused
+    /// and a new client must be created for further connections.
+    #[inline]
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.connection_mode().is_closed()
     }
 
     /// Set disconnect mode to true.
@@ -559,11 +607,17 @@ impl WebSocketClient {
     /// and shutdown the client if it is alive
     pub async fn disconnect(&self) {
         tracing::debug!("Disconnecting");
-        self.disconnect_mode.store(true, Ordering::SeqCst);
+        self.connection_mode
+            .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
             while !self.is_disconnected() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+
+            if !self.controller_task.is_finished() {
+                self.controller_task.abort();
+                tracing::debug!("Aborted controller task");
             }
         })
         .await
@@ -601,93 +655,68 @@ impl WebSocketClient {
 
     fn spawn_controller_task(
         mut inner: WebSocketClientInner,
-        disconnect_mode: Arc<AtomicBool>,
+        connection_mode: Arc<AtomicU8>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
-        max_reconnection_tries: Option<u64>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
+            tracing::debug!("Starting task 'controller'");
+
             let check_interval = Duration::from_millis(10);
-            let retry_interval = Duration::from_millis(1000);
-            let mut retry_counter: u64 = 0;
 
             loop {
                 tokio::time::sleep(check_interval).await;
+                let mode = ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst));
 
-                // Check if client needs to disconnect
-                let disconnect = disconnect_mode.load(Ordering::SeqCst);
-                match (disconnect, inner.is_alive()) {
-                    (false, false) => match inner.reconnect().await {
+                if mode.is_disconnect() {
+                    tracing::debug!("Disconnecting");
+                    shutdown(
+                        inner.read_task.take(),
+                        inner.heartbeat_task.take(),
+                        inner.writer.clone(),
+                    )
+                    .await;
+
+                    if let Some(ref handler) = post_disconnection {
+                        Python::with_gil(|py| match handler.call0(py) {
+                            Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
+                            Err(e) => {
+                                tracing::error!("Error calling `post_disconnection` handler: {e}")
+                            }
+                        });
+                    }
+                    break; // Controller finished
+                }
+
+                if mode.is_reconnect() || !inner.is_alive() {
+                    match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
-                            retry_counter = 0;
+                            inner.backoff.reset();
 
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "Error calling `post_reconnection` handler: {e}"
-                                        );
-                                    }
+                                    Err(e) => tracing::error!(
+                                        "Error calling `post_reconnection` handler: {e}"
+                                    ),
                                 });
                             }
                         }
                         Err(e) => {
-                            retry_counter += 1;
-
-                            if let Some(max) = max_reconnection_tries {
-                                tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max}");
-
-                                if retry_counter >= max {
-                                    tracing::error!("Reached max reconnection tries");
-                                    break;
-                                }
-                            } else {
-                                tracing::warn!(
-                                    "Reconnect failed {e}. Retry {retry_counter} (infinite)"
-                                );
+                            let duration = inner.backoff.next_duration();
+                            tracing::warn!("Reconnect attempt failed: {e}");
+                            if !duration.is_zero() {
+                                tracing::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
-
-                            tokio::time::sleep(retry_interval).await;
+                            tokio::time::sleep(duration).await;
                         }
-                    },
-                    (true, true) => {
-                        shutdown(
-                            inner.read_task.take(),
-                            inner.heartbeat_task.take(),
-                            inner.writer.clone(),
-                        )
-                        .await;
-                        if let Some(ref handler) = post_disconnection {
-                            Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Error calling `post_disconnection` handler: {e}"
-                                    );
-                                }
-                            });
-                        }
-                        break;
                     }
-                    // Close the heartbeat task on disconnect if the connection is already closed
-                    (true, false) => {
-                        tracing::debug!("Inner client is disconnected");
-                        tracing::debug!("Shutting down inner client to clean up running tasks");
-                        shutdown(
-                            inner.read_task.take(),
-                            inner.heartbeat_task.take(),
-                            inner.writer.clone(),
-                        )
-                        .await;
-                    }
-                    _ => (),
                 }
             }
             inner
-                .connection_state
-                .store(CONNECTION_CLOSED, Ordering::SeqCst);
+                .connection_mode
+                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         })
     }
 }
@@ -819,8 +848,11 @@ mod tests {
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
         };
         WebSocketClient::connect(config, None, None, None, vec![], None)
             .await
@@ -860,8 +892,11 @@ mod tests {
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: Some(2),
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
         };
         let res = WebSocketClient::connect(config, None, None, None, vec![], None).await;
         assert!(res.is_err(), "Should fail quickly with no server");
@@ -901,8 +936,11 @@ mod tests {
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
         };
 
         let client = WebSocketClient::connect(

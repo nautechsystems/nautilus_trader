@@ -108,7 +108,7 @@ class PolymarketWebSocketClient:
         bool
 
         """
-        return self._client is not None and self._client.is_alive()
+        return self._client is not None and self._client.is_active()
 
     def is_disconnected(self) -> bool:
         """

@@ -33,6 +33,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
 - Changed `BettingInstrument` default `min_notional` to `None`
 - Changed meaning of `ws_connection_delay_secs` for [PolymarketDataClientConfig](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/adapters/polymarket/config.py) to be **non-initial** delay (#2271)
+- Removed `max_ws_reconnection_tries` for dYdX configs (no longer applicable with infinite retries and exponential backoff)
+- Removed `max_ws_reconnection_tries` for Bybit configs (no longer applicable with infinite retries and exponential backoff)
 
 ### Internal Improvements
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
@@ -40,8 +42,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Added custom certificate loading for `SocketClient` TLS
 - Added `check_nonempty_string` for string validation in Rust
 - Improved Polymarket WebSocket subscription handling by configurable delay (#2271), thanks @ryantam626
-- Improved `WebSocketClient` with state management, timeouts, and more robust reconnect logic
-- Improved `SocketClient` with state management, timeouts, and more robust reconnect logic
+- Improved `WebSocketClient` with state management, error handling, timeouts and robust reconnects with exponential backoff
+- Improved `SocketClient` with state management, error handling, timeouts and robust reconnects with exponential backoff
 - Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
 - Improved `NautilusKernel` pending tasks cancellation on shutdown
 - Improved `TardisHttpClient` requests and error handling
