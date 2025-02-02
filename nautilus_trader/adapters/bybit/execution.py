@@ -183,7 +183,6 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
-        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
 
         self._enum_parser = BybitEnumParser()
@@ -207,7 +206,6 @@ class BybitExecutionClient(LiveExecutionClient):
             api_key=config.api_key or get_api_key(config.demo, config.testnet),
             api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
             loop=loop,
-            max_reconnection_tries=config.max_ws_reconnection_tries,
         )
 
         # WebSocket trade client
@@ -223,7 +221,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 api_key=config.api_key or get_api_key(config.demo, config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
-                max_reconnection_tries=config.max_ws_reconnection_tries,
                 ws_trade_timeout_secs=config.ws_trade_timeout_secs,
             )
             self._order_single_client = self._ws_order_client

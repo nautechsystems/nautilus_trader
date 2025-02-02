@@ -246,7 +246,7 @@ class OKXWebsocketClient:
     def is_connected(self) -> bool:
         if self._client is None:
             return False
-        return self._client.is_alive() if hasattr(self._client, "is_alive") else False
+        return self._client.is_active() if hasattr(self._client, "is_alive") else False
 
     def set_handler(self, handler: Callable[[bytes], None]) -> None:
         self._handler = handler
@@ -1020,7 +1020,7 @@ class OKXWebsocketClient:
         await self._send(payload)
 
     async def _send(self, payload: dict[str, Any]) -> None:
-        if self._client is None or not self._client.is_alive():
+        if self._client is None or not self._client.is_active():
             self._log.error(f"Cannot send msg {payload}: not connected")
             return
 

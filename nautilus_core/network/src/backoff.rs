@@ -13,26 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides an implementation of an exponential backoff mechanism with jitter support.
+//! It is used for managing reconnection delays in the socket clients.
+//!
+//! The backoff mechanism allows the delay to grow exponentially up to a configurable
+//! maximum, optionally applying random jitter to avoid synchronized reconnection storms.
+//! An "immediate first" flag is available so that the very first reconnect attempt
+//! can occur without any delay.
+
 use std::time::Duration;
 
 use rand::Rng;
 
 #[derive(Clone, Debug)]
 pub struct ExponentialBackoff {
-    // Initial backoff delay.
+    /// The initial backoff delay.
     delay_initial: Duration,
-    // Maximum delay to cap the backoff.
+    /// The maximum delay to cap the backoff.
     delay_max: Duration,
-    // Current backoff delay.
+    /// The current backoff delay.
     delay_current: Duration,
-    /// Factor to multiply the delay on each iteration.
+    /// The factor to multiply the delay on each iteration.
     factor: f64,
-    // Maximum random jitter to add (in milliseconds)
+    /// The maximum random jitter to add (in milliseconds).
     jitter_ms: u64,
-    // If true, the first call to `next()` returns zero delay (immediate reconnect).
+    /// If true, the first call to `next()` returns zero delay (immediate reconnect).
     immediate_first: bool,
 }
 
+/// An exponential backoff mechanism with optional jitter and immediate-first behavior.
+///
+/// This struct computes successive delays for reconnect attempts.
+/// It starts from an initial delay and multiplies it by a factor on each iteration,
+/// capping the delay at a maximum value. Random jitter is added (up to a configured
+/// maximum) to the delay. When `immediate_first` is true, the first call to `next_duration`
+/// returns zero delay, triggering an immediate reconnect, after which the immediate flag is disabled.
 impl ExponentialBackoff {
     /// Creates a new [`ExponentialBackoff]` instance.
     pub fn new(
@@ -53,6 +68,10 @@ impl ExponentialBackoff {
     }
 
     /// Return the next backoff delay with jitter and update the internal state.
+    ///
+    /// If the `immediate_first` flag is set and this is the first call (i.e. the current
+    /// delay equals the initial delay), it returns `Duration::ZERO` to trigger an immediate
+    /// reconnect and disables the immediate behavior for subsequent calls.
     pub fn next_duration(&mut self) -> Duration {
         if self.immediate_first && self.delay_current == self.delay_initial {
             self.immediate_first = false;

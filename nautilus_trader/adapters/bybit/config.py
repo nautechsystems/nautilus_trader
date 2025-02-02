@@ -52,9 +52,6 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         The interval (minutes) between reloading instruments from the venue.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
-    max_ws_reconnection_tries: int, default 3
-        The number of retries to reconnect the websocket connection if the
-        connection is broken.
 
     """
 
@@ -66,7 +63,6 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     recv_window_ms: PositiveInt = 5_000
-    max_ws_reconnection_tries: int | None = 3
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -112,9 +108,6 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
-    max_ws_reconnection_tries: int, default 3
-        The number of retries to reconnect the websocket connection if the
-        connection is broken.
     ws_trade_timeout_secs : float, default 5.0
         The timeout for trade websocket messages.
 

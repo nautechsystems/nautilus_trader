@@ -144,7 +144,6 @@ class DYDXDataClient(LiveMarketDataClient):
             handler_reconnect=None,
             base_url=ws_base_url,
             loop=loop,
-            max_reconnection_tries=config.max_ws_reconnection_tries,
             max_send_retries=config.max_ws_send_retries,
             retry_delay_secs=config.max_ws_retry_delay_secs,
         )

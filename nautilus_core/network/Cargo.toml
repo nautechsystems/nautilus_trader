@@ -21,6 +21,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+strum = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
