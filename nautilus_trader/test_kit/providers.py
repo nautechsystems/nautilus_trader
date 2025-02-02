@@ -644,6 +644,40 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def eurusd_future(
+        expiry_year: int,
+        expiry_month: int,
+        venue_name: str = "GLBX",
+    ) -> FuturesContract:
+        activation_date = first_friday_two_years_six_months_ago(expiry_year, expiry_month)
+        expiration_date = third_friday_of_month(expiry_year, expiry_month)
+
+        activation_time = pd.Timedelta(hours=21, minutes=30)
+        expiration_time = pd.Timedelta(hours=14, minutes=30)
+        activation_utc = pd.Timestamp(activation_date, tz=pytz.utc) + activation_time
+        expiration_utc = pd.Timestamp(expiration_date, tz=pytz.utc) + expiration_time
+
+        base_symbol = "6E"
+        raw_symbol = f"{base_symbol}{get_contract_month_code(expiry_month)}{expiry_year % 10}"
+
+        return FuturesContract(
+            instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=Venue(venue_name)),
+            raw_symbol=Symbol(raw_symbol),
+            asset_class=AssetClass.FX,
+            exchange=venue_name,
+            currency=USD,
+            price_precision=5,
+            price_increment=Price.from_str("0.00005"),
+            multiplier=Quantity.from_int(125000),
+            lot_size=Quantity.from_int(1),
+            underlying=base_symbol,
+            activation_ns=activation_utc.value,
+            expiration_ns=expiration_utc.value,
+            ts_event=activation_utc.value,
+            ts_init=activation_utc.value,
+        )
+
+    @staticmethod
     def future(
         symbol: str = "ESZ1",
         underlying: str = "ES",
