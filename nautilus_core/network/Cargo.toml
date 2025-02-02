@@ -19,6 +19,7 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+rand = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
@@ -33,6 +34,7 @@ tokio-rustls = "0.26.1"
 webpki-roots = "0.26.8"
 
 [dev-dependencies]
+nautilus-common = { path = "../common" }
 axum = { workspace = true }
 criterion = { workspace = true }
 serde_json = { workspace = true }

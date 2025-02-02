@@ -14,12 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 //! High-performance raw TCP client implementation with TLS capability, automatic reconnection
-//! and state management.
+//! with exponential backoff and state management.
 
 use std::{
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicU8, Ordering},
         Arc,
     },
     time::Duration,
@@ -37,7 +37,10 @@ use tokio_tungstenite::{
     MaybeTlsStream,
 };
 
-use crate::tls::{create_tls_config_from_certs_dir, tcp_tls, Connector};
+use crate::{
+    backoff::ExponentialBackoff,
+    tls::{create_tls_config_from_certs_dir, tcp_tls, Connector},
+};
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
@@ -45,16 +48,27 @@ type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 
 /// Connection state for the Socket client.
 ///
-/// - ACTIVE: Normal operation, all tasks running
-/// - RECONNECTING: In process of reconnecting, tasks paused
-/// - CLOSED: Connection terminated, cleanup in progress
+/// The client can be in one of four states (managed via an atomic flag):
 ///
-/// Connection state transitions:
-/// ACTIVE <-> RECONNECTING: During reconnection attempts
-/// ACTIVE/RECONNECTING -> CLOSED: Only when controller task terminates
-const CONNECTION_ACTIVE: u8 = 0;
-const CONNECTION_RECONNECTING: u8 = 1;
-const CONNECTION_CLOSED: u8 = 2;
+/// - **CONNECTION_ACTIVE (0):**
+///   The client is fully connected and operational. All tasks (reading, writing, heartbeat) are running normally.
+///
+/// - **CONNECTION_RECONNECT (1):**
+///   The client has been disconnected or has been explicitly signaled to reconnect. In this state, active tasks are paused until a new connection is established.
+///
+/// - **CONNECTION_DISCONNECT (2):**
+///   The client has been explicitly signaled to disconnect. No further reconnection attempts will be made, and cleanup procedures are initiated.
+///
+/// - **CONNECTION_CLOSED (3):**
+///   The client is permanently closed. All associated tasks have been terminated and the connection is no longer available.
+///
+/// **State Transitions:**
+/// - The client typically transitions between **CONNECTION_ACTIVE** and **CONNECTION_RECONNECT** during normal reconnection attempts.
+/// - When a disconnect is initiated (either by user action or due to an unrecoverable error), the state moves to **CONNECTION_DISCONNECT** and finally to **CONNECTION_CLOSED** once cleanup is complete.
+pub const CONNECTION_ACTIVE: u8 = 0;
+pub const CONNECTION_RECONNECT: u8 = 1;
+pub const CONNECTION_DISCONNECT: u8 = 2;
+pub const CONNECTION_CLOSED: u8 = 3;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -73,10 +87,16 @@ pub struct SocketConfig {
     pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
-    /// The timeout (seconds) for reconnects.
-    pub reconnect_timeout_secs: Option<u64>,
-    /// The maximum reconnection attempts before closing the client.
-    pub max_reconnection_tries: Option<u64>,
+    /// The timeout (milliseconds) for reconnection attempts.
+    pub reconnect_timeout_ms: Option<u64>,
+    /// The initial reconnection delay (milliseconds) for reconnects.
+    pub reconnect_delay_initial_ms: Option<u64>,
+    /// The maximum reconnect delay (milliseconds) for exponential backoff.
+    pub reconnect_delay_max_ms: Option<u64>,
+    /// The exponential backoff factor for reconnection delays.
+    pub reconnect_backoff_factor: Option<f64>,
+    /// The maximum jitter (milliseconds) added to reconnection delays.
+    pub reconnect_jitter_ms: Option<u64>,
     /// The path to the certificates directory.
     pub certs_dir: Option<String>,
 }
@@ -106,9 +126,9 @@ struct SocketClientInner {
     read_task: Arc<tokio::task::JoinHandle<()>>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     writer: SharedTcpWriter,
-    reconnection_lock: Arc<Mutex<()>>,
-    connection_state: Arc<AtomicU8>,
-    reconnect_timeout_secs: u64,
+    connection_mode: Arc<AtomicU8>,
+    reconnect_timeout: Duration,
+    backoff: ExponentialBackoff,
 }
 
 impl SocketClientInner {
@@ -121,8 +141,11 @@ impl SocketClientInner {
             heartbeat,
             suffix,
             handler,
-            reconnect_timeout_secs,
-            max_reconnection_tries: _,
+            reconnect_timeout_ms,
+            reconnect_delay_initial_ms,
+            reconnect_delay_max_ms,
+            reconnect_backoff_factor,
+            reconnect_jitter_ms,
             certs_dir,
         } = &config;
         let connector = if let Some(dir) = certs_dir {
@@ -137,9 +160,8 @@ impl SocketClientInner {
         let (reader, writer) = Self::tls_connect_with_server(url, *mode, connector.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
-        let connection_state = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
-        let reconnection_lock = Arc::new(Mutex::new(()));
-        let reconnect_timeout_secs = reconnect_timeout_secs.unwrap_or(30);
+        let connection_mode = Arc::new(AtomicU8::new(CONNECTION_ACTIVE));
+        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
 
         let handler = Python::with_gil(|py| handler.clone_ref(py));
         let read_task = Arc::new(Self::spawn_read_task(reader, handler, suffix.clone()));
@@ -147,12 +169,20 @@ impl SocketClientInner {
         // Optionally spawn a heartbeat task to periodically ping server
         let heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
             Self::spawn_heartbeat_task(
-                connection_state.clone(),
+                connection_mode.clone(),
                 heartbeat.clone(),
                 writer.clone(),
                 suffix.clone(),
             )
         });
+
+        let backoff = ExponentialBackoff::new(
+            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
+            reconnect_backoff_factor.unwrap_or(1.5),
+            reconnect_jitter_ms.unwrap_or(100),
+            true,
+        );
 
         Ok(Self {
             config,
@@ -160,9 +190,9 @@ impl SocketClientInner {
             read_task,
             heartbeat_task,
             writer,
-            reconnection_lock,
-            connection_state,
-            reconnect_timeout_secs,
+            connection_mode,
+            reconnect_timeout,
+            backoff,
         })
     }
 
@@ -185,16 +215,22 @@ impl SocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update the shared writer and the read and heartbeat tasks.
     async fn reconnect(&mut self) -> Result<(), Error> {
-        tracing::debug!("Reconnecting client");
+        tracing::debug!("Reconnecting");
 
-        let timeout = Duration::from_secs(self.reconnect_timeout_secs);
-        tokio::time::timeout(timeout, async {
-            let state_guard = {
-                let guard = self.reconnection_lock.lock().await;
-                self.connection_state
-                    .store(CONNECTION_RECONNECTING, Ordering::SeqCst);
-                guard
-            };
+        tokio::time::timeout(self.reconnect_timeout, async {
+            if self
+                .connection_mode
+                .compare_exchange(
+                    CONNECTION_ACTIVE,
+                    CONNECTION_RECONNECT,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err()
+            {
+                tracing::warn!("Connection not in active mode for reconnect");
+                return Ok(());
+            }
 
             // Clean up existing tasks
             shutdown(
@@ -210,8 +246,11 @@ impl SocketClientInner {
                 heartbeat,
                 suffix,
                 handler,
-                reconnect_timeout_secs: _,
-                max_reconnection_tries: _,
+                reconnect_timeout_ms: _,
+                reconnect_delay_initial_ms: _,
+                reconnect_backoff_factor: _,
+                reconnect_delay_max_ms: _,
+                reconnect_jitter_ms: _,
                 certs_dir: _,
             } = &self.config;
             // Create a fresh connection
@@ -231,15 +270,14 @@ impl SocketClientInner {
             // Optionally spawn new heartbeat task
             self.heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
                 Self::spawn_heartbeat_task(
-                    self.connection_state.clone(),
+                    self.connection_mode.clone(),
                     heartbeat.clone(),
                     writer.clone(),
                     suffix.clone(),
                 )
             });
 
-            drop(state_guard);
-            self.connection_state
+            self.connection_mode
                 .store(CONNECTION_ACTIVE, Ordering::SeqCst);
 
             tracing::debug!("Reconnect succeeded");
@@ -249,7 +287,10 @@ impl SocketClientInner {
         .map_err(|_| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
-                format!("reconnection timed out after {}s", timeout.as_secs()),
+                format!(
+                    "reconnection timed out after {}s",
+                    self.reconnect_timeout.as_secs_f64()
+                ),
             ))
         })?
     }
@@ -312,6 +353,8 @@ impl SocketClientInner {
                     }
                 };
             }
+
+            tracing::debug!("Completed task 'read'");
         })
     }
 
@@ -339,10 +382,12 @@ impl SocketClientInner {
                             Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
                         }
                     }
-                    CONNECTION_CLOSED => break,
+                    CONNECTION_DISCONNECT | CONNECTION_CLOSED => break,
                     _ => continue, // Reconnecting
                 }
             }
+
+            tracing::debug!("Completed task 'heartbeat'");
         })
     }
 }
@@ -414,9 +459,7 @@ impl Drop for SocketClientInner {
 pub struct SocketClient {
     pub(crate) writer: SharedTcpWriter,
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
-    pub(crate) disconnect_mode: Arc<AtomicBool>,
-    pub(crate) reconnect_mode: Arc<AtomicBool>,
-    pub(crate) connection_state: Arc<AtomicU8>,
+    pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) suffix: Vec<u8>,
 }
 
@@ -428,20 +471,16 @@ impl SocketClient {
         post_disconnection: Option<PyObject>,
     ) -> Result<Self, Error> {
         let suffix = config.suffix.clone();
-        let max_reconnection_tries = config.max_reconnection_tries;
         let inner = SocketClientInner::connect_url(config).await?;
+
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(AtomicBool::new(false));
-        let reconnect_mode = Arc::new(AtomicBool::new(false));
-        let connection_state = inner.connection_state.clone();
+        let connection_mode = inner.connection_mode.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
-            disconnect_mode.clone(),
-            reconnect_mode.clone(),
+            connection_mode.clone(),
             post_reconnection,
             post_disconnection,
-            max_reconnection_tries,
         );
 
         if let Some(handler) = post_connection {
@@ -454,9 +493,7 @@ impl SocketClient {
         Ok(Self {
             writer,
             controller_task,
-            disconnect_mode,
-            reconnect_mode,
-            connection_state,
+            connection_mode,
             suffix,
         })
     }
@@ -468,8 +505,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_active(&self) -> bool {
-        let disconnect = self.disconnect_mode.load(Ordering::SeqCst);
-        self.connection_state.load(Ordering::SeqCst) == CONNECTION_ACTIVE && !disconnect
+        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_ACTIVE
     }
 
     /// Check if the client is reconnecting.
@@ -479,7 +515,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_reconnecting(&self) -> bool {
-        self.connection_state.load(Ordering::SeqCst) == CONNECTION_RECONNECTING
+        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_RECONNECT
     }
 
     /// Check if the client is disconnecting.
@@ -488,7 +524,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_disconnecting(&self) -> bool {
-        self.disconnect_mode.load(Ordering::SeqCst)
+        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_DISCONNECT
     }
 
     /// Check if the client is closed.
@@ -499,7 +535,7 @@ impl SocketClient {
     #[inline]
     #[must_use]
     pub fn is_closed(&self) -> bool {
-        self.connection_state.load(Ordering::SeqCst) == CONNECTION_CLOSED
+        self.connection_mode.load(Ordering::SeqCst) == CONNECTION_CLOSED
     }
 
     /// Close the client.
@@ -507,7 +543,8 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     pub async fn close(&self) {
-        self.disconnect_mode.store(true, Ordering::SeqCst);
+        self.connection_mode
+            .store(CONNECTION_DISCONNECT, Ordering::SeqCst);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
             while !self.is_closed() {
@@ -567,24 +604,21 @@ impl SocketClient {
 
     fn spawn_controller_task(
         mut inner: SocketClientInner,
-        disconnect_mode: Arc<AtomicBool>,
-        reconnect_mode: Arc<AtomicBool>, // Mininal change but modes need consolidating
+        connection_mode: Arc<AtomicU8>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
-        max_reconnection_tries: Option<u64>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
+            tracing::debug!("Starting task 'controller'");
+
             let check_interval = Duration::from_millis(10);
-            let retry_interval = Duration::from_millis(1000);
-            let mut retry_counter: u64 = 0;
 
             loop {
                 tokio::time::sleep(check_interval).await;
+                let mode = connection_mode.load(Ordering::SeqCst);
 
-                let should_disconnect = disconnect_mode.load(Ordering::SeqCst);
-                let should_reconnect = reconnect_mode.load(Ordering::SeqCst);
-
-                if should_disconnect {
+                if mode == CONNECTION_DISCONNECT {
+                    tracing::debug!("Disconnecting");
                     shutdown(
                         inner.read_task.clone(),
                         inner.heartbeat_task.take(),
@@ -603,12 +637,11 @@ impl SocketClient {
                     break; // Controller finished
                 }
 
-                if should_reconnect || !inner.is_alive() {
+                if mode == CONNECTION_RECONNECT || !inner.is_alive() {
                     match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
-                            retry_counter = 0;
-                            reconnect_mode.store(false, Ordering::SeqCst);
+                            inner.backoff.reset();
 
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
@@ -620,25 +653,17 @@ impl SocketClient {
                             }
                         }
                         Err(e) => {
-                            retry_counter += 1;
-                            if let Some(max) = max_reconnection_tries {
-                                tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max}");
-                                if retry_counter >= max {
-                                    tracing::error!("Reached max reconnection tries");
-                                    break;
-                                }
-                            } else {
-                                tracing::warn!(
-                                    "Reconnect failed {e}. Retry {retry_counter} (infinite)"
-                                );
-                            }
-                            tokio::time::sleep(retry_interval).await;
+                            let duration = inner.backoff.next_duration();
+                            tracing::warn!(
+                                "Reconnect attempt failed: {e}. Backing off for {duration:?}..."
+                            );
+                            tokio::time::sleep(duration).await;
                         }
                     }
                 }
             }
             inner
-                .connection_state
+                .connection_mode
                 .store(CONNECTION_CLOSED, Ordering::SeqCst);
         })
     }
@@ -652,6 +677,7 @@ impl SocketClient {
 mod tests {
     use std::{ffi::CString, net::TcpListener};
 
+    use nautilus_common::testing::wait_until_async;
     use pyo3::prepare_freethreaded_python;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -754,8 +780,11 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler()),
             heartbeat: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: Some(1),
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
             certs_dir: None,
         };
 
@@ -787,8 +816,11 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler()),
             heartbeat: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: Some(2),
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
             certs_dir: None,
         };
 
@@ -824,8 +856,11 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler()),
             heartbeat: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
             certs_dir: None,
         };
 
@@ -880,8 +915,11 @@ counter = Counter()
             suffix: b"\r\n".to_vec(),
             handler: Arc::new(create_handler().into()),
             heartbeat,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
             certs_dir: None,
         };
 
@@ -945,8 +983,11 @@ def handler(bytes_data):
             suffix: b"\r\n".to_vec(),
             handler,
             heartbeat: None,
-            reconnect_timeout_secs: None,
-            max_reconnection_tries: Some(1),
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
             certs_dir: None,
         };
 
@@ -965,6 +1006,66 @@ def handler(bytes_data):
         client.close().await;
 
         assert!(client.is_closed());
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn test_reconnect_success() {
+        prepare_freethreaded_python();
+
+        let (port, listener) = bind_test_server();
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+
+        // Spawn a server task that:
+        // 1. Accepts the first connection and then drops it after a short delay (simulate disconnect)
+        // 2. Waits a bit and then accepts a new connection and runs the echo server
+        let server_task = task::spawn(async move {
+            // Accept first connection
+            let (mut socket, _) = listener.accept().await.expect("First accept failed");
+
+            // Wait briefly and then force-close the connection
+            sleep(Duration::from_millis(500)).await;
+            let _ = socket.shutdown().await;
+
+            // Wait for the client's reconnect attempt
+            sleep(Duration::from_millis(500)).await;
+
+            // Run the echo server on the new connection
+            let (socket, _) = listener.accept().await.expect("Second accept failed");
+            run_echo_server(socket).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            handler: Arc::new(create_handler()),
+            heartbeat: None,
+            reconnect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: Some(500),
+            reconnect_delay_max_ms: Some(5_000),
+            reconnect_backoff_factor: Some(2.0),
+            reconnect_jitter_ms: Some(50),
+            certs_dir: None,
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .expect("Client connect failed unexpectedly");
+
+        // Initially, the client should be active
+        assert!(client.is_active(), "Client should start as active");
+
+        // Wait until the client loses connection (i.e. not active),
+        // then wait until it reconnects (active again).
+        wait_until_async(|| async { client.is_active() }, Duration::from_secs(10)).await;
+
+        client
+            .send_bytes(b"TestReconnect")
+            .await
+            .expect("Send failed");
+
+        client.close().await;
         server_task.abort();
     }
 }

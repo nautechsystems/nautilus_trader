@@ -23,12 +23,15 @@ use pyo3::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
-use crate::socket::{SocketClient, SocketConfig};
+use crate::socket::{
+    SocketClient, SocketConfig, CONNECTION_ACTIVE, CONNECTION_CLOSED, CONNECTION_DISCONNECT,
+    CONNECTION_RECONNECT,
+};
 
 #[pymethods]
 impl SocketConfig {
     #[new]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_secs=30, max_reconnection_tries=3, certs_dir=None))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, certs_dir=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         url: String,
@@ -36,8 +39,11 @@ impl SocketConfig {
         suffix: Vec<u8>,
         handler: PyObject,
         heartbeat: Option<(u64, Vec<u8>)>,
-        reconnect_timeout_secs: Option<u64>,
-        max_reconnection_tries: Option<u64>,
+        reconnect_timeout_ms: Option<u64>,
+        reconnect_delay_initial_ms: Option<u64>,
+        reconnect_delay_max_ms: Option<u64>,
+        reconnect_backoff_factor: Option<f64>,
+        reconnect_jitter_ms: Option<u64>,
         certs_dir: Option<String>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
@@ -47,8 +53,11 @@ impl SocketConfig {
             suffix,
             handler: Arc::new(handler),
             heartbeat,
-            reconnect_timeout_secs,
-            max_reconnection_tries,
+            reconnect_timeout_ms,
+            reconnect_delay_initial_ms,
+            reconnect_delay_max_ms,
+            reconnect_backoff_factor,
+            reconnect_jitter_ms,
             certs_dir,
         }
     }
@@ -116,12 +125,29 @@ impl SocketClient {
     /// Reconnect the client.
     #[pyo3(name = "reconnect")]
     fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let reconnect_mode = slf.reconnect_mode.clone();
+        let connection_mode = slf.connection_mode.clone();
+        let mode = connection_mode.load(Ordering::SeqCst);
+        tracing::debug!("Reconnect from mode {mode}");
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            reconnect_mode.store(true, Ordering::SeqCst);
-            while reconnect_mode.load(Ordering::SeqCst) {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+            match connection_mode.load(Ordering::SeqCst) {
+                CONNECTION_RECONNECT => {
+                    tracing::warn!("Cannot reconnect: socket already reconnecting");
+                }
+                CONNECTION_DISCONNECT => {
+                    tracing::warn!("Cannot reconnect: socket disconnecting");
+                }
+                CONNECTION_CLOSED => {
+                    tracing::warn!("Cannot reconnect: socket closed");
+                }
+                _ => {
+                    connection_mode.store(CONNECTION_RECONNECT, Ordering::SeqCst);
+                    while connection_mode.load(Ordering::SeqCst) != CONNECTION_ACTIVE {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }
             }
+
             Ok(())
         })
     }
@@ -137,9 +163,26 @@ impl SocketClient {
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "close")]
     fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let disconnect_mode = slf.disconnect_mode.clone();
+        let connection_mode = slf.connection_mode.clone();
+        let mode = connection_mode.load(Ordering::SeqCst);
+        tracing::debug!("Close from mode {mode}");
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            disconnect_mode.store(true, Ordering::SeqCst);
+            match connection_mode.load(Ordering::SeqCst) {
+                CONNECTION_CLOSED => {
+                    tracing::warn!("Socket already closed");
+                }
+                CONNECTION_DISCONNECT => {
+                    tracing::warn!("Socket already disconnecting");
+                }
+                _ => {
+                    connection_mode.store(CONNECTION_DISCONNECT, Ordering::SeqCst);
+                    while connection_mode.load(Ordering::SeqCst) != CONNECTION_CLOSED {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                }
+            }
+
             Ok(())
         })
     }
@@ -155,8 +198,8 @@ impl SocketClient {
         mut data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let writer = slf.writer.clone();
         data.extend(&slf.suffix);
+        let writer = slf.writer.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut writer = writer.lock().await;
