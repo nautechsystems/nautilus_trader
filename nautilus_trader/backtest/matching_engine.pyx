@@ -643,7 +643,12 @@ cdef class OrderMatchingEngine:
         #         )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar):
-        cdef double size_value = max(bar.volume.as_double() / 4.0, self.instrument.size_increment.as_double())
+        cdef double bar_volume = bar.volume.as_double()
+        if bar_volume == 0.0:
+            return
+
+        # Note: we make the approximation that volume is at least 4 if it's not 0
+        cdef double size_value = max(bar.volume.as_double() / 4.0, self.instrument.size_increment.as_double(), 1.0)
         cdef Quantity size = Quantity(size_value, bar._mem.volume.precision)
 
         # Create base tick template
