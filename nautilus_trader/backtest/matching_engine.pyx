@@ -723,8 +723,11 @@ cdef class OrderMatchingEngine:
         if self._last_bid_bar.ts_event != self._last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        cdef Quantity bid_size = Quantity(self._last_bid_bar.volume.as_double() / 4.0, self._last_bid_bar._mem.volume.precision)
-        cdef Quantity ask_size = Quantity(self._last_ask_bar.volume.as_double() / 4.0, self._last_ask_bar._mem.volume.precision)
+        cdef double size_increment_f64 = self.instrument.size_increment.as_double()
+        cdef double bid_size_value = max(self._last_bid_bar.volume.as_double() / 4.0, size_increment_f64)
+        cdef double ask_size_value = max(self._last_ask_bar.volume.as_double() / 4.0, size_increment_f64)
+        cdef Quantity bid_size = Quantity(bid_size_value, self._last_bid_bar._mem.volume.precision)
+        cdef Quantity ask_size = Quantity(ask_size_value, self._last_ask_bar._mem.volume.precision)
 
         # Create base tick template
         cdef QuoteTick tick = self._create_base_quote_tick(bid_size, ask_size)
