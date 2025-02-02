@@ -88,6 +88,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed handling of empty book messages for Tardis (resulted in `deltas` cannot be empty panicking)
 - Fixed `Cache.bar_types` `aggregation_source` filtering, was incorrectly using `price_type` (#2269), thanks @faysou
 - Fixed missing `combo` instrument type for Tardis integration
+- Fixed quote tick processing from bars in `OrderMatchingEngine` resulting in sizes below the minimum increment (#2275), thanks for reporting @miller-moore
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
