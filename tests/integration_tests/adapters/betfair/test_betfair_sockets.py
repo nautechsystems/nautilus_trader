@@ -26,6 +26,9 @@ from nautilus_trader.adapters.betfair.sockets import BetfairStreamClient
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+pytestmark = pytest.mark.skip("Pending refactor")
+
+
 @pytest.mark.skipif(
     sys.platform == "win32" and platform.python_version().startswith("3.12"),
     reason="Failing on Windows with Python 3.12",

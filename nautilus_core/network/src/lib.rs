@@ -35,6 +35,7 @@
 // these deprecations until fully migrated to `IntoPyObject`.
 #![allow(deprecated)]
 
+pub mod backoff;
 pub mod http;
 pub mod socket;
 pub mod websocket;

@@ -84,10 +84,8 @@ class BetfairStreamClient:
         )
         self._client = await SocketClient.connect(
             config,
-            None,
-            # self.post_connection,  # this method itself needs the `self._client` reference
-            self.post_reconnection,
-            self.post_disconnection,
+            post_connection=None,  # this method itself needs the `self._client` reference
+            post_reconnection=self.post_reconnection,
         )
         await self._post_connection()
 
@@ -95,30 +93,36 @@ class BetfairStreamClient:
         self._log.info("Connected")
 
     async def reconnect(self):
-        if self._client is None:
-            self._log.warning("Cannot reconnect: not connected")
-            return
+        try:
+            if self._client is None:
+                self._log.warning("Cannot reconnect: not connected")
+                return
 
-        self.is_connected = False
-        self._log.info("Reconnecting...")
+            self.is_connected = False
+            self._log.info("Reconnecting...")
 
-        await self._client.reconnect()
+            await self._client.reconnect()
 
-        self.is_connected = True
-        self._log.info("Reconnected")
+            self.is_connected = True
+            self._log.info("Reconnected")
+        except asyncio.CancelledError:
+            self._log.warning("Task 'reconnect' canceled")
 
     async def disconnect(self):
-        if self._client is None:
-            self._log.warning("Cannot disconnect: not connected")
-            return
+        try:
+            if self._client is None:
+                self._log.warning("Cannot disconnect: not connected")
+                return
 
-        self.disconnecting = True
-        self._log.info("Disconnecting...")
+            self.disconnecting = True
+            self._log.info("Disconnecting...")
 
-        await self._client.close()
+            await self._client.close()
 
-        self.is_connected = False
-        self._log.info("Disconnected")
+            self.is_connected = False
+            self._log.info("Disconnected")
+        except asyncio.CancelledError:
+            self._log.warning("Task 'disconnect' canceled")
 
     async def _post_connection(self) -> None:
         pass
@@ -139,23 +143,26 @@ class BetfairStreamClient:
         """
 
     async def send(self, message: bytes) -> None:
-        if self._client is None:
-            raise RuntimeError("Cannot send message: no client")
-
-        # If the client is not currently active (e.g. in the middle of a reconnection),
-        # waits up to 2 seconds for it to become active before sending. This handles the case
-        # where a reconnection was triggered right before or during a send operation.
-        timeout = 2.0
-
         try:
-            async with asyncio.timeout(timeout):
-                while not self._client.is_active():
-                    await asyncio.sleep(0.01)
+            if self._client is None:
+                raise RuntimeError("Cannot send message: no client")
 
-            await self._client.send(message)
-            self._log.debug("[SENT]")
-        except TimeoutError:
-            raise RuntimeError(f"Client did not become active within {timeout}s timeout")
+            # If the client is not currently active (e.g. in the middle of a reconnection),
+            # waits up to 2 seconds for it to become active before sending. This handles the case
+            # where a reconnection was triggered right before or during a send operation.
+            timeout = 2.0
+
+            try:
+                async with asyncio.timeout(timeout):
+                    while not self._client.is_active():
+                        await asyncio.sleep(0.01)
+
+                await self._client.send(message)
+                self._log.debug("[SENT]")
+            except TimeoutError:
+                raise RuntimeError(f"Client did not become active within {timeout}s timeout")
+        except asyncio.CancelledError:
+            self._log.warning("Task 'send' cancelled")
 
     def auth_message(self):
         return {

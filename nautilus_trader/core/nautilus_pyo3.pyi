@@ -3256,7 +3256,11 @@ class SocketConfig:
         suffix: bytes,
         handler: Callable[..., Any],
         heartbeat: tuple[int, bytes] | None = None,
-        reconnect_timeout_secs: int | None = 30,
+        reconnect_timeout_ms: int | None = 10_000,
+        reconnect_delay_initial_ms: int | None = 2_000,
+        reconnect_delay_max_ms: int | None = 30_000,
+        reconnect_backoff_factor: float | None = 1.5,
+        reconnect_jitter_ms: int | None = 100,
         max_reconnection_tries: int | None = 3,
         certs_dir: str | None = None,
     ) -> None: ...
