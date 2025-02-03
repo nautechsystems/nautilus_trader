@@ -101,7 +101,6 @@ class BetfairDataClient(LiveMarketDataClient):
             message_handler=self.on_market_update,
             certs_dir=config.certs_dir,
         )
-        self._reconnect_in_progress = False
 
         self._parser = BetfairParser(currency=config.account_currency)
 
@@ -178,13 +177,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
         self._log.info("Closing BetfairClient")
         await self._client.disconnect()
-
-    async def _reconnect(self) -> None:
-        if self._stream.is_active():
-            self._log.warning("Cannot reconnect: streaming client not active")
-            return
-
-        await self._stream.reconnect()
 
     def _reset(self) -> None:
         if self._stream.is_active():
@@ -387,10 +379,10 @@ class BetfairDataClient(LiveMarketDataClient):
                     return
                 self._log.info("Invalid session information, reconnecting client")
                 self._client.reset_headers()
-                self.create_task(self._reconnect())
+                self.create_task(self._stream.reconnect())
             else:
                 if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.warning("Unknown API error, scheduling reconnect")
-                self.create_task(self._reconnect())
+                self.create_task(self._stream.reconnect())

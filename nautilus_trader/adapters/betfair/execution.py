@@ -152,7 +152,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             certs_dir=config.certs_dir,
         )
         self._is_closing = False
-        self._reconnect_in_progress = False
 
         # Async tasks
         self.account_state_task: asyncio.Task | None = None
@@ -205,13 +204,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Closing BetfairHttpClient")
         await self._client.disconnect()
 
-    async def _reconnect(self) -> None:
-        if self._stream.is_active():
-            self._log.warning("Cannot reconnect: streaming client not active")
-            return
-
-        await self._stream.reconnect()
-
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
         if "INVALID_SESSION_INFORMATION" in error.args[0] or "NO_SESSION" in error.args[0]:
@@ -225,7 +217,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             try:
                 # Session is invalid, need to reconnect
                 self._log.warning("Invalid session error, reconnecting...")
-                await self._reconnect()
+                await self._stream.reconnect()
             except Exception:
                 self._log.error(f"Reconnection failed: {traceback.format_exc()}")
 
@@ -1057,10 +1049,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                     return
                 self._log.info("Invalid session information, reconnecting client")
                 self._client.reset_headers()
-                self.create_task(self._reconnect())
+                self.create_task(self._stream.reconnect())
             else:
                 if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.warning("Unknown API error, scheduling reconnect")
-                self.create_task(self._reconnect())
+                self.create_task(self._stream.reconnect())
