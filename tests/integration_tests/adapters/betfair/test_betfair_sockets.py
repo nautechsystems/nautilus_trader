@@ -26,9 +26,6 @@ from nautilus_trader.adapters.betfair.sockets import BetfairStreamClient
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-pytestmark = pytest.mark.skip("Pending refactor")
-
-
 @pytest.mark.skipif(
     sys.platform == "win32" and platform.python_version().startswith("3.12"),
     reason="Failing on Windows with Python 3.12",
@@ -83,7 +80,7 @@ class TestBetfairSockets:
         await client.connect()
 
         # Assert
-        assert client.is_connected
+        assert client.is_active()
         await client.disconnect()
 
     @pytest.mark.asyncio
@@ -95,11 +92,10 @@ class TestBetfairSockets:
 
         # Act
         await client.connect()
-        await asyncio.sleep(2)
         await client.reconnect()
 
         # Assert
-        assert client.is_connected
+        assert client.is_active()
         await client.disconnect()
 
     @pytest.mark.asyncio
@@ -111,8 +107,7 @@ class TestBetfairSockets:
 
         # Act
         await client.connect()
-        await asyncio.sleep(2)
 
         # Assert
-        assert client.is_connected
+        assert client.is_active()
         await client.disconnect()

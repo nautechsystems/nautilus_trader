@@ -206,21 +206,21 @@ class BetfairExecutionClient(LiveExecutionClient):
         await self._client.disconnect()
 
     async def _reconnect(self) -> None:
-        self._log.info("Attempting reconnect")
+        if self._stream.is_active():
+            self._log.warning("Cannot reconnect: streaming client not active")
+            return
+
         await self._stream.reconnect()
-        self._reconnect_in_progress = False
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
         if "INVALID_SESSION_INFORMATION" in error.args[0] or "NO_SESSION" in error.args[0]:
-            if self._reconnect_in_progress:
+            if self._stream.is_reconnecting():
+                # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
+                # are received at "the same time" from the Betfair API. Simultaneous reconnection attempts
+                # will result in MAX_CONNECTION_LIMIT_EXCEEDED errors.
                 self._log.info("Reconnect already in progress")
                 return
-
-            # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
-            # are received at "the same time" from the Betfair API. Simultaneous reconnection attempts
-            # will result in MAX_CONNECTION_LIMIT_EXCEEDED errors.
-            self._reconnect_in_progress = True
 
             try:
                 # Session is invalid, need to reconnect
@@ -228,8 +228,6 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self._reconnect()
             except Exception:
                 self._log.error(f"Reconnection failed: {traceback.format_exc()}")
-
-            self._reconnect_in_progress = False
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
@@ -1054,18 +1052,15 @@ class BetfairExecutionClient(LiveExecutionClient):
             if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
             elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
-                if self._reconnect_in_progress:
+                if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.info("Invalid session information, reconnecting client")
-                self._reconnect_in_progress = True
-                self._stream.is_connected = False
                 self._client.reset_headers()
-                self._log.info("Reconnecting socket")
                 self.create_task(self._reconnect())
             else:
-                if self._reconnect_in_progress:
+                if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
-                self._log.info("Attempting reconnect")
-                self._loop.create_task(self._stream.connect())
+                self._log.warning("Unknown API error, scheduling reconnect")
+                self.create_task(self._reconnect())
