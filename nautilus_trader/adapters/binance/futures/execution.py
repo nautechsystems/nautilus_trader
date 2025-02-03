@@ -268,7 +268,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 client_order_ids=[c.client_order_id.value for c in command.cancels],
             )
         except BinanceError as e:
-            error_code = BinanceErrorCode(e.message["code"])
+            error_code = BinanceErrorCode(int(e.message["code"]))
             if error_code == BinanceErrorCode.CANCEL_REJECTED:
                 self._log.warning(f"Cancel rejected: {e.message}")
             else:

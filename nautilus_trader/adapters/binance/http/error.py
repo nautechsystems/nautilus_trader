@@ -63,6 +63,6 @@ def should_retry(error: BaseException) -> bool:
 
     """
     if isinstance(error, BinanceError):
-        error_code = BinanceErrorCode(error.message["code"])
+        error_code = BinanceErrorCode(int(error.message["code"]))
         return error_code in BINANCE_RETRY_ERRORS
     return False
