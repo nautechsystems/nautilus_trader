@@ -180,20 +180,21 @@ class BetfairDataClient(LiveMarketDataClient):
         await self._client.disconnect()
 
     async def _reconnect(self) -> None:
-        self._log.info("Attempting reconnect")
-        if self._stream.is_connected:
-            await self._stream.reconnect()
-        self._reconnect_in_progress = False
+        if self._stream.is_active():
+            self._log.warning("Cannot reconnect: streaming client not active")
+            return
+
+        await self._stream.reconnect()
 
     def _reset(self) -> None:
-        if self.is_connected:
+        if self._stream.is_active():
             self._log.error("Cannot reset a connected data client")
             return
 
         self._subscribed_instrument_ids = set()
 
     def _dispose(self) -> None:
-        if self.is_connected:
+        if self._stream.is_active():
             self._log.error("Cannot dispose a connected data client")
             return
 
@@ -381,19 +382,15 @@ class BetfairDataClient(LiveMarketDataClient):
             elif update.error_code == StatusErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED:
                 raise RuntimeError("Subscription request limit exceeded")
             elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
-                if self._reconnect_in_progress:
+                if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.info("Invalid session information, reconnecting client")
-                self._reconnect_in_progress = True
-                self._stream.is_connected = False
                 self._client.reset_headers()
-                self._log.info("Reconnecting socket")
                 self.create_task(self._reconnect())
             else:
-                if self._reconnect_in_progress:
+                if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
-                self._log.info("Unknown failure message, scheduling restart")
-                self._reconnect_in_progress = True
+                self._log.warning("Unknown API error, scheduling reconnect")
                 self.create_task(self._reconnect())

@@ -178,27 +178,29 @@ def parser() -> BetfairParser:
 
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    async def write():
-        writer.write(b"connected\r\n")
-        while True:
-            writer.write(b"hello\r\n")
-            await asyncio.sleep(0.1)
-
-    asyncio.get_event_loop().create_task(write())
+    writer.write(b"connected\r\n")
 
     while True:
-        req = await reader.readline()
-        if req.strip() == b"close":
-            writer.close()
+        data = await reader.read(1024)
+        if not data or data == b"close":
+            break
+        writer.write(data)
+        await writer.drain()
+    writer.close()
+    await writer.wait_closed()
 
 
 @pytest_asyncio.fixture()
 async def socket_server():
     server = await asyncio.start_server(handle_echo, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
-    async with server:
-        await server.start_serving()
+    await server.start_serving()
+
+    try:
         yield addr
+    finally:
+        server.close()
+        await server.wait_closed()
 
 
 @pytest_asyncio.fixture(name="closing_socket_server")
@@ -219,5 +221,9 @@ async def fixture_closing_socket_server():
 
     server = await asyncio.start_server(handler, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
-    async with server:
+
+    try:
         yield addr
+    finally:
+        server.close()
+        await server.wait_closed()

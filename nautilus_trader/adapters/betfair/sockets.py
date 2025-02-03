@@ -62,14 +62,12 @@ class BetfairStreamClient:
         self._log = Logger(type(self).__name__)
 
         self.unique_id = next(UNIQUE_ID)
-        self.is_connected: bool = False
-        self.disconnecting: bool = False
 
     async def connect(self):
         if not self._http_client.session_token:
             await self._http_client.connect()
 
-        if self.is_connected:
+        if self._client is not None and self._client.is_active():
             self._log.info("Socket already connected")
             return
 
@@ -87,9 +85,9 @@ class BetfairStreamClient:
             post_connection=None,  # this method itself needs the `self._client` reference
             post_reconnection=self.post_reconnection,
         )
+
         await self._post_connection()
 
-        self.is_connected = True
         self._log.info("Connected")
 
     async def reconnect(self):
@@ -98,12 +96,14 @@ class BetfairStreamClient:
                 self._log.warning("Cannot reconnect: not connected")
                 return
 
-            self.is_connected = False
+            if not self._client.is_active():
+                self._log.warning(f"Cannot reconnect: client in {self._client.mode()} mode")
+                return
+
             self._log.info("Reconnecting...")
 
             await self._client.reconnect()
 
-            self.is_connected = True
             self._log.info("Reconnected")
         except asyncio.CancelledError:
             self._log.warning("Task 'reconnect' canceled")
@@ -114,15 +114,65 @@ class BetfairStreamClient:
                 self._log.warning("Cannot disconnect: not connected")
                 return
 
-            self.disconnecting = True
-            self._log.info("Disconnecting...")
+            self._log.info(f"Disconnecting from {self._client.mode()} mode...")
 
             await self._client.close()
 
-            self.is_connected = False
             self._log.info("Disconnected")
         except asyncio.CancelledError:
             self._log.warning("Task 'disconnect' canceled")
+
+    def is_active(self) -> bool:
+        """
+        Check whether the client connection is active.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._client is None:
+            return False
+        return self._client.is_active()
+
+    def is_reconnecting(self) -> bool:
+        """
+        Check whether the client is reconnecting.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._client is None:
+            return False
+        return self._client.is_reconnecting()
+
+    def is_disconnecting(self) -> bool:
+        """
+        Check whether the client is disconnecting.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._client is None:
+            return False
+        return self._client.is_disconnecting()
+
+    def is_closed(self) -> bool:
+        """
+        Check whether the client is closed.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._client is None:
+            return True
+        return self._client.is_closed()
 
     async def _post_connection(self) -> None:
         pass
@@ -147,20 +197,7 @@ class BetfairStreamClient:
             if self._client is None:
                 raise RuntimeError("Cannot send message: no client")
 
-            # If the client is not currently active (e.g. in the middle of a reconnection),
-            # waits up to 2 seconds for it to become active before sending. This handles the case
-            # where a reconnection was triggered right before or during a send operation.
-            timeout = 2.0
-
-            try:
-                async with asyncio.timeout(timeout):
-                    while not self._client.is_active():
-                        await asyncio.sleep(0.01)
-
-                await self._client.send(message)
-                self._log.debug("[SENT]")
-            except TimeoutError:
-                raise RuntimeError(f"Client did not become active within {timeout}s timeout")
+            await self._client.send(message)
         except asyncio.CancelledError:
             self._log.warning("Task 'send' cancelled")
 
