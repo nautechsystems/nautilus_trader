@@ -109,7 +109,7 @@ struct SocketClientInner {
 }
 
 impl SocketClientInner {
-    pub async fn connect_url(config: SocketConfig) -> Result<Self, Error> {
+    pub async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
         let SocketConfig {
@@ -126,9 +126,7 @@ impl SocketClientInner {
             certs_dir,
         } = &config;
         let connector = if let Some(dir) = certs_dir {
-            // TODO: Unwrap for now, one step away from propagating the error but need to deal
-            // with the tungstenite Error
-            let config = create_tls_config_from_certs_dir(Path::new(dir)).unwrap();
+            let config = create_tls_config_from_certs_dir(Path::new(dir))?;
             Some(Connector::Rustls(Arc::new(config)))
         } else {
             None
@@ -195,20 +193,6 @@ impl SocketClientInner {
         tracing::debug!("Reconnecting");
 
         tokio::time::timeout(self.reconnect_timeout, async {
-            if self
-                .connection_mode
-                .compare_exchange(
-                    ConnectionMode::Active.as_u8(),
-                    ConnectionMode::Reconnect.as_u8(),
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_err()
-            {
-                tracing::warn!("Connection not in active mode for reconnect");
-                return Ok(());
-            }
-
             // Clean up existing tasks
             shutdown(
                 self.read_task.clone(),
@@ -446,10 +430,9 @@ impl SocketClient {
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
-    ) -> Result<Self, Error> {
+    ) -> anyhow::Result<Self> {
         let suffix = config.suffix.clone();
         let inner = SocketClientInner::connect_url(config).await?;
-
         let writer = inner.writer.clone();
         let connection_mode = inner.connection_mode.clone();
 
@@ -619,7 +602,7 @@ impl SocketClient {
                     break; // Controller finished
                 }
 
-                if mode.is_reconnect() || !inner.is_alive() {
+                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
                     match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");

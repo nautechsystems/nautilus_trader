@@ -203,20 +203,6 @@ impl WebSocketClientInner {
         tracing::debug!("Reconnecting");
 
         tokio::time::timeout(self.reconnect_timeout, async {
-            if self
-                .connection_mode
-                .compare_exchange(
-                    ConnectionMode::Active.as_u8(),
-                    ConnectionMode::Reconnect.as_u8(),
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_err()
-            {
-                tracing::warn!("Connection not in active mode for reconnect");
-                return Ok(());
-            }
-
             shutdown(
                 self.read_task.take(),
                 self.heartbeat_task.take(),
@@ -688,7 +674,7 @@ impl WebSocketClient {
                     break; // Controller finished
                 }
 
-                if mode.is_reconnect() || !inner.is_alive() {
+                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
                     match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
