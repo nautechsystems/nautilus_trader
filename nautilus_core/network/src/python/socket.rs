@@ -121,6 +121,11 @@ impl SocketClient {
         slf.is_closed()
     }
 
+    #[pyo3(name = "mode")]
+    fn py_mode(slf: PyRef<'_, Self>) -> String {
+        slf.connection_mode().to_string()
+    }
+
     /// Reconnect the client.
     #[pyo3(name = "reconnect")]
     fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

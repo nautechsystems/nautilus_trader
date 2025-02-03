@@ -20,6 +20,7 @@ use strum::{AsRefStr, Display, EnumString};
 /// The client can be in one of four modes (managed via an atomic flag).
 #[derive(Clone, Copy, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
 #[repr(u8)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum ConnectionMode {
     #[default]
     /// The client is fully connected and operational.
