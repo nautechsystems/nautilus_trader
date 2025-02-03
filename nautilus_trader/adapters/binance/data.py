@@ -233,7 +233,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     self._send_all_instruments_to_data_engine()
                     break
                 except BinanceError as e:
-                    error_code = BinanceErrorCode(e.message["code"])
+                    error_code = BinanceErrorCode(int(e.message["code"]))
                     retries += 1
 
                     if not self._should_retry(error_code, retries):
