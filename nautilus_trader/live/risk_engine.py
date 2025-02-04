@@ -234,7 +234,7 @@ class LiveRiskEngine(RiskEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("Command message queue canceled")
+            self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -255,7 +255,7 @@ class LiveRiskEngine(RiskEngine):
                     break
                 self._handle_event(event)
         except asyncio.CancelledError:
-            self._log.warning("Event message queue canceled")
+            self._log.warning("Canceled task 'run_evt_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:

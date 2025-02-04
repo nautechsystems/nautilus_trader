@@ -364,7 +364,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("DataCommand message queue canceled")
+            self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -385,7 +385,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_request(request)
         except asyncio.CancelledError:
-            self._log.warning("DataRequest message queue canceled")
+            self._log.warning("Canceled task 'run_req_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -406,7 +406,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_response(response)
         except asyncio.CancelledError:
-            self._log.warning("DataResponse message queue canceled")
+            self._log.warning("Canceled task 'run_res_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -425,7 +425,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_data(data)
         except asyncio.CancelledError:
-            self._log.warning("Data message queue canceled")
+            self._log.warning("Canceled task 'run_data_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
