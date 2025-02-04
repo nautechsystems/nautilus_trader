@@ -1285,13 +1285,13 @@ tools = ["hypothesis (>=6.22.0,<6.108.7)"]
 
 [[package]]
 name = "eth-account"
-version = "0.13.4"
+version = "0.13.5"
 description = "eth-account: Sign Ethereum transactions and messages with local private keys"
 optional = true
 python-versions = "<4,>=3.8"
 files = [
-    {file = "eth_account-0.13.4-py3-none-any.whl", hash = "sha256:a4c109e9bad3a278243fcc028b755fb72b43e25b1e6256b3f309a44f5f7d87c3"},
-    {file = "eth_account-0.13.4.tar.gz", hash = "sha256:2e1f2de240bef3d9f3d8013656135d2a79b6be6d4e7885bce9cace4334a4a376"},
+    {file = "eth_account-0.13.5-py3-none-any.whl", hash = "sha256:e43fd30c9a7fabb882b50e8c4c41d4486d2f3478ad97c66bb18cfcc872fdbec8"},
+    {file = "eth_account-0.13.5.tar.gz", hash = "sha256:010c9ce5f3d2688106cf9bfeb711bb8eaf0154ea6f85325f54fecea85c2b3759"},
 ]
 
 [package.dependencies]
@@ -1307,9 +1307,9 @@ pydantic = ">=2.0.0"
 rlp = ">=1.0.0"
 
 [package.extras]
-dev = ["build (>=0.9.0)", "bumpversion (>=0.5.3)", "coverage", "hypothesis (>=4.18.0,<5)", "ipython", "mypy (==1.10.0)", "pre-commit (>=3.4.0)", "pytest (>=7.0.0)", "pytest-xdist (>=2.4.0)", "sphinx (>=6.0.0)", "sphinx-autobuild (>=2021.3.14)", "sphinx-rtd-theme (>=1.0.0)", "towncrier (>=21,<22)", "tox (>=4.0.0)", "twine", "wheel"]
-docs = ["sphinx (>=6.0.0)", "sphinx-autobuild (>=2021.3.14)", "sphinx-rtd-theme (>=1.0.0)", "towncrier (>=21,<22)"]
-test = ["coverage", "hypothesis (>=4.18.0,<5)", "pytest (>=7.0.0)", "pytest-xdist (>=2.4.0)"]
+dev = ["build (>=0.9.0)", "bump_my_version (>=0.19.0)", "coverage", "hypothesis (>=6.22.0,<6.108.7)", "ipython", "mypy (==1.10.0)", "pre-commit (>=3.4.0)", "pytest (>=7.0.0)", "pytest-xdist (>=2.4.0)", "sphinx (>=6.0.0)", "sphinx-autobuild (>=2021.3.14)", "sphinx_rtd_theme (>=1.0.0)", "towncrier (>=24,<25)", "tox (>=4.0.0)", "twine", "wheel"]
+docs = ["sphinx (>=6.0.0)", "sphinx-autobuild (>=2021.3.14)", "sphinx_rtd_theme (>=1.0.0)", "towncrier (>=24,<25)"]
+test = ["coverage", "hypothesis (>=6.22.0,<6.108.7)", "pytest (>=7.0.0)", "pytest-xdist (>=2.4.0)"]
 
 [[package]]
 name = "eth-hash"
