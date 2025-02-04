@@ -288,7 +288,7 @@ cdef class PerContractFeeModel(FeeModel):
     Raises
     ------
     ValueError
-        If `commission` is not a positive amount.
+        If `commission` is negative (< 0).
 
     """
 
