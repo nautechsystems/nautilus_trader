@@ -293,7 +293,7 @@ cdef class PerContractFeeModel(FeeModel):
     """
 
     def __init__(self, Money commission not None):
-        Condition.positive(commission, "commission")
+        Condition.not_negative(commission, "commission")
 
         self._commission = commission
 
