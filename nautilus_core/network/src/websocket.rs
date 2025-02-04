@@ -538,7 +538,7 @@ impl WebSocketClient {
 
     /// Returns the current connection mode.
     pub fn connection_mode(&self) -> ConnectionMode {
-        ConnectionMode::from_u8(self.connection_mode.load(Ordering::SeqCst))
+        ConnectionMode::from_atomic(&self.connection_mode)
     }
 
     /// Check if the client connection is active.
@@ -652,7 +652,7 @@ impl WebSocketClient {
 
             loop {
                 tokio::time::sleep(check_interval).await;
-                let mode = ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst));
+                let mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");

@@ -114,11 +114,11 @@ impl WebSocketClient {
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
-        let mode = connection_mode.load(Ordering::SeqCst);
+        let mode = ConnectionMode::from_atomic(&connection_mode);
         tracing::debug!("Close from mode {mode}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            match ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst)) {
+            match ConnectionMode::from_atomic(&connection_mode) {
                 ConnectionMode::Closed => {
                     tracing::warn!("WebSocket already closed");
                 }
@@ -127,7 +127,7 @@ impl WebSocketClient {
                 }
                 _ => {
                     connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
-                    while connection_mode.load(Ordering::SeqCst) != ConnectionMode::Closed.as_u8() {
+                    while !ConnectionMode::from_atomic(&connection_mode).is_closed() {
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                 }

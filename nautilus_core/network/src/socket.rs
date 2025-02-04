@@ -460,7 +460,7 @@ impl SocketClient {
 
     /// Returns the current connection mode.
     pub fn connection_mode(&self) -> ConnectionMode {
-        ConnectionMode::from_u8(self.connection_mode.load(Ordering::SeqCst))
+        ConnectionMode::from_atomic(&self.connection_mode)
     }
 
     /// Check if the client connection is active.
@@ -544,20 +544,34 @@ impl SocketClient {
         let check_interval = Duration::from_millis(1);
 
         if !self.is_active() {
-            tracing::debug!("Waiting for client to become active before sending (2s)...");
+            tracing::debug!("Waiting for client to become ACTIVE before sending (2s)...");
             match tokio::time::timeout(timeout, async {
                 while !self.is_active() {
+                    if matches!(
+                        self.connection_mode(),
+                        ConnectionMode::Disconnect | ConnectionMode::Closed
+                    ) {
+                        return Err("Client disconnected waiting to send");
+                    }
+
                     tokio::time::sleep(check_interval).await;
                 }
+
+                Ok(())
             })
             .await
             {
-                Ok(_) => tracing::debug!("Client now active"),
+                Ok(Ok(())) => tracing::debug!("Client now active"),
+                Ok(Err(e)) => {
+                    tracing::error!("Cannot send data ({}): {e}", String::from_utf8_lossy(data));
+                    return Ok(());
+                }
                 Err(_) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "Client did not become active within timeout",
-                    ))
+                    tracing::error!(
+                        "Cannot send data ({}): timeout waiting to become ACTIVE",
+                        String::from_utf8_lossy(data)
+                    );
+                    return Ok(());
                 }
             }
         }
@@ -580,7 +594,7 @@ impl SocketClient {
 
             loop {
                 tokio::time::sleep(check_interval).await;
-                let mode = ConnectionMode::from_u8(connection_mode.load(Ordering::SeqCst));
+                let mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
