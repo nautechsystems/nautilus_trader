@@ -141,8 +141,10 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Configuration
         self.config = config
+        self.check_order_timeout_secs = 10.0
         self._log.info(f"{config.account_currency=}", LogColor.BLUE)
         self._log.info(f"{config.request_account_state_secs=}", LogColor.BLUE)
+        self._log.info(f"{self.check_order_timeout_secs=}", LogColor.BLUE)
 
         # Clients
         self._client: BetfairHttpClient = client
@@ -843,15 +845,21 @@ class BetfairExecutionClient(LiveExecutionClient):
                         raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> None:
-        """
-        Ensure we have a client_order_id, instrument and order for this venue order
-        update.
-        """
+        # We may get an order update from the socket before our submit_order response has
+        # come back (with our bet_id).
+        #
+        # As a precaution, wait up to `check_order_timeout_seconds` for the bet_id to be added
+        # to cache.
         venue_order_id = VenueOrderId(str(unmatched_order.id))
-        client_order_id = await self.wait_for_order(venue_order_id, timeout_secs=10.0)
+        client_order_id = await self._wait_for_order(venue_order_id, self.check_order_timeout_secs)
         if client_order_id is None:
-            self._log.warning(f"Can't find client_order_id for {unmatched_order}")
+            self._log.warning(
+                f"Failed to find ClientOrderId for {venue_order_id!r} "
+                f"after {self.check_order_timeout_secs} seconds, unmatched order: {unmatched_order}",
+            )
             return
+
+        self._log.debug(f"Found {client_order_id!r} for {venue_order_id!r}")
 
         order = self._cache.order(client_order_id=client_order_id)
         PyCondition.not_none(order, "order")
@@ -859,9 +867,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
     def _handle_stream_executable_order_update(self, unmatched_order: UnmatchedOrder) -> None:
-        """
-        Handle update containing 'E' (executable) order update.
-        """
+        # Handle update containing 'E' (executable) order update
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
         PyCondition.not_none(client_order_id, "client_order_id")
@@ -1007,33 +1013,23 @@ class BetfairExecutionClient(LiveExecutionClient):
             # This execution is complete - no need to track this anymore
             del self._published_executions[client_order_id]
 
-    async def wait_for_order(
+    async def _wait_for_order(
         self,
         venue_order_id: VenueOrderId,
-        timeout_secs: float = 10.0,
+        timeout_secs: float,
     ) -> ClientOrderId | None:
-        """
-        We may get an order update from the socket before our submit_order response has
-        come back (with our bet_id).
-
-        As a precaution, wait up to `timeout_seconds` for the bet_id to be added
-        to cache.
-
-        """
         try:
             PyCondition.type(venue_order_id, VenueOrderId, "venue_order_id")
 
+            timeout_ns = secs_to_nanos(timeout_secs)
             start = self._clock.timestamp_ns()
             now = start
-            while (now - start) < secs_to_nanos(timeout_secs):
+            while (now - start) < timeout_ns:
                 client_order_id = self._cache.client_order_id(venue_order_id)
                 if client_order_id:
                     return client_order_id
                 await asyncio.sleep(0.01)
                 now = self._clock.timestamp_ns()
-            self._log.warning(
-                f"Failed to find venue_order_id: {venue_order_id} after {timeout_secs} seconds",
-            )
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'wait_for_order'")
         return None
