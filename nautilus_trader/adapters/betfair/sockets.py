@@ -106,7 +106,7 @@ class BetfairStreamClient:
 
             self._log.info("Reconnected")
         except asyncio.CancelledError:
-            self._log.warning("Task 'reconnect' canceled")
+            self._log.warning("Canceled task 'reconnect'")
 
     async def disconnect(self):
         try:
@@ -120,7 +120,7 @@ class BetfairStreamClient:
 
             self._log.info("Disconnected")
         except asyncio.CancelledError:
-            self._log.warning("Task 'disconnect' canceled")
+            self._log.warning("Canceled task 'disconnect'")
 
     def is_active(self) -> bool:
         """
@@ -199,7 +199,7 @@ class BetfairStreamClient:
 
             await self._client.send(message)
         except asyncio.CancelledError:
-            self._log.warning("Task 'send' cancelled")
+            self._log.warning("Canceled task 'send'")
 
     def auth_message(self):
         return {

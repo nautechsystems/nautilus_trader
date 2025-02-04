@@ -385,7 +385,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("Command message queue canceled")
+            self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -406,7 +406,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     break
                 self._handle_event(event)
         except asyncio.CancelledError:
-            self._log.warning("Event message queue canceled")
+            self._log.warning("Canceled task 'run_evt_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -425,7 +425,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 except Exception as e:
                     self._log.error(f"Failed to check in-flight orders: {e}")
         except asyncio.CancelledError:
-            self._log.debug("In-flight check loop task canceled")
+            self._log.debug("Canceled task 'inflight_check_loop'")
 
     async def _check_inflight_orders(self) -> None:
         self._log.debug("Checking in-flight orders status")
@@ -464,7 +464,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 await asyncio.sleep(interval_secs)
                 await self._check_open_orders()
         except asyncio.CancelledError:
-            self._log.debug("Open check loop task canceled")
+            self._log.debug("Canceled task 'open_check_loop'")
 
     async def _check_open_orders(self) -> None:
         try:

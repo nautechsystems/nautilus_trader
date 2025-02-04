@@ -253,7 +253,7 @@ class DYDXWebsocketClient:
                         self._client = None
 
         except asyncio.CancelledError:
-            self._log.debug("Canceled 'reconnect_guard' task")
+            self._log.debug("Canceled task 'reconnect_guard'")
 
     def reconnect(self) -> None:
         """
