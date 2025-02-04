@@ -993,7 +993,7 @@ cdef class Strategy(Actor):
         else:
             self._manager.send_risk_command(command)
 
-    cpdef void cancel_order(self, Order order, ClientId client_id = None,dict[str, object] params = None):
+    cpdef void cancel_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """
         Cancel the given order with optional routing instructions.
 
@@ -1327,7 +1327,7 @@ cdef class Strategy(Actor):
         for position in positions_open:
             self.close_position(position, client_id, tags, reduce_only, params)
 
-    cpdef void query_order(self, Order order, ClientId client_id = None,dict[str, object] params = None):
+    cpdef void query_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """
         Query the given order with optional routing instructions.
 

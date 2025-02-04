@@ -31,7 +31,7 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
 **Settings**:
- - `reconciliation`: (default True): Activates reconciliation at startup, aligning the system's internal state with the execution venue's state.
+ - `reconciliation`: (default True) Activates reconciliation at startup, aligning the system's internal state with the execution venue's state.
  - `reconciliation_lookback_mins`: Specifies how far back (in minutes) the system should request past events to reconcile. This provides recovery for uncached execution state.
 
 :::info
