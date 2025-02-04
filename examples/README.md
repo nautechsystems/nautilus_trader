@@ -5,6 +5,9 @@ The following code examples are organized by system environment context:
 - **Sandbox**: Real-time data with simulated venues.
 - **Live**: Real-time data with live venues (paper trading or real accounts).
 
+In addition to these, there is an **other** directory containing examples that cover various aspects of the framework
+beyond strategies.
+
 Scripts within each environment context directory are organized by integration.
 
 Ensure that the `nautilus_trader` package is either compiled from source or installed via pip before
