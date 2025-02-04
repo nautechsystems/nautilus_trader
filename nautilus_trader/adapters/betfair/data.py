@@ -193,11 +193,16 @@ class BetfairDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _delayed_subscribe(self, delay: int = 0) -> None:
-        self._log.debug(f"Scheduling subscribe for delay={delay}")
-        await asyncio.sleep(delay)
-        self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
-        await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
-        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
+        try:
+            self._log.debug(f"Scheduling subscribe for delay={delay}")
+            await asyncio.sleep(delay)
+            self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
+            await self._stream.send_subscription_message(
+                market_ids=list(self._subscribed_market_ids),
+            )
+            self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
+        except asyncio.CancelledError:
+            self._log.warning("Canceled task 'delayed_subscribe'")
 
     async def _subscribe_order_book_deltas(
         self,

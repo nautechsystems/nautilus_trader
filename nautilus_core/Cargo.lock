@@ -3239,6 +3239,7 @@ dependencies = [
  "futures",
  "futures-util",
  "http",
+ "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",

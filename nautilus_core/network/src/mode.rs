@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use strum::{AsRefStr, Display, EnumString};
 
 /// Connection mode for a socket client.
@@ -48,6 +50,11 @@ impl ConnectionMode {
             3 => Self::Closed,
             _ => panic!("Invalid `ConnectionMode` value: {value}"),
         }
+    }
+
+    #[inline]
+    pub fn from_atomic(value: &AtomicU8) -> Self {
+        Self::from_u8(value.load(Ordering::SeqCst))
     }
 
     /// Convert a [`ConnectionMode`] to a u8, useful when storing to an `AtomicU8`.
