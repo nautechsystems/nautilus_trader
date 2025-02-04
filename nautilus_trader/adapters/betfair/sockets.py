@@ -103,6 +103,7 @@ class BetfairStreamClient:
             self._log.info("Reconnecting...")
 
             await self._client.reconnect()
+            await asyncio.sleep(0.1)
 
             self._log.info("Reconnected")
         except asyncio.CancelledError:
