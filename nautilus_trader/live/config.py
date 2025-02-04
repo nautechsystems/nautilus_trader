@@ -104,7 +104,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         If there is a discrepancy then an order status report is generated and reconciled.
         A recommended setting is between 5-10 seconds, consider API rate limits and the additional
         request weights.
-        If no positive value is specified then the open order checking task is not started.
+        If no value is specified then the open order checking task is not started.
     open_check_open_only : bool, default True
         If True, the **check_open_orders** requests only currently open orders from the venue.
         If False, it requests the entire order history, which can be a heavy API call.
