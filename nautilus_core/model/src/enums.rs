@@ -338,6 +338,47 @@ pub enum BarIntervalType {
     RightOpen = 2,
 }
 
+/// Represents the side of a bet in a betting market.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum BetSide {
+    /// A "Back" bet signifies support for a specific outcome.
+    Back = 1,
+    /// A "Lay" bet signifies opposition to a specific outcome.
+    Lay = 2,
+}
+
+impl BetSide {
+    /// Returns the opposite betting side.
+    #[must_use]
+    pub fn opposite(&self) -> Self {
+        match self {
+            Self::Back => Self::Lay,
+            Self::Lay => Self::Back,
+        }
+    }
+}
+
 /// The type of order book action for an order book event.
 #[repr(C)]
 #[derive(
@@ -834,6 +875,16 @@ pub enum OrderSideSpecified {
 }
 
 impl OrderSideSpecified {
+    /// Returns the opposite order side.
+    #[must_use]
+    pub fn opposite(&self) -> Self {
+        match &self {
+            Self::Buy => Self::Sell,
+            Self::Sell => Self::Buy,
+        }
+    }
+
+    /// Converts this specified side into an [`OrderSide`].
     #[must_use]
     pub fn as_order_side(&self) -> OrderSide {
         match &self {
