@@ -6,7 +6,6 @@ inputs:
     description: The Python version to setup
     required: true
 
-# This action runs for linux and macos only
 runs:
   using: "composite"
   steps:
