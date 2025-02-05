@@ -29,7 +29,7 @@ jobs:
         if: env.PRECOMMIT_FAILED == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.BUILD_TOKEN }}
           script: |
             github.rest.issues.createComment({
               owner: context.repo.owner,
