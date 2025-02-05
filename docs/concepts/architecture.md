@@ -6,12 +6,12 @@ This guide dives deep into the foundational principles, structures, and designs 
 the platform. Whether you're a developer, system architect, or just curious about the inner workings
 of NautilusTrader, this section covers:
 
-- The design philosophy that drives decisions and shapes the system's evolution
-- The overarching system architecture providing a bird's-eye view of the entire system framework
-- How the framework is organized to facilitate modularity and maintainability
-- The code structure that ensures readability and scalability
-- A breakdown of component organization and interaction to understand how different parts communicate and collaborate
-- And finally, the implementation techniques that are crucial for performance, reliability, and robustness
+- The design philosophy that drives decisions and shapes the system's evolution.
+- The overarching system architecture providing a bird's-eye view of the entire system framework.
+- How the framework is organized to facilitate modularity and maintainability.
+- The code structure that ensures readability and scalability.
+- A breakdown of component organization and interaction to understand how different parts communicate and collaborate.
+- And finally, the implementation techniques that are crucial for performance, reliability, and robustness.
 
 :::note
 Throughout the documentation, the term _"Nautilus system boundary"_ refers to operations within
@@ -57,9 +57,9 @@ with. Understanding these contexts is crucial for effective backtesting, develop
 
 Here are the available environments you can work with:
 
-- `Backtest`: Historical data with simulated venues
-- `Sandbox`: Real-time data with simulated venues
-- `Live`: Real-time data with live venues (paper trading or real accounts)
+- `Backtest`: Historical data with simulated venues.
+- `Sandbox`: Real-time data with simulated venues.
+- `Live`: Real-time data with live venues (paper trading or real accounts).
 
 ### Common core
 
@@ -95,33 +95,32 @@ for each of these subpackages from the left nav menu.
 
 ### Core / low-Level
 
-- `core`: Constants, functions and low-level components used throughout the framework
-- `common`: Common parts for assembling the frameworks various components
-- `network`: Low-level base components for networking clients
-- `serialization`: Serialization base components and serializer implementations
-- `model`: Defines a rich trading domain model
+- `core`: Constants, functions and low-level components used throughout the framework.
+- `common`: Common parts for assembling the frameworks various components.
+- `network`: Low-level base components for networking clients.
+- `serialization`: Serialization base components and serializer implementations.
+- `model`: Defines a rich trading domain model.
 
 ### Components
 
-- `accounting`: Different account types and account management machinery
-- `adapters`: Integration adapters for the platform including brokers and exchanges
-- `analysis`: Components relating to trading performance statistics and analysis
-- `cache`: Provides common caching infrastructure
-- `data`: The data stack and data tooling for the platform
-- `execution`: The execution stack for the platform
-- `indicators`: A set of efficient indicators and analyzers
-- `infrastructure`: Technology specific infrastructure implementations
-- `msgbus`: A universal message bus for connecting system components
-- `persistence`: Data storage, cataloging and retrieval, mainly to support backtesting
-- `portfolio`: Portfolio management functionality
-- `risk`: Risk specific components and tooling
-- `trading`: Trading domain specific components and tooling
+- `accounting`: Different account types and account management machinery.
+- `adapters`: Integration adapters for the platform including brokers and exchanges.
+- `analysis`: Components relating to trading performance statistics and analysis.
+- `cache`: Provides common caching infrastructure.
+- `data`: The data stack and data tooling for the platform.
+- `execution`: The execution stack for the platform.
+- `indicators`: A set of efficient indicators and analyzers.
+- `msgbus`: A universal message bus for connecting system components.
+- `persistence`: Data storage, cataloging and retrieval, mainly to support backtesting.
+- `portfolio`: Portfolio management functionality.
+- `risk`: Risk specific components and tooling.
+- `trading`: Trading domain specific components and tooling.
 
 ### System implementations
 
-- `backtest`: Backtesting componentry as well as a backtest engine and node implementations
-- `live`: Live engine and client implementations as well as a node for live trading
-- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](/concepts/architecture.md#environment-contexts)
+- `backtest`: Backtesting componentry as well as a backtest engine and node implementations.
+- `live`: Live engine and client implementations as well as a node for live trading.
+- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](/concepts/architecture.md#environment-contexts).
 
 ## Code structure
 

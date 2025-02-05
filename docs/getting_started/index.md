@@ -1,8 +1,8 @@
 # Getting Started
 
 To get started with NautilusTrader you will need the following:
-- A Python environment with the `nautilus_trader` package installed
-- A way to launch Python scripts for backtesting and/or live trading (either from the command line, or Jupyter notebook etc)
+- A Python environment with the `nautilus_trader` package installed.
+- A way to launch Python scripts for backtesting and/or live trading (either from the command line, or Jupyter notebook etc).
 
 ## [Installation](installation.md)
 The **Installation** guide will help to ensure that NautilusTrader is properly installed on your machine.
@@ -21,8 +21,8 @@ The following table lists example locations ordered by recommended learning prog
 |:--------------------|:-----------------------------------------------------------------------------------------------------------------------------|
 | `/examples`         | Fully runnable self-contained examples.                                                                                      |
 | `/docs/tutorials`   | Various examples in form of Jupyter notebooks.                                                                               |
+| `/docs/concepts`    | Contains numerous small code snippets that provide an overview of available features, but examples are mostly not runnable.  |
 | `/tests/unit_tests` | Unit-tests can be useful when looking for specific implementation details not covered in the examples.                       |
-| `/docs/concepts`    | Contains numerous small code snippets that provide an overview of available features, but examples are mostly not runnable. |
 
 ## Backtesting API levels
 
