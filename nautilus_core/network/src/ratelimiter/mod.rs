@@ -185,7 +185,9 @@ where
     pub async fn until_key_ready(&self, key: &K) {
         loop {
             match self.check_key(key) {
-                Ok(x) => x,
+                Ok(_) => {
+                    break;
+                },
                 Err(neg) => {
                     sleep(neg.wait_time_from(self.clock.now())).await;
                 }
