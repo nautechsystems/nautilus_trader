@@ -34,7 +34,7 @@ def bypass_logging() -> None:
     to debug specific tests, simply comment this out.
 
     """
-    init_logging(
+    _guard = init_logging(
         level_stdout=LogLevel.DEBUG,
         bypass=True,  # Set this to False to see logging in tests
     )
