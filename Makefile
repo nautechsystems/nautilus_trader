@@ -42,6 +42,18 @@ build-wheel-debug:
 
 .PHONY: clean
 clean:
+	find . -type d -name "__pycache" -print0 | xargs -0 rm -rf
+	find . -type f -a \( -name "*.so" -o -name "*.dll" \) -print0 | xargs -0 rm -f
+	rm -rf \
+		nautilus_core/target/ \
+		.benchmarks/ \
+		.mypy_cache/ \
+		.pytest_cache/ \
+		.ruff_cache/ \
+		build/
+
+.PHONY: distclean
+distclean: clean
 	git clean -fxd -e tests/test_data/large/
 
 .PHONY: format

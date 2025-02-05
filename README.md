@@ -335,7 +335,8 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode.
-- `make clean`: **CAUTION** removes all non-source artifacts from the repository.
+- `make clean`: Deletes all build results, such as `.so` or `.dll` files.
+- `make distclean`: **CAUTION** Removes all artifacts not in the git index from the repository. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
 - `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
