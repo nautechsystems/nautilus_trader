@@ -344,4 +344,21 @@ mod tests {
         assert!(mock_limiter.check_key(&"per_second".to_string()).is_ok());
         assert!(mock_limiter.check_key(&"per_minute".to_string()).is_err());
     }
+
+    #[tokio::test]
+    async fn test_await_keys_ready() {
+        let mock_limiter = initialize_mock_rate_limiter();
+
+        // Check base quota is not exceeded
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+
+        // Check base quota is exceeded
+        assert!(mock_limiter.check_key(&"default".to_string()).is_err());
+
+        // Wait keys to be ready and check base quota is reset
+        mock_limiter.advance_clock(Duration::from_secs(1));
+        mock_limiter.await_keys_ready(Some(vec!["default".to_string()])).await;
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+    }
 }
