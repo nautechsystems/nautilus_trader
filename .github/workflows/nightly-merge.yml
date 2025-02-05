@@ -19,14 +19,12 @@ jobs:
         id: fetch-workflows
         run: |
           set -eo pipefail
-
           url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/runs?branch=develop&per_page=20"
           echo "Fetching workflows from: $url"
           if ! curl -s --max-time 30 -H "Authorization: token ${{ secrets.NIGHTLY_TOKEN }}" "$url" > workflow_runs.json; then
               echo "Failed to fetch workflows, exiting"
               exit 1
           fi
-
           echo "Fetched workflow runs:"
           jq '.' workflow_runs.json
 
@@ -34,29 +32,45 @@ jobs:
         id: check-workflow
         run: |
           set -eo pipefail
+          matching_workflows=$(jq '
+            .workflow_runs
+            | map(
+                select(
+                  .name == "build"
+                  and .head_branch == "develop"
+                  and .event == "push"
+                )
+              )
+            | sort_by(.created_at)
+            | reverse
+          ' workflow_runs.json) || {
+            echo "Error parsing workflow data"
+            exit 1
+          }
 
-          matching_workflows=$(jq '.workflow_runs | map(select(.name == "build" and .head_branch == "develop"))' workflow_runs.json)
-          if [[ -z "$matching_workflows" ]]; then
-            echo "No matching workflows found for the develop branch"
+          if [[ -z "$matching_workflows" || "$matching_workflows" == "null" ]]; then
+            echo "No matching workflows found for the develop branch (push events)"
             exit 1
           fi
 
           echo "Matching workflows:"
           echo "$matching_workflows" | jq '.'
 
-          first_workflow=$(echo "$matching_workflows" | jq -r 'first')
+          first_workflow=$(echo "$matching_workflows" | jq '.[0]')
           if [[ "$first_workflow" == "null" || -z "$first_workflow" ]]; then
-              echo "No valid workflows found, exiting"
-              exit 1
+            echo "No valid workflows found, exiting"
+            exit 1
           fi
 
           echo "First matching workflow:"
           echo "$first_workflow"
+          echo "Workflow event type: $(echo "$first_workflow" | jq -r '.event')"
+          echo "Workflow created at: $(echo "$first_workflow" | jq -r '.created_at')"
 
+          # If .status is in_progress, use that; else use .conclusion
           status=$(echo "$first_workflow" | jq -r 'if .status == "in_progress" then "in_progress" else .conclusion end')
-
           echo "status=$status" >> $GITHUB_OUTPUT
-          echo "Last develop branch workflow status: $status"
+          echo "Last develop branch push workflow status: $status"
 
           if [[ "$status" == "in_progress" ]]; then
             echo "The latest workflow for the develop branch is still in progress, exiting"
