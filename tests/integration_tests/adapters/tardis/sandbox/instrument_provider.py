@@ -25,9 +25,8 @@ from nautilus_trader.core import nautilus_pyo3
 
 async def run():
     nautilus_pyo3.init_tracing()
-    init_logging(level_stdout=LogLevel.TRACE)
+    _guard = init_logging(level_stdout=LogLevel.TRACE)
 
-    _guard = init_logging()
     http_client = get_tardis_http_client()
 
     # Test loading all instrument for specified exchanges

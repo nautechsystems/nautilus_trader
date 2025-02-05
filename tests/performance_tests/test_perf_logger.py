@@ -23,8 +23,9 @@ from nautilus_trader.common.enums import LogLevel
 
 def test_logging(benchmark) -> None:
     random.seed(45362718)
+    _guard = None
     if not is_logging_initialized:
-        init_logging(level_stdout=LogLevel.ERROR, bypass=True)
+        _guard = init_logging(level_stdout=LogLevel.ERROR, bypass=True)
 
     logger = Logger(name="TEST_LOGGER")
 
