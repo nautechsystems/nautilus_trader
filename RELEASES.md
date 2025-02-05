@@ -50,6 +50,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Improved `NautilusKernel` pending tasks cancellation on shutdown
 - Improved `TardisHttpClient` requests and error handling
 - Improved log file writer to strip ANSI escape codes and unprintable chars
+- Improved `clean` make target behavior and added `distclean` make target (#2286), @demonkoryu
 - Refined `Currency` `name` to accept non-ASCII characters (common for foreign currencies)
 - Refactored CI with composite actions (#2242), thanks @sunlei
 - Refactored Option Greeks feature (#2266), thanks @faysou
@@ -100,6 +101,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
 - Added docs for Actor (#2233), thanks @stefansimik
 - Added docs for Portfolio limitations with bar data (#2233), thanks @stefansimik
+- Added docs overview for example locations in repository (#2287), thanks @stefansimik
 - Improved docstrings for Actor subscription and request methods
 
 ### Deprecations
