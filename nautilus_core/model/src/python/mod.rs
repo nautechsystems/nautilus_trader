@@ -53,6 +53,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::bar::BarSpecification>()?;
     m.add_class::<crate::data::bar::BarType>()?;
     m.add_class::<crate::data::bar::Bar>()?;
+    m.add_class::<crate::data::bet::Bet>()?;
+    m.add_class::<crate::data::bet::BetPosition>()?;
     m.add_class::<crate::data::order::BookOrder>()?;
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
@@ -81,6 +83,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::AssetClass>()?;
     m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::BarAggregation>()?;
+    m.add_class::<crate::enums::BetSide>()?;
     m.add_class::<crate::enums::BookAction>()?;
     m.add_class::<crate::enums::BookType>()?;
     m.add_class::<crate::enums::ContingencyType>()?;
@@ -178,6 +181,18 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         crate::python::account::transformer::margin_account_from_account_events,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::bet::py_calc_bets_pnl,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::bet::py_probability_to_bet,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::bet::py_inverse_probability_to_bet,
         m
     )?)?;
     Ok(())

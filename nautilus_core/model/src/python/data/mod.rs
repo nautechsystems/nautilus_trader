@@ -16,6 +16,7 @@
 //! Data types for the trading domain model.
 
 pub mod bar;
+pub mod bet;
 pub mod delta;
 pub mod deltas;
 pub mod depth;

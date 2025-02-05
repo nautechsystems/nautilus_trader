@@ -22,8 +22,8 @@ use pyo3::{prelude::*, types::PyType, PyTypeInfo};
 
 use crate::{
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BetSide,
+        BookAction, BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
         OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
         TrailingOffsetType, TriggerType,
@@ -573,6 +573,69 @@ impl BarAggregation {
     #[pyo3(name = "MONTH")]
     fn py_month() -> Self {
         Self::Month
+    }
+}
+
+#[pymethods]
+impl BetSide {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(BetSide),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "BACK")]
+    fn py_back() -> Self {
+        Self::Back
+    }
+
+    #[classattr]
+    #[pyo3(name = "LAY")]
+    fn py_lay() -> Self {
+        Self::Lay
     }
 }
 

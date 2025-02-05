@@ -21,6 +21,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `stream_conflate_ms` config option for `BetfairDataClientConfig`
 - Added `recv_window_ms` config option for `BybitDataClientConfig` and `BybitExecClientConfig`
 - Added `open_check_open_only` config option for `LiveExecEngineConfig`
+- Added `BetSide` enum (to support `Bet` and `BetPosition`)
+- Added `Bet` and `BetPosition` for betting market risk and PnL calculations
 
 ### Breaking Changes
 - Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)
