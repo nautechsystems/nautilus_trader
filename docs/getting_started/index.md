@@ -10,6 +10,20 @@ The **Installation** guide will help to ensure that NautilusTrader is properly i
 ## [Quickstart](quickstart.md)
 The **Quickstart** provides a step-by-step walk through for setting up your first backtest.
 
+## Examples in repository
+
+The examples presented in the [online documentation](https://nautilustrader.io/docs/latest/) cover only a portion of all
+available examples. For a complete collection, we recommend downloading the [GitHub repository](https://github.com/nautechsystems/nautilus_trader).
+
+The following table lists example locations ordered by recommended learning progression:
+
+| Directory           | Contains                                                                                                                     |
+|:--------------------|:-----------------------------------------------------------------------------------------------------------------------------|
+| `/examples`         | Fully runnable self-contained examples.                                                                                      |
+| `/docs/tutorials`   | Various examples in form of Jupyter notebooks.                                                                               |
+| `/tests/unit_tests` | Unit-tests can be useful when looking for specific implementation details not covered in the examples.                       |
+| `/docs/concepts`    | Contains numerous small code snippets that provide an overview of available features, but examples are mostly not runnable. |
+
 ## Backtesting API levels
 
 Backtesting involves running simulated trading systems on historical data.
