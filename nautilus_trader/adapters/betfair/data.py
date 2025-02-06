@@ -144,6 +144,11 @@ class BetfairDataClient(LiveMarketDataClient):
             self._keep_alive_task = self.create_task(self._keep_alive())
 
         # Subscribe to instrument provider config
+        await self.stream_subscribe()
+        self._subscription_status = SubscriptionStatus.SUBSCRIBED
+
+    async def stream_subscribe(self):
+        # Subscribe to instrument provider config
         await self._stream.send_subscription_message(
             market_ids=self.instrument_provider.config.market_ids,
             event_type_ids=self.instrument_provider.config.event_type_ids,
@@ -151,7 +156,6 @@ class BetfairDataClient(LiveMarketDataClient):
             market_types=self.instrument_provider.config.market_types,
             conflate_ms=self.config.stream_conflate_ms,
         )
-        self._subscription_status = SubscriptionStatus.SUBSCRIBED
 
     async def _keep_alive(self) -> None:
         keep_alive_hrs = self.config.keep_alive_secs / (60 * 60)
