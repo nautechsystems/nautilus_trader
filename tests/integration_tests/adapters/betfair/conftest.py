@@ -28,6 +28,7 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
@@ -62,7 +63,14 @@ def betfair_client(event_loop):
 
 @pytest.fixture()
 def instrument_provider(betfair_client):
-    return BetfairTestStubs.instrument_provider(betfair_client=betfair_client)
+    config = BetfairInstrumentProviderConfig(
+        account_currency="GBP",
+        event_type_ids=[1, 2],
+    )
+    return BetfairTestStubs.instrument_provider(
+        betfair_client=betfair_client,
+        config=config,
+    )
 
 
 @pytest.fixture()
@@ -111,6 +119,9 @@ def data_client(
     patch(
         "nautilus_trader.adapters.betfair.data.BetfairDataClient._instrument_provider.get_account_currency",
         return_value="GBP",
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.data.BetfairDataClient.stream_subscribe",
     )
     patch(
         "nautilus_trader.adapters.betfair.providers.BetfairInstrumentProvider._client.list_navigation",
