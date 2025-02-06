@@ -143,15 +143,19 @@ class BetfairDataClient(LiveMarketDataClient):
         if not self._keep_alive_task:
             self._keep_alive_task = self.create_task(self._keep_alive())
 
-        # Check for any global filters in instrument provider to subscribe
-        if self.instrument_provider._config.event_type_ids:
-            await self._stream.send_subscription_message(
-                event_type_ids=self.instrument_provider._config.event_type_ids,
-                country_codes=self.instrument_provider._config.country_codes,
-                market_types=self.instrument_provider._config.market_types,
-                conflate_ms=self._config.stream_conflate_ms,
-            )
-            self._subscription_status = SubscriptionStatus.SUBSCRIBED
+        # Subscribe to instrument provider config
+        await self.stream_subscribe()
+        self._subscription_status = SubscriptionStatus.SUBSCRIBED
+
+    async def stream_subscribe(self):
+        # Subscribe to instrument provider config
+        await self._stream.send_subscription_message(
+            market_ids=self.instrument_provider.config.market_ids,
+            event_type_ids=self.instrument_provider.config.event_type_ids,
+            country_codes=self.instrument_provider.config.country_codes,
+            market_types=self.instrument_provider.config.market_types,
+            conflate_ms=self.config.stream_conflate_ms,
+        )
 
     async def _keep_alive(self) -> None:
         keep_alive_hrs = self.config.keep_alive_secs / (60 * 60)
@@ -191,19 +195,6 @@ class BetfairDataClient(LiveMarketDataClient):
             return
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
-
-    async def _delayed_subscribe(self, delay: int = 0) -> None:
-        try:
-            self._log.debug(f"Scheduling subscribe for delay={delay}")
-            await asyncio.sleep(delay)
-            self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
-            await self._stream.send_subscription_message(
-                market_ids=list(self._subscribed_market_ids),
-            )
-            self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
-        except asyncio.CancelledError:
-            self._log.warning("Canceled task 'delayed_subscribe'")
-
     async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
@@ -211,59 +202,28 @@ class BetfairDataClient(LiveMarketDataClient):
         depth: int | None = None,
         params: dict[str, Any] | None = None,
     ) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
-
-        instrument: BettingInstrument = self._instrument_provider.find(instrument_id)
-
-        if instrument.market_id in self._subscribed_market_ids:
-            self._log.warning(
-                f"Already subscribed to market_id: {instrument.market_id} "
-                f"[Instrument: {instrument_id.symbol}] <OrderBook> data",
-            )
-            return
-
-        if self._subscription_status == SubscriptionStatus.SUBSCRIBED:
-            self._log.debug("Already subscribed")
-            return
-
-        # If this is the first subscription request we're receiving, schedule a
-        # subscription after a short delay to allow other strategies to send
-        # their subscriptions (every change triggers a full snapshot).
-        self._subscribed_market_ids.add(instrument.market_id)
-        self._subscribed_instrument_ids.add(instrument.id)
-        if self._subscription_status == SubscriptionStatus.UNSUBSCRIBED:
-            delay = self.config.subscription_delay_secs or 0
-            self.create_task(self._delayed_subscribe(delay=delay))
-            self._subscription_status = SubscriptionStatus.PENDING_STARTUP
-        elif self._subscription_status == SubscriptionStatus.PENDING_STARTUP:
-            pass
-        elif self._subscription_status == SubscriptionStatus.RUNNING:
-            self.create_task(self._delayed_subscribe(delay=0))
-
-        self._log.info(
-            f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data",
-        )
+        self._log.info("Skipping subscribe_order_book_deltas, Betfair subscribes automatically.")
 
     async def _subscribe_instrument(
         self,
         instrument_id: InstrumentId,
         params: dict[str, Any] | None = None,
     ) -> None:
-        self._log.info("Skipping subscribe_instrument, Betfair subscribes as part of orderbook")
+        self._log.info("Skipping subscribe_instrument, Betfair subscribes automatically.")
 
     async def _subscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
         params: dict[str, Any] | None = None,
     ) -> None:
-        self._log.info("Skipping subscribe_quote_ticks, Betfair subscribes as part of orderbook")
+        self._log.info("Skipping subscribe_quote_ticks, Betfair subscribes automatically.")
 
     async def _subscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
         params: dict[str, Any] | None = None,
     ) -> None:
-        self._log.info("Skipping subscribe_trade_ticks, Betfair subscribes as part of orderbook")
+        self._log.info("Skipping subscribe_trade_ticks, Betfair subscribes automatically.")
 
     async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         for instrument in self._instrument_provider.list_all():

@@ -66,8 +66,6 @@ class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_
         The country codes to filter for.
     market_types : list[str], optional
         The market types to filter for.
-    event_type_names : list[str], optional
-        The event type names to filter for.
     min_market_start_time : pd.Timestamp, optional
         The minimum market start time (UTC) to filter from (date granularity only).
     max_market_start_time : pd.Timestamp, optional
@@ -113,7 +111,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         PyCondition.not_none(config, "config")
         super().__init__(config=config)
 
-        self._config = config
+        self.config: BetfairInstrumentProviderConfig = config
         self._client = client
         self._account_currency = config.account_currency
 
@@ -135,15 +133,15 @@ class BetfairInstrumentProvider(InstrumentProvider):
         currency = await self.get_account_currency()
         filters = filters or {}
 
-        self._log.info(f"Loading markets with market_filter={self._config}")
+        self._log.info(f"Loading markets with market_filter={self.config}")
         markets: list[FlattenedMarket] = await load_markets(
             self._client,
-            event_type_ids=filters.get("event_type_ids") or self._config.event_type_ids,
-            event_ids=filters.get("event_ids") or self._config.event_ids,
-            market_ids=filters.get("market_ids") or self._config.market_ids,
-            event_country_codes=filters.get("country_codes") or self._config.country_codes,
-            market_market_types=filters.get("market_types") or self._config.market_types,
-            event_type_names=filters.get("event_type_names") or self._config.event_type_names,
+            event_type_ids=filters.get("event_type_ids") or self.config.event_type_ids,
+            event_ids=filters.get("event_ids") or self.config.event_ids,
+            market_ids=filters.get("market_ids") or self.config.market_ids,
+            event_country_codes=filters.get("country_codes") or self.config.country_codes,
+            market_market_types=filters.get("market_types") or self.config.market_types,
+            event_type_names=filters.get("event_type_names") or self.config.event_type_names,
         )
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
@@ -151,15 +149,15 @@ class BetfairInstrumentProvider(InstrumentProvider):
             client=self._client,
             markets=markets,
             min_market_start_time=filters.get("min_market_start_time")
-            or self._config.min_market_start_time,
+            or self.config.min_market_start_time,
             max_market_start_time=filters.get("max_market_start_time")
-            or self._config.max_market_start_time,
+            or self.config.max_market_start_time,
         )
 
-        account_currency = Currency.from_str(self._config.account_currency)
+        account_currency = Currency.from_str(self.config.account_currency)
         default_min_notional = (
-            Money(self._config.default_min_notional, account_currency)
-            if self._config.default_min_notional
+            Money(self.config.default_min_notional, account_currency)
+            if self.config.default_min_notional
             else None
         )
 
