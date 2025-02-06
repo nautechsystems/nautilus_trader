@@ -52,6 +52,8 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "binance-options"
             else:
                 return "binance-futures"
+        case "BINANCE_DELIVERY":
+            return "binance-delivery"
         case "BITFINEX":
             if isinstance(instrument, CurrencyPair):
                 return "bitfinex"
@@ -69,7 +71,7 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "crypto-com"
             else:
                 return "crypto-com-derivatives"
-        case "GATEIO":
+        case "GATE_IO":
             if isinstance(instrument, CurrencyPair):
                 return "gate-io"
             else:

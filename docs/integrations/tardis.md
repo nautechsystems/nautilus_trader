@@ -108,7 +108,8 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | Nautilus venue          | Tardis exchange(s)                                    |
 |:------------------------|:------------------------------------------------------|
 | `ASCENDEX`              | `ascendex`                                            |
-| `BINANCE`               | `binance`, `binance-delivery`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BINANCE`               | `binance`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BINANCE_DELIVERY`      | `binance-delivery` (*COIN-margined contracts*)        |
 | `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
 | `BITFLYER`              | `bitflyer`                                            |
 | `BITMEX`                | `bitmex`                                              |
@@ -123,9 +124,9 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `DELTA`                 | `delta`                                               |
 | `DERIBIT`               | `deribit`                                             |
 | `DYDX`                  | `dydx`                                                |
-| `FTX`                   | `ftx` (*for historical research*)                     |
-| `FTX_US`                | `ftx-us` (*for historical research*)                  |
-| `GATEIO`                | `gate-io`, `gate-io-futures`                          |
+| `FTX`                   | `ftx` (*historical research*)                         |
+| `FTX_US`                | `ftx-us` (*historical research*)                      |
+| `GATE_IO`               | `gate-io`, `gate-io-futures`                          |
 | `GEMINI`                | `gemini`                                              |
 | `HITBTC`                | `hitbtc`                                              |
 | `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options`, `huobi-dm-swap` |
@@ -136,7 +137,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-swap`   |
 | `PHEMEX`                | `phemex`                                              |
 | `POLONIEX`              | `poloniex`                                            |
-| `SERUM`                 | `serum` (*for historical research*)                   |
+| `SERUM`                 | `serum` (*historical research*)                       |
 | `STARATLAS`             | `staratlas`                                           |
 | `UPBIT`                 | `upbit`                                               |
 | `WOOX`                  | `woo-x`                                               |
