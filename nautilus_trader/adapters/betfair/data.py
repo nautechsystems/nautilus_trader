@@ -143,15 +143,17 @@ class BetfairDataClient(LiveMarketDataClient):
         if not self._keep_alive_task:
             self._keep_alive_task = self.create_task(self._keep_alive())
 
-        # Check for any global filters in instrument provider to subscribe
-        if self.instrument_provider._config.event_type_ids:
-            await self._stream.send_subscription_message(
-                event_type_ids=self.instrument_provider._config.event_type_ids,
-                country_codes=self.instrument_provider._config.country_codes,
-                market_types=self.instrument_provider._config.market_types,
-                conflate_ms=self._config.stream_conflate_ms,
-            )
-            self._subscription_status = SubscriptionStatus.SUBSCRIBED
+        await self.stream_subscribe()
+
+    async def stream_subscribe(self):
+        # Subscribe to instrument provider config
+        await self._stream.send_subscription_message(
+            market_ids=self.instrument_provider._config.market_ids,
+            event_type_ids=self.instrument_provider._config.event_type_ids,
+            country_codes=self.instrument_provider._config.country_codes,
+            market_types=self.instrument_provider._config.market_types,
+            conflate_ms=self.config.stream_conflate_ms,
+        )
 
     async def _keep_alive(self) -> None:
         keep_alive_hrs = self.config.keep_alive_secs / (60 * 60)
@@ -164,6 +166,12 @@ class BetfairDataClient(LiveMarketDataClient):
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'keep_alive'")
                 return
+
+    async def _reconnect(self) -> None:
+        self._log.info("Reconnecting betfair data client")
+        await self._client.reconnect()
+        await self._stream.reconnect()
+        await self.stream_subscribe()
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -383,11 +391,10 @@ class BetfairDataClient(LiveMarketDataClient):
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.info("Invalid session information, reconnecting client")
-                self._client.reset_headers()
-                self.create_task(self._stream.reconnect())
+                self.create_task(self._reconnect())
             else:
                 if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.warning("Unknown API error, scheduling reconnect")
-                self.create_task(self._stream.reconnect())
+                self.create_task(self._reconnect())
