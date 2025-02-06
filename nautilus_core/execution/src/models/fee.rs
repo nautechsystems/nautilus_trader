@@ -125,6 +125,7 @@ impl FeeModel for MakerTakerFeeModel {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_execution::models::fee::{FeeModel, FixedFeeModel, MakerTakerFeeModel};
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
         instruments::{stubs::audusd_sim, InstrumentAny},
@@ -136,8 +137,6 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal::prelude::ToPrimitive;
-
-    use crate::models::fee::{FeeModel, FixedFeeModel, MakerTakerFeeModel};
 
     #[rstest]
     fn test_fixed_model_single_fill() {

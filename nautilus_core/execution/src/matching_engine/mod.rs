@@ -35,10 +35,6 @@ use std::{
 use chrono::TimeDelta;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::{
-    matching_core::OrderMatchingCore,
-    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder},
-};
 use nautilus_model::{
     data::{order::BookOrder, Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
@@ -66,7 +62,9 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
+    matching_core::OrderMatchingCore,
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
+    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder},
     models::{
         fee::{FeeModel, FeeModelAny},
         fill::FillModel,

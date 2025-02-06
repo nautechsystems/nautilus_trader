@@ -38,8 +38,6 @@
 pub mod data_client;
 pub mod engine;
 pub mod exchange;
-pub mod matching_engine;
-pub mod models;
 pub mod modules;
 
 #[cfg(feature = "ffi")]

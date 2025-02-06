@@ -27,7 +27,6 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder};
 use nautilus_model::{
     data::{stubs::OrderBookDeltaTestBuilder, BookOrder, TradeTick},
     enums::{
@@ -52,10 +51,7 @@ use nautilus_model::{
 use rstest::{fixture, rstest};
 use ustr::Ustr;
 
-use crate::{
-    matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModel},
-};
+use crate::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder};
 
 static ATOMIC_TIME: LazyLock<AtomicTime> =
     LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));

@@ -24,6 +24,9 @@ rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

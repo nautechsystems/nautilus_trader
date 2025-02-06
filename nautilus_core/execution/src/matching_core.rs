@@ -19,12 +19,33 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::{cell::RefCell, rc::Rc};
+
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{LimitOrderAny, MarketOrder, OrderError, PassiveOrderAny, StopOrderAny},
+    orders::{LimitOrderAny, MarketOrder, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
 };
+
+use crate::{emulator::OrderEmulator, matching_engine::OrderMatchingEngine};
+
+pub trait FillMarketOrderHandler {
+    fn fill_market_order(&self, order: &OrderAny);
+}
+
+pub enum FillMarketOrderHandlerAny {
+    OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
+    OrderEmulator(Rc<RefCell<OrderEmulator>>),
+}
+
+pub trait FillLimitOrderHandler {
+    fn fill_limit_order(&self, order: &OrderAny);
+}
+
+pub trait TriggerStopOrderHandler {
+    fn trigger_stop_order(&self, order: &OrderAny);
+}
 
 /// A generic order matching core.
 #[derive(Clone)]

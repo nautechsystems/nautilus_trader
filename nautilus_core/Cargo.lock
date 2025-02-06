@@ -3134,6 +3134,7 @@ name = "nautilus-execution"
 version = "0.41.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "criterion",
  "derive_builder",
  "indexmap",
@@ -3145,12 +3146,14 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-risk",
  "pyo3",
+ "rand",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
  "strum",
  "ustr",
+ "uuid",
 ]
 
 [[package]]
