@@ -41,7 +41,7 @@
 #![allow(deprecated)]
 
 pub mod client;
-pub mod emulator;
+pub mod order_emulator;
 pub mod engine;
 pub mod manager;
 pub mod matching_core;

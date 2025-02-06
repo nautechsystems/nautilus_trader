@@ -210,7 +210,7 @@ impl OrderEmulator {
 
                 if parent_order.contingency_type() == Some(ContingencyType::Oto)
                     && (parent_order.is_active_local()
-                        || parent_order.filled_qty() == Quantity::zero(0))
+                    || parent_order.filled_qty() == Quantity::zero(0))
                 {
                     continue; // Process contingency order later once parent triggered
                 }
