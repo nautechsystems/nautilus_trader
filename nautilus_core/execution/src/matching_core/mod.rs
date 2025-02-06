@@ -19,33 +19,19 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, rc::Rc};
+pub mod handlers;
 
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{LimitOrderAny, MarketOrder, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
+    orders::{LimitOrderAny, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
 };
 
-use crate::{emulator::OrderEmulator, matching_engine::OrderMatchingEngine};
-
-pub trait FillMarketOrderHandler {
-    fn fill_market_order(&self, order: &OrderAny);
-}
-
-pub enum FillMarketOrderHandlerAny {
-    OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
-    OrderEmulator(Rc<RefCell<OrderEmulator>>),
-}
-
-pub trait FillLimitOrderHandler {
-    fn fill_limit_order(&self, order: &OrderAny);
-}
-
-pub trait TriggerStopOrderHandler {
-    fn trigger_stop_order(&self, order: &OrderAny);
-}
+use crate::matching_core::handlers::{
+    FillLimitOrderHandler, ShareableFillLimitOrderHandler, ShareableFillMarketOrderHandler,
+    ShareableTriggerStopOrderHandler, TriggerStopOrderHandler,
+};
 
 /// A generic order matching core.
 #[derive(Clone)]
@@ -65,9 +51,9 @@ pub struct OrderMatchingCore {
     pub is_last_initialized: bool,
     orders_bid: Vec<PassiveOrderAny>,
     orders_ask: Vec<PassiveOrderAny>,
-    trigger_stop_order: Option<fn(&StopOrderAny)>,
-    fill_market_order: Option<fn(&MarketOrder)>,
-    fill_limit_order: Option<fn(&LimitOrderAny)>,
+    trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
+    fill_market_order: Option<ShareableFillMarketOrderHandler>,
+    fill_limit_order: Option<ShareableFillLimitOrderHandler>,
 }
 
 impl OrderMatchingCore {
@@ -76,9 +62,9 @@ impl OrderMatchingCore {
     pub fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
-        trigger_stop_order: Option<fn(&StopOrderAny)>,
-        fill_market_order: Option<fn(&MarketOrder)>,
-        fill_limit_order: Option<fn(&LimitOrderAny)>,
+        trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
+        fill_market_order: Option<ShareableFillMarketOrderHandler>,
+        fill_limit_order: Option<ShareableFillLimitOrderHandler>,
     ) -> Self {
         Self {
             instrument_id,
@@ -228,16 +214,16 @@ impl OrderMatchingCore {
 
     pub fn match_limit_order(&self, order: &LimitOrderAny) {
         if self.is_limit_matched(order) {
-            if let Some(func) = self.fill_limit_order {
-                func(order);
+            if let Some(handler) = &self.fill_limit_order {
+                handler.0.fill_limit_order(&OrderAny::from(order.clone()));
             }
         }
     }
 
     pub fn match_stop_order(&self, order: &StopOrderAny) {
         if self.is_stop_matched(order) {
-            if let Some(func) = self.trigger_stop_order {
-                func(order);
+            if let Some(handler) = &self.trigger_stop_order {
+                handler.0.trigger_stop_order(&OrderAny::from(order.clone()));
             }
         }
     }
