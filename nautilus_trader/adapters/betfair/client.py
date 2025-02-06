@@ -146,7 +146,8 @@ class BetfairHttpClient:
         self.update_headers(login_resp=resp)
 
     async def reconnect(self) -> None:
-        await self.disconnect()
+        self._log.info("Reconnecting...")
+        self.reset_headers()
         await self.connect()
 
     async def disconnect(self) -> None:
