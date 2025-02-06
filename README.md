@@ -429,6 +429,14 @@ Join our community of users and contributors on [Discord](https://discord.gg/AUW
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
 developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
 
+> [!WARNING]
+>
+> NautilusTrader does not issue, promote, or endorse any cryptocurrency tokens. Any claims or communications suggesting otherwise are unauthorized and false.
+>
+> All official updates and communications from NautilusTrader will be shared exclusively through https://nautilustrader.io, our official Discord server, or our X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
+>
+> If you encounter any suspicious activity, please report it to the appropriate platform and contact us at info@nautechsystems.io.
+
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
