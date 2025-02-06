@@ -70,6 +70,7 @@ class TardisInstrumentProvider(InstrumentProvider):
         ts_init = time.time_ns()
 
         for venue in venues:
+            venue = venue.upper().replace("-", "_")
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
                 pyo3_instruments = await self._client.instruments(
                     exchange=exchange.lower(),
@@ -103,7 +104,8 @@ class TardisInstrumentProvider(InstrumentProvider):
             venue_instruments[venue] = set()
 
         for instrument_id in instrument_ids:
-            for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value):
+            venue = instrument_id.venue.value.upper().replace("-", "_")
+            for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
                 venue_instruments[exchange].add(instrument_id.symbol.value)
 
         start = filters.get("start")

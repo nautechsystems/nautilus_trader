@@ -39,7 +39,11 @@ pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) ->
     match msg {
         WsMessage::BookChange(msg) => {
             if msg.bids.is_empty() && msg.asks.is_empty() {
-                // Skip empty book changes - these are valid messages but contain no actionable data
+                tracing::error!(
+                    "Invalid book change for {} {} (empty bids and asks)",
+                    msg.exchange,
+                    msg.symbol
+                );
                 return None;
             }
             Some(Data::Deltas(parse_book_change_msg_as_deltas(
