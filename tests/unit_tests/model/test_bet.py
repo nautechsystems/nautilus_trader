@@ -68,12 +68,12 @@ def test_hedging_functions():
 def test_betposition_methods():
     pos = BetPosition()
     # Initially, the position should have no side
-    assert pos.side() is None
+    assert pos.side is None
 
     # Add a BACK bet
     bet1 = Bet(Decimal("2.0"), Decimal("100.0"), BetSide.BACK)
     pos.add_bet(bet1)
-    assert pos.side() == BetSide.BACK
+    assert pos.side == BetSide.BACK
 
     # Add a LAY bet that partially offsets the BACK bet
     bet2 = Bet(Decimal("2.0"), Decimal("150.0"), BetSide.LAY)
@@ -81,7 +81,7 @@ def test_betposition_methods():
     # Depending on the internal logic, the overall exposure may flip negative
     assert pos.exposure < Decimal("0")
 
-    # If the net exposure is nonzero, as_bet() should return a Bet
+    # If the net exposure is non-zero, as_bet() should return a Bet
     assert pos.as_bet() is not None
 
 
@@ -198,21 +198,21 @@ def test_bet_position_initialization():
 
 def test_bet_position_side_none():
     position = BetPosition()
-    assert position.side() is None
+    assert position.side is None
 
 
 def test_bet_position_side_back():
     position = BetPosition()
     bet = Bet(dec(2.0), dec(100), BetSide.BACK)
     position.add_bet(bet)
-    assert position.side() == BetSide.BACK
+    assert position.side == BetSide.BACK
 
 
 def test_bet_position_side_lay():
     position = BetPosition()
     bet = Bet(dec(2.0), dec(100), BetSide.LAY)
     position.add_bet(bet)
-    assert position.side() == BetSide.LAY
+    assert position.side == BetSide.LAY
 
 
 def test_position_increase_back():
@@ -242,7 +242,7 @@ def test_position_flip():
     position.add_bet(back_bet)
     position.add_bet(lay_bet)
     # Net exposure: 200 + (-300) = -100 → side becomes LAY.
-    assert position.side() == BetSide.LAY
+    assert position.side == BetSide.LAY
     assert position.exposure == dec(-100)
 
 
@@ -252,7 +252,7 @@ def test_position_flat():
     lay_bet = Bet(dec(2.0), dec(100), BetSide.LAY)  # exposure -200
     position.add_bet(back_bet)
     position.add_bet(lay_bet)
-    assert position.side() is None
+    assert position.side is None
     assert position.exposure == pytest.approx(dec(0))
 
 

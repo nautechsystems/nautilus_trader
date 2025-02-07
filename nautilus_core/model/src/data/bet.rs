@@ -26,15 +26,33 @@ use crate::enums::{BetSide, OrderSideSpecified};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Bet {
-    pub price: Decimal,
-    pub stake: Decimal,
-    pub side: BetSide,
+    price: Decimal,
+    stake: Decimal,
+    side: BetSide,
 }
 
 impl Bet {
     /// Creates a new [`Bet`] instance.
     pub fn new(price: Decimal, stake: Decimal, side: BetSide) -> Self {
         Self { price, stake, side }
+    }
+
+    /// Returns the bet's price.
+    #[must_use]
+    pub fn price(&self) -> Decimal {
+        self.price
+    }
+
+    /// Returns the bet's stake.
+    #[must_use]
+    pub fn stake(&self) -> Decimal {
+        self.stake
+    }
+
+    /// Returns the bet's side.
+    #[must_use]
+    pub fn side(&self) -> BetSide {
+        self.side
     }
 
     /// Creates a bet from a stake or liability depending on the bet side.
@@ -62,7 +80,6 @@ impl Bet {
         if side != BetSide::Lay {
             panic!("Liability-based betting is only applicable for Lay side.");
         }
-        // Adjusted volume = liability / (price - 1)
         let adjusted_volume = liability / (price - Decimal::ONE);
         Self::new(price, adjusted_volume, side)
     }
@@ -150,10 +167,10 @@ impl Display for Bet {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct BetPosition {
-    pub price: Decimal,
-    pub exposure: Decimal,
-    pub realised_pnl: Decimal,
-    pub bets: Vec<Bet>,
+    price: Decimal,
+    exposure: Decimal,
+    realised_pnl: Decimal,
+    bets: Vec<Bet>,
 }
 
 impl Default for BetPosition {
@@ -168,6 +185,30 @@ impl Default for BetPosition {
 }
 
 impl BetPosition {
+    /// Returns the position's price.
+    #[must_use]
+    pub fn price(&self) -> Decimal {
+        self.price
+    }
+
+    /// Returns the position's exposure.
+    #[must_use]
+    pub fn exposure(&self) -> Decimal {
+        self.exposure
+    }
+
+    /// Returns the position's realised profit and loss.
+    #[must_use]
+    pub fn realised_pnl(&self) -> Decimal {
+        self.realised_pnl
+    }
+
+    /// Returns a reference to the position's bets.
+    #[must_use]
+    pub fn bets(&self) -> &[Bet] {
+        &self.bets
+    }
+
     /// Returns the overall side of the position.
     ///
     /// If exposure is positive the side is BACK; if negative, LAY; if zero, None.

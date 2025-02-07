@@ -30,7 +30,7 @@ use crate::{
 impl Bet {
     #[new]
     fn py_new(price: Decimal, stake: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Bet { price, stake, side })
+        Ok(Bet::new(price, stake, side))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -82,25 +82,25 @@ impl Bet {
         Ok(Bet::from_liability(price, liability, side))
     }
 
-    /// Returns the bet's price as a float.
+    /// Returns the bet's price.
     #[getter]
     #[pyo3(name = "price")]
     fn py_price(&self) -> Decimal {
-        self.price
+        self.price()
     }
 
-    /// Returns the bet's stake as a float.
+    /// Returns the bet's stake.
     #[getter]
     #[pyo3(name = "stake")]
     fn py_stake(&self) -> Decimal {
-        self.stake
+        self.stake()
     }
 
     /// Returns the bet's side.
     #[getter]
     #[pyo3(name = "side")]
     fn py_side(&self) -> BetSide {
-        self.side
+        self.side()
     }
 
     /// Returns the exposure of the bet.
@@ -161,37 +161,38 @@ impl BetPosition {
         self.to_string()
     }
 
+    /// Returns the aggregated price.
+    #[getter]
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Decimal {
+        self.price()
+    }
+
+    /// Returns the side of the position.
+    #[getter]
+    #[pyo3(name = "side")]
+    fn py_side(&self) -> Option<BetSide> {
+        self.side()
+    }
+
+    /// Returns the aggregated exposure.
+    #[getter]
+    #[pyo3(name = "exposure")]
+    fn py_exposure(&self) -> Decimal {
+        self.exposure()
+    }
+
+    /// Returns the realised PnL.
+    #[getter]
+    #[pyo3(name = "realised_pnl")]
+    fn py_realised_pnl(&self) -> Decimal {
+        self.realised_pnl()
+    }
+
     /// Adds a bet to the position.
     #[pyo3(name = "add_bet")]
     fn py_add_bet(&mut self, bet: &Bet) {
         self.add_bet(bet.clone());
-    }
-
-    /// Returns the aggregated price as a float.
-    #[getter]
-    #[pyo3(name = "price")]
-    fn py_price(&self) -> Decimal {
-        self.price
-    }
-
-    /// Returns the aggregated exposure as a float.
-    #[getter]
-    #[pyo3(name = "exposure")]
-    fn py_exposure(&self) -> Decimal {
-        self.exposure
-    }
-
-    /// Returns the realised PnL as a float.
-    #[getter]
-    #[pyo3(name = "realised_pnl")]
-    fn py_realised_pnl(&self) -> Decimal {
-        self.realised_pnl
-    }
-
-    /// Returns the side of the position.
-    #[pyo3(name = "side")]
-    fn py_side(&self) -> Option<BetSide> {
-        self.side()
     }
 
     /// Converts the position into a single Bet, if possible.
