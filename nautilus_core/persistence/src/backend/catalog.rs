@@ -48,7 +48,7 @@ impl ParquetDataCatalog {
         }
     }
 
-    fn make_path(&self, type_name: PathBuf, instrument_id: Option<&String>) -> PathBuf {
+    fn make_path(&self, type_name: &str, instrument_id: Option<&String>) -> PathBuf {
         let mut path = self.base_path.join("data").join(type_name);
 
         if let Some(id) = instrument_id {
@@ -249,14 +249,14 @@ impl ParquetDataCatalog {
 }
 
 pub trait CatalogPathPrefix {
-    fn path_prefix() -> PathBuf;
+    fn path_prefix() -> &'static str;
 }
 
 macro_rules! impl_catalog_path_prefix {
     ($type:ty, $path:expr) => {
         impl CatalogPathPrefix for $type {
-            fn path_prefix() -> PathBuf {
-                PathBuf::from($path)
+            fn path_prefix() -> &'static str {
+                $path
             }
         }
     };
