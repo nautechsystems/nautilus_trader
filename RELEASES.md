@@ -38,6 +38,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Changed `GATEIO` Tardis venue to `GATE_IO` for consistency with `CRYPTO_COM` and `BLOCKCHAIN_COM`
 - Removed `max_ws_reconnection_tries` for dYdX configs (no longer applicable with infinite retries and exponential backoff)
 - Removed `max_ws_reconnection_tries` for Bybit configs (no longer applicable with infinite retries and exponential backoff)
+- Removed remaining `max_ws_reconnection_tries` for Bybit configs (#2290), thanks @sunlei
 
 ### Internal Improvements
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
@@ -78,7 +79,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `LiveTimer` immediate fire when start time zero (#2270), thanks for reporting @bartolootrit
 - Fixed order book action parsing for Tardis (ensures zero sizes in snapshots work with the tighter validation for `action` vs `size`)
 - Fixed PnL calculations for betting instruments in `Portfolio`
-- Fixed net exposure for betting instrument in `Portfolio`
+- Fixed net exposure for betting instruments in `Portfolio`
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
@@ -88,7 +89,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
 - Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
 - Fixed memory leak in network PyO3 layer caused by the `gil-refs` feature (#2229), thanks for reporting @davidsblom
-- Fixed reconnect handling for Betfair (#2232), thanks @limx0
+- Fixed reconnect handling for Betfair (#2232, #2288, #2289), thanks @limx0
 - Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
 - Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
 - Fixed realized pnl calculation in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
