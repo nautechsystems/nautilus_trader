@@ -982,7 +982,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """
-        Load the instrument associated with the given instrument_id (if found).
+        Load the instrument associated with the given instrument ID (if found).
 
         Parameters
         ----------
