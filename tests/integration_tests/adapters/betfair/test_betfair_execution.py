@@ -446,9 +446,9 @@ async def test_order_multiple_fills(exec_client, setup_order_state, events):
 
 
 @pytest.mark.asyncio()
-async def test_connection_account_state(exec_client, cache, account_id):
+async def test_request_account_state(exec_client, cache, account_id):
     # Arrange, Act
-    await exec_client.connection_account_state()
+    await exec_client.request_account_state()
 
     # Assert
     assert cache.account(account_id)
