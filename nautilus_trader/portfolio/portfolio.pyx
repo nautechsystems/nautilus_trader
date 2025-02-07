@@ -830,11 +830,15 @@ cdef class Portfolio(PortfolioFacade):
             else:
                 settlement_currency = instrument.get_settlement_currency()
 
-            net_exposure = instrument.notional_value(
-                position.quantity,
-                last,
-            ).as_f64_c()
-            net_exposure = round(net_exposure * xrate, settlement_currency.get_precision())
+            if isinstance(instrument, BettingInstrument):
+                bet_position = self._bet_positions.get(instrument.id)
+                net_exposure = float(bet_position.exposure) * xrate if bet_position else 0.0
+            else:
+                net_exposure = instrument.notional_value(
+                    position.quantity,
+                    last,
+                ).as_f64_c()
+                net_exposure = round(net_exposure * xrate, settlement_currency.get_precision())
 
             total_net_exposure = net_exposures.get(settlement_currency, 0.0)
             total_net_exposure += net_exposure
@@ -961,11 +965,15 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 return None  # Cannot calculate
 
-            notional_value = instrument.notional_value(
-                position.quantity,
-                last,
-            )
-            net_exposure += notional_value.as_f64_c() * xrate
+            if isinstance(instrument, BettingInstrument):
+                bet_position = self._bet_positions.get(instrument.id)
+                net_exposure += float(bet_position.exposure) * xrate if bet_position else 0.0
+            else:
+                notional_value = instrument.notional_value(
+                    position.quantity,
+                    last,
+                )
+                net_exposure += notional_value.as_f64_c() * xrate
 
         if account.base_currency is not None:
             return Money(net_exposure, account.base_currency)
