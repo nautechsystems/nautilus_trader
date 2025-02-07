@@ -101,6 +101,9 @@ class BetfairDataClient(LiveMarketDataClient):
             message_handler=self.on_market_update,
             certs_dir=config.certs_dir,
         )
+        self._is_reconnecting = (
+            False  # Necessary for coordination, as the clients rely on each other
+        )
 
         self._parser = BetfairParser(currency=config.account_currency)
 
@@ -146,7 +149,7 @@ class BetfairDataClient(LiveMarketDataClient):
         await self.stream_subscribe()
 
     async def stream_subscribe(self):
-        # Subscribe to instrument provider config
+        # Subscribe per instrument provider config
         await self._stream.send_subscription_message(
             market_ids=self.instrument_provider.config.market_ids,
             event_type_ids=self.instrument_provider.config.event_type_ids,
@@ -168,10 +171,12 @@ class BetfairDataClient(LiveMarketDataClient):
                 return
 
     async def _reconnect(self) -> None:
-        self._log.info("Reconnecting betfair data client")
+        self._log.info("Reconnecting to Betfair")
+        self._is_reconnecting = True
         await self._client.reconnect()
         await self._stream.reconnect()
         await self.stream_subscribe()
+        self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -343,13 +348,13 @@ class BetfairDataClient(LiveMarketDataClient):
             elif update.error_code == StatusErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED:
                 raise RuntimeError("Subscription request limit exceeded")
             elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
-                if self._stream.is_reconnecting():
+                if self._is_reconnecting:
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.info("Invalid session information, reconnecting client")
                 self.create_task(self._reconnect())
             else:
-                if self._stream.is_reconnecting():
+                if self._is_reconnecting:
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.warning("Unknown API error, scheduling reconnect")
