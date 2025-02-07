@@ -941,14 +941,13 @@ cdef class BacktestEngine:
         At the end of the run the trader and strategies will be stopped, then
         post-run analysis performed.
 
-        If more data than can fit in memory is to be run through the backtest
-        engine, then `streaming` mode can be utilized. The expected sequence is as
-        follows:
-         - Add initial data batch and strategies.
-         - Call `run(streaming=True)`.
-         - Call `clear_data()`.
-         - Add next batch of data stream.
-         - Call either `run(streaming=False)` or `end()`. When there is no more data to run on.
+        For datasets larger than available memory, use `streaming` mode with the
+        following sequence:
+        - 1. Add initial data batch and strategies
+        - 2. Call `run(streaming=True)`
+        - 3. Call `clear_data()`
+        - 4. Add next batch of data stream
+        - 5. Call `run(streaming=False)` or `end()` when processing the final batch
 
         Parameters
         ----------
@@ -961,11 +960,10 @@ cdef class BacktestEngine:
         run_config_id : str, optional
             The tokenized `BacktestRunConfig` ID.
         streaming : bool, default False
-            Controls how data are loaded and processed:
-            - If False (default mode): All data is loaded at once
-              This is currently the only supported mode for custom data (e.g. option Greeks).
-            - If True (streaming mode): Data is loaded in chunks, enabling more efficient memory
-              usage when backtesting large datasets.
+            Controls data loading and processing mode:
+            - If False (default): Loads all data at once.
+              This is currently the only supported mode for custom data (e.g., option Greeks).
+            - If True, loads data in chunks for memory-efficient processing of large datasets.
 
         Raises
         ------
