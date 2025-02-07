@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod adapter;
-pub mod emulator;
-pub mod handlers;
+use rstest::rstest;
 
-#[cfg(test)]
-mod tests;
+#[rstest]
+fn test_init() {
+    assert_eq!(1, 1);
+}
