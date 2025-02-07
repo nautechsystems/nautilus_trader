@@ -14,7 +14,7 @@ use object_store::{path::Path, ObjectStore};
 use super::catalog::CatalogPathPrefix;
 use nautilus_common::clock::Clock;
 use nautilus_core::UnixNanos;
-use nautilus_serialization::arrow::EncodeToRecordBatch;
+use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
 
 /// A FileWriter encodes data via an Arrow StreamWriter.
 ///
@@ -166,11 +166,7 @@ impl FileWriterManager {
     /// This is the user entry point. The data is encoded into a RecordBatch and written to the appropriate FileWriter.
     /// If the writer's buffer reaches capacity or meets rotation criteria (based on the rotation configuration),
     /// the FileWriter is flushed to the object store and replaced.
-    pub async fn write<T>(
-        &mut self,
-        data: T,
-        instrument_id: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error>>
+    pub async fn write<T>(&mut self, data: T) -> Result<(), Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
@@ -178,7 +174,7 @@ impl FileWriterManager {
             return Ok(());
         }
 
-        let key = self.get_writer_key::<T>(instrument_id);
+        let key = self.get_writer_key(&data)?;
 
         // Create a new FileWriter if one does not exist.
         if !self.writers.contains_key(&key) {
@@ -243,16 +239,20 @@ impl FileWriterManager {
     }
 
     /// Generates a key for a FileWriter based on type T and optional instrument ID.
-    fn get_writer_key<T>(&self, instrument_id: Option<&str>) -> String
+    fn get_writer_key<T>(&self, data: &T) -> Result<String, Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix,
     {
         let path = T::path_prefix();
         let type_str = path.to_str().unwrap();
         if self.per_instrument_types.contains(type_str) {
-            format!("{}_{}", type_str, instrument_id.unwrap_or("default"))
+            let metadata = T::metadata(data);
+            let instrument_id = metadata
+                .get(KEY_INSTRUMENT_ID)
+                .ok_or("Instrument ID not found")?;
+            Ok(format!("{}_{}", type_str, instrument_id))
         } else {
-            type_str.to_string()
+            Ok(type_str.to_string())
         }
     }
 
