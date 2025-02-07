@@ -143,9 +143,7 @@ class BetfairDataClient(LiveMarketDataClient):
         if not self._keep_alive_task:
             self._keep_alive_task = self.create_task(self._keep_alive())
 
-        # Subscribe to instrument provider config
         await self.stream_subscribe()
-        self._subscription_status = SubscriptionStatus.SUBSCRIBED
 
     async def stream_subscribe(self):
         # Subscribe to instrument provider config
@@ -168,6 +166,12 @@ class BetfairDataClient(LiveMarketDataClient):
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'keep_alive'")
                 return
+
+    async def _reconnect(self) -> None:
+        self._log.info("Reconnecting betfair data client")
+        await self._client.reconnect()
+        await self._stream.reconnect()
+        await self.stream_subscribe()
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -343,11 +347,10 @@ class BetfairDataClient(LiveMarketDataClient):
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.info("Invalid session information, reconnecting client")
-                self._client.reset_headers()
-                self.create_task(self._stream.reconnect())
+                self.create_task(self._reconnect())
             else:
                 if self._stream.is_reconnecting():
                     self._log.info("Reconnect already in progress")
                     return
                 self._log.warning("Unknown API error, scheduling reconnect")
-                self.create_task(self._stream.reconnect())
+                self.create_task(self._reconnect())

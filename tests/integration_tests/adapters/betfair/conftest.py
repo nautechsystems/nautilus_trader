@@ -127,6 +127,9 @@ def data_client(
         "nautilus_trader.adapters.betfair.providers.BetfairInstrumentProvider._client.list_navigation",
         return_value=BetfairResponses.navigation_list_navigation(),
     )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.data.BetfairDataClient.stream_subscribe",
+    )
 
     return data_client
 

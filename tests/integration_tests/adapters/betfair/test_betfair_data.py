@@ -93,6 +93,7 @@ async def test_connect(mocker, data_client, instrument):
     # Arrange
     mocker.patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
     mocker.patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
+    mocker.patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
 
     # Act
     data_client.connect()
