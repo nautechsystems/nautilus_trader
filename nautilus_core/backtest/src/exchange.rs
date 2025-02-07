@@ -28,7 +28,7 @@ use nautilus_core::{
 };
 use nautilus_execution::{
     client::ExecutionClient,
-    matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
+    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     messages::TradingCommand,
     models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
 };

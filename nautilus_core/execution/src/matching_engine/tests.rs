@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Tests module for `OrderMatchingEngine`.
-
 use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -51,7 +49,11 @@ use nautilus_model::{
 use rstest::{fixture, rstest};
 use ustr::Ustr;
 
-use crate::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder};
+use crate::{
+    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
+    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
+    models::{fee::FeeModelAny, fill::FillModel},
+};
 
 static ATOMIC_TIME: LazyLock<AtomicTime> =
     LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
