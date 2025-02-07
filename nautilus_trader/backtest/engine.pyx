@@ -961,8 +961,11 @@ cdef class BacktestEngine:
         run_config_id : str, optional
             The tokenized `BacktestRunConfig` ID.
         streaming : bool, default False
-            If running in streaming mode. If False, then will end the backtest
-            following the run iterations.
+            Controls how data are loaded and processed:
+            - If False (default mode): All data is loaded at once
+              This is currently the only supported mode for custom data (e.g. option Greeks).
+            - If True (streaming mode): Data is loaded in chunks, enabling more efficient memory
+              usage when backtesting large datasets.
 
         Raises
         ------
