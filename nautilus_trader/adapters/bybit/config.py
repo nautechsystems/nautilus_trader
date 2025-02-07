@@ -132,5 +132,4 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
     recv_window_ms: PositiveInt = 5_000
-    max_ws_reconnection_tries: int | None = 3
     ws_trade_timeout_secs: float | None = 5.0
