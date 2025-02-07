@@ -304,91 +304,42 @@ cdef class Portfolio(PortfolioFacade):
         self.initialized = initialized
 
     cpdef void update_quote_tick(self, QuoteTick tick):
-        self.update_instrument_id(tick.instrument_id)
-
-    cpdef void update_bar(self, Bar bar):
-        cdef InstrumentId instrument_id = bar.bar_type.instrument_id
-        self._bar_close_prices[instrument_id] = bar.close
-        self.update_instrument_id(instrument_id)
-
-    cpdef void update_instrument_id(self, InstrumentId instrument_id):
         """
-        Update the portfolio for the given instrument_id.
+        Update the portfolio with the given quote tick.
 
-        Clears the unrealized PnL for the quoting instrument, and
+        Clears the unrealized PnL for the associated instrument, and
         performs any initialization calculations which may have been pending
-        a market quote update.
+        an update.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument_id to update the pnls of.
+        quote_tick : QuoteTick
+            The quote tick to update with.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(tick, "tick")
 
-        self._unrealized_pnls.pop(instrument_id, None)
+        self._update_instrument_id(tick.instrument_id)
 
-        if self.initialized:
-            return
+    cpdef void update_bar(self, Bar bar):
+        """
+        Update the portfolio with the given bar.
 
-        if instrument_id not in self._pending_calcs:
-            return
+        Clears the unrealized PnL for the associated instrument, and
+        performs any initialization calculations which may have been pending
+        an update.
 
-        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
-        if account is None:
-            self._log.error(
-                f"Cannot update tick: "
-                f"no account registered for {instrument_id.venue}"
-            )
-            return  # No account registered
+        Parameters
+        ----------
+        bar : Bar
+            The bar to update with.
 
-        cdef Instrument instrument = self._cache.instrument(self._venue or instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot update tick: "
-                f"no instrument found for {instrument_id}"
-            )
-            return  # No instrument found
+        """
+        Condition.not_none(bar, "bar")
 
-        cdef list orders_open = self._cache.orders_open(
-            venue=None,  # Faster query filtering
-            instrument_id=instrument_id,
-        )
-
-        cdef:
-            Order o
-        # Initialize initial (order) margin
-        cdef AccountState result_init = self._accounts.update_orders(
-            account=account,
-            instrument=instrument,
-            orders_open=[o for o in orders_open if o.is_passive_c()],
-            ts_event=account.last_event_c().ts_event,
-        )
-
-        result_maint = None
-        if account.is_margin_account:
-            positions_open = self._cache.positions_open(
-                venue=None,  # Faster query filtering
-                instrument_id=instrument_id,
-            )
-
-            # Initialize maintenance (position) margin
-            result_maint = self._accounts.update_positions(
-                account=account,
-                instrument=instrument,
-                positions_open=positions_open,
-                ts_event=account.last_event_c().ts_event,
-            )
-
-        # Calculate unrealized PnL
-        cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(instrument_id)
-
-        # Check portfolio initialization
-        if result_init is not None and (account.is_cash_account or (result_maint is not None and result_unrealized_pnl)):
-            self._pending_calcs.discard(instrument_id)
-            if not self._pending_calcs:
-                self.initialized = True
+        cdef InstrumentId instrument_id = bar.bar_type.instrument_id
+        self._bar_close_prices[instrument_id] = bar.close
+        self._update_instrument_id(instrument_id)
 
     cpdef void update_account(self, AccountState event):
         """
@@ -1115,6 +1066,70 @@ cdef class Portfolio(PortfolioFacade):
         if existing_position != net_position:
             self._net_positions[instrument_id] = net_position
             self._log.info(f"{instrument_id} net_position={net_position}")
+
+    cdef void _update_instrument_id(self, InstrumentId instrument_id):
+        self._unrealized_pnls.pop(instrument_id, None)
+
+        if self.initialized:
+            return
+
+        if instrument_id not in self._pending_calcs:
+            return
+
+        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
+        if account is None:
+            self._log.error(
+                f"Cannot update tick: "
+                f"no account registered for {instrument_id.venue}"
+            )
+            return  # No account registered
+
+        cdef Instrument instrument = self._cache.instrument(self._venue or instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot update tick: "
+                f"no instrument found for {instrument_id}"
+            )
+            return  # No instrument found
+
+        cdef list orders_open = self._cache.orders_open(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+        )
+
+        cdef:
+            Order o
+        # Initialize initial (order) margin
+        cdef AccountState result_init = self._accounts.update_orders(
+            account=account,
+            instrument=instrument,
+            orders_open=[o for o in orders_open if o.is_passive_c()],
+            ts_event=account.last_event_c().ts_event,
+        )
+
+        result_maint = None
+        if account.is_margin_account:
+            positions_open = self._cache.positions_open(
+                venue=None,  # Faster query filtering
+                instrument_id=instrument_id,
+            )
+
+            # Initialize maintenance (position) margin
+            result_maint = self._accounts.update_positions(
+                account=account,
+                instrument=instrument,
+                positions_open=positions_open,
+                ts_event=account.last_event_c().ts_event,
+            )
+
+        # Calculate unrealized PnL
+        cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(instrument_id)
+
+        # Check portfolio initialization
+        if result_init is not None and (account.is_cash_account or (result_maint is not None and result_unrealized_pnl)):
+            self._pending_calcs.discard(instrument_id)
+            if not self._pending_calcs:
+                self.initialized = True
 
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
