@@ -29,7 +29,7 @@ use std::{
 use async_stream::stream;
 use futures_util::{stream::SplitSink, SinkExt, Stream, StreamExt};
 use message::WsMessage;
-use tokio::{net::TcpStream, time::timeout};
+use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{self, protocol::frame::coding::CloseCode},
@@ -122,7 +122,7 @@ async fn stream_from_websocket(
         tokio::spawn(heartbeat(writer));
 
         // Timeout awaiting the next record before checking signal
-        let timeout_duration = Duration::from_millis(10);
+        let timeout = Duration::from_millis(10);
 
         tracing::info!("Streaming from websocket...");
 
@@ -132,7 +132,7 @@ async fn stream_from_websocket(
                 break;
             }
 
-            let result = timeout(timeout_duration, reader.next()).await;
+            let result = tokio::time::timeout(timeout, reader.next()).await;
             let msg = match result {
                 Ok(msg) => msg,
                 Err(_) => continue, // Timeout
