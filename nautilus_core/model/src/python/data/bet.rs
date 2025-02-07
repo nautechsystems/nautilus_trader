@@ -182,11 +182,11 @@ impl BetPosition {
         self.exposure()
     }
 
-    /// Returns the realised PnL.
+    /// Returns the realized PnL.
     #[getter]
-    #[pyo3(name = "realised_pnl")]
-    fn py_realised_pnl(&self) -> Decimal {
-        self.realised_pnl()
+    #[pyo3(name = "realized_pnl")]
+    fn py_realized_pnl(&self) -> Decimal {
+        self.realized_pnl()
     }
 
     /// Adds a bet to the position.
@@ -201,13 +201,13 @@ impl BetPosition {
         self.as_bet()
     }
 
-    /// Calculates the unrealised PnL given a current price.
-    #[pyo3(name = "unrealised_pnl")]
-    fn py_unrealised_pnl(&self, price: Decimal) -> Decimal {
-        self.unrealised_pnl(price)
+    /// Calculates the unrealized PnL given a current price.
+    #[pyo3(name = "unrealized_pnl")]
+    fn py_unrealized_pnl(&self, price: Decimal) -> Decimal {
+        self.unrealized_pnl(price)
     }
 
-    /// Calculates the total PnL (realised + unrealised) given a current price.
+    /// Calculates the total PnL (realized + unrealized) given a current price.
     #[pyo3(name = "total_pnl")]
     fn py_total_pnl(&self, price: Decimal) -> Decimal {
         self.total_pnl(price)

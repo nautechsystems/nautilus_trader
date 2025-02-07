@@ -1011,7 +1011,7 @@ class TestPosition:
         assert position.commissions() == [Money(0.00, USD)]
         assert repr(position) == "Position(LONG 150_000 AUD/USD.SIM, id=P-123456)"
 
-    def test_position_realised_pnl_with_interleaved_order_sides(self) -> None:
+    def test_position_realized_pnl_with_interleaved_order_sides(self) -> None:
         # Arrange
         order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,

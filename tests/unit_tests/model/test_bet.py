@@ -193,7 +193,7 @@ def test_bet_position_initialization():
     position = BetPosition()
     assert position.price == Decimal(0)
     assert position.exposure == Decimal(0)
-    assert position.realised_pnl == Decimal(0)
+    assert position.realized_pnl == Decimal(0)
 
 
 def test_bet_position_side_none():
@@ -256,12 +256,12 @@ def test_position_flat():
     assert position.exposure == pytest.approx(dec(0))
 
 
-def test_unrealised_pnl_negative():
+def test_unrealized_pnl_negative():
     position = BetPosition()
     bet = Bet(dec(2.0), dec(100), BetSide.BACK)
     position.add_bet(bet)
-    unrealised_pnl = position.unrealised_pnl(dec(2.5))
-    assert unrealised_pnl == dec(-20)
+    unrealized_pnl = position.unrealized_pnl(dec(2.5))
+    assert unrealized_pnl == dec(-20)
 
 
 def test_total_pnl():
