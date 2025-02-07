@@ -110,6 +110,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added docs for Portfolio limitations with bar data (#2233), thanks @stefansimik
 - Added docs overview for example locations in repository (#2287), thanks @stefansimik
 - Improved docstrings for Actor subscription and request methods
+- Refined `streaming` parameter description (#2293), thanks @faysou and @stefansimik
 
 ### Deprecations
 - The [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage for indicators is deprecated and will be removed in a future version, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2206)
