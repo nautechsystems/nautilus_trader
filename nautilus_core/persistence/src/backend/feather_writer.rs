@@ -14,7 +14,9 @@ use object_store::{path::Path, ObjectStore};
 use super::catalog::CatalogPathPrefix;
 use nautilus_common::clock::Clock;
 use nautilus_core::UnixNanos;
-use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
+use nautilus_serialization::arrow::{
+    ArrowSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch, KEY_INSTRUMENT_ID,
+};
 
 /// A FileWriter encodes data via an Arrow StreamWriter.
 ///
@@ -126,7 +128,7 @@ pub enum RotationConfig {
 /// its contents are flushed to the object store and it is replaced.
 pub struct FileWriterManager {
     /// Base directory for writing files.
-    base_path: PathBuf,
+    base_path: String,
     /// Object store for persistence.
     store: Arc<dyn ObjectStore>,
     /// Clock for timestamps and rotation.
@@ -144,7 +146,7 @@ pub struct FileWriterManager {
 impl FileWriterManager {
     /// Creates a new FileWriterManager instance.
     pub fn new(
-        base_path: PathBuf,
+        base_path: String,
         store: Arc<dyn ObjectStore>,
         clock: Rc<RefCell<dyn Clock>>,
         rotation_config: RotationConfig,
@@ -232,8 +234,7 @@ impl FileWriterManager {
             .as_ref()
             .map(|included| {
                 let path = T::path_prefix();
-                let type_str = path.to_str().unwrap();
-                included.contains(type_str)
+                included.contains(path)
             })
             .unwrap_or(true)
     }
@@ -244,23 +245,21 @@ impl FileWriterManager {
         T: EncodeToRecordBatch + CatalogPathPrefix,
     {
         let path = T::path_prefix();
-        let type_str = path.to_str().unwrap();
-        if self.per_instrument_types.contains(type_str) {
+        if self.per_instrument_types.contains(path) {
             let metadata = T::metadata(data);
             let instrument_id = metadata
                 .get(KEY_INSTRUMENT_ID)
                 .ok_or("Instrument ID not found")?;
-            Ok(format!("{}_{}", type_str, instrument_id))
+            Ok(format!("{}_{}", path, instrument_id))
         } else {
-            Ok(type_str.to_string())
+            Ok(path.to_string())
         }
     }
 
     /// Generates a file path for a new FileWriter.
     fn make_path<T: CatalogPathPrefix>(&self, instrument_id: Option<&str>) -> Path {
-        let path = T::path_prefix();
-        let type_str = path.to_str().unwrap();
-        let mut path = Path::from(self.base_path.to_str().unwrap());
+        let type_str = T::path_prefix();
+        let mut path = Path::from(self.base_path.as_str());
         path = path.child(type_str);
         if let Some(id) = instrument_id {
             path = path.child(id);
