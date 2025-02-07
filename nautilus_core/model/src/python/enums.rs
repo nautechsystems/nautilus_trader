@@ -626,6 +626,12 @@ impl BetSide {
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
+    #[classmethod]
+    #[pyo3(name = "from_order_side")]
+    fn py_from_order_side(_: &Bound<'_, PyType>, order_side: OrderSide) -> Self {
+        order_side.into()
+    }
+
     #[classattr]
     #[pyo3(name = "BACK")]
     fn py_back() -> Self {
@@ -636,6 +642,11 @@ impl BetSide {
     #[pyo3(name = "LAY")]
     fn py_lay() -> Self {
         Self::Lay
+    }
+
+    #[pyo3(name = "opposite")]
+    fn py_opposite(&self) -> Self {
+        self.opposite()
     }
 }
 

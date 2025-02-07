@@ -1335,7 +1335,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_realised_pnl_with_interleaved_order_sides(
+    fn test_position_realized_pnl_with_interleaved_order_sides(
         currency_pair_btcusdt: CurrencyPair,
     ) {
         let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);

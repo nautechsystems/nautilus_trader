@@ -30,10 +30,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
 };
-use tokio::{
-    sync::mpsc::error::TryRecvError,
-    time::{timeout, Duration},
-};
+use tokio::{sync::mpsc::error::TryRecvError, time::Duration};
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
@@ -111,9 +108,10 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
         let mut deltas_count = 0_u64;
+        let timeout = Duration::from_secs(5); // Hard-coded timeout for now
 
-        let result = timeout(
-            Duration::from_secs(5), // Hard-coded timeout for now
+        let result = tokio::time::timeout(
+            timeout,
             databento::LiveClient::builder()
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
@@ -132,7 +130,7 @@ impl DatabentoFeedHandler {
         };
 
         // Timeout awaiting the next record before checking for a command
-        let timeout_duration = Duration::from_millis(10);
+        let timeout = Duration::from_millis(10);
 
         // Flag to control whether to continue to await next record
         let mut running = false;
@@ -185,7 +183,7 @@ impl DatabentoFeedHandler {
             }
 
             // Await the next record with a timeout
-            let result = timeout(timeout_duration, client.next_record()).await;
+            let result = tokio::time::timeout(timeout, client.next_record()).await;
             let record_opt = match result {
                 Ok(record_opt) => record_opt,
                 Err(_) => continue, // Timeout

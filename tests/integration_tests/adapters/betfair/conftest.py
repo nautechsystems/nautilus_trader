@@ -120,6 +120,9 @@ def data_client(
         "nautilus_trader.adapters.betfair.data.BetfairDataClient._instrument_provider.get_account_currency",
         return_value="GBP",
     )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.data.BetfairDataClient.stream_subscribe",
+    )
     patch(
         "nautilus_trader.adapters.betfair.providers.BetfairInstrumentProvider._client.list_navigation",
         return_value=BetfairResponses.navigation_list_navigation(),

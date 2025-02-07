@@ -77,6 +77,8 @@ This release will be the final version that uses Poetry for package and dependen
 ### Fixes
 - Fixed `LiveTimer` immediate fire when start time zero (#2270), thanks for reporting @bartolootrit
 - Fixed order book action parsing for Tardis (ensures zero sizes in snapshots work with the tighter validation for `action` vs `size`)
+- Fixed PnL calculations for betting instruments in `Portfolio`
+- Fixed net exposure for betting instrument in `Portfolio`
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
@@ -98,6 +100,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed quote tick processing from bars in `OrderMatchingEngine` resulting in sizes below the minimum increment (#2275), thanks for reporting @miller-moore
 - Fixed initialization of `BinanceErrorCode`s requiring `int`
 - Fixed resolution of Tardis `BINANCE_DELIVERY` venue for COIN-margined contracts
+- Fixed hang in rate limiter (#2285), thanks @WyldeCat
+- Fixed typo in `InstrumentProviderConfig` docstring (#2284), thanks @ikeepo
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik

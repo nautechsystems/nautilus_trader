@@ -45,6 +45,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict[InstrumentId, Money] _unrealized_pnls
     cdef dict[InstrumentId, Money] _realized_pnls
     cdef dict[InstrumentId, Decimal] _net_positions
+    cdef dict[InstrumentId, object] _bet_positions
     cdef set[InstrumentId] _pending_calcs
     cdef dict[InstrumentId, Price] _bar_close_prices
 
@@ -55,7 +56,6 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_bar(self, Bar bar)
-    cpdef void update_instrument_id(self, InstrumentId instrument_id)
     cpdef void update_account(self, AccountState event)
     cpdef void update_order(self, OrderEvent event)
     cpdef void update_position(self, PositionEvent event)
@@ -63,6 +63,7 @@ cdef class Portfolio(PortfolioFacade):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef object _net_position(self, InstrumentId instrument_id)
+    cdef void _update_instrument_id(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open)
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id)
