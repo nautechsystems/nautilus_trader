@@ -230,7 +230,7 @@ class BetfairTicker(Data):
 
 class BetfairStartingPrice(Data):
     """
-    Represents the realised Betfair Starting Price.
+    Represents the realized Betfair Starting Price.
     """
 
     def __init__(

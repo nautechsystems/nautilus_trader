@@ -169,7 +169,7 @@ impl Display for Bet {
 pub struct BetPosition {
     price: Decimal,
     exposure: Decimal,
-    realised_pnl: Decimal,
+    realized_pnl: Decimal,
     bets: Vec<Bet>,
 }
 
@@ -178,7 +178,7 @@ impl Default for BetPosition {
         Self {
             price: Decimal::ZERO,
             exposure: Decimal::ZERO,
-            realised_pnl: Decimal::ZERO,
+            realized_pnl: Decimal::ZERO,
             bets: vec![],
         }
     }
@@ -197,10 +197,10 @@ impl BetPosition {
         self.exposure
     }
 
-    /// Returns the position's realised profit and loss.
+    /// Returns the position's realized profit and loss.
     #[must_use]
-    pub fn realised_pnl(&self) -> Decimal {
-        self.realised_pnl
+    pub fn realized_pnl(&self) -> Decimal {
+        self.realized_pnl
     }
 
     /// Returns a reference to the position's bets.
@@ -231,7 +231,7 @@ impl BetPosition {
         })
     }
 
-    /// Adds a bet to the position, adjusting exposure and realised PnL.
+    /// Adds a bet to the position, adjusting exposure and realized PnL.
     pub fn add_bet(&mut self, bet: Bet) {
         match self.side() {
             None => self.position_increase(&bet),
@@ -270,13 +270,13 @@ impl BetPosition {
                 let current_side = self.side().unwrap();
                 let decreasing_bet = Bet::new(self.price, decreasing_volume, current_side);
                 let pnl = calc_bets_pnl(&[bet.clone(), decreasing_bet]);
-                self.realised_pnl += pnl;
+                self.realized_pnl += pnl;
                 self.exposure += bet.exposure();
             }
             std::cmp::Ordering::Greater => {
                 if let Some(self_bet) = self.as_bet() {
                     let pnl = calc_bets_pnl(&[bet.clone(), self_bet]);
-                    self.realised_pnl += pnl;
+                    self.realized_pnl += pnl;
                 }
                 self.price = bet.price;
                 self.exposure += bet.exposure();
@@ -284,7 +284,7 @@ impl BetPosition {
             std::cmp::Ordering::Equal => {
                 if let Some(self_bet) = self.as_bet() {
                     let pnl = calc_bets_pnl(&[bet.clone(), self_bet]);
-                    self.realised_pnl += pnl;
+                    self.realized_pnl += pnl;
                 }
                 self.price = Decimal::ZERO;
                 self.exposure = Decimal::ZERO;
@@ -292,8 +292,8 @@ impl BetPosition {
         }
     }
 
-    /// Calculates the unrealised profit and loss given a current price.
-    pub fn unrealised_pnl(&self, price: Decimal) -> Decimal {
+    /// Calculates the unrealized profit and loss given a current price.
+    pub fn unrealized_pnl(&self, price: Decimal) -> Decimal {
         if self.side().is_none() {
             Decimal::ZERO
         } else if let Some(flattening_bet) = self.flattening_bet(price) {
@@ -307,9 +307,9 @@ impl BetPosition {
         }
     }
 
-    /// Returns the total profit and loss (realised plus unrealised) given a current price.
+    /// Returns the total profit and loss (realized plus unrealized) given a current price.
     pub fn total_pnl(&self, price: Decimal) -> Decimal {
-        self.realised_pnl + self.unrealised_pnl(price)
+        self.realized_pnl + self.unrealized_pnl(price)
     }
 
     /// Creates a bet that would flatten (neutralize) the current position.
@@ -328,7 +328,7 @@ impl BetPosition {
     pub fn reset(&mut self) {
         self.price = Decimal::ZERO;
         self.exposure = Decimal::ZERO;
-        self.realised_pnl = Decimal::ZERO;
+        self.realized_pnl = Decimal::ZERO;
     }
 }
 
@@ -336,8 +336,8 @@ impl Display for BetPosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "BetPosition(price: {:.2}, exposure: {:.2}, realised_pnl: {:.2})",
-            self.price, self.exposure, self.realised_pnl
+            "BetPosition(price: {:.2}, exposure: {:.2}, realized_pnl: {:.2})",
+            self.price, self.exposure, self.realized_pnl
         )
     }
 }
@@ -508,7 +508,7 @@ mod tests {
         let position = BetPosition::default();
         assert_eq!(position.price, dec!(0.0));
         assert_eq!(position.exposure, dec!(0.0));
-        assert_eq!(position.realised_pnl, dec!(0.0));
+        assert_eq!(position.realized_pnl, dec!(0.0));
     }
 
     #[rstest]
@@ -520,7 +520,7 @@ mod tests {
 
         assert!(formatted.contains("price"));
         assert!(formatted.contains("exposure"));
-        assert!(formatted.contains("realised_pnl"));
+        assert!(formatted.contains("realized_pnl"));
     }
 
     #[rstest]
@@ -547,7 +547,7 @@ mod tests {
         // After reset, the position should be cleared
         assert_eq!(position.price, dec!(0.0));
         assert_eq!(position.exposure, dec!(0.0));
-        assert_eq!(position.realised_pnl, dec!(0.0));
+        assert_eq!(position.realized_pnl, dec!(0.0));
     }
 
     #[rstest]
@@ -618,13 +618,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_unrealised_pnl_negative() {
+    fn test_unrealized_pnl_negative() {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back); // exposure 200
         position.add_bet(bet);
         // As computed: flattening bet (Lay at 2.5) gives stake = 80 and win payoff = -120, plus original bet win payoff = 100 → -20
-        let unrealised_pnl = position.unrealised_pnl(dec!(2.5));
-        assert_eq!(unrealised_pnl, dec!(-20.0));
+        let unrealized_pnl = position.unrealized_pnl(dec!(2.5));
+        assert_eq!(unrealized_pnl, dec!(-20.0));
     }
 
     #[rstest]
@@ -632,9 +632,9 @@ mod tests {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
-        position.realised_pnl = dec!(10.0);
+        position.realized_pnl = dec!(10.0);
         let total_pnl = position.total_pnl(dec!(2.5));
-        // Expected realised (10) + unrealised (-20) = -10
+        // Expected realized (10) + unrealized (-20) = -10
         assert_eq!(total_pnl, dec!(-10.0));
     }
 
@@ -676,66 +676,66 @@ mod tests {
     }
 
     #[rstest]
-    fn test_realised_pnl_flattening() {
+    fn test_realized_pnl_flattening() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back); // profit = 400
         let lay = Bet::new(dec!(4.0), dec!(125.0), BetSide::Lay); // outcome win payoff = -375
         let mut position = BetPosition::default();
         position.add_bet(back);
         position.add_bet(lay);
-        // Expected realised pnl = 25
-        assert_eq!(position.realised_pnl, dec!(25.0));
+        // Expected realized pnl = 25
+        assert_eq!(position.realized_pnl, dec!(25.0));
     }
 
     #[rstest]
-    fn test_realised_pnl_single_side() {
+    fn test_realized_pnl_single_side() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back);
         let mut position = BetPosition::default();
         position.add_bet(back);
         // No opposing bet → pnl remains 0
-        assert_eq!(position.realised_pnl, dec!(0.0));
+        assert_eq!(position.realized_pnl, dec!(0.0));
     }
 
     #[rstest]
-    fn test_realised_pnl_open_position() {
+    fn test_realized_pnl_open_position() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back); // exposure +500
         let lay = Bet::new(dec!(4.0), dec!(100.0), BetSide::Lay); // exposure -400
         let mut position = BetPosition::default();
         position.add_bet(back);
         position.add_bet(lay);
-        // Expected realised pnl = 20
-        assert_eq!(position.realised_pnl, dec!(20.0));
+        // Expected realized pnl = 20
+        assert_eq!(position.realized_pnl, dec!(20.0));
     }
 
     #[rstest]
-    fn test_realised_pnl_partial_close() {
+    fn test_realized_pnl_partial_close() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back); // exposure +500
         let lay = Bet::new(dec!(4.0), dec!(110.0), BetSide::Lay); // exposure -440
         let mut position = BetPosition::default();
         position.add_bet(back);
         position.add_bet(lay);
-        // Expected realised pnl = 22
-        assert_eq!(position.realised_pnl, dec!(22.0));
+        // Expected realized pnl = 22
+        assert_eq!(position.realized_pnl, dec!(22.0));
     }
 
     #[rstest]
-    fn test_realised_pnl_flipping() {
+    fn test_realized_pnl_flipping() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back); // exposure +500
         let lay = Bet::new(dec!(4.0), dec!(130.0), BetSide::Lay); // exposure -520
         let mut position = BetPosition::default();
         position.add_bet(back);
         position.add_bet(lay);
-        // Expected realised pnl = 10
-        assert_eq!(position.realised_pnl, dec!(10.0));
+        // Expected realized pnl = 10
+        assert_eq!(position.realized_pnl, dec!(10.0));
     }
 
     #[rstest]
-    fn test_unrealised_pnl_positive() {
+    fn test_unrealized_pnl_positive() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back); // exposure +500
         let mut position = BetPosition::default();
         position.add_bet(back);
-        let unrealised_pnl = position.unrealised_pnl(dec!(4.0));
-        // Expected unrealised pnl = 25
-        assert_eq!(unrealised_pnl, dec!(25.0));
+        let unrealized_pnl = position.unrealized_pnl(dec!(4.0));
+        // Expected unrealized pnl = 25
+        assert_eq!(unrealized_pnl, dec!(25.0));
     }
 
     #[rstest]
@@ -745,34 +745,34 @@ mod tests {
         let mut position = BetPosition::default();
         position.add_bet(back);
         position.add_bet(lay);
-        // After processing, realised pnl should be 24 and unrealised pnl 1.0
-        let realised_pnl = position.realised_pnl;
-        let unrealised_pnl = position.unrealised_pnl(dec!(4.0));
+        // After processing, realized pnl should be 24 and unrealized pnl 1.0
+        let realized_pnl = position.realized_pnl;
+        let unrealized_pnl = position.unrealized_pnl(dec!(4.0));
         let total_pnl = position.total_pnl(dec!(4.0));
-        assert_eq!(realised_pnl, dec!(24.0));
-        assert_eq!(unrealised_pnl, dec!(1.0));
+        assert_eq!(realized_pnl, dec!(24.0));
+        assert_eq!(unrealized_pnl, dec!(1.0));
         assert_eq!(total_pnl, dec!(25.0));
     }
 
     #[rstest]
-    fn test_open_position_realised_unrealised() {
+    fn test_open_position_realized_unrealized() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Back); // exposure +500
         let lay = Bet::new(dec!(4.0), dec!(100.0), BetSide::Lay); // exposure -400
         let mut position = BetPosition::default();
         position.add_bet(back);
         position.add_bet(lay);
-        let unrealised_pnl = position.unrealised_pnl(dec!(4.0));
-        // Expected unrealised pnl = 5
-        assert_eq!(unrealised_pnl, dec!(5.0));
+        let unrealized_pnl = position.unrealized_pnl(dec!(4.0));
+        // Expected unrealized pnl = 5
+        assert_eq!(unrealized_pnl, dec!(5.0));
     }
 
     #[rstest]
-    fn test_unrealised_no_position() {
+    fn test_unrealized_no_position() {
         let back = Bet::new(dec!(5.0), dec!(100.0), BetSide::Lay);
         let mut position = BetPosition::default();
         position.add_bet(back);
-        let unrealised_pnl = position.unrealised_pnl(dec!(5.0));
-        assert_eq!(unrealised_pnl, dec!(0.0));
+        let unrealized_pnl = position.unrealized_pnl(dec!(5.0));
+        assert_eq!(unrealized_pnl, dec!(0.0));
     }
 
     #[rstest]
