@@ -33,16 +33,21 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::messages::{SubmitOrder, TradingCommand};
+use crate::messages::{
+    cancel::{CancelOrderHandler, CancelOrderHandlerAny},
+    modify::{ModifyOrderHandler, ModifyOrderHandlerAny},
+    submit::{SubmitOrderHandler, SubmitOrderHandlerAny},
+    SubmitOrder, TradingCommand,
+};
 
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     active_local: bool,
-    submit_order_handler: Option<fn(&SubmitOrder)>,
-    cancel_order_handler: Option<fn(&OrderAny)>,
-    modify_order_handler: Option<fn(&OrderAny, Quantity)>,
+    submit_order_handler: Option<SubmitOrderHandlerAny>,
+    cancel_order_handler: Option<CancelOrderHandlerAny>,
+    modify_order_handler: Option<ModifyOrderHandlerAny>,
     submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
 }
 
@@ -52,9 +57,9 @@ impl OrderManager {
         msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         active_local: bool,
-        submit_order_handler: Option<fn(&SubmitOrder)>,
-        cancel_order_handler: Option<fn(&OrderAny)>,
-        modify_order_handler: Option<fn(&OrderAny, Quantity)>,
+        submit_order_handler: Option<SubmitOrderHandlerAny>,
+        cancel_order_handler: Option<CancelOrderHandlerAny>,
+        modify_order_handler: Option<ModifyOrderHandlerAny>,
     ) -> Self {
         Self {
             clock,
@@ -66,6 +71,18 @@ impl OrderManager {
             modify_order_handler,
             submit_order_commands: HashMap::new(),
         }
+    }
+
+    pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
+        self.submit_order_handler = Some(handler);
+    }
+
+    pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
+        self.cancel_order_handler = Some(handler);
+    }
+
+    pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
+        self.modify_order_handler = Some(handler);
     }
 
     #[must_use]
@@ -89,7 +106,7 @@ impl OrderManager {
         self.submit_order_commands.clear();
     }
 
-    pub fn cancel_order(&mut self, order: OrderAny) {
+    pub fn cancel_order(&mut self, order: &OrderAny) {
         if self
             .cache
             .borrow()
@@ -105,20 +122,20 @@ impl OrderManager {
 
         self.submit_order_commands.remove(&order.client_order_id());
 
-        if let Some(cancel_order_handler) = self.cancel_order_handler {
-            cancel_order_handler(&order);
+        if let Some(handler) = &self.cancel_order_handler {
+            handler.handle_cancel_order(order);
         }
     }
 
-    pub fn modify_order_quantity(&mut self, order: OrderAny, new_quantity: Quantity) {
-        if let Some(modify_order_handler) = self.modify_order_handler {
-            modify_order_handler(&order, new_quantity);
+    pub fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
+        if let Some(handler) = &self.modify_order_handler {
+            handler.handle_modify_order(order, new_quantity)
         }
     }
 
     pub fn create_new_submit_order(
         &mut self,
-        order: OrderAny,
+        order: &OrderAny,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
@@ -150,8 +167,8 @@ impl OrderManager {
                 }
                 None => self.send_risk_command(TradingCommand::SubmitOrder(submit)),
             }
-        } else if let Some(submit_order_handler) = self.submit_order_handler {
-            submit_order_handler(&submit);
+        } else if let Some(handler) = &self.submit_order_handler {
+            handler.handle_submit_order(submit);
         }
 
         Ok(())
@@ -297,8 +314,8 @@ impl OrderManager {
                             order
                         } else {
                             panic!(
-                            "Cannot find OTO child order for client_order_id: {client_order_id}"
-                        );
+                                "Cannot find OTO child order for client_order_id: {client_order_id}"
+                            );
                         };
 
                     if !self.should_manage_order(&child_order) {
@@ -310,7 +327,7 @@ impl OrderManager {
                     }
 
                     if parent_filled_qty != child_order.leaves_qty() {
-                        self.modify_order_quantity(child_order.clone(), parent_filled_qty);
+                        self.modify_order_quantity(&mut child_order, parent_filled_qty);
                     }
 
                     if self.submit_order_handler.is_none() {
@@ -322,7 +339,7 @@ impl OrderManager {
                         .contains_key(&child_order.client_order_id())
                     {
                         if let Err(e) =
-                            self.create_new_submit_order(child_order, position_id, client_id)
+                            self.create_new_submit_order(&child_order, position_id, client_id)
                         {
                             log::error!("Failed to create new submit order: {e}");
                         }
@@ -358,7 +375,7 @@ impl OrderManager {
                         continue;
                     }
                     if contingent_order.client_order_id() != order.client_order_id() {
-                        self.cancel_order(contingent_order);
+                        self.cancel_order(&contingent_order);
                     }
                 }
             }
@@ -395,7 +412,7 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let contingent_order =
+            let mut contingent_order =
                 if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
                     order
                 } else {
@@ -419,14 +436,14 @@ impl OrderManager {
                         && filled_qty.raw == 0
                         && (order.exec_spawn_id().is_none() || !is_spawn_active)
                     {
-                        self.cancel_order(contingent_order);
+                        self.cancel_order(&contingent_order);
                     } else if filled_qty.raw > 0 && filled_qty != contingent_order.quantity() {
-                        self.modify_order_quantity(contingent_order, filled_qty);
+                        self.modify_order_quantity(&mut contingent_order, filled_qty);
                     }
                 }
                 Some(ContingencyType::Oco) => {
                     if order.is_closed() && (order.exec_spawn_id().is_none() || !is_spawn_active) {
-                        self.cancel_order(contingent_order);
+                        self.cancel_order(&contingent_order);
                     }
                 }
                 Some(ContingencyType::Ouo) => {
@@ -434,9 +451,9 @@ impl OrderManager {
                         || (order.is_closed()
                             && (order.exec_spawn_id().is_none() || !is_spawn_active))
                     {
-                        self.cancel_order(contingent_order);
+                        self.cancel_order(&contingent_order);
                     } else if leaves_qty != contingent_order.leaves_qty() {
-                        self.modify_order_quantity(contingent_order, leaves_qty);
+                        self.modify_order_quantity(&mut contingent_order, leaves_qty);
                     }
                 }
                 _ => {}
@@ -473,7 +490,7 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let contingent_order = match self.cache.borrow().order(&client_order_id).cloned() {
+            let mut contingent_order = match self.cache.borrow().order(&client_order_id).cloned() {
                 Some(contingent_order) => contingent_order,
                 None => panic!(
                     "Cannot find OCO contingent order for client_order_id: {client_order_id}"
@@ -493,7 +510,7 @@ impl OrderManager {
                     ContingencyType::Oto | ContingencyType::Oco
                 ) && quantity != contingent_order.quantity()
                 {
-                    self.modify_order_quantity(contingent_order, quantity);
+                    self.modify_order_quantity(&mut contingent_order, quantity);
                 }
             }
         }
