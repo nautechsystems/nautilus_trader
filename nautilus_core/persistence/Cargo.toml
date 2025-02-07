@@ -12,6 +12,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
+nautilus-common = { path = "../common" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 nautilus-serialization = { path = "../serialization" }
 
@@ -33,6 +34,7 @@ datafusion = { version = "44.0.0", default-features = false, features = [
   "regex_expressions",
   "unicode_expressions",
 ] }
+object_store = "0.11.2"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }
