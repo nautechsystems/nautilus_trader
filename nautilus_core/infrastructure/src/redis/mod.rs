@@ -95,6 +95,15 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 }
 
 /// Create a new Redis database connection from the given database config.
+///
+/// In case of reconnection issues, the connection will retry reconnection
+/// `number_of_retries` times, with an exponentially increasing delay, calculated as
+/// `rand(0 .. factor * (exponent_base ^ current-try))`.
+///
+/// Apply a maximum delay. No retry delay will be longer than this `max_delay` .
+///
+/// The new connection will time out operations after `response_timeout` has passed.
+/// Each connection attempt to the server will time out after `connection_timeout`.
 pub async fn create_redis_connection(
     con_name: &str,
     config: DatabaseConfig,
@@ -102,15 +111,25 @@ pub async fn create_redis_connection(
     tracing::debug!("Creating {con_name} redis connection");
     let (redis_url, redacted_url) = get_redis_url(config.clone());
     tracing::debug!("Connecting to {redacted_url}");
-    let timeout = Duration::from_secs(config.timeout as u64);
+
+    let connection_timeout = Duration::from_secs(config.connection_timeout as u64);
+    let response_timeout = Duration::from_secs(config.response_timeout as u64);
+    let number_of_retries = config.number_of_retries;
+    let exponent_base = config.exponent_base;
+    let factor = config.factor;
+
+    // into milliseconds
+    let max_delay = config.max_delay * 1000;
+
     let client = redis::Client::open(redis_url)?;
 
     let connection_manager_config = redis::aio::ConnectionManagerConfig::new()
-        // .set_exponent_base(1)
-        // .set_factor(1)
-        // .set_number_of_retries(1)
-        // .set_response_timeout(timeout)
-        .set_connection_timeout(timeout);
+        .set_exponent_base(exponent_base)
+        .set_factor(factor)
+        .set_number_of_retries(number_of_retries)
+        .set_response_timeout(response_timeout)
+        .set_connection_timeout(connection_timeout)
+        .set_max_delay(max_delay);
 
     let mut con = client
         .get_connection_manager_with_config(connection_manager_config)
