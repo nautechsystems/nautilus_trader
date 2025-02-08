@@ -47,6 +47,7 @@ sqlx = { version = "0.8.3", features = [
   "runtime-tokio",
   "json"
 ], optional = true }
+async-trait = "0.1.86"
 
 [dev-dependencies]
 rstest = { workspace = true }

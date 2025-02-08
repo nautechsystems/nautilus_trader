@@ -42,6 +42,7 @@ pub enum ConnectionMode {
 impl ConnectionMode {
     /// Convert a u8 to [`ConnectionMode`], useful when loading from an `AtomicU8`.
     #[inline]
+    #[must_use]
     pub fn from_u8(value: u8) -> Self {
         match value {
             0 => Self::Active,
@@ -59,31 +60,36 @@ impl ConnectionMode {
 
     /// Convert a [`ConnectionMode`] to a u8, useful when storing to an `AtomicU8`.
     #[inline]
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self as u8
     }
 
     /// Returns true if the client is in an active state.
     #[inline]
-    pub fn is_active(&self) -> bool {
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
         matches!(self, Self::Active)
     }
 
     /// Returns true if the client is attempting to reconnect.
     #[inline]
-    pub fn is_reconnect(&self) -> bool {
+    #[must_use]
+    pub const fn is_reconnect(&self) -> bool {
         matches!(self, Self::Reconnect)
     }
 
     /// Returns true if the client is attempting to disconnect.
     #[inline]
-    pub fn is_disconnect(&self) -> bool {
+    #[must_use]
+    pub const fn is_disconnect(&self) -> bool {
         matches!(self, Self::Disconnect)
     }
 
     /// Returns true if the client connection is closed.
     #[inline]
-    pub fn is_closed(&self) -> bool {
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
         matches!(self, Self::Closed)
     }
 }

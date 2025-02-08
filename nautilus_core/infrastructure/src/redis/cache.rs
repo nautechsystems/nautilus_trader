@@ -20,6 +20,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use futures::{future::join_all, StreamExt};
 use nautilus_common::{
     cache::{database::CacheDatabaseAdapter, CacheConfig},
     custom::CustomData,
@@ -43,7 +44,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{Commands, Connection, Pipeline, RedisError};
+use redis::{aio::ConnectionManager, AsyncCommands, Pipeline};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -132,14 +133,15 @@ impl DatabaseCommand {
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     trader_key: String,
-    con: Connection,
+    con: ConnectionManager,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
     handle: tokio::task::JoinHandle<()>,
 }
 
 impl RedisCacheDatabase {
     /// Creates a new [`RedisCacheDatabase`] instance.
-    pub fn new(
+    // need to remove async from here
+    pub async fn new(
         trader_id: TraderId,
         instance_id: UUID4,
         config: CacheConfig,
@@ -150,7 +152,7 @@ impl RedisCacheDatabase {
             .database
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-        let con = create_redis_connection(CACHE_READ, db_config.clone())?;
+        let con = create_redis_connection(CACHE_READ, db_config.clone()).await?;
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
@@ -188,33 +190,36 @@ impl RedisCacheDatabase {
         log::debug!("Closed");
     }
 
-    pub fn flushdb(&mut self) {
-        if let Err(e) = redis::cmd(REDIS_FLUSHDB).query::<()>(&mut self.con) {
+    pub async fn flushdb(&mut self) {
+        if let Err(e) = redis::cmd(REDIS_FLUSHDB)
+            .query_async::<()>(&mut self.con)
+            .await
+        {
             log::error!("Failed to flush database: {e:?}");
         }
     }
 
-    pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
+    pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
         log::debug!("Querying keys: {pattern}");
-        Ok(scan_keys(&mut self.con, pattern)?)
+        scan_keys(&mut self.con, pattern).await
     }
 
-    pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let collection = get_collection_key(key)?;
         let key = format!("{}{REDIS_DELIMITER}{}", self.trader_key, key);
 
         match collection {
-            INDEX => read_index(&mut self.con, &key),
-            GENERAL => read_string(&mut self.con, &key),
-            CURRENCIES => read_string(&mut self.con, &key),
-            INSTRUMENTS => read_string(&mut self.con, &key),
-            SYNTHETICS => read_string(&mut self.con, &key),
-            ACCOUNTS => read_list(&mut self.con, &key),
-            ORDERS => read_list(&mut self.con, &key),
-            POSITIONS => read_list(&mut self.con, &key),
-            ACTORS => read_string(&mut self.con, &key),
-            STRATEGIES => read_string(&mut self.con, &key),
+            INDEX => read_index(&mut self.con, &key).await,
+            GENERAL => read_string(&mut self.con, &key).await,
+            CURRENCIES => read_string(&mut self.con, &key).await,
+            INSTRUMENTS => read_string(&mut self.con, &key).await,
+            SYNTHETICS => read_string(&mut self.con, &key).await,
+            ACCOUNTS => read_list(&mut self.con, &key).await,
+            ORDERS => read_list(&mut self.con, &key).await,
+            POSITIONS => read_list(&mut self.con, &key).await,
+            ACTORS => read_string(&mut self.con, &key).await,
+            STRATEGIES => read_string(&mut self.con, &key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -255,7 +260,7 @@ async fn process_commands(
         .database
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-    let mut con = create_redis_connection(CACHE_WRITE, db_config.clone())?;
+    let mut con = create_redis_connection(CACHE_WRITE, db_config.clone()).await?;
 
     // Buffering
     let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
@@ -265,7 +270,7 @@ async fn process_commands(
     // Continue to receive and handle messages until channel is hung up
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-            drain_buffer(&mut con, &trader_key, &mut buffer);
+            drain_buffer(&mut con, &trader_key, &mut buffer).await;
             last_drain = Instant::now();
         } else {
             match rx.recv().await {
@@ -282,14 +287,18 @@ async fn process_commands(
 
     // Drain any remaining messages
     if !buffer.is_empty() {
-        drain_buffer(&mut con, &trader_key, &mut buffer);
+        drain_buffer(&mut con, &trader_key, &mut buffer).await;
     }
 
     tracing::debug!("Stopped cache processing");
     Ok(())
 }
 
-fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<DatabaseCommand>) {
+async fn drain_buffer(
+    conn: &mut ConnectionManager,
+    trader_key: &str,
+    buffer: &mut VecDeque<DatabaseCommand>,
+) {
     let mut pipe = redis::pipe();
     pipe.atomic();
 
@@ -334,35 +343,42 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
         }
     }
 
-    if let Err(e) = pipe.query::<()>(conn) {
+    if let Err(e) = pipe.query_async::<()>(conn).await {
         tracing::error!("{e}");
     }
 }
 
-fn scan_keys(con: &mut Connection, pattern: String) -> Result<Vec<String>, RedisError> {
-    Ok(con.scan_match::<String, String>(pattern)?.collect())
+async fn scan_keys(
+    con: &mut ConnectionManager,
+    pattern: String,
+) -> Result<Vec<String>, anyhow::Error> {
+    Ok(con
+        .scan_match::<String, String>(pattern)
+        .await?
+        .collect()
+        .await)
 }
 
-fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
+async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let index_key = get_index_key(key)?;
     match index_key {
-        INDEX_ORDER_IDS => read_set(conn, key),
-        INDEX_ORDER_POSITION => read_hset(conn, key),
-        INDEX_ORDER_CLIENT => read_hset(conn, key),
-        INDEX_ORDERS => read_set(conn, key),
-        INDEX_ORDERS_OPEN => read_set(conn, key),
-        INDEX_ORDERS_CLOSED => read_set(conn, key),
-        INDEX_ORDERS_EMULATED => read_set(conn, key),
-        INDEX_ORDERS_INFLIGHT => read_set(conn, key),
-        INDEX_POSITIONS => read_set(conn, key),
-        INDEX_POSITIONS_OPEN => read_set(conn, key),
-        INDEX_POSITIONS_CLOSED => read_set(conn, key),
+        INDEX_ORDER_IDS => read_set(conn, key).await,
+        INDEX_ORDER_POSITION => read_hset(conn, key).await,
+        INDEX_ORDER_CLIENT => read_hset(conn, key).await,
+        INDEX_ORDERS => read_set(conn, key).await,
+        INDEX_ORDERS_OPEN => read_set(conn, key).await,
+        INDEX_ORDERS_CLOSED => read_set(conn, key).await,
+        INDEX_ORDERS_EMULATED => read_set(conn, key).await,
+        INDEX_ORDERS_INFLIGHT => read_set(conn, key).await,
+        INDEX_POSITIONS => read_set(conn, key).await,
+        INDEX_POSITIONS_OPEN => read_set(conn, key).await,
+        INDEX_POSITIONS_CLOSED => read_set(conn, key).await,
         _ => anyhow::bail!("Index unknown '{index_key}' on read"),
     }
 }
 
-fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: Vec<u8> = conn.get(key)?;
+async fn read_string(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<u8> = conn.get(key).await?;
 
     if result.is_empty() {
         Ok(vec![])
@@ -371,19 +387,19 @@ fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     }
 }
 
-fn read_set(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: Vec<Bytes> = conn.smembers(key)?;
+async fn read_set(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<Bytes> = conn.smembers(key).await?;
     Ok(result)
 }
 
-fn read_hset(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: HashMap<String, String> = conn.hgetall(key)?;
+async fn read_hset(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: HashMap<String, String> = conn.hgetall(key).await?;
     let json = serde_json::to_string(&result)?;
     Ok(vec![Bytes::from(json.into_bytes())])
 }
 
-fn read_list(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: Vec<Bytes> = conn.lrange(key, 0, -1)?;
+async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
     Ok(result)
 }
 
@@ -668,6 +684,7 @@ pub struct RedisCacheDatabaseAdapter {
 
 #[allow(dead_code)] // Under development
 #[allow(unused)] // Under development
+#[async_trait::async_trait]
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()> {
         self.database.close();
@@ -684,14 +701,24 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(HashMap::new()) // TODO
     }
 
-    fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
         let mut currencies = HashMap::new();
         let pattern = format!("{CURRENCIES}*");
+        let mut con = self.database.con.clone();
+        let keys = scan_keys(&mut con, pattern).await?;
 
-        for key in scan_keys(&mut self.database.con, pattern)? {
-            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-            let currency_code = Ustr::from(parts.first().unwrap());
-            let result = self.load_currency(&currency_code)?;
+        let futures = keys.iter().map(|key| {
+            let mut conn = self.database.con.clone();
+            async {
+                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+                let currency_code = Ustr::from(parts.first().unwrap());
+                let result = self.load_currency(&currency_code);
+                (currency_code, result)
+            }
+        });
+
+        for (currency_code, result) in join_all(futures).await {
+            let result = result?;
             match result {
                 Some(currency) => {
                     currencies.insert(currency_code, currency);
@@ -701,17 +728,28 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                 }
             }
         }
+
         Ok(currencies)
     }
 
-    fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
         let mut instruments = HashMap::new();
         let pattern = format!("{INSTRUMENTS}*");
+        let mut con = self.database.con.clone();
+        let keys = scan_keys(&mut con, pattern).await?;
 
-        for key in scan_keys(&mut self.database.con, pattern)? {
-            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-            let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
-            let result = self.load_instrument(&instrument_id)?;
+        let futures = keys.iter().map(|key| {
+            let mut conn = self.database.con.clone();
+            async {
+                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+                let instrument_id = InstrumentId::from_str(parts.first().unwrap()).unwrap();
+                let result = self.load_instrument(&instrument_id);
+                (instrument_id, result)
+            }
+        });
+
+        for (instrument_id, result) in join_all(futures).await {
+            let result = result?;
             match result {
                 Some(instrument) => {
                     instruments.insert(instrument_id, instrument);
@@ -725,28 +763,48 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(instruments)
     }
 
-    fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
         let mut synthetics = HashMap::new();
         let pattern = format!("{SYNTHETICS}*");
+        let mut con = self.database.con.clone();
+        let keys = scan_keys(&mut con, pattern).await?;
 
-        for key in scan_keys(&mut self.database.con, pattern)? {
-            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-            let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
-            let synthetic = self.load_synthetic(&instrument_id)?;
+        let futures = keys.iter().map(|key| {
+            let mut conn = self.database.con.clone();
+            async {
+                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+                let instrument_id = InstrumentId::from_str(parts.first().unwrap()).unwrap();
+                let synthetic = self.load_synthetic(&instrument_id);
+                (instrument_id, synthetic)
+            }
+        });
+
+        for (instrument_id, result) in join_all(futures).await {
+            let synthetic = result.unwrap();
             synthetics.insert(instrument_id, synthetic);
         }
 
         Ok(synthetics)
     }
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
+    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let mut accounts = HashMap::new();
         let pattern = format!("{ACCOUNTS}*");
+        let mut con = self.database.con.clone();
+        let keys = scan_keys(&mut con, pattern).await?;
 
-        for key in scan_keys(&mut self.database.con, pattern)? {
-            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-            let account_id = AccountId::from(*parts.first().unwrap());
-            let result = self.load_account(&account_id)?;
+        let futures = keys.iter().map(|key| {
+            let mut conn = self.database.con.clone();
+            async {
+                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+                let account_id = AccountId::from(*parts.first().unwrap());
+                let result = self.load_account(&account_id);
+                (account_id, result)
+            }
+        });
+
+        for (account_id, result) in join_all(futures).await {
+            let result = result?;
             match result {
                 Some(account) => {
                     accounts.insert(account_id, account);
@@ -760,14 +818,24 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(accounts)
     }
 
-    fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         let mut orders = HashMap::new();
         let pattern = format!("{ORDERS}*");
+        let mut con = self.database.con.clone();
+        let keys = scan_keys(&mut con, pattern).await?;
 
-        for key in scan_keys(&mut self.database.con, pattern)? {
-            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-            let client_order_id = ClientOrderId::from(*parts.first().unwrap());
-            let result = self.load_order(&client_order_id)?;
+        let futures = keys.iter().map(|key| {
+            let mut conn = self.database.con.clone();
+            async {
+                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+                let client_order_id = ClientOrderId::from(*parts.first().unwrap());
+                let result = self.load_order(&client_order_id);
+                (client_order_id, result)
+            }
+        });
+
+        for (client_order_id, result) in join_all(futures).await {
+            let result = result?;
             match result {
                 Some(order) => {
                     orders.insert(client_order_id, order);
@@ -780,14 +848,24 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(orders)
     }
 
-    fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
+    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
         let mut positions = HashMap::new();
         let pattern = format!("{POSITIONS}*");
+        let mut con = self.database.con.clone();
+        let keys = scan_keys(&mut con, pattern).await?;
 
-        for key in scan_keys(&mut self.database.con, pattern)? {
-            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-            let position_id = PositionId::from(*parts.first().unwrap());
-            let position = self.load_position(&position_id)?;
+        let futures = keys.iter().map(|key| {
+            let mut conn = self.database.con.clone();
+            async {
+                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+                let position_id = PositionId::from(*parts.first().unwrap());
+                let position = self.load_position(&position_id);
+                (position_id, position)
+            }
+        });
+
+        for (position_id, result) in join_all(futures).await {
+            let position = result?;
             positions.insert(position_id, position);
         }
 

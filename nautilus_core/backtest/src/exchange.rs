@@ -336,11 +336,11 @@ impl SimulatedExchange {
                             exec_client
                                 .generate_account_state(
                                     vec![current_balance],
-                                    margins.values().cloned().collect(),
+                                    margins.values().copied().collect(),
                                     true,
                                     self.clock.get_time_ns(),
                                 )
-                                .unwrap()
+                                .unwrap();
                         }
                     }
                     None => {

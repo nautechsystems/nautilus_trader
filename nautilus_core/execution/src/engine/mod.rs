@@ -176,19 +176,20 @@ impl ExecutionEngine {
     }
 
     // -- COMMANDS ------------------------------------------------------------
-
-    pub fn load_cache(&mut self) -> anyhow::Result<()> {
+    #[allow(clippy::await_holding_refcell_ref)]
+    pub async fn load_cache(&mut self) -> anyhow::Result<()> {
         let ts = SystemTime::now();
 
         {
             let mut cache = self.cache.borrow_mut();
             cache.cache_general()?;
-            cache.cache_currencies()?;
-            cache.cache_instruments()?;
-            cache.cache_accounts()?;
-            cache.cache_orders()?;
-            cache.cache_positions()?;
+        }
 
+        // Async operation without holding RefCell borrow
+        self.cache.borrow_mut().cache_all().await?;
+
+        {
+            let mut cache = self.cache.borrow_mut();
             cache.build_index();
             let _ = cache.check_integrity();
         }

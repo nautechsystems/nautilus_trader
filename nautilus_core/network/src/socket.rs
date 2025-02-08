@@ -459,6 +459,7 @@ impl SocketClient {
     }
 
     /// Returns the current connection mode.
+    #[must_use]
     pub fn connection_mode(&self) -> ConnectionMode {
         ConnectionMode::from_atomic(&self.connection_mode)
     }
@@ -609,7 +610,7 @@ impl SocketClient {
                         Python::with_gil(|py| match handler.call0(py) {
                             Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
                             Err(e) => {
-                                tracing::error!("Error calling `post_disconnection` handler: {e}")
+                                tracing::error!("Error calling `post_disconnection` handler: {e}");
                             }
                         });
                     }
@@ -669,7 +670,7 @@ mod tests {
     use super::*;
 
     fn create_handler() -> PyObject {
-        let code_raw = r#"
+        let code_raw = r"
 class Counter:
     def __init__(self):
         self.count = 0
@@ -689,15 +690,15 @@ class Counter:
         return self.count
 
 counter = Counter()
-"#;
+";
         let code = CString::new(code_raw).unwrap();
         let filename = CString::new("test".to_string()).unwrap();
         let module = CString::new("test".to_string()).unwrap();
         Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
             let counter = pymod.getattr("counter").unwrap().into_py(py);
-            let handler = counter.getattr(py, "handler").unwrap().into_py(py);
-            handler
+
+            counter.getattr(py, "handler").unwrap().into_py(py)
         })
     }
 
@@ -893,7 +894,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler: Arc::new(create_handler().into()),
+            handler: Arc::new(create_handler()),
             heartbeat,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
