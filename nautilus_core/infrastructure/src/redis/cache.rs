@@ -22,7 +22,10 @@ use std::{
 use bytes::Bytes;
 use futures::{future::join_all, StreamExt};
 use nautilus_common::{
-    cache::{database::CacheDatabaseAdapter, CacheConfig},
+    cache::{
+        database::{CacheDatabaseAdapter, CacheMap},
+        CacheConfig,
+    },
     custom::CustomData,
     enums::SerializationEncoding,
     runtime::get_runtime,
@@ -45,6 +48,7 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{aio::ConnectionManager, AsyncCommands, Pipeline};
+use tokio::try_join;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -694,6 +698,27 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn flush(&mut self) -> anyhow::Result<()> {
         self.database.flushdb();
         Ok(())
+    }
+
+    async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
+            self.load_currencies(),
+            self.load_instruments(),
+            self.load_synthetics(),
+            self.load_accounts(),
+            self.load_orders(),
+            self.load_positions()
+        )
+        .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
+
+        Ok(CacheMap {
+            currencies,
+            instruments,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+        })
     }
 
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
