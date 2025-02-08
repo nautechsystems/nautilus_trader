@@ -23,6 +23,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `open_check_open_only` config option for `LiveExecEngineConfig`
 - Added `BetSide` enum (to support `Bet` and `BetPosition`)
 - Added `Bet` and `BetPosition` for betting market risk and PnL calculations
+- Added `total_pnl` and `total_pnls` methods for `Portfolio`
 
 ### Breaking Changes
 - Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)
