@@ -572,8 +572,8 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
-    use nautilus_common::testing::wait_until;
-    use redis::{aio::ConnectionManager, Commands};
+    use nautilus_common::testing::wait_until_async;
+    use redis::aio::ConnectionManager;
     use rstest::*;
 
     use super::*;
@@ -734,63 +734,68 @@ mod serial_tests {
         flush_redis(&mut con).await.unwrap()
     }
 
-    // TODO: Fix this test
-    // #[rstest]
-    // #[tokio::test(flavor = "multi_thread")]
-    // async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
-    //     let mut con = redis_connection.await;
-    //     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
+        let mut con = redis_connection.await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
-    //     let trader_id = TraderId::from("tester-001");
-    //     let instance_id = UUID4::new();
-    //     let mut config = MessageBusConfig::default();
-    //     config.database = Some(DatabaseConfig::default());
-    //     config.stream_per_topic = false;
-    //     let stream_key = get_stream_key(trader_id, instance_id, &config);
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let mut config = MessageBusConfig::default();
+        config.database = Some(DatabaseConfig::default());
+        config.stream_per_topic = false;
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
 
-    //     // Start the publish_messages task
-    //     let handle = tokio::spawn(async move {
-    //         publish_messages(rx, trader_id, instance_id, config)
-    //             .await
-    //             .unwrap();
-    //     });
+        // Start the publish_messages task
+        let handle = tokio::spawn(async move {
+            publish_messages(rx, trader_id, instance_id, config)
+                .await
+                .unwrap();
+        });
 
-    //     // Send a test message
-    //     let msg = BusMessage {
-    //         topic: "test_topic".to_string(),
-    //         payload: Bytes::from("test_payload"),
-    //     };
-    //     tx.send(msg).unwrap();
+        // Send a test message
+        let msg = BusMessage {
+            topic: "test_topic".to_string(),
+            payload: Bytes::from("test_payload"),
+        };
+        tx.send(msg).unwrap();
 
-    //     // Wait until the message is published to Redis
-    //     wait_until(
-    //         || {
-    //             let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).await.unwrap();
-    //             !messages.is_empty()
-    //         },
-    //         Duration::from_secs(2),
-    //     );
+        // Wait until the message is published to Redis
+        wait_until_async(
+            || {
+                let mut con = con.clone();
+                let stream_key = stream_key.clone();
+                async move {
+                    let messages: RedisStreamBulk =
+                        con.xread(&[&stream_key], &["0"]).await.unwrap();
+                    !messages.is_empty()
+                }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
-    //     // Verify the message was published to Redis
-    //     let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).await.unwrap();
-    //     assert_eq!(messages.len(), 1);
-    //     let stream_msgs = messages[0].get(&stream_key).unwrap();
-    //     let stream_msg_array = &stream_msgs[0].values().next().unwrap();
-    //     let decoded_message = decode_bus_message(stream_msg_array).unwrap();
-    //     assert_eq!(decoded_message.topic, "test_topic");
-    //     assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
+        // Verify the message was published to Redis
+        let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).await.unwrap();
+        assert_eq!(messages.len(), 1);
+        let stream_msgs = messages[0].get(&stream_key).unwrap();
+        let stream_msg_array = &stream_msgs[0].values().next().unwrap();
+        let decoded_message = decode_bus_message(stream_msg_array).unwrap();
+        assert_eq!(decoded_message.topic, "test_topic");
+        assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
 
-    //     // Stop publishing task
-    //     let msg = BusMessage {
-    //         topic: CLOSE_TOPIC.to_string(),
-    //         payload: Bytes::new(), // Empty
-    //     };
-    //     tx.send(msg).unwrap();
+        // Stop publishing task
+        let msg = BusMessage {
+            topic: CLOSE_TOPIC.to_string(),
+            payload: Bytes::new(), // Empty
+        };
+        tx.send(msg).unwrap();
 
-    //     // Shutdown and cleanup
-    //     handle.await.unwrap();
-    //     flush_redis(&mut con).await.unwrap();
-    // }
+        // Shutdown and cleanup
+        handle.await.unwrap();
+        flush_redis(&mut con).await.unwrap();
+    }
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
