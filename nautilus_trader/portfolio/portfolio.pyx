@@ -39,7 +39,6 @@ from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
-from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
@@ -776,7 +775,6 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             Currency currency
             Money amount
-            MoneyRaw raw_value
 
         # Sum realized PnLs
         for currency, amount in realized.items():
