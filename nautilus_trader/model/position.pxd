@@ -119,10 +119,10 @@ cdef class Position:
 
     cpdef void apply(self, OrderFilled fill)
 
-    cpdef Money notional_value(self, Price last)
+    cpdef Money notional_value(self, Price price)
     cpdef Money calculate_pnl(self, double avg_px_open, double avg_px_close, Quantity quantity)
-    cpdef Money unrealized_pnl(self, Price last)
-    cpdef Money total_pnl(self, Price last)
+    cpdef Money unrealized_pnl(self, Price price)
+    cpdef Money total_pnl(self, Price price)
     cpdef list commissions(self)
 
     cdef void _check_duplicate_trade_id(self, OrderFilled fill)

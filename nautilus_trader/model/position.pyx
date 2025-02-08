@@ -49,7 +49,7 @@ cdef class Position:
     ValueError
         If `instrument.id` is not equal to `fill.instrument_id`.
     ValueError
-        If `event.position_id` is ``None``.
+        If `fill.position_id` is ``None``.
     """
 
     def __init__(
@@ -230,7 +230,7 @@ cdef class Position:
 
         Returns
         -------
-        list[VenueOrderId]
+        list[ClientOrderId]
 
         Notes
         -----
@@ -427,6 +427,9 @@ cdef class Position:
         """
         Applies the given order fill event to the position.
 
+        If the position is FLAT prior to applying `fill`, the position state is reset
+        (clearing existing events, commissions, etc.) before processing the new fill.
+
         Parameters
         ----------
         fill : OrderFilled
@@ -499,31 +502,37 @@ cdef class Position:
 
         self.ts_last = fill.ts_event
 
-    cpdef Money notional_value(self, Price last):
+    cpdef Money notional_value(self, Price price):
         """
-        Return the current notional value of the position.
+        Return the current notional value of the position, using a reference
+        price for the calculation (e.g., bid, ask, mid, last, or mark).
+
+        - For a standard (non-inverse) instrument, the notional is returned in the quote currency.
+        - For an inverse instrument, the notional is returned in the base currency, with
+          the calculation scaled by 1 / price.
 
         Parameters
         ----------
-        last : Price
-            The last close price for the position.
+        price : Price
+            The reference price for the calculation. This could be the last, mid, bid, ask,
+            a mark-to-market price, or any other suitably representative value.
 
         Returns
         -------
         Money
-            In quote currency.
+            Denominated in quote currency for standard instruments, or base currency if inverse.
 
         """
-        Condition.not_none(last, "last")
+        Condition.not_none(price, "price")
 
         if self.is_inverse:
             return Money(
-                self.quantity.as_f64_c() * self.multiplier.as_f64_c() * (1.0 / last.as_f64_c()),
+                self.quantity.as_f64_c() * self.multiplier.as_f64_c() * (1.0 / price.as_f64_c()),
                 self.base_currency,
             )
         else:
             return Money(
-                self.quantity.as_f64_c() * self.multiplier.as_f64_c() * last.as_f64_c(),
+                self.quantity.as_f64_c() * self.multiplier.as_f64_c() * price.as_f64_c(),
                 self.quote_currency,
             )
 
@@ -534,10 +543,7 @@ cdef class Position:
         Quantity quantity,
     ):
         """
-        Return a calculated PnL.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
+        Return a calculated PnL in the instrument's settlement currency.
 
         Parameters
         ----------
@@ -551,7 +557,7 @@ cdef class Position:
         Returns
         -------
         Money
-            In settlement currency.
+            Denominated in settlement currency.
 
         """
         cdef double pnl = self._calculate_pnl(
@@ -562,57 +568,57 @@ cdef class Position:
 
         return Money(pnl, self.settlement_currency)
 
-    cpdef Money unrealized_pnl(self, Price last):
+    cpdef Money unrealized_pnl(self, Price price):
         """
-        Return the unrealized PnL from the given last quote tick.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
+        Return the unrealized PnL for the position, using a reference
+        price for the calculation (e.g., bid, ask, mid, last, or mark).
 
         Parameters
         ----------
-        last : Price
-            The last price for the calculation.
+        price : Price
+            The reference price for the calculation. This could be the last, mid, bid, ask,
+            a mark-to-market price, or any other suitably representative value.
 
         Returns
         -------
         Money
+            Denominated in settlement currency.
 
         """
-        Condition.not_none(last, "last")
+        Condition.not_none(price, "price")
 
         if self.side == PositionSide.FLAT:
             return Money(0, self.settlement_currency)
 
         cdef double pnl = self._calculate_pnl(
             avg_px_open=self.avg_px_open,
-            avg_px_close=last.as_f64_c(),
+            avg_px_close=price.as_f64_c(),
             quantity=self.quantity.as_f64_c(),
         )
 
         return Money(pnl, self.settlement_currency)
 
-    cpdef Money total_pnl(self, Price last):
+    cpdef Money total_pnl(self, Price price):
         """
-        Return the total PnL from the given last quote tick.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
+        Return the total PnL for the position, using a reference
+        price for the calculation (e.g., bid, ask, mid, last, or mark).
 
         Parameters
         ----------
-        last : Price
-            The last price for the calculation.
+        price : Price
+            The reference price for the calculation. This could be the last, mid, bid, ask,
+            a mark-to-market price, or any other suitably representative value.
 
         Returns
         -------
         Money
+            Denominated in settlement currency.
 
         """
-        Condition.not_none(last, "last")
+        Condition.not_none(price, "price")
 
         cdef double realized_pnl = self.realized_pnl.as_f64_c() if self.realized_pnl is not None else 0.0
-        return Money(realized_pnl + self.unrealized_pnl(last).as_f64_c(), self.settlement_currency)
+        return Money(realized_pnl + self.unrealized_pnl(price).as_f64_c(), self.settlement_currency)
 
     cpdef list commissions(self):
         """
