@@ -26,7 +26,10 @@ pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache
 mod serial_tests {
     use std::time::Duration;
 
-    use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
+    use nautilus_common::{
+        cache::database::CacheDatabaseAdapter,
+        testing::{wait_until, wait_until_async},
+    };
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::AccountAny,
@@ -55,14 +58,15 @@ mod serial_tests {
         database.add_currency(&eth).unwrap();
         database.add_currency(&usdt).unwrap();
         database.add_instrument(&crypto_perpetual).unwrap();
-        wait_until(
-            || {
-                let currencies = database.load_currencies().unwrap();
-                let instruments = database.load_instruments().unwrap();
+        wait_until_async(
+            || async {
+                let currencies = database.load_currencies().await.unwrap();
+                let instruments = database.load_instruments().await.unwrap();
                 currencies.len() >= 2 && !instruments.is_empty()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Load instruments and build indexes
         cache.cache_instruments().await.unwrap();

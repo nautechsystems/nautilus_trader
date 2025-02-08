@@ -143,13 +143,14 @@ mod serial_tests {
 
         // Wait for cache to update
         wait_until_async(
-            || async move {
+            || async {
                 let currencies = pg_cache.load_currencies().await.unwrap();
                 let instruments = pg_cache.load_instruments().await.unwrap();
                 currencies.len() >= 6 && instruments.len() >= 7
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Check currency list is correct
         let currencies = pg_cache.load_currencies().await.unwrap();
@@ -285,12 +286,13 @@ mod serial_tests {
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
         wait_until_async(
-            || async move {
+            || async {
                 pg_cache.load_currencies().await.unwrap().len() == 2
                     && pg_cache.load_instruments().await.unwrap().len() == 1
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Call flush which will truncate all the tables
         pg_cache.flush().unwrap();
