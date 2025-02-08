@@ -732,28 +732,33 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let mut con = self.database.con.clone();
         let keys = scan_keys(&mut con, pattern).await?;
 
-        let futures = keys.iter().map(|key| {
-            let mut conn = self.database.con.clone();
-            async {
-                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-                let currency_code = Ustr::from(parts.first().unwrap());
-                let result = self.load_currency(&currency_code);
-                (currency_code, result)
-            }
-        });
+        let futures: Vec<_> = keys
+            .iter()
+            .map(|key| async move {
+                let currency_code = match key.as_str().rsplit(':').next() {
+                    Some(code) => Ustr::from(code),
+                    None => {
+                        log::error!("Invalid key format: {}", key);
+                        return None;
+                    }
+                };
 
-        for (currency_code, result) in join_all(futures).await {
-            let result = result?;
-            match result {
-                Some(currency) => {
-                    currencies.insert(currency_code, currency);
+                match self.load_currency(&currency_code) {
+                    Ok(Some(currency)) => Some((currency_code, currency)),
+                    Ok(None) => {
+                        log::error!("Currency not found: {}", currency_code);
+                        None
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load currency {}: {}", currency_code, e);
+                        None
+                    }
                 }
-                None => {
-                    log::error!("Currency not found: {currency_code}");
-                }
-            }
-        }
+            })
+            .collect();
 
+        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values.
+        currencies.extend(join_all(futures).await.into_iter().flatten());
         Ok(currencies)
     }
 
@@ -763,28 +768,45 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let mut con = self.database.con.clone();
         let keys = scan_keys(&mut con, pattern).await?;
 
-        let futures = keys.iter().map(|key| {
-            let mut conn = self.database.con.clone();
-            async {
-                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-                let instrument_id = InstrumentId::from_str(parts.first().unwrap()).unwrap();
-                let result = self.load_instrument(&instrument_id);
-                (instrument_id, result)
-            }
-        });
+        let futures: Vec<_> = keys
+            .iter()
+            .map(|key| async move {
+                let instrument_id = key
+                    .as_str()
+                    .rsplit(':')
+                    .next()
+                    .ok_or_else(|| {
+                        log::error!("Invalid key format: {}", key);
+                        "Invalid key format"
+                    })
+                    .and_then(|code| {
+                        InstrumentId::from_str(code).map_err(|e| {
+                            log::error!("Failed to convert to InstrumentId for {}: {}", key, e);
+                            "Invalid instrument ID"
+                        })
+                    });
 
-        for (instrument_id, result) in join_all(futures).await {
-            let result = result?;
-            match result {
-                Some(instrument) => {
-                    instruments.insert(instrument_id, instrument);
-                }
-                None => {
-                    log::error!("Instrument not found: {instrument_id}");
-                }
-            }
-        }
+                let instrument_id = match instrument_id {
+                    Ok(id) => id,
+                    Err(_) => return None,
+                };
 
+                match self.load_instrument(&instrument_id) {
+                    Ok(Some(instrument)) => Some((instrument_id, instrument)),
+                    Ok(None) => {
+                        log::error!("Instrument not found: {}", instrument_id);
+                        None
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load instrument {}: {}", instrument_id, e);
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
+        instruments.extend(join_all(futures).await.into_iter().flatten());
         Ok(instruments)
     }
 
@@ -794,21 +816,41 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let mut con = self.database.con.clone();
         let keys = scan_keys(&mut con, pattern).await?;
 
-        let futures = keys.iter().map(|key| {
-            let mut conn = self.database.con.clone();
-            async {
-                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-                let instrument_id = InstrumentId::from_str(parts.first().unwrap()).unwrap();
-                let synthetic = self.load_synthetic(&instrument_id);
-                (instrument_id, synthetic)
-            }
-        });
+        let futures: Vec<_> = keys
+            .iter()
+            .map(|key| async move {
+                let instrument_id = key
+                    .as_str()
+                    .rsplit(':')
+                    .next()
+                    .ok_or_else(|| {
+                        log::error!("Invalid key format: {}", key);
+                        "Invalid key format"
+                    })
+                    .and_then(|code| {
+                        InstrumentId::from_str(code).map_err(|e| {
+                            log::error!("Failed to parse InstrumentId for {}: {}", key, e);
+                            "Invalid instrument ID"
+                        })
+                    });
 
-        for (instrument_id, result) in join_all(futures).await {
-            let synthetic = result.unwrap();
-            synthetics.insert(instrument_id, synthetic);
-        }
+                let instrument_id = match instrument_id {
+                    Ok(id) => id,
+                    Err(_) => return None,
+                };
 
+                match self.load_synthetic(&instrument_id) {
+                    Ok(synthetic) => Some((instrument_id, synthetic)),
+                    Err(e) => {
+                        log::error!("Failed to load synthetic {}: {}", instrument_id, e);
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values.
+        synthetics.extend(join_all(futures).await.into_iter().flatten());
         Ok(synthetics)
     }
 
@@ -818,28 +860,33 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let mut con = self.database.con.clone();
         let keys = scan_keys(&mut con, pattern).await?;
 
-        let futures = keys.iter().map(|key| {
-            let mut conn = self.database.con.clone();
-            async {
-                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-                let account_id = AccountId::from(*parts.first().unwrap());
-                let result = self.load_account(&account_id);
-                (account_id, result)
-            }
-        });
+        let futures: Vec<_> = keys
+            .iter()
+            .map(|key| async move {
+                let account_id = match key.as_str().rsplit(':').next() {
+                    Some(code) => AccountId::from(code),
+                    None => {
+                        log::error!("Invalid key format: {}", key);
+                        return None;
+                    }
+                };
 
-        for (account_id, result) in join_all(futures).await {
-            let result = result?;
-            match result {
-                Some(account) => {
-                    accounts.insert(account_id, account);
+                match self.load_account(&account_id) {
+                    Ok(Some(account)) => Some((account_id, account)),
+                    Ok(None) => {
+                        log::error!("Account not found: {}", account_id);
+                        None
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load account {}: {}", account_id, e);
+                        None
+                    }
                 }
-                None => {
-                    log::error!("Account not found: {account_id}");
-                }
-            }
-        }
+            })
+            .collect();
 
+        // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values.
+        accounts.extend(join_all(futures).await.into_iter().flatten());
         Ok(accounts)
     }
 
@@ -849,27 +896,33 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let mut con = self.database.con.clone();
         let keys = scan_keys(&mut con, pattern).await?;
 
-        let futures = keys.iter().map(|key| {
-            let mut conn = self.database.con.clone();
-            async {
-                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-                let client_order_id = ClientOrderId::from(*parts.first().unwrap());
-                let result = self.load_order(&client_order_id);
-                (client_order_id, result)
-            }
-        });
+        let futures: Vec<_> = keys
+            .iter()
+            .map(|key| async move {
+                let client_order_id = match key.as_str().rsplit(':').next() {
+                    Some(code) => ClientOrderId::from(code),
+                    None => {
+                        log::error!("Invalid key format: {}", key);
+                        return None;
+                    }
+                };
 
-        for (client_order_id, result) in join_all(futures).await {
-            let result = result?;
-            match result {
-                Some(order) => {
-                    orders.insert(client_order_id, order);
+                match self.load_order(&client_order_id) {
+                    Ok(Some(order)) => Some((client_order_id, order)),
+                    Ok(None) => {
+                        log::error!("Order not found: {}", client_order_id);
+                        None
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load order {}: {}", client_order_id, e);
+                        None
+                    }
                 }
-                None => {
-                    log::error!("Order not found: {client_order_id}");
-                }
-            }
-        }
+            })
+            .collect();
+
+        // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values.
+        orders.extend(join_all(futures).await.into_iter().flatten());
         Ok(orders)
     }
 
@@ -879,21 +932,29 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let mut con = self.database.con.clone();
         let keys = scan_keys(&mut con, pattern).await?;
 
-        let futures = keys.iter().map(|key| {
-            let mut conn = self.database.con.clone();
-            async {
-                let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
-                let position_id = PositionId::from(*parts.first().unwrap());
-                let position = self.load_position(&position_id);
-                (position_id, position)
-            }
-        });
+        let futures: Vec<_> = keys
+            .iter()
+            .map(|key| async move {
+                let position_id = match key.as_str().rsplit(':').next() {
+                    Some(code) => PositionId::from(code),
+                    None => {
+                        log::error!("Invalid key format: {}", key);
+                        return None;
+                    }
+                };
 
-        for (position_id, result) in join_all(futures).await {
-            let position = result?;
-            positions.insert(position_id, position);
-        }
+                match self.load_position(&position_id) {
+                    Ok(position) => Some((position_id, position)),
+                    Err(e) => {
+                        log::error!("Failed to load position {}: {}", position_id, e);
+                        None
+                    }
+                }
+            })
+            .collect();
 
+        // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values.
+        positions.extend(join_all(futures).await.into_iter().flatten());
         Ok(positions)
     }
 
