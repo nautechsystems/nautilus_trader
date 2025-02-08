@@ -183,13 +183,7 @@ impl ExecutionEngine {
         {
             let mut cache = self.cache.borrow_mut();
             cache.cache_general()?;
-        }
-
-        // Async operation without holding RefCell borrow
-        self.cache.borrow_mut().cache_all().await?;
-
-        {
-            let mut cache = self.cache.borrow_mut();
+            self.cache.borrow_mut().cache_all().await?;
             cache.build_index();
             let _ = cache.check_integrity();
         }
