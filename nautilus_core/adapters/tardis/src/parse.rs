@@ -18,6 +18,7 @@ use nautilus_model::{
     data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol},
+    types::{Price, ERROR_PRICE, PRICE_MAX, PRICE_MIN},
 };
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
@@ -100,6 +101,17 @@ pub fn normalize_instrument_id(
 ) -> InstrumentId {
     let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
     parse_instrument_id(exchange, symbol)
+}
+
+/// Parses a Nautilus price from the given `value`.
+///
+/// If `value` is outside the valid range, then will return an [`ERROR_PRICE`].
+#[must_use]
+pub fn parse_price(value: f64, precision: u8) -> Price {
+    match value {
+        PRICE_MIN..=PRICE_MAX => Price::new(value, precision),
+        _ => ERROR_PRICE,
+    }
 }
 
 /// Parses a Nautilus order side from the given Tardis string `value`.
