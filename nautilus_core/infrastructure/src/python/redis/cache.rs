@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use bytes::Bytes;
+use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     UUID4,
@@ -28,7 +29,9 @@ impl RedisCacheDatabase {
     #[new]
     fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
         let config = serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
-        Self::new(trader_id, instance_id, config).map_err(to_pyvalue_err)
+        let result = get_runtime()
+            .block_on(async { RedisCacheDatabase::new(trader_id, instance_id, config).await });
+        result.map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "close")]
@@ -38,20 +41,19 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "flushdb")]
     fn py_flushdb(&mut self) {
-        self.flushdb()
+        get_runtime().block_on(async { self.flushdb().await });
     }
 
     #[pyo3(name = "keys")]
     fn py_keys(&mut self, pattern: &str) -> PyResult<Vec<String>> {
-        match self.keys(pattern) {
-            Ok(keys) => Ok(keys),
-            Err(e) => Err(to_pyruntime_err(e)),
-        }
+        let result = get_runtime().block_on(async { self.keys(pattern).await });
+        result.map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "read")]
     fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<PyObject>> {
-        match self.read(key) {
+        let result = get_runtime().block_on(async { self.read(key).await });
+        match result {
             Ok(result) => {
                 let vec_py_bytes = result
                     .into_iter()

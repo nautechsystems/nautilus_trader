@@ -84,8 +84,9 @@ mod tests {
     // -- EXECUTION -------------------------------------------------------------------------------
 
     #[rstest]
-    fn test_cache_orders_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_orders().is_ok());
+    #[tokio::test]
+    async fn test_cache_orders_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_orders().await.is_ok());
     }
 
     #[rstest]
@@ -359,8 +360,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cache_positions_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_positions().is_ok());
+    #[tokio::test]
+    async fn test_cache_positions_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_positions().await.is_ok());
     }
 
     #[rstest]
@@ -418,13 +420,15 @@ mod tests {
     // -- DATA ------------------------------------------------------------------------------------
 
     #[rstest]
-    fn test_cache_currencies_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_currencies().is_ok());
+    #[tokio::test]
+    async fn test_cache_currencies_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_currencies().await.is_ok());
     }
 
     #[rstest]
-    fn test_cache_instruments_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_instruments().is_ok());
+    #[tokio::test]
+    async fn test_cache_instruments_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_instruments().await.is_ok());
     }
 
     #[rstest]
@@ -464,8 +468,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cache_synthetics_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_synthetics().is_ok());
+    #[tokio::test]
+    async fn test_cache_synthetics_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_synthetics().await.is_ok());
     }
 
     #[rstest]
@@ -609,8 +614,9 @@ mod tests {
     // -- ACCOUNT ---------------------------------------------------------------------------------
 
     #[rstest]
-    fn test_cache_accounts_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_accounts().is_ok());
+    #[tokio::test]
+    async fn test_cache_accounts_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_accounts().await.is_ok());
     }
 
     #[rstest]

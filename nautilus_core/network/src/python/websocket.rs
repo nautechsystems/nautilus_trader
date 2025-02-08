@@ -375,7 +375,7 @@ mod tests {
     }
 
     fn create_test_handler() -> (PyObject, PyObject) {
-        let code_raw = r#"
+        let code_raw = r"
 class Counter:
     def __init__(self):
         self.count = 0
@@ -395,7 +395,7 @@ class Counter:
         return self.count
 
 counter = Counter()
-"#;
+";
 
         let code = CString::new(code_raw).unwrap();
         let filename = CString::new("test".to_string()).unwrap();

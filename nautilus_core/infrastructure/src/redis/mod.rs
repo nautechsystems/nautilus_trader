@@ -95,18 +95,28 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 }
 
 /// Create a new Redis database connection from the given database config.
-pub fn create_redis_connection(
+pub async fn create_redis_connection(
     con_name: &str,
     config: DatabaseConfig,
-) -> anyhow::Result<redis::Connection> {
+) -> anyhow::Result<redis::aio::ConnectionManager> {
     tracing::debug!("Creating {con_name} redis connection");
     let (redis_url, redacted_url) = get_redis_url(config.clone());
     tracing::debug!("Connecting to {redacted_url}");
     let timeout = Duration::from_secs(config.timeout as u64);
     let client = redis::Client::open(redis_url)?;
-    let mut con = client.get_connection_with_timeout(timeout)?;
 
-    let version = get_redis_version(&mut con)?;
+    let connection_manager_config = redis::aio::ConnectionManagerConfig::new()
+        // .set_exponent_base(1)
+        // .set_factor(1)
+        // .set_number_of_retries(1)
+        // .set_response_timeout(timeout)
+        .set_connection_timeout(timeout);
+
+    let mut con = client
+        .get_connection_manager_with_config(connection_manager_config)
+        .await?;
+
+    let version = get_redis_version(&mut con).await?;
     let min_version = Version::parse(REDIS_MIN_VERSION)?;
     let con_msg = format!("Connected to redis v{version}");
 
@@ -122,8 +132,10 @@ pub fn create_redis_connection(
 }
 
 /// Flush the Redis database for the given connection.
-pub fn flush_redis(con: &mut redis::Connection) -> anyhow::Result<(), RedisError> {
-    redis::cmd(REDIS_FLUSHDB).exec(con)
+pub async fn flush_redis(
+    con: &mut redis::aio::ConnectionManager,
+) -> anyhow::Result<(), RedisError> {
+    redis::cmd(REDIS_FLUSHDB).exec_async(con).await
 }
 
 /// Parse the stream key from the given identifiers and config.
@@ -153,8 +165,10 @@ pub fn get_stream_key(
 }
 
 /// Parses the Redis version from the "INFO" command output.
-pub fn get_redis_version(conn: &mut Connection) -> anyhow::Result<Version> {
-    let info: String = redis::cmd("INFO").query(conn)?;
+pub async fn get_redis_version(
+    conn: &mut redis::aio::ConnectionManager,
+) -> anyhow::Result<Version> {
+    let info: String = redis::cmd("INFO").query_async(conn).await?;
     let version_str = info
         .lines()
         .find_map(|line| {
