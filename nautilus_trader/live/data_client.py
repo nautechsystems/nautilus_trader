@@ -26,7 +26,6 @@ import traceback
 from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
-from typing import Any
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -45,11 +44,25 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.enums import BookType
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstrumentClose
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstrumentClose
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 
 
@@ -218,21 +231,21 @@ class LiveDataClient(DataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        self._add_subscription(data_type)
+    def subscribe(self, command: SubscribeData) -> None:
+        self._add_subscription(command.data_type)
         self.create_task(
-            self._subscribe(data_type, params),
-            log_msg=f"subscribe: {data_type}",
-            success_msg=f"Subscribed {data_type}",
+            self._subscribe(command),
+            log_msg=f"subscribe: {command.data_type}",
+            success_msg=f"Subscribed {command.data_type}",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        self._remove_subscription(data_type)
+    def unsubscribe(self, command: UnsubscribeData) -> None:
+        self._remove_subscription(command.data_type)
         self.create_task(
-            self._unsubscribe(data_type, params),
-            log_msg=f"unsubscribe_{data_type}",
-            success_msg=f"Unsubscribed {data_type}",
+            self._unsubscribe(command),
+            log_msg=f"unsubscribe_{command.data_type}",
+            success_msg=f"Unsubscribed {command.data_type}",
             success_color=LogColor.BLUE,
         )
 
@@ -258,12 +271,12 @@ class LiveDataClient(DataClient):
             "implement the `_disconnect` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe(self, command: SubscribeData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe(self, command: UnsubscribeBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
@@ -445,260 +458,190 @@ class LiveMarketDataClient(MarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        self._add_subscription(data_type)
+    def subscribe(self, command: SubscribeData) -> None:
+        self._add_subscription(command.data_type)
         self.create_task(
-            self._subscribe(data_type, params),
-            log_msg=f"subscribe: {data_type}",
-            success_msg=f"Subscribed {data_type}",
+            self._subscribe(command),
+            log_msg=f"subscribe: {command.data_type}",
+            success_msg=f"Subscribed {command.data_type}",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    def subscribe_instruments(self, command: SubscribeInstruments) -> None:
         instrument_ids = list(self._instrument_provider.get_all().keys())
         [self._add_subscription_instrument(i) for i in instrument_ids]
         self.create_task(
-            self._subscribe_instruments(params),
+            self._subscribe_instruments(command),
             log_msg=f"subscribe: instruments {self.venue}",
             success_msg=f"Subscribed {self.venue} instruments",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_instrument(instrument_id)
+    def subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        self._add_subscription_instrument(command.instrument_id)
         self.create_task(
-            self._subscribe_instrument(instrument_id, params),
-            log_msg=f"subscribe: instrument {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} instrument",
+            self._subscribe_instrument(command),
+            log_msg=f"subscribe: instrument {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} instrument",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_order_book_deltas(instrument_id)
+    def subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        self._add_subscription_order_book_deltas(command.instrument_id)
         self.create_task(
-            self._subscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                depth=depth,
-                params=params,
-            ),
-            log_msg=f"subscribe: order_book_deltas {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} order book deltas depth={depth}",
+            self._subscribe_order_book_deltas(command),
+            log_msg=f"subscribe: order_book_deltas {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} order book deltas depth={command.depth}",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_order_book_snapshots(instrument_id)
+    def subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        self._add_subscription_order_book_snapshots(command.instrument_id)
         self.create_task(
-            self._subscribe_order_book_snapshots(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                depth=depth,
-                params=params,
-            ),
-            log_msg=f"subscribe: order_book_snapshots {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} order book snapshots depth={depth}",
+            self._subscribe_order_book_snapshots(command),
+            log_msg=f"subscribe: order_book_snapshots {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} order book snapshots depth={command.depth}",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_quote_ticks(instrument_id)
+    def subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        self._add_subscription_quote_ticks(command.instrument_id)
         self.create_task(
-            self._subscribe_quote_ticks(instrument_id, params),
-            log_msg=f"subscribe: quote_ticks {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} quotes",
+            self._subscribe_quote_ticks(command),
+            log_msg=f"subscribe: quote_ticks {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} quotes",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_trade_ticks(instrument_id)
+    def subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        self._add_subscription_trade_ticks(command.instrument_id)
         self.create_task(
-            self._subscribe_trade_ticks(instrument_id, params),
-            log_msg=f"subscribe: trade_ticks {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} trades",
+            self._subscribe_trade_ticks(command),
+            log_msg=f"subscribe: trade_ticks {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} trades",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_bars(self, bar_type: BarType, params: dict[str, Any] | None = None) -> None:
+    def subscribe_bars(self, command: SubscribeBars) -> None:
         PyCondition.is_true(
-            bar_type.is_externally_aggregated(),
+            command.bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
         )
 
-        self._add_subscription_bars(bar_type)
+        self._add_subscription_bars(command)
         self.create_task(
-            self._subscribe_bars(bar_type, params),
-            log_msg=f"subscribe: bars {bar_type}",
-            success_msg=f"Subscribed {bar_type} bars",
+            self._subscribe_bars(command),
+            log_msg=f"subscribe: bars {command.vbar_type}",
+            success_msg=f"Subscribed {command.bar_type} bars",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_instrument_status(instrument_id)
+    def subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        self._add_subscription_instrument_status(command.instrument_id)
         self.create_task(
-            self._subscribe_instrument_status(instrument_id, params),
-            log_msg=f"subscribe: instrument_status {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} instrument status ",
+            self._subscribe_instrument_status(command),
+            log_msg=f"subscribe: instrument_status {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} instrument status ",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instrument_close(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._add_subscription_instrument_close(instrument_id)
+    def subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
+        self._add_subscription_instrument_close(command.instrument_id)
         self.create_task(
-            self._subscribe_instrument_close(instrument_id, params),
-            log_msg=f"subscribe: instrument_close {instrument_id}",
-            success_msg=f"Subscribed {instrument_id} instrument close",
+            self._subscribe_instrument_close(command),
+            log_msg=f"subscribe: instrument_close {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} instrument close",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        self._remove_subscription(data_type)
+    def unsubscribe(self, command: UnsubscribeData) -> None:
+        self._remove_subscription(command.data_type)
         self.create_task(
-            self._unsubscribe(data_type, params),
-            log_msg=f"unsubscribe {data_type}",
-            success_msg=f"Unsubscribed {data_type}",
+            self._unsubscribe(command),
+            log_msg=f"unsubscribe {command.data_type}",
+            success_msg=f"Unsubscribed {command.data_type}",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    def unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         instrument_ids = list(self._instrument_provider.get_all().keys())
         [self._remove_subscription_instrument(i) for i in instrument_ids]
         self.create_task(
-            self._unsubscribe_instruments(params),
+            self._unsubscribe_instruments(command),
             log_msg=f"unsubscribe: instruments {self.venue}",
             success_msg=f"Unsubscribed {self.venue} instruments",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_instrument(instrument_id)
+    def unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        self._remove_subscription_instrument(command.instrument_id)
         self.create_task(
-            self._unsubscribe_instrument(instrument_id, params),
-            log_msg=f"unsubscribe: instrument {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} instrument",
+            self._unsubscribe_instrument(command),
+            log_msg=f"unsubscribe: instrument {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} instrument",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_order_book_deltas(instrument_id)
+    def unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        self._remove_subscription_order_book_deltas(command.instrument_id)
         self.create_task(
-            self._unsubscribe_order_book_deltas(instrument_id, params),
-            log_msg=f"unsubscribe: order_book_deltas {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} order book deltas",
+            self._unsubscribe_order_book_deltas(command),
+            log_msg=f"unsubscribe: order_book_deltas {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} order book deltas",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_order_book_snapshots(instrument_id)
+    def unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+        self._remove_subscription_order_book_snapshots(command.instrument_id)
         self.create_task(
-            self._unsubscribe_order_book_snapshots(instrument_id, params),
-            log_msg=f"unsubscribe: order_book_snapshots {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} order book snapshots",
+            self._unsubscribe_order_book_snapshots(command),
+            log_msg=f"unsubscribe: order_book_snapshots {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} order book snapshots",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_quote_ticks(instrument_id)
+    def unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        self._remove_subscription_quote_ticks(command.instrument_id)
         self.create_task(
-            self._unsubscribe_quote_ticks(instrument_id, params),
-            log_msg=f"unsubscribe: quote_ticks {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} quotes",
+            self._unsubscribe_quote_ticks(command),
+            log_msg=f"unsubscribe: quote_ticks {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} quotes",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_trade_ticks(instrument_id)
+    def unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        self._remove_subscription_trade_ticks(command.instrument_id)
         self.create_task(
-            self._unsubscribe_trade_ticks(instrument_id, params),
-            log_msg=f"unsubscribe: trade_ticks {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} trades",
+            self._unsubscribe_trade_ticks(command),
+            log_msg=f"unsubscribe: trade_ticks {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} trades",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_bars(self, bar_type: BarType, params: dict[str, Any] | None = None) -> None:
-        self._remove_subscription_bars(bar_type)
+    def unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        self._remove_subscription_bars(command.bar_type)
         self.create_task(
-            self._unsubscribe_bars(bar_type, params),
-            log_msg=f"unsubscribe: bars {bar_type}",
-            success_msg=f"Unsubscribed {bar_type} bars",
+            self._unsubscribe_bars(command),
+            log_msg=f"unsubscribe: bars {command.bar_type}",
+            success_msg=f"Unsubscribed {command.bar_type} bars",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_instrument_status(instrument_id)
+    def unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        self._remove_subscription_instrument_status(command.instrument_id)
         self.create_task(
-            self._unsubscribe_instrument_status(instrument_id, params),
-            log_msg=f"unsubscribe: instrument_status {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} instrument status",
+            self._unsubscribe_instrument_status(command),
+            log_msg=f"unsubscribe: instrument_status {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} instrument status",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instrument_close(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._remove_subscription_instrument_close(instrument_id)
+    def unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
+        self._remove_subscription_instrument_close(command.instrument_id)
         self.create_task(
-            self._unsubscribe_instrument_close(instrument_id, params),
-            log_msg=f"unsubscribe: instrument_close {instrument_id}",
-            success_msg=f"Unsubscribed {instrument_id} instrument close",
+            self._unsubscribe_instrument_close(command),
+            log_msg=f"unsubscribe: instrument_close {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} instrument close",
             success_color=LogColor.BLUE,
         )
 
@@ -787,170 +730,102 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_disconnect` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe(self, command: SubscribeData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_quote_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_trade_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_bars` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument_status` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument_close(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument_close` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instruments(self, params: dict | None = None) -> None:
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_quote_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_trade_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_bars` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument_status` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument_close(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument_close` coroutine",  # pragma: no cover
         )

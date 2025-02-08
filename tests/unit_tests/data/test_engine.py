@@ -37,14 +37,25 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
-from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.data.messages import Unsubscribe
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -58,7 +69,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -397,7 +407,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(NewsEvent),  # NewsEvent data not recognized
@@ -417,7 +427,7 @@ class TestDataEngine:
         self.data_engine.register_client(self.quandl)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=ClientId("QUANDL"),
             venue=None,
             data_type=DataType(Data, metadata={"Type": "news"}),
@@ -442,7 +452,7 @@ class TestDataEngine:
         handler = []
 
         self.msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler.append)
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=ClientId("QUANDL"),
             venue=None,
             data_type=DataType(Data, metadata={"Type": "news"}),
@@ -453,7 +463,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         self.msgbus.unsubscribe(topic=f"data.{data_type.topic}", handler=handler.append)
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeData(
             client_id=ClientId("QUANDL"),
             venue=None,
             data_type=DataType(Data, metadata={"Type": "news"}),
@@ -474,7 +484,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeData(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(Data),
@@ -493,10 +503,10 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -550,10 +560,9 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeInstruments(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -569,10 +578,9 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeInstruments(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -584,10 +592,9 @@ class TestDataEngine:
             ETHUSDT_BINANCE.id,
         ]
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeInstruments(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -604,10 +611,10 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeInstrument(
+            instrument_id=ETHUSDT_BINANCE.id,
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -624,10 +631,10 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=Venue("SYNTH"),
-            data_type=DataType(Instrument, metadata={"instrument_id": TestIdStubs.synthetic_id()}),
+            instrument_id=TestIdStubs.synthetic_id(),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -643,10 +650,10 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -655,10 +662,10 @@ class TestDataEngine:
 
         assert self.binance_client.subscribed_instruments() == [ETHUSDT_BINANCE.id]
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -675,10 +682,10 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": TestIdStubs.synthetic_id()}),
+            instrument_id=TestIdStubs.synthetic_id(),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -697,10 +704,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -725,18 +732,18 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler1.append)
         self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler2.append)
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeInstrument(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -756,19 +763,15 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 10,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=2,
+            depth=10,
+            interval_ms=1000,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -784,19 +787,15 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 10,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=2,
+            depth=10,
+            interval_ms=1000,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -812,19 +811,15 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=2,
+            depth=25,
+            interval_ms=1000,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -840,19 +835,14 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=2,
+            depth=25,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -861,16 +851,11 @@ class TestDataEngine:
 
         assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "interval_ms": 1000,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -887,19 +872,15 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=2,
+            depth=25,
+            interval_ms=1000,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -909,16 +890,11 @@ class TestDataEngine:
         assert self.binance_client.subscribed_order_book_snapshots() == []
         assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "interval_ms": 1000,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -944,19 +920,15 @@ class TestDataEngine:
             handler=handler.append,
         )
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L2_MBP,
-                    "depth": 20,
-                    "interval_ms": 1000,  # Streaming
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=20,
+            interval_ms=1000,  # Streaming
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -985,19 +957,15 @@ class TestDataEngine:
             handler=handler.append,
         )
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L2_MBP,
-                    "depth": 25,
-                    "interval_ms": 1000,  # Streaming
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=25,
+            interval_ms=1000,  # Streaming
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1028,18 +996,14 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 5,
-                    "managed": True,
-                },
-            ),
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
+            only_deltas=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1065,18 +1029,14 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 5,
-                    "managed": True,
-                },
-            ),
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
+            only_deltas=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1110,18 +1070,14 @@ class TestDataEngine:
 
         es_fut = InstrumentId.from_str("ES.FUT.GLBX")
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": es_fut,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 25,
-                    "managed": True,
-                },
-            ),
+            instrument_id=es_fut,
+            book_type=BookType.L3_MBO,
+            depth=25,
+            managed=True,
+            only_deltas=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1166,36 +1122,28 @@ class TestDataEngine:
             handler=handler2.append,
         )
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L2_MBP,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=25,
+            interval_ms=1000,  # Streaming
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L2_MBP,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=25,
+            interval_ms=1000,  # Streaming
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1242,36 +1190,28 @@ class TestDataEngine:
             handler=handler2.append,
         )
 
-        subscribe1 = Subscribe(
-            client_id=ClientId("BINANCE"),
+        subscribe1 = SubscribeOrderBook(
+            client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                {
-                    "instrument_id": BTCUSDT_PERP_BINANCE.id,
-                    "book_type": BookType.L2_MBP,
-                    "depth": 10,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            interval_ms=1000,  # Streaming
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                {
-                    "instrument_id": BTCUSDT_PERP_BINANCE.id,
-                    "book_type": BookType.L2_MBP,
-                    "depth": 10,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=False,
+            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            interval_ms=1000,  # Streaming
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1304,19 +1244,15 @@ class TestDataEngine:
         self.betfair.start()
         self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BETFAIR.value),
             venue=BETFAIR,
-            data_type=DataType(
-                OrderBookDelta,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=2,
+            depth=25,
+            interval_ms=1000,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1345,10 +1281,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1367,10 +1303,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1379,10 +1315,10 @@ class TestDataEngine:
 
         assert self.binance_client.subscribed_quote_ticks() == [ETHUSDT_BINANCE.id]
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1402,10 +1338,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1433,18 +1369,18 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler1.append)
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler2.append)
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1466,10 +1402,10 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1488,10 +1424,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USD", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1500,10 +1436,10 @@ class TestDataEngine:
 
         assert self.binance_client.subscribed_trade_ticks() == [ETHUSDT_BINANCE.id]
 
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1523,10 +1459,10 @@ class TestDataEngine:
         synthetic = TestInstrumentProvider.synthetic_instrument()
         self.cache.add_synthetic(synthetic)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeQuoteTicks(
             client_id=None,
             venue=Venue("SYNTH"),
-            data_type=DataType(QuoteTick, metadata={"instrument_id": synthetic.id}),
+            instrument_id=synthetic.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1545,10 +1481,10 @@ class TestDataEngine:
         synthetic = TestInstrumentProvider.synthetic_instrument()
         self.cache.add_synthetic(synthetic)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeTradeTicks(
             client_id=None,
             venue=Venue("SYNTH"),
-            data_type=DataType(TradeTick, metadata={"instrument_id": synthetic.id}),
+            instrument_id=synthetic.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1567,10 +1503,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1597,18 +1533,18 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler1.append)
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler2.append)
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1640,18 +1576,18 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler1.append)
         self.msgbus.subscribe(topic="data.trades.SYNTH.BTC-ETH", handler=handler2.append)
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeTradeTicks(
             client_id=ClientId(BINANCE.value),
             venue=synthetic.id.venue,
-            data_type=DataType(TradeTick, metadata={"instrument_id": synthetic.id}),
+            instrument_id=synthetic.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1699,18 +1635,18 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler1.append)
         self.msgbus.subscribe(topic="data.quotes.SYNTH.BTC-ETH", handler=handler2.append)
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeQuoteTicks(
             client_id=ClientId(BINANCE.value),
             venue=synthetic.id.venue,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": synthetic.id}),
+            instrument_id=synthetic.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1766,10 +1702,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1792,10 +1728,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1805,10 +1741,10 @@ class TestDataEngine:
         assert self.binance_client.subscribed_bars() == [bar_type]
 
         self.msgbus.unsubscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
-        unsubscribe = Unsubscribe(
+        unsubscribe = UnsubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1832,10 +1768,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1872,18 +1808,18 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler1.append)
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler2.append)
 
-        subscribe1 = Subscribe(
+        subscribe1 = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
-        subscribe2 = Subscribe(
+        subscribe2 = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1920,10 +1856,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1995,10 +1931,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -2060,10 +1996,10 @@ class TestDataEngine:
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeBars(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            bar_type=bar_type,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -3305,18 +3241,14 @@ class TestDataBufferEngine:
         handler = []
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 5,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -3349,18 +3281,14 @@ class TestDataBufferEngine:
         handler = []
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 5,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -3388,18 +3316,14 @@ class TestDataBufferEngine:
         handler = []
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 5,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -3431,18 +3355,14 @@ class TestDataBufferEngine:
         handler = []
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
-        subscribe = Subscribe(
+        subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDelta,
-                {
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": BookType.L3_MBO,
-                    "depth": 5,
-                    "managed": True,
-                },
-            ),
+            only_deltas=True,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )

@@ -20,8 +20,8 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import RequestData
-from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.data.messages import Unsubscribe
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -43,7 +43,7 @@ class TestDataMessage:
     def test_data_messages_when_client_id_and_venue_none_raise_value_error(self):
         # Arrange, Act , Assert
         with pytest.raises(ValueError) as e:
-            Subscribe(
+            SubscribeData(
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
@@ -54,7 +54,7 @@ class TestDataMessage:
         assert e.match("Both `client_id` and `venue` were None")
 
         with pytest.raises(ValueError) as e:
-            Unsubscribe(
+            UnsubscribeData(
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
@@ -98,7 +98,7 @@ class TestDataMessage:
         # Arrange, Act
         command_id = UUID4()
 
-        command = Subscribe(
+        command = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(Data, {"type": "newswire"}),
@@ -110,10 +110,10 @@ class TestDataMessage:
         # Assert
         assert (
             str(command)
-            == "Subscribe(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'}, params={'filter': 'ABC'})"
+            == "SubscribeData(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'}, params={'filter': 'ABC'})"
         )
         assert repr(command) == (
-            f"Subscribe("
+            f"SubscribeData("
             f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=Data{{'type': 'newswire'}}, "
@@ -124,7 +124,7 @@ class TestDataMessage:
         # Arrange, Act
         command_id = UUID4()
 
-        command = Subscribe(
+        command = SubscribeData(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(TradeTick, {"instrument_id": "BTCUSDT"}),
@@ -135,10 +135,10 @@ class TestDataMessage:
         # Assert
         assert (
             str(command)
-            == "Subscribe(client_id=BINANCE, venue=BINANCE, data_type=TradeTick{'instrument_id': 'BTCUSDT'})"
+            == "SubscribeData(client_id=BINANCE, venue=BINANCE, data_type=TradeTick{'instrument_id': 'BTCUSDT'})"
         )
         assert repr(command) == (
-            f"Subscribe("
+            f"SubscribeData("
             f"client_id=BINANCE, "
             f"venue=BINANCE, "
             f"data_type=TradeTick{{'instrument_id': 'BTCUSDT'}}, "

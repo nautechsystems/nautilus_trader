@@ -21,9 +21,13 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -37,14 +41,14 @@ cdef class DataCommand(Command):
 
     Parameters
     ----------
+    command_id : UUID4
+        The command ID.
+    data_type : type
+        The data type for the command.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
-    data_type : type
-        The data type for the command.
-    command_id : UUID4
-        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -62,19 +66,19 @@ cdef class DataCommand(Command):
 
     def __init__(
         self,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        DataType data_type not None,
         UUID4 command_id not None,
-        uint64_t ts_init,
+        DataType data_type not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
     ):
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(command_id, ts_init)
 
+        self.data_type = data_type
         self.client_id = client_id
         self.venue = venue
-        self.data_type = data_type
         self.params = params or {}
 
     def __str__(self) -> str:
@@ -95,20 +99,20 @@ cdef class DataCommand(Command):
         )
 
 
-cdef class Subscribe(DataCommand):
+cdef class SubscribeData(DataCommand):
     """
     Represents a command to subscribe to data.
 
     Parameters
     ----------
+    command_id : UUID4
+        The command ID.
+    data_type : type
+        The data type for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
-    data_type : type
-        The data type for the subscription.
-    command_id : UUID4
-        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -123,37 +127,35 @@ cdef class Subscribe(DataCommand):
 
     def __init__(
         self,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        DataType data_type not None,
         UUID4 command_id not None,
-        uint64_t ts_init,
+        DataType data_type not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
     ):
         super().__init__(
+            command_id,
+            data_type,
             client_id,
             venue,
-            data_type,
-            command_id,
             ts_init,
             params,
         )
 
 
-cdef class Unsubscribe(DataCommand):
+cdef class SubscribeInstruments(SubscribeData):
     """
-    Represents a command to unsubscribe from data.
+    Represents a command to subscribe to all instruments of a venue.
 
     Parameters
     ----------
+    command_id : UUID4
+        The command ID.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
-    data_type : type
-        The data type to unsubscribe from.
-    command_id : UUID4
-        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -168,20 +170,1059 @@ cdef class Unsubscribe(DataCommand):
 
     def __init__(
         self,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        DataType data_type not None,
         UUID4 command_id not None,
-        uint64_t ts_init,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
     ):
         super().__init__(
+            command_id,
+            DataType(Instrument),
             client_id,
             venue,
-            data_type,
-            command_id,
             ts_init,
             params,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeInstrument(SubscribeData):
+    """
+    Represents a command to subscribe to an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(Instrument),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeOrderBook(SubscribeData):
+    """
+    Represents a command to subscribe to order book deltas of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    book_type : BookType
+        The order book type.
+    depth : int
+        The maximum depth for the subscription.
+    manaaged: bool
+        If an order book should be managed by the data engine based on the subscribed feed.
+    interval_ms : int
+        The interval (in milliseconds) between snapshots.
+    only_deltas : bool
+        If the subscription is for OrderBookDeltas or OrderBook snapshots.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        BookType book_type,
+        int depth = 0,
+        bint managed = True,
+        int interval_ms = 1000,
+        bint only_deltas = True,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+        self.book_type = book_type
+        self.depth = depth
+        self.managed = managed
+        self.interval_ms = interval_ms
+        self.only_deltas = only_deltas
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"book_type={self.book_type}, "
+            f"depth={self.depth}, "
+            f"managed={self.managed}, "
+            f"interval_ms={self.interval_ms}, "
+            f"only_deltas={self.only_deltas}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"book_type={self.book_type}, "
+            f"depth={self.depth}, "
+            f"managed={self.managed}, "
+            f"interval_ms={self.interval_ms}, "
+            f"only_deltas={self.only_deltas}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeQuoteTicks(SubscribeData):
+    """
+    Represents a command to subscribe to quote ticks.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(QuoteTick),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeTradeTicks(SubscribeData):
+    """
+    Represents a command to subscribe to trade ticks.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(TradeTick),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeBars(SubscribeData):
+    """
+    Represents a command to subscribe to bars of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    bar_type : BarType
+        The bar type for the subscription.
+    await_partial : bool
+        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        BarType bar_type not None,
+        bint await_partial = False,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(Bar),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.bar_type = bar_type
+        self.await_partial = await_partial
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"bar_type={self.bar_type}, "
+            f"await_partial={self.await_partial}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"bar_type={self.bar_type}, "
+            f"await_partial={self.await_partial}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeInstrumentStatus(SubscribeData):
+    """
+    Represents a command to subscribe to the status of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(InstrumentStatus),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class SubscribeInstrumentClose(SubscribeData):
+    """
+    Represents a command to subscribe to the close of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(InstrumentClose),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeData(DataCommand):
+    """
+    Represents a command to unsubscribe to data.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    data_type : type
+        The data type for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        DataType data_type not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            data_type,
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+
+
+cdef class UnsubscribeInstruments(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to all instruments.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(Instrument),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id})"
+        )
+
+
+cdef class UnsubscribeInstrument(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(Instrument),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+        def __str__(self) -> str:
+            return (
+                f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id}, "
+                f"client_id={self.client_id}, "
+                f"venue={self.venue})"
+            )
+
+        def __repr__(self) -> str:
+            return (
+                f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id}, "
+                f"client_id={self.client_id}, "
+                f"venue={self.venue}, "
+                f"id={self.id}{form_params_str(self.params)})"
+            )
+
+
+cdef class UnsubscribeOrderBook(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to order book updates of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    only_deltas: bool
+        If the subscription is for OrderBookDeltas or OrderBook snapshots.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        only_deltas: bool,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+        self.only_deltas = only_deltas
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"only_deltas={self.only_deltas}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"only_deltas={self.only_deltas}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeQuoteTicks(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to quote ticks of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(QuoteTick),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeTradeTicks(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to trade ticks of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(TradeTick),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeBars(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to bars of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    bar_type : BarType
+        The bar type for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        BarType bar_type not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(Bar),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.bar_type = bar_type
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"bar_type={self.bar_type}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"bar_type={self.bar_type}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to instrument status of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(InstrumentStatus),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeInstrumentClose(UnsubscribeData):
+    """
+    Represents a command to unsubscribe to instrument close of an instrument.
+
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        UUID4 command_id not None,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            command_id,
+            DataType(InstrumentClose),
+            client_id,
+            venue,
+            ts_init,
+            params,
+        )
+        self.instrument_id = instrument_id
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
         )
 
 

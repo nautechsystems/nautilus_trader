@@ -15,7 +15,6 @@
 
 import asyncio
 from operator import attrgetter
-from typing import Any
 
 import pandas as pd
 
@@ -34,15 +33,29 @@ from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstrumentClose
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstrumentClose
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 
 
@@ -131,73 +144,49 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
 
-    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe(self, command: SubscribeData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if not (instrument := self._cache.instrument(instrument_id)):
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        if not (instrument := self._cache.instrument(command.instrument_id)):
             self._log.error(
-                f"Cannot subscribe to quotes for {instrument_id}: instrument not found",
+                f"Cannot subscribe to quotes for {command.instrument_id}: instrument not found",
             )
             return
 
         await self._client.subscribe_ticks(
-            instrument_id=instrument_id,
+            instrument_id=command.instrument_id,
             contract=IBContract(**instrument.info["contract"]),
             tick_type="BidAsk",
             ignore_size=self._ignore_quote_tick_size_updates,
         )
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if not (instrument := self._cache.instrument(instrument_id)):
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        if not (instrument := self._cache.instrument(command.instrument_id)):
             self._log.error(
-                f"Cannot subscribe to trades for {instrument_id}: instrument not found",
+                f"Cannot subscribe to trades for {command.instrument_id}: instrument not found",
             )
             return
 
@@ -208,122 +197,78 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
 
         await self._client.subscribe_ticks(
-            instrument_id=instrument_id,
+            instrument_id=command.instrument_id,
             contract=IBContract(**instrument.info["contract"]),
             tick_type="AllLast",
             ignore_size=self._ignore_quote_tick_size_updates,
         )
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if not (instrument := self._cache.instrument(bar_type.instrument_id)):
-            self._log.error(f"Cannot subscribe to {bar_type} bars: instrument not found")
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        if not (instrument := self._cache.instrument(command.bar_type.instrument_id)):
+            self._log.error(f"Cannot subscribe to {command.bar_type} bars: instrument not found")
             return
 
-        if bar_type.spec.timedelta.total_seconds() == 5:
+        if command.bar_type.spec.timedelta.total_seconds() == 5:
             await self._client.subscribe_realtime_bars(
-                bar_type=bar_type,
+                bar_type=command.bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
             )
         else:
             await self._client.subscribe_historical_bars(
-                bar_type=bar_type,
+                bar_type=command.bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,
             )
 
-    async def _subscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _subscribe_instrument_close(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._client.unsubscribe_ticks(instrument_id, "BidAsk")
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        await self._client.unsubscribe_ticks(command.instrument_id, "BidAsk")
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._client.unsubscribe_ticks(instrument_id, "AllLast")
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        await self._client.unsubscribe_ticks(command.instrument_id, "AllLast")
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if bar_type.spec.timedelta == 5:
-            await self._client.unsubscribe_realtime_bars(bar_type)
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        if command.bar_type.spec.timedelta == 5:
+            await self._client.unsubscribe_realtime_bars(command.bar_type)
         else:
-            await self._client.unsubscribe_historical_bars(bar_type)
+            await self._client.unsubscribe_historical_bars(command.bar_type)
 
-    async def _unsubscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _unsubscribe_instrument_close(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _request(self, request: RequestData) -> None:

@@ -43,9 +43,16 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -223,14 +230,8 @@ class PolymarketDataClient(LiveMarketDataClient):
                 success_msg="Finished delaying start of PolymarketWebSocketClient connection",
             )
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type == BookType.L3_MBO:
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Polymarket. "
@@ -239,77 +240,45 @@ class PolymarketDataClient(LiveMarketDataClient):
             return
 
         if self._config.compute_effective_deltas:
-            local_book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
-            self._local_books[instrument_id] = local_book
+            local_book = OrderBook(command.instrument_id, book_type=BookType.L2_MBP)
+            self._local_books[command.instrument_id] = local_book
 
-        await self._subscribe_asset_book(instrument_id)
+        await self._subscribe_asset_book(command.instrument_id)
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._subscribe_asset_book(instrument_id)
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        await self._subscribe_asset_book(command.instrument_id)
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._subscribe_asset_book(instrument_id)
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        await self._subscribe_asset_book(command.instrument_id)
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         self._log.error(
-            f"Cannot subscribe to {bar_type} bars: not implemented for Polymarket",
+            f"Cannot subscribe to {command.bar_type} bars: not implemented for Polymarket",
         )
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} order book deltas: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {command.instrument_id} order book deltas: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} order book snapshots: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {command.instrument_id} order book snapshots: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} quotes: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {command.instrument_id} quotes: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} trades: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {command.instrument_id} trades: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {bar_type} bars: not implemented for Polymarket",
+            f"Cannot unsubscribe from {command.bar_type} bars: not implemented for Polymarket",
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:

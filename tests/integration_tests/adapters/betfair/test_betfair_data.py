@@ -33,6 +33,10 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import SubscribeInstrumentClose
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
@@ -107,11 +111,17 @@ async def test_connect(mocker, data_client, instrument):
 @pytest.mark.asyncio()
 async def test_subscriptions(data_client, instrument):
     # Arrange, Act
-    data_client.subscribe_trade_ticks(instrument.id)
+    data_client.subscribe_trade_ticks(
+        SubscribeTradeTicks(UUID4(), instrument.id, venue=instrument.id.venue),
+    )
     await asyncio.sleep(0)
-    data_client.subscribe_instrument_status(instrument.id)
+    data_client.subscribe_instrument_status(
+        SubscribeInstrumentStatus(UUID4(), instrument.id, venue=instrument.id.venue),
+    )
     await asyncio.sleep(0)
-    data_client.subscribe_instrument_close(instrument.id)
+    data_client.subscribe_instrument_close(
+        SubscribeInstrumentClose(UUID4(), instrument.id, venue=instrument.id.venue),
+    )
     await asyncio.sleep(0)
 
     # Assert
