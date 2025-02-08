@@ -41,11 +41,23 @@ use ustr::Ustr;
 
 use crate::{custom::CustomData, signal::Signal};
 
+#[derive(Default)]
+pub struct CacheMap {
+    pub currencies: HashMap<Ustr, Currency>,
+    pub instruments: HashMap<InstrumentId, InstrumentAny>,
+    pub synthetics: HashMap<InstrumentId, SyntheticInstrument>,
+    pub accounts: HashMap<AccountId, AccountAny>,
+    pub orders: HashMap<ClientOrderId, OrderAny>,
+    pub positions: HashMap<PositionId, Position>,
+}
+
 #[async_trait::async_trait]
 pub trait CacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()>;
 
     fn flush(&mut self) -> anyhow::Result<()>;
+
+    async fn load_all(&self) -> anyhow::Result<CacheMap>;
 
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>>;
 

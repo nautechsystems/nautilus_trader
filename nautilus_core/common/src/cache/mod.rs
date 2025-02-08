@@ -30,7 +30,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use database::CacheDatabaseAdapter;
+use database::{CacheDatabaseAdapter, CacheMap};
 use nautilus_core::{
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
@@ -54,7 +54,6 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tokio::try_join;
 use ustr::Ustr;
 
 use crate::{
@@ -321,23 +320,17 @@ impl Cache {
 
     /// Loads all caches (currencies, instruments, synthetics, accounts, orders, positions) from the database.
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
-        let db = self.database.as_ref().unwrap();
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
-            db.load_currencies(),
-            db.load_instruments(),
-            db.load_synthetics(),
-            db.load_accounts(),
-            db.load_orders(),
-            db.load_positions()
-        )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
+        let cache_map = match &self.database {
+            Some(db) => db.load_all().await?,
+            None => CacheMap::default(),
+        };
 
-        self.currencies = currencies;
-        self.instruments = instruments;
-        self.synthetics = synthetics;
-        self.accounts = accounts;
-        self.orders = orders;
-        self.positions = positions;
+        self.currencies = cache_map.currencies;
+        self.instruments = cache_map.instruments;
+        self.synthetics = cache_map.synthetics;
+        self.accounts = cache_map.accounts;
+        self.orders = cache_map.orders;
+        self.positions = cache_map.positions;
         Ok(())
     }
 
