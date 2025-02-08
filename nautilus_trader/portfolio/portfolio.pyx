@@ -39,6 +39,7 @@ from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
@@ -677,7 +678,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         venue : Venue
-            The venue for the unrealized PnL.
+            The venue for the unrealized PnLs.
 
         Returns
         -------
@@ -718,7 +719,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         venue : Venue
-            The venue for the realized PnL.
+            The venue for the realized PnLs.
 
         Returns
         -------
@@ -751,6 +752,41 @@ cdef class Portfolio(PortfolioFacade):
             realized_pnls[pnl.currency] = realized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
 
         return {k: Money(v, k) for k, v in realized_pnls.items()}
+
+    cpdef dict total_pnls(self, Venue venue):
+        """
+        Return the total PnLs for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the total PnLs.
+
+        Returns
+        -------
+        dict[Currency, Money] or ``None``
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef dict realized = self.realized_pnls(venue)
+        cdef dict unrealized = self.unrealized_pnls(venue)
+        cdef dict[Currency, double] total_pnls = {}
+
+        cdef:
+            Currency currency
+            Money amount
+            MoneyRaw raw_value
+
+        # Sum realized PnLs
+        for currency, amount in realized.items():
+            total_pnls[currency] = amount._mem.raw
+
+        # Add unrealized PnLs
+        for currency, amount in unrealized.items():
+            total_pnls[currency] = total_pnls.get(currency, 0) + amount._mem.raw
+
+        return {k: Money.from_raw_c(v, k) for k, v in total_pnls.items()}
 
     cpdef dict net_exposures(self, Venue venue):
         """
@@ -896,6 +932,36 @@ cdef class Portfolio(PortfolioFacade):
         self._realized_pnls[instrument_id] = pnl
 
         return pnl
+
+    cpdef Money total_pnl(self, InstrumentId instrument_id):
+        """
+        Return the total PnL for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument for the total PnL.
+
+        Returns
+        -------
+        Money or ``None``
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef Money realized = self.realized_pnl(instrument_id)
+        cdef Money unrealized = self.unrealized_pnl(instrument_id)
+
+        if realized is None and unrealized is None:
+            return None
+
+        if realized is None:
+            return unrealized
+
+        if unrealized is None:
+            return realized
+
+        return Money.from_raw_c(realized._mem.raw + unrealized._mem.raw, realized.currency)
 
     cpdef Money net_exposure(self, InstrumentId instrument_id):
         """
@@ -1320,7 +1386,9 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef Price _get_last_price(self, Position position):
         cdef PriceType price_type
-        if position.side == PositionSide.LONG:
+        if position.side == PositionSide.FLAT:
+            price_type = PriceType.LAST
+        elif position.side == PositionSide.LONG:
             price_type = PriceType.BID
         elif position.side == PositionSide.SHORT:
             price_type = PriceType.ASK

@@ -36,10 +36,12 @@ cdef class PortfolioFacade:
     cpdef dict margins_maint(self, Venue venue)
     cpdef dict unrealized_pnls(self, Venue venue)
     cpdef dict realized_pnls(self, Venue venue)
+    cpdef dict total_pnls(self, Venue venue)
     cpdef dict net_exposures(self, Venue venue)
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id)
     cpdef Money realized_pnl(self, InstrumentId instrument_id)
+    cpdef Money total_pnl(self, InstrumentId instrument_id)
     cpdef Money net_exposure(self, InstrumentId instrument_id)
     cpdef object net_position(self, InstrumentId instrument_id)
 
