@@ -68,7 +68,17 @@ pub struct DatabaseConfig {
     /// If the database should use an SSL-enabled connection.
     pub ssl: bool,
     /// The timeout (in seconds) to wait for a new connection.
-    pub timeout: u16,
+    pub connection_timeout: u16,
+    /// The timeout (in seconds) to wait for a response.
+    pub response_timeout: u16,
+    /// The number of retry attempts with exponential backoff for connection attempts.
+    pub number_of_retries: usize,
+    /// The base value for exponential backoff calculation.
+    pub exponent_base: u64,
+    /// The maximum delay between retry attempts (in seconds).
+    pub max_delay: u64,
+    /// The multiplication factor for retry delay calculation.
+    pub factor: u64,
 }
 
 impl Default for DatabaseConfig {
@@ -81,7 +91,12 @@ impl Default for DatabaseConfig {
             username: None,
             password: None,
             ssl: false,
-            timeout: 20,
+            connection_timeout: 20,
+            response_timeout: 20,
+            number_of_retries: 100,
+            exponent_base: 2,
+            max_delay: 1000,
+            factor: 2,
         }
     }
 }
@@ -183,7 +198,12 @@ mod tests {
         assert_eq!(config.username, None);
         assert_eq!(config.password, None);
         assert!(!config.ssl);
-        assert_eq!(config.timeout, 20);
+        assert_eq!(config.connection_timeout, 20);
+        assert_eq!(config.response_timeout, 20);
+        assert_eq!(config.number_of_retries, 100);
+        assert_eq!(config.exponent_base, 2);
+        assert_eq!(config.max_delay, 1000);
+        assert_eq!(config.factor, 2);
     }
 
     #[rstest]
@@ -195,7 +215,12 @@ mod tests {
             "username": "user",
             "password": "pass",
             "ssl": true,
-            "timeout": 30
+            "connection_timeout": 30,
+            "response_timeout": 10,
+            "number_of_retries": 3,
+            "exponent_base": 2,
+            "max_delay": 10,
+            "factor": 2
         });
         let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
         assert_eq!(config.database_type, "redis");
@@ -204,7 +229,12 @@ mod tests {
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
         assert!(config.ssl);
-        assert_eq!(config.timeout, 30);
+        assert_eq!(config.connection_timeout, 30);
+        assert_eq!(config.response_timeout, 10);
+        assert_eq!(config.number_of_retries, 3);
+        assert_eq!(config.exponent_base, 2);
+        assert_eq!(config.max_delay, 10);
+        assert_eq!(config.factor, 2);
     }
 
     #[rstest]
@@ -233,7 +263,12 @@ mod tests {
                 "username": "user",
                 "password": "pass",
                 "ssl": true,
-                "timeout": 30
+                "connection_timeout": 30,
+                "response_timeout": 10,
+                "number_of_retries": 3,
+                "exponent_base": 2,
+                "max_delay": 10,
+                "factor": 2
             },
             "encoding": "json",
             "timestamps_as_iso8601": true,
