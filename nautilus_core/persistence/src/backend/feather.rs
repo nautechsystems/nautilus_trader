@@ -31,7 +31,7 @@ pub struct FeatherBuffer {
     /// Current size in bytes.
     size: u64,
     /// TODO: Optional next rotation timestamp.
-    next_rotation: Option<UnixNanos>,
+    // next_rotation: Option<UnixNanos>,
     /// Schema of the data being written.
     schema: Schema,
     /// Maximum buffer size in bytes.
@@ -53,7 +53,7 @@ impl FeatherBuffer {
         Ok(Self {
             writer,
             size: 0,
-            next_rotation: None,
+            // next_rotation: None,
             max_buffer_size,
             schema: schema.clone(),
             rotation_config,
