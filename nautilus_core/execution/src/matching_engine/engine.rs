@@ -17,12 +17,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-pub mod config;
-pub mod ids_generator;
-
-#[cfg(test)]
-mod tests;
-
 use std::{
     any::Any,
     cell::RefCell,
@@ -35,10 +29,6 @@ use std::{
 use chrono::TimeDelta;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::{
-    matching_core::OrderMatchingCore,
-    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder},
-};
 use nautilus_model::{
     data::{order::BookOrder, Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{
@@ -66,7 +56,9 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
+    matching_core::OrderMatchingCore,
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
+    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder},
     models::{
         fee::{FeeModel, FeeModelAny},
         fill::FillModel,
@@ -95,7 +87,7 @@ pub struct OrderMatchingEngine {
     msgbus: Rc<RefCell<MessageBus>>,
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
-    core: OrderMatchingCore,
+    pub core: OrderMatchingCore,
     fill_model: FillModel,
     fee_model: FeeModelAny,
     target_bid: Option<Price>,
@@ -111,7 +103,6 @@ pub struct OrderMatchingEngine {
 }
 
 impl OrderMatchingEngine {
-    /// Creates a new [`OrderMatchingEngine`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument: InstrumentAny,
@@ -1136,7 +1127,7 @@ impl OrderMatchingEngine {
         self.book.simulate_fills(&book_order)
     }
 
-    fn fill_market_order(&mut self, order: &mut OrderAny) {
+    pub fn fill_market_order(&mut self, order: &mut OrderAny) {
         if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
             if filled_qty >= &order.quantity() {
                 log::info!(
@@ -1172,7 +1163,7 @@ impl OrderMatchingEngine {
         self.apply_fills(order, fills, LiquiditySide::Taker, None, position);
     }
 
-    fn fill_limit_order(&mut self, order: &OrderAny) {
+    pub fn fill_limit_order(&mut self, order: &OrderAny) {
         match order.price() {
             Some(order_price) => {
                 let cached_filled_qty = self.cached_filled_qty.get(&order.client_order_id());
@@ -1302,7 +1293,7 @@ impl OrderMatchingEngine {
                     fill_qty.precision,
                     self.instrument.size_precision(),
                     self.instrument.id()
-                );
+            );
 
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
@@ -1620,7 +1611,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn trigger_stop_order(&mut self, order: &OrderAny) {
+    pub fn trigger_stop_order(&mut self, order: &mut OrderAny) {
         todo!("trigger_stop_order")
     }
 

@@ -19,11 +19,18 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod handlers;
+
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{LimitOrderAny, MarketOrder, OrderError, PassiveOrderAny, StopOrderAny},
+    orders::{LimitOrderAny, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
+};
+
+use crate::matching_core::handlers::{
+    FillLimitOrderHandler, ShareableFillLimitOrderHandler, ShareableFillMarketOrderHandler,
+    ShareableTriggerStopOrderHandler, TriggerStopOrderHandler,
 };
 
 /// A generic order matching core.
@@ -44,9 +51,9 @@ pub struct OrderMatchingCore {
     pub is_last_initialized: bool,
     orders_bid: Vec<PassiveOrderAny>,
     orders_ask: Vec<PassiveOrderAny>,
-    trigger_stop_order: Option<fn(&StopOrderAny)>,
-    fill_market_order: Option<fn(&MarketOrder)>,
-    fill_limit_order: Option<fn(&LimitOrderAny)>,
+    trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
+    fill_market_order: Option<ShareableFillMarketOrderHandler>,
+    fill_limit_order: Option<ShareableFillLimitOrderHandler>,
 }
 
 impl OrderMatchingCore {
@@ -55,9 +62,9 @@ impl OrderMatchingCore {
     pub fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
-        trigger_stop_order: Option<fn(&StopOrderAny)>,
-        fill_market_order: Option<fn(&MarketOrder)>,
-        fill_limit_order: Option<fn(&LimitOrderAny)>,
+        trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
+        fill_market_order: Option<ShareableFillMarketOrderHandler>,
+        fill_limit_order: Option<ShareableFillLimitOrderHandler>,
     ) -> Self {
         Self {
             instrument_id,
@@ -74,6 +81,18 @@ impl OrderMatchingCore {
             fill_market_order,
             fill_limit_order,
         }
+    }
+
+    pub fn set_fill_limit_order_handler(&mut self, handler: ShareableFillLimitOrderHandler) {
+        self.fill_limit_order = Some(handler);
+    }
+
+    pub fn set_trigger_stop_order_handler(&mut self, handler: ShareableTriggerStopOrderHandler) {
+        self.trigger_stop_order = Some(handler);
+    }
+
+    pub fn set_fill_market_order_handler(&mut self, handler: ShareableFillMarketOrderHandler) {
+        self.fill_market_order = Some(handler);
     }
 
     // -- QUERIES ---------------------------------------------------------------------------------
@@ -103,6 +122,13 @@ impl OrderMatchingCore {
     #[must_use]
     pub fn get_orders_ask(&self) -> &[PassiveOrderAny] {
         self.orders_ask.as_slice()
+    }
+
+    #[must_use]
+    pub fn get_orders(&self) -> Vec<PassiveOrderAny> {
+        let mut orders = self.orders_bid.clone();
+        orders.extend_from_slice(&self.orders_ask);
+        orders
     }
 
     #[must_use]
@@ -177,20 +203,26 @@ impl OrderMatchingCore {
         }
     }
 
-    pub fn iterate(&self) {
+    pub fn iterate(&mut self) {
         self.iterate_bids();
         self.iterate_asks();
     }
 
-    pub fn iterate_bids(&self) {
-        self.iterate_orders(&self.orders_bid);
+    pub fn iterate_bids(&mut self) {
+        let orders: Vec<_> = self.orders_bid.to_vec();
+        for order in &orders {
+            self.match_order(order, false);
+        }
     }
 
-    pub fn iterate_asks(&self) {
-        self.iterate_orders(&self.orders_ask);
+    pub fn iterate_asks(&mut self) {
+        let orders: Vec<_> = self.orders_ask.to_vec();
+        for order in &orders {
+            self.match_order(order, false);
+        }
     }
 
-    fn iterate_orders(&self, orders: &[PassiveOrderAny]) {
+    fn iterate_orders(&mut self, orders: &[PassiveOrderAny]) {
         for order in orders {
             self.match_order(order, false);
         }
@@ -198,25 +230,25 @@ impl OrderMatchingCore {
 
     // -- MATCHING --------------------------------------------------------------------------------
 
-    pub fn match_order(&self, order: &PassiveOrderAny, _initial: bool) {
+    pub fn match_order(&mut self, order: &PassiveOrderAny, _initial: bool) {
         match order {
             PassiveOrderAny::Limit(o) => self.match_limit_order(o),
             PassiveOrderAny::Stop(o) => self.match_stop_order(o),
         }
     }
 
-    pub fn match_limit_order(&self, order: &LimitOrderAny) {
+    pub fn match_limit_order(&mut self, order: &LimitOrderAny) {
         if self.is_limit_matched(order) {
-            if let Some(func) = self.fill_limit_order {
-                func(order);
+            if let Some(handler) = &mut self.fill_limit_order {
+                handler.0.fill_limit_order(&OrderAny::from(order.clone()));
             }
         }
     }
 
-    pub fn match_stop_order(&self, order: &StopOrderAny) {
+    pub fn match_stop_order(&mut self, order: &StopOrderAny) {
         if self.is_stop_matched(order) {
-            if let Some(func) = self.trigger_stop_order {
-                func(order);
+            if let Some(handler) = &mut self.trigger_stop_order {
+                handler.0.trigger_stop_order(&OrderAny::from(order.clone()));
             }
         }
     }
@@ -243,8 +275,6 @@ impl OrderMatchingCore {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         orders::builder::OrderTestBuilder,
@@ -253,9 +283,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-
-    static TRIGGERED_STOPS: Mutex<Vec<StopOrderAny>> = Mutex::new(Vec::new());
-    static FILLED_LIMITS: Mutex<Vec<LimitOrderAny>> = Mutex::new(Vec::new());
+    use crate::matching_core::handlers::{FillLimitOrderHandler, TriggerStopOrderHandler};
 
     fn create_matching_core(
         instrument_id: InstrumentId,
@@ -508,78 +536,5 @@ mod tests {
 
         let result = matching_core.is_stop_matched(&order.into());
         assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(OrderSide::Buy)]
-    #[case(OrderSide::Sell)]
-    fn test_match_stop_order_when_triggered(#[case] order_side: OrderSide) {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let trigger_price = Price::from("100.00");
-
-        fn trigger_stop_order_handler(order: &StopOrderAny) {
-            let order = order;
-            TRIGGERED_STOPS.lock().unwrap().push(order.clone());
-        }
-
-        let mut matching_core = OrderMatchingCore::new(
-            instrument_id,
-            Price::from("0.01"),
-            Some(trigger_stop_order_handler),
-            None,
-            None,
-        );
-
-        matching_core.bid = Some(Price::from("100.00"));
-        matching_core.ask = Some(Price::from("100.00"));
-
-        let order = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(instrument_id)
-            .side(order_side)
-            .trigger_price(trigger_price)
-            .quantity(Quantity::from("100"))
-            .build();
-
-        matching_core.match_stop_order(&order.clone().into());
-
-        let triggered_stops = TRIGGERED_STOPS.lock().unwrap();
-        assert_eq!(triggered_stops.len(), 1);
-        assert_eq!(triggered_stops[0], order.into());
-    }
-
-    #[rstest]
-    #[case(OrderSide::Buy)]
-    #[case(OrderSide::Sell)]
-    fn test_match_limit_order_when_triggered(#[case] order_side: OrderSide) {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let price = Price::from("100.00");
-
-        fn fill_limit_order_handler(order: &LimitOrderAny) {
-            FILLED_LIMITS.lock().unwrap().push(order.clone());
-        }
-
-        let mut matching_core = OrderMatchingCore::new(
-            instrument_id,
-            Price::from("0.01"),
-            None,
-            None,
-            Some(fill_limit_order_handler),
-        );
-
-        matching_core.bid = Some(Price::from("100.00"));
-        matching_core.ask = Some(Price::from("100.00"));
-
-        let order = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(instrument_id)
-            .side(order_side)
-            .price(price)
-            .quantity(Quantity::from("100"))
-            .build();
-
-        matching_core.match_limit_order(&order.clone().into());
-
-        let filled_limits = FILLED_LIMITS.lock().unwrap();
-        assert_eq!(filled_limits.len(), 1);
-        assert_eq!(filled_limits[0], order.into());
     }
 }

@@ -13,14 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use derive_builder::Builder;
 use nautilus_core::{UnixNanos, UUID4};
-use nautilus_model::identifiers::{
-    ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+use nautilus_model::{
+    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    orders::OrderAny,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::order_emulator::emulator::OrderEmulator;
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
@@ -69,6 +72,24 @@ impl Display for CancelOrder {
             "CancelOrder(instrument_id={}, client_order_id={}, venue_order_id={})",
             self.instrument_id, self.client_order_id, self.venue_order_id,
         )
+    }
+}
+
+pub trait CancelOrderHandler {
+    fn handle_cancel_order(&self, order: &OrderAny);
+}
+
+pub enum CancelOrderHandlerAny {
+    OrderEmulator(Rc<RefCell<OrderEmulator>>),
+}
+
+impl CancelOrderHandler for CancelOrderHandlerAny {
+    fn handle_cancel_order(&self, order: &OrderAny) {
+        match self {
+            CancelOrderHandlerAny::OrderEmulator(order_emulator) => {
+                order_emulator.borrow_mut().cancel_order(order);
+            }
+        }
     }
 }
 

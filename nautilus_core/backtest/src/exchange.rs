@@ -26,7 +26,12 @@ use nautilus_core::{
     correctness::{check_equal, FAILED},
     AtomicTime, UnixNanos,
 };
-use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
+use nautilus_execution::{
+    client::ExecutionClient,
+    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
+    messages::TradingCommand,
+    models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
@@ -42,11 +47,7 @@ use nautilus_model::{
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 
-use crate::{
-    matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
-    modules::SimulationModule,
-};
+use crate::modules::SimulationModule;
 
 pub struct SimulatedExchange {
     id: Venue,
@@ -626,7 +627,14 @@ mod tests {
         },
     };
     use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-    use nautilus_execution::client::ExecutionClient;
+    use nautilus_execution::{
+        client::ExecutionClient,
+        models::{
+            fee::{FeeModelAny, MakerTakerFeeModel},
+            fill::FillModel,
+            latency::LatencyModel,
+        },
+    };
     use nautilus_model::{
         accounts::{AccountAny, MarginAccount},
         data::{
@@ -645,14 +653,7 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use crate::{
-        exchange::SimulatedExchange,
-        models::{
-            fee::{FeeModelAny, MakerTakerFeeModel},
-            fill::FillModel,
-            latency::LatencyModel,
-        },
-    };
+    use crate::exchange::SimulatedExchange;
 
     static ATOMIC_TIME: LazyLock<AtomicTime> =
         LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
