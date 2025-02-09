@@ -48,11 +48,15 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.aggregation import BarAggregator
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
 from nautilus_trader.data.aggregation import VolumeBarAggregator
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -571,65 +575,43 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    async def _request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if start is not None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
+        if request.start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if end is not None:
+        if request.end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+        instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}")
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, params)
+        self._handle_instrument(instrument, request.id, request.params)
 
-    async def _request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Binance",
         )
 
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        limit = request.limit
         if limit == 0 or limit > 1000:
             limit = 1000
 
         if not self._use_agg_trade_ticks:
-            if start is not None or end is not None:
+            if request.start is not None or request.end is not None:
                 self._log.warning(
                     "Trades have been requested with a from/to time range, "
                     f"however the request will be for the most recent {limit}: "
                     "consider using aggregated trades (`use_agg_trade_ticks`)",
                 )
             ticks = await self._http_market.request_trade_ticks(
-                instrument_id=instrument_id,
+                instrument_id=request.instrument_id,
                 limit=limit,
                 ts_init=self._clock.timestamp_ns(),
             )
@@ -637,128 +619,119 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             # Convert from timestamps to milliseconds
             start_time_ms = None
             end_time_ms = None
-            if start:
-                start_time_ms = int(start.timestamp() * 1000)
-            if end:
-                end_time_ms = int(end.timestamp() * 1000)
+            if request.start:
+                start_time_ms = int(request.start.timestamp() * 1000)
+            if request.end:
+                end_time_ms = int(request.end.timestamp() * 1000)
             ticks = await self._http_market.request_agg_trade_ticks(
-                instrument_id=instrument_id,
+                instrument_id=request.instrument_id,
                 limit=limit,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._handle_trade_ticks(instrument_id, ticks, correlation_id, params)
+        self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
 
-    async def _request_bars(  # (too complex)
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if bar_type.spec.price_type != PriceType.LAST:
+    async def _request_bars(self, request: RequestBars) -> None:
+        if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type} bars: "
+                f"Cannot request {request.bar_type} bars: "
                 f"only historical bars for LAST price type available from Binance",
             )
             return
 
         start_time_ms = None
-        if start is not None:
-            start_time_ms = secs_to_millis(start.timestamp())
+        if request.start is not None:
+            start_time_ms = secs_to_millis(request.start.timestamp())
 
         end_time_ms = None
-        if end is not None:
-            end_time_ms = secs_to_millis(end.timestamp())
+        if request.end is not None:
+            end_time_ms = secs_to_millis(request.end.timestamp())
 
-        if bar_type.is_externally_aggregated() or bar_type.spec.is_time_aggregated():
-            if not bar_type.spec.is_time_aggregated():
+        if (
+            request.bar_type.is_externally_aggregated()
+            or request.bar_type.spec.is_time_aggregated()
+        ):
+            if not request.bar_type.spec.is_time_aggregated():
                 self._log.error(
-                    f"Cannot request {bar_type} bars: only time bars are aggregated by Binance",
+                    f"Cannot request {request.bar_type} bars: only time bars are aggregated by Binance",
                 )
                 return
 
-            resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
+            resolution = self._enum_parser.parse_nautilus_bar_aggregation(
+                request.bar_type.spec.aggregation,
+            )
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
-                    f"Cannot request {bar_type} bars: "
+                    f"Cannot request {request.bar_type} bars: "
                     "second interval bars are not aggregated by Binance Futures",
                 )
             try:
-                interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+                interval = BinanceKlineInterval(f"{request.bar_type.spec.step}{resolution}")
             except ValueError:
                 self._log.error(
-                    f"Cannot create Binance Kline interval. {bar_type.spec.step}{resolution} "
+                    f"Cannot create Binance Kline interval. {request.bar_type.spec.step}{resolution} "
                     "not supported",
                 )
                 return
 
             bars = await self._http_market.request_binance_bars(
-                bar_type=bar_type,
+                bar_type=request.bar_type,
                 interval=interval,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
-                limit=limit if limit > 0 else None,
+                limit=request.limit if request.limit > 0 else None,
                 ts_init=self._clock.timestamp_ns(),
             )
 
-            if bar_type.is_internally_aggregated():
+            if request.bar_type.is_internally_aggregated():
                 self._log.info(
                     "Inferred INTERNAL time bars from EXTERNAL time bars",
                     LogColor.BLUE,
                 )
-        elif start and start < self._clock.utc_now() - pd.Timedelta(days=1):
+        elif request.start and request.start < self._clock.utc_now() - pd.Timedelta(days=1):
             bars = await self._aggregate_internal_from_minute_bars(
-                bar_type=bar_type,
+                bar_type=request.bar_type,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms,
-                limit=limit if limit > 0 else None,
+                limit=request.limit if request.limit > 0 else None,
             )
         else:
             bars = await self._aggregate_internal_from_agg_trade_ticks(
-                bar_type=bar_type,
+                bar_type=request.bar_type,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms,
-                limit=limit if limit > 0 else None,
+                limit=request.limit if request.limit > 0 else None,
             )
 
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, params)
+        self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
 
-    async def _request_order_book_snapshot(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        params: dict | None = None,
-    ) -> None:
-        if limit not in [5, 10, 20, 50, 100, 500, 1000]:
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        if request.limit not in [5, 10, 20, 50, 100, 500, 1000]:
             self._log.error(
                 "Cannot get order book snapshots: "
-                f"invalid `limit`, was {limit}. "
+                f"invalid `limit`, was {request.limit}. "
                 "Valid limits are 5, 10, 20, 50, 100, 500 or 1000",
             )
             return
         else:
             snapshot: OrderBookDeltas = await self._http_market.request_order_book_snapshot(
-                instrument_id=instrument_id,
-                limit=limit,
+                instrument_id=request.instrument_id,
+                limit=request.limit,
                 ts_init=self._clock.timestamp_ns(),
             )
 
             data_type = DataType(
                 OrderBookDeltas,
-                metadata=({"instrument_id": instrument_id}),
+                metadata=({"instrument_id": request.instrument_id}),
             )
             self._handle_data_response(
                 data_type=data_type,
                 data=snapshot,
-                correlation_id=correlation_id,
-                params=params,
+                correlation_id=request.id,
+                params=request.params,
             )
 
     async def _aggregate_internal_from_minute_bars(

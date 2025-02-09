@@ -13,13 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.data.messages cimport RequestBars
+from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestInstrument
+from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
+from nautilus_trader.data.messages cimport RequestQuoteTicks
+from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
@@ -51,7 +56,7 @@ cdef class DataClient(Component):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id, dict[str, object] params=*)
+    cpdef void request(self, RequestData request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
@@ -120,56 +125,12 @@ cdef class MarketDataClient(DataClient):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void request_instrument(
-        self,
-        InstrumentId instrument_id,
-        UUID4 correlation_id,
-        datetime start=*,
-        datetime end=*,
-        dict[str, object] params=*,
-    )
-    cpdef void request_instruments(
-        self,
-        Venue venue,
-        UUID4 correlation_id,
-        datetime start=*,
-        datetime end=*,
-        dict[str, object] params=*,
-    )
-    cpdef void request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        dict[str, object] params=*,
-    )
-    cpdef void request_quote_ticks(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        datetime start=*,
-        datetime end=*,
-        dict[str, object] params=*,
-    )
-    cpdef void request_trade_ticks(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        datetime start=*,
-        datetime end=*,
-        dict[str, object] params=*,
-    )
-    cpdef void request_bars(
-        self,
-        BarType bar_type,
-        int limit,
-        UUID4 correlation_id,
-        datetime start=*,
-        datetime end=*,
-        dict[str, object] params=*,
-    )
+    cpdef void request_instrument(self, RequestInstrument request)
+    cpdef void request_instruments(self, RequestInstruments request)
+    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request)
+    cpdef void request_quote_ticks(self, RequestQuoteTicks request)
+    cpdef void request_trade_ticks(self, RequestTradeTicks request)
+    cpdef void request_bars(self, RequestBars request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
