@@ -24,7 +24,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import RequestQuoteTicks
-from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
@@ -108,7 +108,7 @@ class TestLiveDataEngine:
             config=LiveDataEngineConfig(qsize=1),
         )
 
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),
@@ -256,7 +256,7 @@ class TestLiveDataEngine:
         # Arrange
         self.engine.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),

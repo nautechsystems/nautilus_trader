@@ -26,6 +26,7 @@ attempts to operate without a managing `Trader` instance.
 
 import asyncio
 from concurrent.futures import Executor
+from typing import Any
 from typing import Callable
 
 import cython
@@ -67,15 +68,30 @@ from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
-from nautilus_trader.data.messages cimport Subscribe
-from nautilus_trader.data.messages cimport Unsubscribe
+from nautilus_trader.data.messages cimport SubscribeBars
+from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeInstrument
+from nautilus_trader.data.messages cimport SubscribeInstrumentClose
+from nautilus_trader.data.messages cimport SubscribeInstruments
+from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeOrderBook
+from nautilus_trader.data.messages cimport SubscribeQuoteTicks
+from nautilus_trader.data.messages cimport SubscribeTradeTicks
+from nautilus_trader.data.messages cimport UnsubscribeBars
+from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeInstrument
+from nautilus_trader.data.messages cimport UnsubscribeInstruments
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeOrderBook
+from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
+from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
-from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -1145,10 +1161,10 @@ cdef class Actor(Component):
         if client_id is None:
             return
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeData command = SubscribeData(
+            data_type=data_type,
             client_id=client_id,
             venue=None,
-            data_type=data_type,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1187,10 +1203,9 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeInstruments command = SubscribeInstruments(
             client_id=client_id,
             venue=venue,
-            data_type=DataType(Instrument),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1231,10 +1246,10 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeInstrument command = SubscribeInstrument(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1292,17 +1307,15 @@ cdef class Actor(Component):
             handler=self.handle_order_book_deltas,
         )
 
-        params = params if params else {}
-        params["managed"] = managed
-
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeOrderBook command = SubscribeOrderBook(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            depth=depth,
+            managed=managed,
+            interval_ms=1000,
+            only_deltas=True,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookDelta, metadata={
-                "instrument_id": instrument_id,
-                "book_type": book_type,
-                "depth": depth,
-            }),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1380,18 +1393,15 @@ cdef class Actor(Component):
             handler=self.handle_order_book,
         )
 
-        params = params if params else {}
-        params["managed"] = managed
-        params["interval_ms"] = interval_ms
-
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeOrderBook command = SubscribeOrderBook(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            depth=depth,
+            managed=managed,
+            interval_ms=interval_ms,
+            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBook, metadata={
-                "instrument_id": instrument_id,
-                "book_type": book_type,
-                "depth": depth,
-            }),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1432,10 +1442,10 @@ cdef class Actor(Component):
             handler=self.handle_quote_tick,
         )
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeQuoteTicks command = SubscribeQuoteTicks(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1476,10 +1486,10 @@ cdef class Actor(Component):
             handler=self.handle_trade_tick,
         )
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeTradeTicks command = SubscribeTradeTicks(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1522,13 +1532,11 @@ cdef class Actor(Component):
             handler=self.handle_bar,
         )
 
-        params = params if params else {}
-        params["await_partial"] = await_partial
-
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeBars command = SubscribeBars(
+            bar_type=bar_type,
+            await_partial=await_partial,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1567,10 +1575,10 @@ cdef class Actor(Component):
             handler=self.handle_instrument_status,
         )
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeInstrumentStatus command = SubscribeInstrumentStatus(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1610,10 +1618,10 @@ cdef class Actor(Component):
             handler=self.handle_instrument_close,
         )
 
-        cdef Subscribe command = Subscribe(
+        cdef SubscribeInstrumentClose command = SubscribeInstrumentClose(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentClose, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1652,10 +1660,10 @@ cdef class Actor(Component):
         if client_id is None:
             return
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeData command = UnsubscribeData(
+            data_type=data_type,
             client_id=client_id,
             venue=None,
-            data_type=data_type,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1691,10 +1699,9 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeInstruments command = UnsubscribeInstruments(
             client_id=client_id,
             venue=venue,
-            data_type=DataType(Instrument),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1732,10 +1739,10 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeInstrument command = UnsubscribeInstrument(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1773,10 +1780,11 @@ cdef class Actor(Component):
             handler=self.handle_order_book_deltas,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
+            instrument_id=instrument_id,
+            only_deltas=True,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookDelta, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1820,13 +1828,11 @@ cdef class Actor(Component):
             handler=self.handle_order_book,
         )
 
-        params = params if params else {}
-        params["interval_ms"] = interval_ms
-
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
+            instrument_id=instrument_id,
+            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBook, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1864,10 +1870,10 @@ cdef class Actor(Component):
             handler=self.handle_quote_tick,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeQuoteTicks command = UnsubscribeQuoteTicks(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1905,10 +1911,10 @@ cdef class Actor(Component):
             handler=self.handle_trade_tick,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeTradeTicks command = UnsubscribeTradeTicks(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1946,10 +1952,10 @@ cdef class Actor(Component):
             handler=self.handle_bar,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeBars command = UnsubscribeBars(
+            bar_type=standard_bar_type,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata={"bar_type": standard_bar_type}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1986,10 +1992,10 @@ cdef class Actor(Component):
             handler=self.handle_instrument_status,
         )
 
-        cdef Unsubscribe command = Unsubscribe(
+        cdef UnsubscribeInstrumentStatus command = UnsubscribeInstrumentStatus(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,

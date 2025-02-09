@@ -30,7 +30,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import par
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 # fmt: on

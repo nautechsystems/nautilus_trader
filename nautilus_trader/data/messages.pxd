@@ -18,6 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
+from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -36,12 +37,104 @@ cdef class DataCommand(Command):
     """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
 
 
-cdef class Subscribe(DataCommand):
+cdef class SubscribeData(DataCommand):
     pass
 
 
-cdef class Unsubscribe(DataCommand):
+cdef class SubscribeInstruments(SubscribeData):
     pass
+
+
+cdef class SubscribeInstrument(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class SubscribeOrderBook(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    cdef BookType book_type
+    """The order book type."""
+    cdef int depth
+    """The maximum depth for the subscription."""
+    cdef bint managed
+    """If an order book should be managed by the data engine based on the subscribed feed."""
+    cdef int interval_ms
+    """The order book snapshot interval in milliseconds (must be positive)."""
+    cdef bint only_deltas
+    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+
+
+cdef class SubscribeQuoteTicks(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class SubscribeTradeTicks(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class SubscribeBars(SubscribeData):
+    cdef BarType bar_type
+    """The bar type for the subscription."""
+    cdef bint await_partial
+    """If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars."""
+
+
+cdef class SubscribeInstrumentStatus(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class SubscribeInstrumentClose(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeData(DataCommand):
+    pass
+
+
+cdef class UnsubscribeInstruments(UnsubscribeData):
+    pass
+
+
+cdef class UnsubscribeInstrument(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeOrderBook(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    cdef bint only_deltas
+    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+
+
+cdef class UnsubscribeQuoteTicks(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeTradeTicks(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeBars(UnsubscribeData):
+    cdef readonly BarType bar_type
+    """The bar type for the subscription."""
+
+
+cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeInstrumentClose(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
 
 
 cdef class RequestData(Request):

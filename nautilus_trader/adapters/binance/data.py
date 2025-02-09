@@ -16,7 +16,6 @@
 import asyncio
 import decimal
 from decimal import Decimal
-from typing import Any
 
 import msgspec
 import pandas as pd
@@ -57,6 +56,20 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -280,17 +293,17 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
+    async def _subscribe(self, command: SubscribeData) -> None:
+        instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
-                f"Cannot subscribe to `{data_type.type}` no instrument ID in `data_type` metadata",
+                f"Cannot subscribe to `{command.data_type.type}` no instrument ID in `data_type` metadata",
             )
             return
 
-        if data_type.type == BinanceTicker:
+        if command.data_type.type == BinanceTicker:
             await self._ws_client.subscribe_ticker(instrument_id.symbol.value)
-        elif data_type.type == BinanceFuturesMarkPriceUpdate:
+        elif command.data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
                     f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
@@ -300,20 +313,20 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
         else:
             self._log.error(
-                f"Cannot subscribe to {data_type.type} (not implemented)",
+                f"Cannot subscribe to {command.data_type.type} (not implemented)",
             )
 
-    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
                 "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata",
             )
             return
 
-        if data_type.type == BinanceTicker:
+        if command.data_type.type == BinanceTicker:
             await self._ws_client.unsubscribe_ticker(instrument_id.symbol.value)
-        elif data_type.type == BinanceFuturesMarkPriceUpdate:
+        elif command.data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
                     "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
@@ -322,59 +335,25 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 return
         else:
             self._log.error(
-                f"Cannot unsubscribe from {data_type.type} (not implemented)",
+                f"Cannot unsubscribe from {command.data_type.type} (not implemented)",
             )
 
-    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         pass  # Do nothing further
 
-    async def _subscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         pass  # Do nothing further
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        update_speed: int | None = params.get("update_speed") if params else None
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        await self._subscribe_order_book(command)
 
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        await self._subscribe_order_book(command)
 
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        update_speed: int | None = params.get("update_speed") if params else None
+    async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
+        update_speed: int | None = command.params.get("update_speed")
 
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
-
-    async def _subscribe_order_book(  # (too complex)
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        update_speed: int | None = None,
-        depth: int | None = None,
-    ) -> None:
-        if book_type == BookType.L3_MBO:
+        if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
@@ -397,7 +376,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if not depth:
+        if not command.depth:
             # Reasonable default for full book, which works for Spot and Futures
             depth = 1000
 
@@ -410,19 +389,19 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
-                symbol=instrument_id.symbol.value,
+                symbol=command.vinstrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
             )
         else:
             await self._ws_client.subscribe_diff_book_depth(
-                symbol=instrument_id.symbol.value,
+                symbol=command.instrument_id.symbol.value,
                 speed=update_speed,
             )
 
-        self._book_depths[instrument_id] = depth
+        self._book_depths[command.instrument_id] = depth
 
-        await self._order_book_snapshot_then_deltas(instrument_id)
+        await self._order_book_snapshot_then_deltas(command.instrument_id)
 
     async def _order_book_snapshot_then_deltas(self, instrument_id: InstrumentId) -> None:
         # Add delta feed buffer
@@ -453,123 +432,91 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        await self._ws_client.subscribe_book_ticker(command.instrument_id.symbol.value)
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if self._use_agg_trade_ticks:
-            await self._ws_client.subscribe_agg_trades(instrument_id.symbol.value)
+            await self._ws_client.subscribe_agg_trades(command.instrument_id.symbol.value)
         else:
-            await self._ws_client.subscribe_trades(instrument_id.symbol.value)
+            await self._ws_client.subscribe_trades(command.instrument_id.symbol.value)
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         PyCondition.is_true(
-            bar_type.is_externally_aggregated(),
+            command.bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
         )
 
-        if not bar_type.spec.is_time_aggregated():
+        if not command.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance",
+                f"Cannot subscribe to {command.bar_type}: only time bars are aggregated by Binance",
             )
             return
 
-        resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
+        resolution = self._enum_parser.parse_nautilus_bar_aggregation(
+            command.bar_type.spec.aggregation,
+        )
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot subscribe to {bar_type}. "
+                f"Cannot subscribe to {command.bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures",
             )
         try:
-            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+            interval = BinanceKlineInterval(f"{command.bar_type.spec.step}{resolution}")
         except ValueError:
             self._log.error(
-                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance",
+                f"Bar interval {command.bar_type.spec.step}{resolution} not supported by Binance",
             )
             return
 
         await self._ws_client.subscribe_bars(
-            symbol=bar_type.instrument_id.symbol.value,
+            symbol=command.bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
 
-    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         pass  # Do nothing further
 
-    async def _unsubscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         pass  # Do nothing further
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        await self._ws_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ws_client.unsubscribe_trades(instrument_id.symbol.value)
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if not bar_type.spec.is_time_aggregated():
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        if not command.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance",
+                f"Cannot unsubscribe from {command.bar_type}: only time bars are aggregated by Binance",
             )
             return
 
-        resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
+        resolution = self._enum_parser.parse_nautilus_bar_aggregation(
+            command.bar_type.spec.aggregation,
+        )
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}. "
+                f"Cannot unsubscribe from {command.bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures",
             )
         try:
-            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+            interval = BinanceKlineInterval(f"{command.bar_type.spec.step}{resolution}")
         except ValueError:
             self._log.error(
-                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance",
+                f"Bar interval {command.bar_type.spec.step}{resolution} not supported by Binance",
             )
             return
 
         await self._ws_client.unsubscribe_bars(
-            symbol=bar_type.instrument_id.symbol.value,
+            symbol=command.bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
 

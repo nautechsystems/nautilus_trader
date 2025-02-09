@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any
 
 import pandas as pd
 
@@ -37,9 +36,16 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -250,14 +256,8 @@ class TardisDataClient(LiveMarketDataClient):
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._ws_clients[ws_client_key] = ws_client
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type == BookType.L3_MBO:
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Tardis. "
@@ -266,16 +266,10 @@ class TardisDataClient(LiveMarketDataClient):
             return
 
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDelta)
-        self._subscribe_stream(instrument_id, tardis_data_type, "order book deltas")
+        self._subscribe_stream(command.instrument_id, tardis_data_type, "order book deltas")
 
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type == BookType.L3_MBO:
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book snapshots: "
                 "L3_MBO data is not published by Tardis. "
@@ -284,76 +278,44 @@ class TardisDataClient(LiveMarketDataClient):
             return
 
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDepth10)
-        tardis_data_type = f"{tardis_data_type}_{depth}_0ms"
-        self._subscribe_stream(instrument_id, tardis_data_type, "order book snapshots")
+        tardis_data_type = f"{tardis_data_type}_{command.depth}_0ms"
+        self._subscribe_stream(command.instrument_id, tardis_data_type, "order book snapshots")
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(QuoteTick)
-        self._subscribe_stream(instrument_id, tardis_data_type, "quotes")
+        self._subscribe_stream(command.instrument_id, tardis_data_type, "quotes")
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
-        self._subscribe_stream(instrument_id, tardis_data_type, "trades")
+        self._subscribe_stream(command.instrument_id, tardis_data_type, "trades")
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
-        self._subscribe_stream(bar_type.instrument_id, tardis_data_type, "bars")
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(command.bar_type)
+        self._subscribe_stream(command.bar_type.instrument_id, tardis_data_type, "bars")
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDelta)
-        ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
+        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDepth10)
-        ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
+        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(QuoteTick)
-        ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
+        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
-        ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
+        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
-        ws_client_key = get_ws_client_key(bar_type.instrument_id, tardis_data_type)
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(command.bar_type)
+        ws_client_key = get_ws_client_key(command.bar_type.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:

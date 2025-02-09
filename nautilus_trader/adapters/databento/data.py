@@ -16,7 +16,6 @@
 import asyncio
 from collections import defaultdict
 from collections.abc import Coroutine
-from typing import Any
 
 import pandas as pd
 
@@ -44,9 +43,24 @@ from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import QuoteTick
@@ -364,37 +378,26 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     # -- OVERRIDES ----------------------------------------------------------------------------
 
-    def subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type != BookType.L3_MBO:
+    def subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type != BookType.L3_MBO:
             raise NotImplementedError
 
         self.create_task(
-            self._subscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                depth=depth,
-                params=params,
-            ),
-            log_msg=f"subscribe: order_book_deltas {instrument_id}",
-            actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
+            self._subscribe_order_book_deltas(command),
+            log_msg=f"subscribe: order_book_deltas {command.instrument_id}",
+            actions=lambda: self._add_subscription_order_book_deltas(command.instrument_id),
         )
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        if data_type.type == DatabentoImbalance:
-            await self._subscribe_imbalance(data_type)
-        elif data_type.type == DatabentoStatistics:
-            await self._subscribe_statistics(data_type)
+    async def _subscribe(self, command: SubscribeData) -> None:
+        if command.data_type.type == DatabentoImbalance:
+            await self._subscribe_imbalance(command.data_type)
+        elif command.data_type.type == DatabentoStatistics:
+            await self._subscribe_statistics(command.data_type)
         else:
             raise NotImplementedError(
-                f"Cannot subscribe to {data_type.type} (not implemented).",
+                f"Cannot subscribe to {command.data_type.type} (not implemented).",
             )
 
     async def _subscribe_imbalance(self, data_type: DataType) -> None:
@@ -425,23 +428,19 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_statistics'")
 
-    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         # Replace method in child class, for exchange specific data types.
         raise NotImplementedError("Cannot subscribe to all instruments (not currently supported).")
 
-    async def _subscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         try:
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-            start: int | None = params.get("start") if params else None
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
+            start: int | None = command.params.get("start") if command.params else None
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
                 start=start,
             )
             await self._check_live_client_started(dataset, live_client)
@@ -483,42 +482,36 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_instrument_ids'")
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         try:
-            if book_type != BookType.L3_MBO:
+            if command.book_type != BookType.L3_MBO:
                 raise NotImplementedError
 
-            if depth:  # Can be None or 0 (full depth)
+            if command.depth:  # Can be None or 0 (full depth)
                 self._log.error(
-                    f"Cannot subscribe to order book deltas with specific depth of {depth} "
+                    f"Cannot subscribe to order book deltas with specific depth of {command.depth} "
                     "(do not specify depth when subscribing, must be full depth)",
                 )
                 return
 
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
 
             if self._is_buffering_mbo_subscriptions:
                 self._log.debug(
-                    f"Buffering MBO/L3 subscription for {instrument_id}",
+                    f"Buffering MBO/L3 subscription for {command.instrument_id}",
                     LogColor.MAGENTA,
                 )
-                self._buffered_mbo_subscriptions[dataset].append(instrument_id)
+                self._buffered_mbo_subscriptions[dataset].append(command.instrument_id)
                 return
 
             if self._live_clients_mbo.get(dataset) is not None:
                 self._log.error(
-                    f"Cannot subscribe to order book deltas for {instrument_id}, "
+                    f"Cannot subscribe to order book deltas for {command.instrument_id}, "
                     "MBO/L3 feed already started",
                 )
                 return
 
-            await self._subscribe_order_book_deltas_batch([instrument_id])
+            await self._subscribe_order_book_deltas_batch([command.instrument_id])
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_order_book_deltas'")
 
@@ -576,46 +569,36 @@ class DatabentoDataClient(LiveMarketDataClient):
                 "Canceled task 'subscribe_order_book_deltas_batch'",
             )
 
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         try:
-            await self._ensure_subscribed_for_instrument(instrument_id)
+            await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            match depth:
+            match command.depth:
                 case 1:
                     schema = DatabentoSchema.MBP_1.value
                 case 10:
                     schema = DatabentoSchema.MBP_10.value
                 case _:
                     self._log.error(
-                        f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10",
+                        f"Cannot subscribe for order book snapshots of depth {command.depth}, use either 1 or 10",
                     )
                     return
 
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_order_book_snapshots'")
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         try:
-            await self._ensure_subscribed_for_instrument(instrument_id)
+            await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            schema: str | None = params.get("schema") if params else None
+            schema: str | None = command.params.get("schema") if command.params else None
             # allowed schema values: mbp-1, bbo-1s, bbo-1m
             if schema is None or schema not in [
                 DatabentoSchema.MBP_1.value,
@@ -624,167 +607,129 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
-            start: int | None = params.get("start") if params else None
+            start: int | None = command.params.get("start") if command.params else None
 
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
                 start=start,
             )
 
             # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
-            self._trade_tick_subscriptions.add(instrument_id)
+            self._trade_tick_subscriptions.add(command.instrument_id)
 
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_quote_ticks'")
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         try:
-            if instrument_id in self._trade_tick_subscriptions:
+            if command.instrument_id in self._trade_tick_subscriptions:
                 return  # Already subscribed (this will save on data costs)
 
-            await self._ensure_subscribed_for_instrument(instrument_id)
+            await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            start: int | None = params.get("start") if params else None
+            start: int | None = command.params.get("start") if command.params else None
 
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.TRADES.value,
-                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
                 start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_trade_ticks'")
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         try:
-            dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(
+                command.bar_type.instrument_id.venue,
+            )
 
             try:
-                schema = databento_schema_from_nautilus_bar_type(bar_type)
+                schema = databento_schema_from_nautilus_bar_type(command.bar_type)
             except ValueError as e:
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
-            start: int | None = params.get("start") if params else None
+            start: int | None = command.params.get("start") if command.params else None
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema.value,
-                instrument_ids=[instrument_id_to_pyo3(bar_type.instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(command.bar_type.instrument_id)],
                 start=start,
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_bars'")
 
-    async def _subscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         try:
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.STATUS.value,
-                instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'subscribe_instrument_status'")
 
-    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
+            f"Cannot unsubscribe from {command.data_type}, unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         raise NotImplementedError(
             "Cannot unsubscribe from all instruments, unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} instrument, "
+            f"Cannot unsubscribe from {command.instrument_id} instrument, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} order book deltas, "
+            f"Cannot unsubscribe from {command.instrument_id} order book deltas, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} order book snapshots, "
+            f"Cannot unsubscribe from {command.instrument_id} order book snapshots, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} quotes, "
+            f"Cannot unsubscribe from {command.instrument_id} quotes, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} trades, "
+            f"Cannot unsubscribe from {command.instrument_id} trades, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {bar_type} bars, "
+            f"Cannot unsubscribe from {command.bar_type} bars, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instrument_status(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} instrument status, "
+            f"Cannot unsubscribe from {command.instrument_id} instrument status, "
             "unsubscribing not supported by Databento.",
         )
 
