@@ -197,8 +197,12 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _reconnect(self) -> None:
         self._log.info("Reconnecting to Betfair")
         self._is_reconnecting = True
+        if self._update_account_task:
+            self._update_account_task.cancel()
+            self._update_account_task = None
         await self._client.reconnect()
         await self._stream.reconnect()
+        self._update_account_task = self.create_task(self._update_account_state())
         self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
@@ -780,7 +784,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                 for selection in market.orc:
                     if selection.uo is not None:
                         for unmatched_order in selection.uo:
-                            await self._check_order_update(unmatched_order=unmatched_order)
+                            if not await self._check_order_update(unmatched_order=unmatched_order):
+                                self._log.warning(f"Unknown order for this node: {unmatched_order}")
+                                return
                             if unmatched_order.status == "E":
                                 self._handle_stream_executable_order_update(
                                     unmatched_order=unmatched_order,
@@ -832,7 +838,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
                         raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
-    async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> None:
+    async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> bool:
         # We may get an order update from the socket before our submit_order response has
         # come back (with our bet_id).
         #
@@ -843,16 +849,25 @@ class BetfairExecutionClient(LiveExecutionClient):
         if client_order_id is None:
             self._log.warning(
                 f"Failed to find ClientOrderId for {venue_order_id!r} "
-                f"after {self.check_order_timeout_secs} seconds, unmatched order: {unmatched_order}",
+                f"after {self.check_order_timeout_secs} seconds",
             )
-            return
+            return False
 
         self._log.debug(f"Found {client_order_id!r} for {venue_order_id!r}")
 
+        # Check order exists
         order = self._cache.order(client_order_id=client_order_id)
-        PyCondition.not_none(order, "order")
+        if order is None:
+            self._log.error(f"Cannot find order for {client_order_id!r}")
+            return False
+
+        # Check instrument exists
         instrument = self._cache.instrument(order.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {order.instrument_id}")
+            return False
+
+        return True
 
     def _handle_stream_executable_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         # Handle update containing 'E' (executable) order update
@@ -1023,19 +1038,17 @@ class BetfairExecutionClient(LiveExecutionClient):
         return None
 
     def _handle_status_message(self, update: Status) -> None:
-        if update.is_error and update.connection_closed:
-            self._log.warning(f"Betfair connection closed: {update.error_message}")
+        if update.is_error:
             if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
-            elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
+            elif update.error_code == StatusErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED:
+                raise RuntimeError("Subscription request limit exceeded")
+
+            self._log.warning(f"Betfair API error: {update.error_message}")
+
+            if update.connection_closed:
+                self._log.warning("Betfair connection closed")
                 if self._is_reconnecting:
                     self._log.info("Reconnect already in progress")
                     return
-                self._log.info("Invalid session information, reconnecting client")
-                self.create_task(self._reconnect())
-            else:
-                if self._is_reconnecting:
-                    self._log.info("Reconnect already in progress")
-                    return
-                self._log.warning("Unknown API error, scheduling reconnect")
                 self.create_task(self._reconnect())
