@@ -17,6 +17,7 @@
 
 pub mod cache;
 pub mod msgbus;
+pub mod queries;
 
 use std::time::Duration;
 
@@ -95,18 +96,47 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 }
 
 /// Create a new Redis database connection from the given database config.
-pub fn create_redis_connection(
+///
+/// In case of reconnection issues, the connection will retry reconnection
+/// `number_of_retries` times, with an exponentially increasing delay, calculated as
+/// `rand(0 .. factor * (exponent_base ^ current-try))`.
+///
+/// Apply a maximum delay. No retry delay will be longer than this `max_delay` .
+///
+/// The new connection will time out operations after `response_timeout` has passed.
+/// Each connection attempt to the server will time out after `connection_timeout`.
+pub async fn create_redis_connection(
     con_name: &str,
     config: DatabaseConfig,
-) -> anyhow::Result<redis::Connection> {
+) -> anyhow::Result<redis::aio::ConnectionManager> {
     tracing::debug!("Creating {con_name} redis connection");
     let (redis_url, redacted_url) = get_redis_url(config.clone());
     tracing::debug!("Connecting to {redacted_url}");
-    let timeout = Duration::from_secs(config.timeout as u64);
-    let client = redis::Client::open(redis_url)?;
-    let mut con = client.get_connection_with_timeout(timeout)?;
 
-    let version = get_redis_version(&mut con)?;
+    let connection_timeout = Duration::from_secs(config.connection_timeout as u64);
+    let response_timeout = Duration::from_secs(config.response_timeout as u64);
+    let number_of_retries = config.number_of_retries;
+    let exponent_base = config.exponent_base;
+    let factor = config.factor;
+
+    // into milliseconds
+    let max_delay = config.max_delay * 1000;
+
+    let client = redis::Client::open(redis_url)?;
+
+    let connection_manager_config = redis::aio::ConnectionManagerConfig::new()
+        .set_exponent_base(exponent_base)
+        .set_factor(factor)
+        .set_number_of_retries(number_of_retries)
+        .set_response_timeout(response_timeout)
+        .set_connection_timeout(connection_timeout)
+        .set_max_delay(max_delay);
+
+    let mut con = client
+        .get_connection_manager_with_config(connection_manager_config)
+        .await?;
+
+    let version = get_redis_version(&mut con).await?;
     let min_version = Version::parse(REDIS_MIN_VERSION)?;
     let con_msg = format!("Connected to redis v{version}");
 
@@ -122,8 +152,10 @@ pub fn create_redis_connection(
 }
 
 /// Flush the Redis database for the given connection.
-pub fn flush_redis(con: &mut redis::Connection) -> anyhow::Result<(), RedisError> {
-    redis::cmd(REDIS_FLUSHDB).exec(con)
+pub async fn flush_redis(
+    con: &mut redis::aio::ConnectionManager,
+) -> anyhow::Result<(), RedisError> {
+    redis::cmd(REDIS_FLUSHDB).exec_async(con).await
 }
 
 /// Parse the stream key from the given identifiers and config.
@@ -153,18 +185,22 @@ pub fn get_stream_key(
 }
 
 /// Parses the Redis version from the "INFO" command output.
-pub fn get_redis_version(conn: &mut Connection) -> anyhow::Result<Version> {
-    let info: String = redis::cmd("INFO").query(conn)?;
-    let version_str = info
-        .lines()
-        .find_map(|line| {
-            if line.starts_with("redis_version:") {
-                line.split(':').nth(1).map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
-        .expect("Redis version not available");
+pub async fn get_redis_version(
+    conn: &mut redis::aio::ConnectionManager,
+) -> anyhow::Result<Version> {
+    let info: String = redis::cmd("INFO").query_async(conn).await?;
+    let version_str = match info.lines().find_map(|line| {
+        if line.starts_with("redis_version:") {
+            line.split(':').nth(1).map(|s| s.trim().to_string())
+        } else {
+            None
+        }
+    }) {
+        Some(info) => info,
+        None => {
+            anyhow::bail!("Redis version not available");
+        }
+    };
 
     parse_redis_version(&version_str)
 }

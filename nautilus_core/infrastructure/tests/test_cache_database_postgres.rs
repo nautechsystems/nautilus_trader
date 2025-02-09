@@ -21,8 +21,10 @@ mod serial_tests {
     use bytes::Bytes;
     use indexmap::indexmap;
     use nautilus_common::{
-        cache::database::CacheDatabaseAdapter, custom::CustomData, signal::Signal,
-        testing::wait_until,
+        cache::database::CacheDatabaseAdapter,
+        custom::CustomData,
+        signal::Signal,
+        testing::{wait_until, wait_until_async},
     };
     use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
@@ -140,17 +142,18 @@ mod serial_tests {
             .unwrap();
 
         // Wait for cache to update
-        wait_until(
-            || {
-                let currencies = pg_cache.load_currencies().unwrap();
-                let instruments = pg_cache.load_instruments().unwrap();
+        wait_until_async(
+            || async {
+                let currencies = pg_cache.load_currencies().await.unwrap();
+                let instruments = pg_cache.load_instruments().await.unwrap();
                 currencies.len() >= 6 && instruments.len() >= 7
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Check currency list is correct
-        let currencies = pg_cache.load_currencies().unwrap();
+        let currencies = pg_cache.load_currencies().await.unwrap();
         assert_eq!(currencies.len(), 6);
         assert_eq!(
             currencies
@@ -250,7 +253,7 @@ mod serial_tests {
         );
 
         // Check instrument list is correct
-        let instruments = pg_cache.load_instruments().unwrap();
+        let instruments = pg_cache.load_instruments().await.unwrap();
         assert_eq!(instruments.len(), 7);
         assert_eq!(
             instruments.into_keys().collect::<HashSet<InstrumentId>>(),
@@ -282,21 +285,22 @@ mod serial_tests {
             .unwrap();
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
-        wait_until(
-            || {
-                pg_cache.load_currencies().unwrap().len() == 2
-                    && pg_cache.load_instruments().unwrap().len() == 1
+        wait_until_async(
+            || async {
+                pg_cache.load_currencies().await.unwrap().len() == 2
+                    && pg_cache.load_instruments().await.unwrap().len() == 1
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Call flush which will truncate all the tables
         pg_cache.flush().unwrap();
 
         // Check if all the tables are empty
-        let currencies = pg_cache.load_currencies().unwrap();
+        let currencies = pg_cache.load_currencies().await.unwrap();
         assert_eq!(currencies.len(), 0);
-        let instruments = pg_cache.load_instruments().unwrap();
+        let instruments = pg_cache.load_instruments().await.unwrap();
         assert_eq!(instruments.len(), 0);
 
         pg_cache.flush().unwrap();
