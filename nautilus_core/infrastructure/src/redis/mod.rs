@@ -17,6 +17,7 @@
 
 pub mod cache;
 pub mod msgbus;
+pub mod queries;
 
 use std::time::Duration;
 

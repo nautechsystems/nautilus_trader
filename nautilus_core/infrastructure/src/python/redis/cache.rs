@@ -20,9 +20,12 @@ use nautilus_core::{
     UUID4,
 };
 use nautilus_model::identifiers::TraderId;
-use pyo3::{prelude::*, types::PyBytes};
+use pyo3::{
+    prelude::*,
+    types::{PyBytes, PyDict},
+};
 
-use crate::redis::cache::RedisCacheDatabase;
+use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
 
 #[pymethods]
 impl RedisCacheDatabase {
@@ -48,6 +51,70 @@ impl RedisCacheDatabase {
     fn py_keys(&mut self, pattern: &str) -> PyResult<Vec<String>> {
         let result = get_runtime().block_on(async { self.keys(pattern).await });
         result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_all")]
+    fn py_load_all(&mut self) -> PyResult<PyObject> {
+        let result = get_runtime().block_on(async { DatabaseQueries::load_all(&self.con).await });
+        match result {
+            Ok(cache_map) => Python::with_gil(|py| {
+                let dict = PyDict::new(py);
+
+                let currencies_dict = PyDict::new(py);
+                for (key, value) in cache_map.currencies {
+                    currencies_dict
+                        .set_item(key.to_string(), value)
+                        .map_err(to_pyvalue_err)?;
+                }
+                dict.set_item("currencies", currencies_dict)
+                    .map_err(to_pyvalue_err)?;
+
+                // TODO: Fix this
+                // let instruments_dict = PyDict::new(py);
+                // for (key, value) in cache_map.instruments {
+                //     instruments_dict
+                //         .set_item(key, value)
+                //         .map_err(to_pyvalue_err)?;
+                // }
+                // dict.set_item("instruments", instruments_dict)
+                //     .map_err(to_pyvalue_err)?;
+
+                let synthetics_dict = PyDict::new(py);
+                for (key, value) in cache_map.synthetics {
+                    synthetics_dict
+                        .set_item(key, value)
+                        .map_err(to_pyvalue_err)?;
+                }
+                dict.set_item("synthetics", synthetics_dict)
+                    .map_err(to_pyvalue_err)?;
+
+                // let accounts_dict = PyDict::new(py);
+                // for (key, value) in cache_map.accounts {
+                //     accounts_dict.set_item(key, value).map_err(to_pyvalue_err)?;
+                // }
+                // dict.set_item("accounts", accounts_dict)
+                //     .map_err(to_pyvalue_err)?;
+
+                // let orders_dict = PyDict::new(py);
+                // for (key, value) in cache_map.orders {
+                //     orders_dict.set_item(key, value).map_err(to_pyvalue_err)?;
+                // }
+                // dict.set_item("orders", orders_dict)
+                //     .map_err(to_pyvalue_err)?;
+
+                let positions_dict = PyDict::new(py);
+                for (key, value) in cache_map.positions {
+                    positions_dict
+                        .set_item(key, value)
+                        .map_err(to_pyvalue_err)?;
+                }
+                dict.set_item("positions", positions_dict)
+                    .map_err(to_pyvalue_err)?;
+
+                Ok(dict.to_object(py))
+            }),
+            Err(e) => Err(to_pyruntime_err(e)),
+        }
     }
 
     #[pyo3(name = "read")]
