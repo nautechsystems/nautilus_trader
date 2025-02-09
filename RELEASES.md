@@ -1,11 +1,17 @@
 # NautilusTrader 1.211.0 Beta
 
-Released on TBD (UTC).
+Released on 9th February 2025 (UTC).
+
+This release introduces [high-precision mode](https://nautilustrader.io/docs/nightly/concepts/overview#value-types), where value types such as `Price`, `Quantity` and `Money` are now
+backed by 128-bit integers (instead of 64-bit), thereby increasing maximum precision to 16, and vastly expanding the allowable value ranges.
+
+This will address precision and value range issues experienced by some crypto users, alleviate higher timeframe bar volume limitations, as well as future proofing the platform.
+See the [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) for more details. For an explanation on compiling with or without high-precision mode, see the [precision-mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode) section of the installation guide.
 
 This release will be the final version that uses Poetry for package and dependency management.
 
 ### Enhancements
-- Added `high-precision` mode for 128-bit integer backed value types, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) and [precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) docs (#2072), thanks @twitu
+- Added `high-precision` mode for 128-bit integer backed value types (#2072), thanks @twitu
 - Added instrument definitions range requests for `TardisHttpClient` with optional `start` and `end` filter parameters
 - Added `quote_currency`, `base_currency`, `instrument_type`, `contract_type`, `active`, `start` and `end` filters for `TardisInstrumentProvider`
 - Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
