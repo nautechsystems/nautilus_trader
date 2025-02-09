@@ -34,6 +34,7 @@ documentation = "https://nautilustrader.io/docs"
 anyhow = "1.0.95"
 arrow = "53.4.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
+async-trait = "0.1.86"
 base64 = "0.22.1"
 bytes = { version = "1.10.0", features = ["serde"] }
 chrono = { version = "0.4.39", features = ["serde"] }
