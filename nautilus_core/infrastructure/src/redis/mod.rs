@@ -188,16 +188,18 @@ pub async fn get_redis_version(
     conn: &mut redis::aio::ConnectionManager,
 ) -> anyhow::Result<Version> {
     let info: String = redis::cmd("INFO").query_async(conn).await?;
-    let version_str = info
-        .lines()
-        .find_map(|line| {
-            if line.starts_with("redis_version:") {
-                line.split(':').nth(1).map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
-        .expect("Redis version not available");
+    let version_str = match info.lines().find_map(|line| {
+        if line.starts_with("redis_version:") {
+            line.split(':').nth(1).map(|s| s.trim().to_string())
+        } else {
+            None
+        }
+    }) {
+        Some(info) => info,
+        None => {
+            anyhow::bail!("Redis version not available");
+        }
+    };
 
     parse_redis_version(&version_str)
 }

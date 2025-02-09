@@ -163,9 +163,9 @@ impl RedisCacheDatabase {
         let trader_key_clone = trader_key.clone();
 
         let handle = get_runtime().spawn(async move {
-            process_commands(rx, trader_key_clone, config.clone())
-                .await
-                .expect("Error spawning task '{CACHE_WRITE}'")
+            if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
+                log::error!("Failed to spawn task '{}': {}", CACHE_WRITE, e);
+            }
         });
 
         Ok(RedisCacheDatabase {
@@ -307,7 +307,13 @@ async fn drain_buffer(
     pipe.atomic();
 
     for msg in buffer.drain(..) {
-        let key = msg.key.expect("Null command `key`");
+        let key = match msg.key {
+            Some(key) => key,
+            None => {
+                log::error!("Null key found for message: {msg:?}");
+                continue;
+            }
+        };
         let collection = match get_collection_key(&key) {
             Ok(collection) => collection,
             Err(e) => {
