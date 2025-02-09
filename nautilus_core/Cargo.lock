@@ -3012,6 +3012,7 @@ name = "nautilus-common"
 version = "0.42.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "bytes",
  "cbindgen",
@@ -3149,6 +3150,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum",
+ "tokio",
  "ustr",
 ]
 
@@ -3170,6 +3172,7 @@ version = "0.42.0"
 dependencies = [
  "anyhow",
  "async-stream",
+ "async-trait",
  "bytes",
  "chrono",
  "derive_builder",

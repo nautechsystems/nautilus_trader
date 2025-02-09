@@ -50,7 +50,8 @@ pub struct ExponentialBackoff {
 /// returns zero delay, triggering an immediate reconnect, after which the immediate flag is disabled.
 impl ExponentialBackoff {
     /// Creates a new [`ExponentialBackoff]` instance.
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         delay_initial: Duration,
         delay_max: Duration,
         factor: f64,
@@ -99,7 +100,8 @@ impl ExponentialBackoff {
     /// Returns the current base delay without jitter.
     /// This represents the delay that would be used as the base for the next call to `next()`,
     /// before any jitter is applied.
-    pub fn current_delay(&self) -> Duration {
+    #[must_use]
+    pub const fn current_delay(&self) -> Duration {
         self.delay_current
     }
 }
@@ -181,15 +183,11 @@ mod tests {
             let max_expected = base + Duration::from_millis(jitter);
             assert!(
                 delay >= min_expected,
-                "Delay {:?} is less than expected minimum {:?}",
-                delay,
-                min_expected
+                "Delay {delay:?} is less than expected minimum {min_expected:?}"
             );
             assert!(
                 delay <= max_expected,
-                "Delay {:?} exceeds expected maximum {:?}",
-                delay,
-                max_expected
+                "Delay {delay:?} exceeds expected maximum {max_expected:?}"
             );
         }
     }

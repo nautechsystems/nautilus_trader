@@ -20,7 +20,10 @@ use std::{
 
 use bytes::Bytes;
 use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
+    cache::database::{CacheDatabaseAdapter, CacheMap},
+    custom::CustomData,
+    runtime::get_runtime,
+    signal::Signal,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -38,6 +41,7 @@ use nautilus_model::{
     types::Currency,
 };
 use sqlx::{postgres::PgConnectOptions, PgPool};
+use tokio::try_join;
 use ustr::Ustr;
 
 use crate::sql::{
@@ -149,6 +153,7 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 
 #[allow(dead_code)]
 #[allow(unused)]
+#[async_trait::async_trait]
 impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn close(&mut self) -> anyhow::Result<()> {
         let pool = self.pool.clone();
@@ -199,6 +204,27 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
+    async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
+            self.load_currencies(),
+            self.load_instruments(),
+            self.load_synthetics(),
+            self.load_accounts(),
+            self.load_orders(),
+            self.load_positions()
+        )
+        .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
+
+        Ok(CacheMap {
+            currencies,
+            instruments,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+        })
+    }
+
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -225,7 +251,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -251,7 +277,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -277,11 +303,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
         todo!()
     }
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
+    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -307,7 +333,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -333,7 +359,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
+    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
         todo!()
     }
 

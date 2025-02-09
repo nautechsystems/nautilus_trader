@@ -531,12 +531,13 @@ impl WebSocketClient {
         Ok(Self {
             writer,
             controller_task,
-            connection_mode: connection_mode.clone(),
+            connection_mode,
             rate_limiter,
         })
     }
 
     /// Returns the current connection mode.
+    #[must_use]
     pub fn connection_mode(&self) -> ConnectionMode {
         ConnectionMode::from_atomic(&self.connection_mode)
     }
@@ -667,7 +668,7 @@ impl WebSocketClient {
                         Python::with_gil(|py| match handler.call0(py) {
                             Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
                             Err(e) => {
-                                tracing::error!("Error calling `post_disconnection` handler: {e}")
+                                tracing::error!("Error calling `post_disconnection` handler: {e}");
                             }
                         });
                     }
