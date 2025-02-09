@@ -15,12 +15,10 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    str::FromStr,
     time::{Duration, Instant},
 };
 
 use bytes::Bytes;
-use futures::{future::join_all, StreamExt};
 use nautilus_common::{
     cache::{
         database::{CacheDatabaseAdapter, CacheMap},
@@ -52,7 +50,7 @@ use tokio::try_join;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
-use crate::redis::create_redis_connection;
+use crate::redis::{create_redis_connection, queries::DatabaseQueries};
 
 // Task and connection names
 const CACHE_READ: &str = "cache-read";
@@ -137,7 +135,7 @@ impl DatabaseCommand {
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     trader_key: String,
-    con: ConnectionManager,
+    pub con: ConnectionManager,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
     handle: tokio::task::JoinHandle<()>,
 }
@@ -206,7 +204,7 @@ impl RedisCacheDatabase {
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
         log::debug!("Querying keys: {pattern}");
-        scan_keys(&mut self.con, pattern).await
+        DatabaseQueries::scan_keys(&mut self.con, pattern).await
     }
 
     pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
@@ -356,17 +354,6 @@ async fn drain_buffer(
     if let Err(e) = pipe.query_async::<()>(conn).await {
         tracing::error!("{e}");
     }
-}
-
-async fn scan_keys(
-    con: &mut ConnectionManager,
-    pattern: String,
-) -> Result<Vec<String>, anyhow::Error> {
-    Ok(con
-        .scan_match::<String, String>(pattern)
-        .await?
-        .collect()
-        .await)
 }
 
 async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
@@ -733,235 +720,27 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        let mut currencies = HashMap::new();
-        let pattern = format!("{CURRENCIES}*");
-        let mut con = self.database.con.clone();
-        let keys = scan_keys(&mut con, pattern).await?;
-
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| async move {
-                let currency_code = match key.as_str().rsplit(':').next() {
-                    Some(code) => Ustr::from(code),
-                    None => {
-                        log::error!("Invalid key format: {}", key);
-                        return None;
-                    }
-                };
-
-                match self.load_currency(&currency_code) {
-                    Ok(Some(currency)) => Some((currency_code, currency)),
-                    Ok(None) => {
-                        log::error!("Currency not found: {}", currency_code);
-                        None
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load currency {}: {}", currency_code, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values.
-        currencies.extend(join_all(futures).await.into_iter().flatten());
-        Ok(currencies)
+        DatabaseQueries::load_currencies(&self.database.con).await
     }
 
     async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        let mut instruments = HashMap::new();
-        let pattern = format!("{INSTRUMENTS}*");
-        let mut con = self.database.con.clone();
-        let keys = scan_keys(&mut con, pattern).await?;
-
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| async move {
-                let instrument_id = key
-                    .as_str()
-                    .rsplit(':')
-                    .next()
-                    .ok_or_else(|| {
-                        log::error!("Invalid key format: {}", key);
-                        "Invalid key format"
-                    })
-                    .and_then(|code| {
-                        InstrumentId::from_str(code).map_err(|e| {
-                            log::error!("Failed to convert to InstrumentId for {}: {}", key, e);
-                            "Invalid instrument ID"
-                        })
-                    });
-
-                let instrument_id = match instrument_id {
-                    Ok(id) => id,
-                    Err(_) => return None,
-                };
-
-                match self.load_instrument(&instrument_id) {
-                    Ok(Some(instrument)) => Some((instrument_id, instrument)),
-                    Ok(None) => {
-                        log::error!("Instrument not found: {}", instrument_id);
-                        None
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load instrument {}: {}", instrument_id, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
-        instruments.extend(join_all(futures).await.into_iter().flatten());
-        Ok(instruments)
+        DatabaseQueries::load_instruments(&self.database.con).await
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        let mut synthetics = HashMap::new();
-        let pattern = format!("{SYNTHETICS}*");
-        let mut con = self.database.con.clone();
-        let keys = scan_keys(&mut con, pattern).await?;
-
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| async move {
-                let instrument_id = key
-                    .as_str()
-                    .rsplit(':')
-                    .next()
-                    .ok_or_else(|| {
-                        log::error!("Invalid key format: {}", key);
-                        "Invalid key format"
-                    })
-                    .and_then(|code| {
-                        InstrumentId::from_str(code).map_err(|e| {
-                            log::error!("Failed to parse InstrumentId for {}: {}", key, e);
-                            "Invalid instrument ID"
-                        })
-                    });
-
-                let instrument_id = match instrument_id {
-                    Ok(id) => id,
-                    Err(_) => return None,
-                };
-
-                match self.load_synthetic(&instrument_id) {
-                    Ok(synthetic) => Some((instrument_id, synthetic)),
-                    Err(e) => {
-                        log::error!("Failed to load synthetic {}: {}", instrument_id, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values.
-        synthetics.extend(join_all(futures).await.into_iter().flatten());
-        Ok(synthetics)
+        DatabaseQueries::load_synthetics(&self.database.con).await
     }
 
     async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        let mut accounts = HashMap::new();
-        let pattern = format!("{ACCOUNTS}*");
-        let mut con = self.database.con.clone();
-        let keys = scan_keys(&mut con, pattern).await?;
-
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| async move {
-                let account_id = match key.as_str().rsplit(':').next() {
-                    Some(code) => AccountId::from(code),
-                    None => {
-                        log::error!("Invalid key format: {}", key);
-                        return None;
-                    }
-                };
-
-                match self.load_account(&account_id) {
-                    Ok(Some(account)) => Some((account_id, account)),
-                    Ok(None) => {
-                        log::error!("Account not found: {}", account_id);
-                        None
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load account {}: {}", account_id, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values.
-        accounts.extend(join_all(futures).await.into_iter().flatten());
-        Ok(accounts)
+        DatabaseQueries::load_accounts(&self.database.con).await
     }
 
     async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        let mut orders = HashMap::new();
-        let pattern = format!("{ORDERS}*");
-        let mut con = self.database.con.clone();
-        let keys = scan_keys(&mut con, pattern).await?;
-
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| async move {
-                let client_order_id = match key.as_str().rsplit(':').next() {
-                    Some(code) => ClientOrderId::from(code),
-                    None => {
-                        log::error!("Invalid key format: {}", key);
-                        return None;
-                    }
-                };
-
-                match self.load_order(&client_order_id) {
-                    Ok(Some(order)) => Some((client_order_id, order)),
-                    Ok(None) => {
-                        log::error!("Order not found: {}", client_order_id);
-                        None
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load order {}: {}", client_order_id, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values.
-        orders.extend(join_all(futures).await.into_iter().flatten());
-        Ok(orders)
+        DatabaseQueries::load_orders(&self.database.con).await
     }
 
     async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
-        let mut positions = HashMap::new();
-        let pattern = format!("{POSITIONS}*");
-        let mut con = self.database.con.clone();
-        let keys = scan_keys(&mut con, pattern).await?;
-
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| async move {
-                let position_id = match key.as_str().rsplit(':').next() {
-                    Some(code) => PositionId::from(code),
-                    None => {
-                        log::error!("Invalid key format: {}", key);
-                        return None;
-                    }
-                };
-
-                match self.load_position(&position_id) {
-                    Ok(position) => Some((position_id, position)),
-                    Err(e) => {
-                        log::error!("Failed to load position {}: {}", position_id, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values.
-        positions.extend(join_all(futures).await.into_iter().flatten());
-        Ok(positions)
+        DatabaseQueries::load_positions(&self.database.con).await
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
@@ -973,30 +752,30 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
-        todo!()
+        DatabaseQueries::load_currency(&self.database.con, code)
     }
 
     fn load_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        todo!()
+        DatabaseQueries::load_instrument(&self.database.con, instrument_id)
     }
 
     fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument> {
-        todo!()
+        DatabaseQueries::load_synthetic(&self.database.con, instrument_id)
     }
 
     fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
-        todo!()
+        DatabaseQueries::load_account(&self.database.con, account_id)
     }
 
     fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
-        todo!()
+        DatabaseQueries::load_order(&self.database.con, client_order_id)
     }
 
     fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
-        todo!()
+        DatabaseQueries::load_position(&self.database.con, position_id)
     }
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
