@@ -52,9 +52,8 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
         if decimal_part.chars().any(|c| c != '0') {
             let trimmed_len = decimal_part.trim_end_matches('0').len();
             return trimmed_len as u8;
-        } else {
-            return decimal_part.len() as u8;
         }
+        return decimal_part.len() as u8;
     }
 
     0

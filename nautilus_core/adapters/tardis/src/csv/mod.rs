@@ -29,8 +29,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-use crate::parse::parse_price;
-
 use super::{
     csv::record::{
         TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
@@ -41,6 +39,7 @@ use super::{
         parse_timestamp,
     },
 };
+use crate::parse::parse_price;
 
 /// Creates a new CSV reader which can handle gzip compression.
 pub fn create_csv_reader<P: AsRef<Path>>(

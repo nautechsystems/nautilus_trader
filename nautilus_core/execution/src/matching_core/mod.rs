@@ -59,7 +59,7 @@ pub struct OrderMatchingCore {
 impl OrderMatchingCore {
     // Creates a new [`OrderMatchingCore`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
         trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
@@ -209,14 +209,14 @@ impl OrderMatchingCore {
     }
 
     pub fn iterate_bids(&mut self) {
-        let orders: Vec<_> = self.orders_bid.to_vec();
+        let orders: Vec<_> = self.orders_bid.clone();
         for order in &orders {
             self.match_order(order, false);
         }
     }
 
     pub fn iterate_asks(&mut self) {
-        let orders: Vec<_> = self.orders_ask.to_vec();
+        let orders: Vec<_> = self.orders_ask.clone();
         for order in &orders {
             self.match_order(order, false);
         }
@@ -283,7 +283,6 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::matching_core::handlers::{FillLimitOrderHandler, TriggerStopOrderHandler};
 
     fn create_matching_core(
         instrument_id: InstrumentId,

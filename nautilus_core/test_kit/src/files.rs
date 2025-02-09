@@ -50,9 +50,8 @@ pub fn ensure_file_exists_or_download_http(
                 update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
                 return Ok(());
             }
-        } else {
-            return Ok(());
         }
+        return Ok(());
     }
 
     download_file(filepath, url)?;

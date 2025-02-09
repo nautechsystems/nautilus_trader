@@ -99,7 +99,7 @@ pub enum ModifyOrderHandlerAny {
 impl ModifyOrderHandler for ModifyOrderHandlerAny {
     fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity) {
         match self {
-            ModifyOrderHandlerAny::OrderEmulator(order_emulator) => {
+            Self::OrderEmulator(order_emulator) => {
                 order_emulator.borrow_mut().update_order(order, quantity);
             }
         }

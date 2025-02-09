@@ -100,7 +100,7 @@ pub enum SubmitOrderHandlerAny {
 impl SubmitOrderHandler for SubmitOrderHandlerAny {
     fn handle_submit_order(&self, command: SubmitOrder) {
         match self {
-            SubmitOrderHandlerAny::OrderEmulator(emulator) => {
+            Self::OrderEmulator(emulator) => {
                 emulator.borrow_mut().handle_submit_order(command);
             }
         }
