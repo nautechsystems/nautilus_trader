@@ -19,16 +19,20 @@ This module provides a data client for backtesting.
 
 from nautilus_trader.common.config import NautilusConfig
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport BookType
-from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.data.messages cimport RequestBars
+from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestInstrument
+from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
+from nautilus_trader.data.messages cimport RequestQuoteTicks
+from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -100,8 +104,8 @@ cdef class BacktestDataClient(DataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id, dict params = None):
-        Condition.not_none(data_type, "data_type")
+    cpdef void request(self, RequestData request):
+        Condition.not_none(request.data_type, "data_type")
         # Do nothing else for backtest
 
 
@@ -311,98 +315,34 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(
-        self,
-        InstrumentId instrument_id,
-        UUID4 correlation_id,
-        datetime start: datetime | None = None,
-        datetime end: datetime | None = None,
-        dict metadata = None,
-    ):
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        cdef Instrument instrument = self._cache.instrument(instrument_id)
+    cpdef void request_instrument(self, RequestInstrument request):
+        cdef Instrument instrument = self._cache.instrument(request.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}")
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        data_type = DataType(
-            type=Instrument,
-            metadata={"instrument_id": instrument_id},
-        )
+        self._handle_instrument(instrument, request.id, request.params)
 
-        self._handle_instrument(instrument, correlation_id, metadata)
-
-    cpdef void request_instruments(
-        self,
-        Venue venue,
-        UUID4 correlation_id,
-        datetime start: datetime | None = None,
-        datetime end: datetime | None = None,
-        dict metadata = None,
-    ):
-        Condition.not_none(correlation_id, "correlation_id")
-
-        cdef list instruments = self._cache.instruments(venue)
+    cpdef void request_instruments(self, RequestInstruments request):
+        cdef list instruments = self._cache.instruments(request.venue)
         if not instruments:
             self._log.error(f"Cannot find instruments")
             return
 
-        self._handle_instruments(venue, instruments, correlation_id, metadata)
+        self._handle_instruments(request.venue, instruments, request.id, request.params)
 
-    cpdef void request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        dict metadata = None,
-    ):
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
-
+    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
         # Do nothing else for backtest
+        pass
 
-    cpdef void request_quote_ticks(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        datetime start: datetime | None = None,
-        datetime end: datetime | None = None,
-        dict metadata = None,
-    ):
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
-
+    cpdef void request_quote_ticks(self, RequestQuoteTicks request):
         # Do nothing else for backtest
+        pass
 
-    cpdef void request_trade_ticks(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-        datetime start: datetime | None = None,
-        datetime end: datetime | None = None,
-        dict metadata = None,
-    ):
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_negative_int(limit, "limit")
-        Condition.not_none(correlation_id, "correlation_id")
-
+    cpdef void request_trade_ticks(self, RequestTradeTicks request):
         # Do nothing else for backtest
+        pass
 
-    cpdef void request_bars(
-        self,
-        BarType bar_type,
-        int limit,
-        UUID4 correlation_id,
-        datetime start: datetime | None = None,
-        datetime end: datetime | None = None,
-        dict metadata = None,
-    ):
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
-        Condition.not_none(correlation_id, "correlation_id")
-
+    cpdef void request_bars(self, RequestBars request):
         # Do nothing else for backtest
+        pass

@@ -29,8 +29,14 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.data.messages import DataCommand
-from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.data.messages import Unsubscribe
 from nautilus_trader.model.book import OrderBook
@@ -298,21 +304,17 @@ class TestDataEngine:
     def test_send_request_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         handler = []
-        request = DataRequest(
+        request = RequestQuoteTicks(
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+            start=None,
+            end=None,
+            limit=1000,
             client_id=ClientId("RANDOM"),
             venue=None,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -326,21 +328,22 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         handler = []
-        request = DataRequest(
-            client_id=None,
-            venue=BINANCE,
+        request = RequestData(
             data_type=DataType(
                 Data,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
                 },
             ),
+            start=None,
+            end=None,
+            limit=0,
+            client_id=None,
+            venue=BINANCE,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"limit": 1000},
         )
 
         # Act
@@ -357,38 +360,30 @@ class TestDataEngine:
         handler = []
         uuid = UUID4()  # We'll use this as a duplicate
 
-        request1 = DataRequest(
-            client_id=None,
-            venue=BINANCE,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
-                },
-            ),
+        request1 = RequestQuoteTicks(
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+            start=None,
+            end=None,
+            limit=1000,
+            client_id=ClientId("RANDOM"),
+            venue=None,
             callback=handler.append,
-            request_id=uuid,  # Duplicate
+            request_id=uuid,
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
-        request2 = DataRequest(
-            client_id=None,
-            venue=BINANCE,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
-                },
-            ),
+        request2 = RequestQuoteTicks(
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+            start=None,
+            end=None,
+            limit=1000,
+            client_id=ClientId("RANDOM"),
+            venue=None,
             callback=handler.append,
-            request_id=uuid,  # Duplicate
+            request_id=uuid,
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -2111,18 +2106,16 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         handler = []
-        request = DataRequest(
+        request = RequestInstrument(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
             client_id=None,
             venue=BINANCE,
-            data_type=DataType(
-                Instrument,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -2138,18 +2131,15 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         handler = []
-        request = DataRequest(
+        request = RequestInstruments(
+            start=None,
+            end=None,
             client_id=None,
             venue=BINANCE,
-            data_type=DataType(
-                Instrument,
-                metadata={
-                    "venue": BINANCE,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -2173,13 +2163,16 @@ class TestDataEngine:
 
         # Act
         handler = []
-        request = DataRequest(
+        request = RequestInstrument(
+            instrument_id=instrument.id,
+            start=None,
+            end=None,
             client_id=None,
             venue=idealpro,
-            data_type=DataType(Instrument, metadata={"instrument_id": instrument.id}),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -2203,13 +2196,15 @@ class TestDataEngine:
 
         # Act
         handler = []
-        request = DataRequest(
+        request = RequestInstruments(
+            start=None,
+            end=None,
             client_id=None,
             venue=idealpro,
-            data_type=DataType(Instrument, metadata={}),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -2232,19 +2227,15 @@ class TestDataEngine:
         self.data_engine.process(deltas)
 
         handler = []
-        request = DataRequest(
+        request = RequestOrderBookSnapshot(
+            instrument_id=ETHUSDT_BINANCE.id,
+            limit=10,
             client_id=None,
             venue=BINANCE,
-            data_type=DataType(
-                OrderBookDeltas,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "limit": 10,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -2272,17 +2263,13 @@ class TestDataEngine:
         self.mock_market_data_client.bars = [bar]
 
         handler = []
-        request = DataRequest(
+        request = RequestBars(
+            bar_type=bar_type,
+            start=None,
+            end=None,
+            limit=0,
             client_id=None,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_type": bar_type,
-                    "start": None,
-                    "end": None,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2315,17 +2302,13 @@ class TestDataEngine:
         self.mock_market_data_client.bars = [bar]
 
         handler = []
-        request = DataRequest(
+        request = RequestBars(
+            bar_type=bar_type,
+            start=pd.Timestamp("2024-10-01"),
+            end=pd.Timestamp("2024-10-31"),
+            limit=0,
             client_id=None,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_type": bar_type,
-                    "start": pd.Timestamp("2024-10-01"),
-                    "end": pd.Timestamp("2024-10-31"),
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2359,17 +2342,13 @@ class TestDataEngine:
         self.data_engine.register_catalog(catalog)
 
         handler = []
-        request = DataRequest(
+        request = RequestBars(
+            bar_type=bar_type,
+            start=None,
+            end=None,
+            limit=0,
             client_id=None,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_type": bar_type,
-                    "start": None,
-                    "end": None,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2416,17 +2395,13 @@ class TestDataEngine:
         self.mock_market_data_client.bars = [bar2]
 
         handler = []
-        request = DataRequest(
+        request = RequestBars(
+            bar_type=bar_type,
+            start=pd.Timestamp("2024-3-24"),
+            end=pd.Timestamp("2024-3-25"),
+            limit=0,
             client_id=None,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_type": bar_type,
-                    "start": pd.Timestamp("2024-3-24"),
-                    "end": pd.Timestamp("2024-3-25"),
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2462,17 +2437,13 @@ class TestDataEngine:
         self.mock_market_data_client.quote_ticks = [quote_tick]
 
         handler = []
-        request = DataRequest(
+        request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
             client_id=None,
             venue=ETHUSDT_BINANCE.venue,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "start": None,
-                    "end": None,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2503,17 +2474,13 @@ class TestDataEngine:
         self.data_engine.register_catalog(catalog)
 
         handler = []
-        request = DataRequest(
+        request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
             client_id=None,
             venue=ETHUSDT_BINANCE.venue,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "start": None,
-                    "end": None,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2556,17 +2523,13 @@ class TestDataEngine:
         self.mock_market_data_client.quote_ticks = [quote_tick2]
 
         handler = []
-        request = DataRequest(
+        request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=pd.Timestamp("2024-3-24"),
+            end=pd.Timestamp("2024-3-25"),
             client_id=None,
+            limit=0,
             venue=ETHUSDT_BINANCE.venue,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "start": pd.Timestamp("2024-3-24"),
-                    "end": pd.Timestamp("2024-3-25"),
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2604,17 +2567,13 @@ class TestDataEngine:
         self.mock_market_data_client.trade_ticks = [trade_tick]
 
         handler = []
-        request = DataRequest(
+        request = RequestTradeTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
             client_id=None,
             venue=ETHUSDT_BINANCE.venue,
-            data_type=DataType(
-                TradeTick,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "start": None,
-                    "end": None,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2647,17 +2606,13 @@ class TestDataEngine:
         assert trade_tick == trade_tick
 
         handler = []
-        request = DataRequest(
+        request = RequestTradeTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
             client_id=None,
             venue=ETHUSDT_BINANCE.venue,
-            data_type=DataType(
-                TradeTick,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "start": None,
-                    "end": None,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2700,17 +2655,13 @@ class TestDataEngine:
         self.mock_market_data_client.trade_ticks = [trade_tick2]
 
         handler = []
-        request = DataRequest(
+        request = RequestTradeTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=pd.Timestamp("2024-3-24"),
+            end=pd.Timestamp("2024-3-25"),
+            limit=0,
             client_id=None,
             venue=ETHUSDT_BINANCE.venue,
-            data_type=DataType(
-                TradeTick,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "start": pd.Timestamp("2024-3-24"),
-                    "end": pd.Timestamp("2024-3-25"),
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2778,28 +2729,23 @@ class TestDataEngine:
 
         handler = []
         params = {}
+        params["bar_type"] = bar_types[0].composite()
+        params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = True
         params["update_subscriptions"] = False
         params["update_catalog"] = False
+        params["bars_market_data_type"] = "bars"
 
-        request_id = UUID4()
-        request = DataRequest(
+        request = RequestBars(
+            bar_type=bar_types[0].composite(),
+            start=start,
+            end=end,
+            limit=0,
             client_id=None,
             venue=symbol_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_types": tuple(bar_types),
-                    "bars_market_data_type": "bars",
-                    "instrument_id": symbol_id,
-                    "bar_type": bar_types[0].composite(),
-                    "start": start,
-                    "end": end,
-                },
-            ),
             callback=handler.append,
-            request_id=request_id,
-            ts_init=utc_now.value,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
             params=params,
         )
 
@@ -2899,28 +2845,23 @@ class TestDataEngine:
 
         handler = []
         params = {}
+        params["bar_type"] = bar_types[0].composite()
+        params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = False
         params["update_subscriptions"] = False
         params["update_catalog"] = False
+        params["bars_market_data_type"] = "quote_ticks"
 
-        request_id = UUID4()
-        request = DataRequest(
+        request = RequestQuoteTicks(
+            instrument_id=bar_types[0].instrument_id,
+            start=start,
+            end=end,
+            limit=0,
             client_id=None,
             venue=symbol_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_types": tuple(bar_types),
-                    "bars_market_data_type": "quote_ticks",
-                    "instrument_id": symbol_id,
-                    "bar_type": bar_types[0].composite(),
-                    "start": start,
-                    "end": end,
-                },
-            ),
             callback=handler.append,
-            request_id=request_id,
-            ts_init=utc_now.value,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
             params=params,
         )
 
@@ -2996,28 +2937,23 @@ class TestDataEngine:
 
         handler = []
         params = {}
+        params["bar_type"] = bar_types[0].composite()
+        params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = False
         params["update_subscriptions"] = False
         params["update_catalog"] = False
+        params["bars_market_data_type"] = "trade_ticks"
 
-        request_id = UUID4()
-        request = DataRequest(
+        request = RequestTradeTicks(
+            instrument_id=bar_types[0].instrument_id,
+            start=start,
+            end=end,
+            limit=0,
             client_id=None,
             venue=symbol_id.venue,
-            data_type=DataType(
-                Bar,
-                metadata={
-                    "bar_types": tuple(bar_types),
-                    "bars_market_data_type": "trade_ticks",
-                    "instrument_id": symbol_id,
-                    "bar_type": bar_types[0].composite(),
-                    "start": start,
-                    "end": end,
-                },
-            ),
             callback=handler.append,
-            request_id=request_id,
-            ts_init=utc_now.value,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
             params=params,
         )
 
@@ -3110,7 +3046,7 @@ class TestDataEngine:
     #
     #     # Act
     #     handler: list[DataResponse] = []
-    #     request = DataRequest(
+    #     request = RequestData(
     #         client_id=None,
     #         venue=sim_venue,
     #         data_type=DataType(
@@ -3193,7 +3129,7 @@ class TestDataEngine:
     #
     #     # Act
     #     handler: list[DataResponse] = []
-    #     request1 = DataRequest(
+    #     request1 = RequestData(
     #         client_id=None,
     #         venue=sim_venue,
     #         data_type=DataType(
@@ -3206,7 +3142,7 @@ class TestDataEngine:
     #         request_id=UUID4(),
     #         ts_init=self.clock.timestamp_ns(),
     #     )
-    #     request2 = DataRequest(
+    #     request2 = RequestData(
     #         client_id=None,
     #         venue=sim_venue,
     #         data_type=DataType(
@@ -3266,7 +3202,7 @@ class TestDataEngine:
     #
     #     # Act
     #     handler = []
-    #     request = DataRequest(
+    #     request = RequestData(
     #         client_id=None,
     #         venue=BINANCE,
     #         data_type=DataType(

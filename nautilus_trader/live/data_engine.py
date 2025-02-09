@@ -25,8 +25,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataCommand
-from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.data.messages import RequestData
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
 
 
@@ -87,7 +87,7 @@ class LiveDataEngine(DataEngine):
             clock=self._clock,
             logger=self._log,
         )
-        self._req_enqueuer: ThrottledEnqueuer[DataRequest] = ThrottledEnqueuer(
+        self._req_enqueuer: ThrottledEnqueuer[RequestData] = ThrottledEnqueuer(
             qname="req_queue",
             queue=self._req_queue,
             loop=self._loop,
@@ -199,7 +199,7 @@ class LiveDataEngine(DataEngine):
 
     def req_qsize(self) -> int:
         """
-        Return the number of `DataRequest` objects buffered on the internal queue.
+        Return the number of `RequestData` objects buffered on the internal queue.
 
         Returns
         -------
@@ -270,7 +270,7 @@ class LiveDataEngine(DataEngine):
         """
         self._cmd_enqueuer.enqueue(command)
 
-    def request(self, request: DataRequest) -> None:
+    def request(self, request: RequestData) -> None:
         """
         Handle the given request.
 
@@ -280,7 +280,7 @@ class LiveDataEngine(DataEngine):
 
         Parameters
         ----------
-        request : DataRequest
+        request : RequestData
             The request to handle.
 
         """
@@ -364,7 +364,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_cmd_queue'")
+            self._log.warning("DataCommand message queue canceled")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -376,20 +376,20 @@ class LiveDataEngine(DataEngine):
 
     async def _run_req_queue(self) -> None:
         self._log.debug(
-            f"DataRequest message queue processing starting (qsize={self.req_qsize()})",
+            f"RequestData message queue processing starting (qsize={self.req_qsize()})",
         )
         try:
             while True:
-                request: DataRequest | None = await self._req_queue.get()
+                request: RequestData | None = await self._req_queue.get()
                 if request is self._sentinel:
                     break
                 self._handle_request(request)
         except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_req_queue'")
+            self._log.warning("RequestData message queue canceled")
         except Exception as e:
             self._log.error(repr(e))
         finally:
-            stopped_msg = "DataRequest message queue stopped"
+            stopped_msg = "RequestData message queue stopped"
             if not self._req_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.req_qsize()} message(s) on queue")
             else:
@@ -406,7 +406,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_response(response)
         except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_res_queue'")
+            self._log.warning("DataResponse message queue canceled")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -425,7 +425,7 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_data(data)
         except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_data_queue'")
+            self._log.warning("Data message queue canceled")
         except Exception as e:
             self._log.error(repr(e))
         finally:

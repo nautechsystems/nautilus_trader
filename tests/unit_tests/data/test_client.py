@@ -20,6 +20,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.messages import RequestData
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
@@ -98,8 +99,21 @@ class TestDataClient:
         # Arrange
         data_type = DataType(Data, {"Type": "MyData"})
 
+        request = RequestData(
+            data_type=data_type,
+            start=None,
+            end=None,
+            limit=0,
+            client_id=None,
+            venue=self.venue,
+            callback=(lambda x: x),
+            request_id=UUID4(),
+            ts_init=0,
+            params=None,
+        )
+
         # Act
-        self.client.request(data_type, UUID4())
+        self.client.request(request)
 
         # Assert
         # TODO: Determine better way of asserting this than parsing logs
