@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -14,21 +13,24 @@ use object_store::{path::Path, ObjectStore};
 use super::catalog::CatalogPathPrefix;
 use nautilus_common::clock::Clock;
 use nautilus_core::UnixNanos;
-use nautilus_serialization::arrow::{
-    ArrowSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch, KEY_INSTRUMENT_ID,
-};
+use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
+
+#[derive(Debug, Default, PartialEq, PartialOrd, Hash, Eq, Clone)]
+pub struct FileWriterPath {
+    path: Path,
+    type_str: String,
+    instrument_id: Option<String>,
+}
 
 /// A FileWriter encodes data via an Arrow StreamWriter.
 ///
 /// It flushes the internal buffer to the object according to rotation policy.
 pub struct FileWriter {
-    /// Output path.
-    path: Path,
     /// Arrow StreamWriter that writes to an in-memory Vec<u8>.
     writer: StreamWriter<Vec<u8>>,
     /// Current size in bytes.
     size: u64,
-    /// Optional next rotation timestamp.
+    /// TODO: Optional next rotation timestamp.
     next_rotation: Option<UnixNanos>,
     /// Schema of the data being written.
     schema: Schema,
@@ -40,11 +42,7 @@ pub struct FileWriter {
 
 impl FileWriter {
     /// Creates a new FileWriter using the given path, schema and maximum buffer size.
-    pub fn new(
-        path: Path,
-        schema: &Schema,
-        rotation_config: RotationConfig,
-    ) -> Result<Self, ArrowError> {
+    pub fn new(schema: &Schema, rotation_config: RotationConfig) -> Result<Self, ArrowError> {
         let writer = StreamWriter::try_new(Vec::new(), schema)?;
         let mut max_buffer_size = 1_000_000_000_000; // 1 GB
 
@@ -53,7 +51,6 @@ impl FileWriter {
         };
 
         Ok(Self {
-            path,
             writer,
             size: 0,
             next_rotation: None,
@@ -88,11 +85,6 @@ impl FileWriter {
             RotationConfig::Size { max_size } => self.size >= *max_size,
             _ => false,
         }
-    }
-
-    /// Returns the file path where the data should be written.
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 }
 
@@ -140,7 +132,7 @@ pub struct FileWriterManager {
     /// Set of types that should be split by instrument.
     per_instrument_types: HashSet<String>,
     /// Map of active FileWriters keyed by their writer key.
-    writers: HashMap<String, FileWriter>,
+    writers: HashMap<FileWriterPath, FileWriter>,
 }
 
 impl FileWriterManager {
@@ -176,54 +168,56 @@ impl FileWriterManager {
             return Ok(());
         }
 
-        let key = self.get_writer_key(&data)?;
+        let path = self.get_writer_path(&data)?;
 
         // Create a new FileWriter if one does not exist.
-        if !self.writers.contains_key(&key) {
-            self.create_writer::<T>(&key)?;
+        if !self.writers.contains_key(&path) {
+            self.create_writer::<T>(path.clone())?;
         }
 
         // Encode the data into a RecordBatch using T's encoding logic.
         let batch = T::encode_batch(&T::metadata(&data), &[data])?;
 
         // Write the RecordBatch to the appropriate FileWriter.
-        if let Some(writer) = self.writers.get_mut(&key) {
+        if let Some(writer) = self.writers.get_mut(&path) {
             let should_rotate = writer.write_record_batch(&batch)?;
             if should_rotate {
-                self.rotate_writer(&key).await?;
+                self.rotate_writer(&path).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Rotates the FileWriter associated with `key`.
-    /// This flushes its current buffer to the object store, then creates a new FileWriter.
+    /// Flushes and rotates FileWriter associated with `key`.
     /// TODO: Fix error type to handle arrow error and object store error
-    async fn rotate_writer(&mut self, key: &str) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(writer) = self.writers.get_mut(key) {
-            let bytes = writer.take_buffer()?;
-            self.store.put(writer.path(), bytes.into()).await?;
-        }
+    async fn rotate_writer(
+        &mut self,
+        path: &FileWriterPath,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut writer = self.writers.remove(path).unwrap();
+        let bytes = writer.take_buffer()?;
+        self.store.put(&path.path, bytes.into()).await?;
+        let new_path = self.regen_writer_path(path)?;
+        self.writers.insert(new_path, writer);
         Ok(())
     }
 
     /// Creates (and inserts) a new FileWriter for type T.
-    fn create_writer<T>(&mut self, key: &str) -> Result<(), ArrowError>
+    fn create_writer<T>(&mut self, path: FileWriterPath) -> Result<(), ArrowError>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
-        let path = Path::from(key);
-        let writer = FileWriter::new(path, &T::get_schema(None), self.rotation_config.clone())?;
-        self.writers.insert(key.to_string(), writer);
+        let writer = FileWriter::new(&T::get_schema(None), self.rotation_config.clone())?;
+        self.writers.insert(path, writer);
         Ok(())
     }
 
     /// Flushes all active FileWriters by writing any remaining buffered bytes to the object store.
     pub async fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        for (_key, mut writer) in self.writers.drain() {
+        for (path, mut writer) in self.writers.drain() {
             let bytes = writer.take_buffer()?;
-            self.store.put(writer.path(), bytes.into()).await?;
+            self.store.put(&path.path, bytes.into()).await?;
         }
         Ok(())
     }
@@ -239,63 +233,223 @@ impl FileWriterManager {
             .unwrap_or(true)
     }
 
+    fn regen_writer_path(
+        &self,
+        path: &FileWriterPath,
+    ) -> Result<FileWriterPath, Box<dyn std::error::Error>> {
+        let type_str = path.type_str.clone();
+        let instrument_id = path.instrument_id.clone();
+        let timestamp = self.clock.borrow().timestamp_ns();
+        let mut path = Path::from(self.base_path.clone());
+        if let Some(ref instrument_id) = instrument_id {
+            path = path.child(type_str.clone());
+            path = path.child(format!("{}_{}.feather", instrument_id, timestamp));
+        } else {
+            path = path.child(format!("{}_{}.feather", type_str, timestamp));
+        }
+
+        Ok(FileWriterPath {
+            path,
+            type_str,
+            instrument_id,
+        })
+    }
+
     /// Generates a key for a FileWriter based on type T and optional instrument ID.
-    fn get_writer_key<T>(&self, data: &T) -> Result<String, Box<dyn std::error::Error>>
+    fn get_writer_path<T>(&self, data: &T) -> Result<FileWriterPath, Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix,
     {
-        let path = T::path_prefix();
-        if self.per_instrument_types.contains(path) {
-            let metadata = T::metadata(data);
-            let instrument_id = metadata
-                .get(KEY_INSTRUMENT_ID)
-                .ok_or("Instrument ID not found")?;
-            Ok(format!("{}_{}", path, instrument_id))
-        } else {
-            Ok(path.to_string())
-        }
-    }
-
-    /// Generates a file path for a new FileWriter.
-    fn make_path<T: CatalogPathPrefix>(&self, instrument_id: Option<&str>) -> Path {
         let type_str = T::path_prefix();
-        let mut path = Path::from(self.base_path.as_str());
-        path = path.child(type_str);
-        if let Some(id) = instrument_id {
-            path = path.child(id);
-        }
+        let instrument_id = self.per_instrument_types.contains(type_str).then(|| {
+            let metadata = T::metadata(data);
+            metadata
+                .get(KEY_INSTRUMENT_ID)
+                .cloned()
+                .expect("Data {type_str} expected instrument_id metadata for per instrument writer")
+        });
+
         let timestamp = self.clock.borrow().timestamp_ns();
-        path = path.child(format!("{}_{}.feather", type_str, timestamp));
-        path
-    }
-
-    // fn check_rotation(&self, writer: &FileWriter) -> bool {
-    //     match &self.rotation_config {
-    //         RotationConfig::Size { max_size } => writer.size() >= *max_size,
-    //         RotationConfig::Interval { interval_ns: _ } => {
-    //             if let Some(next) = writer.next_rotation() {
-    //                 self.clock.borrow().timestamp_ns() >= next
-    //             } else {
-    //                 false
-    //             }
-    //         }
-    //         RotationConfig::ScheduledDates { .. } => {
-    //             if let Some(next) = writer.next_rotation() {
-    //                 self.clock.borrow().timestamp_ns() >= next
-    //             } else {
-    //                 false
-    //             }
-    //         }
-    //         RotationConfig::NoRotation => false,
-    //     }
-    // }
-
-    /// Flush all writers
-    async fn flush_all(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        for (_key, mut writer) in self.writers.drain() {
-            let bytes = writer.take_buffer()?;
-            self.store.put(writer.path(), bytes.into()).await?;
+        let mut path = Path::from(self.base_path.clone());
+        if let Some(ref instrument_id) = instrument_id {
+            path = path.child(type_str);
+            path = path.child(format!("{}_{}.feather", instrument_id, timestamp));
+        } else {
+            path = path.child(format!("{}_{}.feather", type_str, timestamp));
         }
-        Ok(())
+
+        Ok(FileWriterPath {
+            path,
+            type_str: type_str.to_string(),
+            instrument_id,
+        })
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nautilus_common::clock::TestClock;
+    use nautilus_model::{
+        data::{QuoteTick, TradeTick},
+        enums::AggressorSide,
+        identifiers::{InstrumentId, TradeId},
+        types::{Price, Quantity},
+    };
+    use object_store::local::LocalFileSystem;
+    use object_store::ObjectStore;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_writer_manager_keys() {
+        // Create a temporary directory for base path.
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path().to_str().unwrap().to_string();
+
+        // Create a LocalFileSystem based object store using the temp directory.
+        let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+        let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+
+        // Create a test clock.
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let timestamp = clock.borrow().timestamp_ns();
+
+        let quote_type_str = QuoteTick::path_prefix();
+
+        let mut per_instrument = HashSet::new();
+        per_instrument.insert(quote_type_str.to_string());
+
+        let mut manager = FileWriterManager::new(
+            base_path.clone(),
+            store,
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            Some(per_instrument),
+        );
+
+        let instrument_id = "AAPL.AAPL";
+        // Write a dummy value.
+        let quote = QuoteTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from("100.0"),
+            Price::from("100.0"),
+            Quantity::from("100.0"),
+            Quantity::from("100.0"),
+            UnixNanos::from(1000000000000000000),
+            UnixNanos::from(1000000000000000000),
+        );
+
+        let trade = TradeTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from("100.0"),
+            Quantity::from("100.0"),
+            AggressorSide::Buyer,
+            TradeId::from("1"),
+            UnixNanos::from(1000000000000000000),
+            UnixNanos::from(1000000000000000000),
+        );
+
+        manager.write(quote).await.unwrap();
+        manager.write(trade).await.unwrap();
+
+        // Check keys and paths for quotes and trades
+        let path = manager.get_writer_path(&quote).unwrap();
+        let expected_path = format!("/{base_path}/quotes/{instrument_id}_{timestamp}.feather");
+        assert_eq!(path.path.to_string(), expected_path);
+        assert!(manager.writers.contains_key(&path));
+        let writer = manager.writers.get(&path).unwrap();
+        assert!(writer.size > 0);
+
+        let path = manager.get_writer_path(&trade).unwrap();
+        let expected_path = format!("/{base_path}/trades_{timestamp}.feather");
+        assert_eq!(path.path.to_string(), expected_path);
+        assert!(manager.writers.contains_key(&path));
+        let writer = manager.writers.get(&path).unwrap();
+        assert!(writer.size > 0);
+    }
+
+    // #[tokio::test]
+    // async fn test_write_and_flush() {
+    //     // Create a temporary directory for base path.
+    //     let temp_dir = TempDir::new().unwrap();
+    //     let base_path = temp_dir.path().to_str().unwrap().to_string();
+
+    //     // Create a LocalFileSystem based object store using the temp directory.
+    //     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    //     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+
+    //     // Create a test clock.
+    //     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    //     let timestamp = clock.borrow().timestamp_ns();
+
+    //     let quote_type_str = QuoteTick::path_prefix();
+
+    //     let mut per_instrument = HashSet::new();
+    //     per_instrument.insert(quote_type_str.to_string());
+
+    //     let mut manager = FileWriterManager::new(
+    //         base_path.clone(),
+    //         store,
+    //         clock,
+    //         RotationConfig::NoRotation,
+    //         None,
+    //         Some(per_instrument),
+    //     );
+
+    //     let instrument_id = "AAPL.AAPL";
+    //     // Write a dummy value.
+    //     let quote = QuoteTick::new(
+    //         InstrumentId::from(instrument_id),
+    //         Price::from("100.0"),
+    //         Price::from("100.0"),
+    //         Quantity::from("100.0"),
+    //         Quantity::from("100.0"),
+    //         UnixNanos::from(1000000000000000000),
+    //         UnixNanos::from(1000000000000000000),
+    //     );
+
+    //     let trade = TradeTick::new(
+    //         InstrumentId::from(instrument_id),
+    //         Price::from("100.0"),
+    //         Quantity::from("100.0"),
+    //         AggressorSide::Buyer,
+    //         TradeId::from("1"),
+    //         UnixNanos::from(1000000000000000000),
+    //         UnixNanos::from(1000000000000000000),
+    //     );
+
+    //     manager.write(quote).await.unwrap();
+    //     manager.write(trade).await.unwrap();
+
+    //     let paths = manager.writers.keys().collect::<Vec<_>>();
+    //     assert_eq!(paths.len(), 2);
+
+    //     // Read files from the temporary directory.
+    //     let mut recovered_data = Vec::new();
+    //     for entry in std::fs::read_dir(temp_dir.path()).unwrap() {
+    //         let entry = entry.unwrap();
+    //         let path = entry.path();
+    //         if path
+    //             .extension()
+    //             .map(|ext| ext == "feather")
+    //             .unwrap_or(false)
+    //         {
+    //             let bytes = std::fs::read(&path).unwrap();
+    //             let mut reader = StreamReader::try_new(Cursor::new(bytes)).unwrap();
+    //             while let Some(batch) = reader.next() {
+    //                 let batch = batch.unwrap();
+    //                 let decoded = Dummy::decode_batch(&HashMap::new(), batch).unwrap();
+    //                 recovered_data.extend(decoded);
+    //             }
+    //         }
+    //     }
+
+    //     // Sort by value for comparison.
+    //     recovered_data.sort_by_key(|d| d.value);
+    //     assert_eq!(recovered_data.len(), 2);
+    //     assert_eq!(recovered_data[0].value, 10);
+    //     assert_eq!(recovered_data[1].value, 20);
+    // }
 }
