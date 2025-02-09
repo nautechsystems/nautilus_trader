@@ -13,15 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use derive_builder::Builder;
 use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    orders::OrderAny,
     types::{Price, Quantity},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::order_emulator::emulator::OrderEmulator;
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
@@ -82,6 +85,24 @@ impl Display for ModifyOrder {
             self.price.map_or("None".to_string(), |price| format!("{price}")),
             self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
         )
+    }
+}
+
+pub trait ModifyOrderHandler {
+    fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity);
+}
+
+pub enum ModifyOrderHandlerAny {
+    OrderEmulator(Rc<RefCell<OrderEmulator>>),
+}
+
+impl ModifyOrderHandler for ModifyOrderHandlerAny {
+    fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity) {
+        match self {
+            ModifyOrderHandlerAny::OrderEmulator(order_emulator) => {
+                order_emulator.borrow_mut().update_order(order, quantity);
+            }
+        }
     }
 }
 

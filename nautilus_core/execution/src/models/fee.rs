@@ -137,7 +137,7 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::prelude::ToPrimitive;
 
-    use crate::models::fee::{FeeModel, FixedFeeModel, MakerTakerFeeModel};
+    use super::{FeeModel, FixedFeeModel, MakerTakerFeeModel};
 
     #[rstest]
     fn test_fixed_model_single_fill() {

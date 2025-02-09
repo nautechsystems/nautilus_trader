@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Tests module for `OrderMatchingEngine`.
-
 use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -27,7 +25,6 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{AtomicTime, UnixNanos, UUID4};
-use nautilus_execution::messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder};
 use nautilus_model::{
     data::{stubs::OrderBookDeltaTestBuilder, BookOrder, TradeTick},
     enums::{
@@ -53,7 +50,8 @@ use rstest::{fixture, rstest};
 use ustr::Ustr;
 
 use crate::{
-    matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
+    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
+    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     models::{fee::FeeModelAny, fill::FillModel},
 };
 
