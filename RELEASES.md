@@ -9,7 +9,11 @@ None
 None
 
 ### Internal Improvements
-None
+- Improved Redis queries, error handling and connections (#2295), thanks @Pushkarm029
+- Refactored data request interfaces into messages (#2260), thanks @faysou
+- Refactored data subscribe interfaces into messages (#2280), thanks @faysou
+- Refactored execution message handling in Rust (#2291), thanks @filipmacek
+- Ported StreamingFeatherWriter to Rust (#2292), thanks @twitu
 
 ### Fixes
 None
@@ -32,7 +36,9 @@ backed by 128-bit integers (instead of 64-bit), thereby increasing maximum preci
 This will address precision and value range issues experienced by some crypto users, alleviate higher timeframe bar volume limitations, as well as future proofing the platform.
 See the [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) for more details. For an explanation on compiling with or without high-precision mode, see the [precision-mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode) section of the installation guide.
 
-This release will be the final version that uses Poetry for package and dependency management.
+**For migrating data catalogs due to the breaking changes, see the [data migrations guide](https://nautilustrader.io/docs/nightly/concepts/data#data-migrations)**.
+
+**This release will be the final version that uses Poetry for package and dependency management.**
 
 ### Enhancements
 - Added `high-precision` mode for 128-bit integer backed value types (#2072), thanks @twitu
@@ -65,6 +71,11 @@ This release will be the final version that uses Poetry for package and dependen
 - Renamed `event_logging` config option to `log_events`
 - Renamed `BetfairExecClientConfig.request_account_state_period` to `request_account_state_secs`
 - Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
+- Changed `OrderBookDelta` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
+- Changed `OrderBookDepth10` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
+- Changed `QuoteTick` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
+- Changed `TradeTick` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
+- Changed `Bar` Arrow schema to use `FixedSizeBinary` fields to support the new precision modes
 - Changed `BettingInstrument` default `min_notional` to `None`
 - Changed meaning of `ws_connection_delay_secs` for [PolymarketDataClientConfig](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/adapters/polymarket/config.py) to be **non-initial** delay (#2271)
 - Changed `GATEIO` Tardis venue to `GATE_IO` for consistency with `CRYPTO_COM` and `BLOCKCHAIN_COM`
