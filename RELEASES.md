@@ -24,6 +24,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `BetSide` enum (to support `Bet` and `BetPosition`)
 - Added `Bet` and `BetPosition` for betting market risk and PnL calculations
 - Added `total_pnl` and `total_pnls` methods for `Portfolio`
+- Added optional `price` parameter for `Portfolio` unrealized PnL and net exposure methods
 
 ### Breaking Changes
 - Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)

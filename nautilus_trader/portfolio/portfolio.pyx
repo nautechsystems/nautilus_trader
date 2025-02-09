@@ -110,8 +110,8 @@ cdef class Portfolio(PortfolioFacade):
         )
 
         self._venue = None  # Venue for specific portfolio behavior (Interactive Brokers)
-        self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._realized_pnls: dict[InstrumentId, Money] = {}
+        self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._bet_positions: dict[InstrumentId, object] = {}
         self._pending_calcs: set[InstrumentId] = set()
@@ -234,8 +234,8 @@ cdef class Portfolio(PortfolioFacade):
         Performs all account calculations for the current position state.
         """
         # Clean slate
-        self._unrealized_pnls.clear()
         self._realized_pnls.clear()
+        self._unrealized_pnls.clear()
 
         cdef list all_positions_open = self._cache.positions_open()
 
@@ -263,8 +263,8 @@ cdef class Portfolio(PortfolioFacade):
                 positions_open=positions_open,
             )
 
-            self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
             self._realized_pnls[instrument_id] = self._calculate_realized_pnl(instrument_id)
+            self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
             account = self._cache.account_for_venue(self._venue or instrument_id.venue)
             if account is None:
@@ -311,7 +311,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Update the portfolio with the given quote tick.
 
-        Clears the unrealized PnL for the associated instrument, and
+        Clears the cached unrealized PnL for the associated instrument, and
         performs any initialization calculations which may have been pending
         an update.
 
@@ -329,7 +329,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Update the portfolio with the given bar.
 
-        Clears the unrealized PnL for the associated instrument, and
+        Clears the cached unrealized PnL for the associated instrument, and
         performs any initialization calculations which may have been pending
         an update.
 
@@ -489,10 +489,10 @@ cdef class Portfolio(PortfolioFacade):
             positions_open=positions_open
         )
 
-        self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
+        self._realized_pnls[event.instrument_id] = self._calculate_realized_pnl(
             instrument_id=event.instrument_id,
         )
-        self._realized_pnls[event.instrument_id] = self._calculate_realized_pnl(
+        self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
             instrument_id=event.instrument_id,
         )
 
@@ -525,8 +525,8 @@ cdef class Portfolio(PortfolioFacade):
     def _reset(self) -> None:
         self._net_positions.clear()
         self._bet_positions.clear()
-        self._unrealized_pnls.clear()
         self._realized_pnls.clear()
+        self._unrealized_pnls.clear()
         self._pending_calcs.clear()
         self.analyzer.reset()
 
@@ -670,50 +670,12 @@ cdef class Portfolio(PortfolioFacade):
 
         return account.margins_maint()
 
-    cpdef dict unrealized_pnls(self, Venue venue):
-        """
-        Return the unrealized PnLs for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the unrealized PnLs.
-
-        Returns
-        -------
-        dict[Currency, Money] or ``None``
-
-        """
-        Condition.not_none(venue, "venue")
-
-        cdef list positions_open = self._cache.positions_open(venue)
-        if not positions_open:
-            return {}  # Nothing to calculate
-
-        cdef set[InstrumentId] instrument_ids = {p.instrument_id for p in positions_open}
-
-        cdef dict[Currency, double] unrealized_pnls = {}  # type: dict[Currency, 0.0]
-
-        cdef:
-            InstrumentId instrument_id
-            Money pnl
-        for instrument_id in instrument_ids:
-            pnl = self._unrealized_pnls.get(instrument_id)
-            if pnl is not None:
-                # PnL already calculated
-                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
-                continue
-            # Calculate PnL
-            pnl = self._calculate_unrealized_pnl(instrument_id)
-            if pnl is None:
-                continue  # Error logged in `_calculate_unrealized_pnl`
-            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
-
-        return {k: Money(v, k) for k, v in unrealized_pnls.items()}
-
     cpdef dict realized_pnls(self, Venue venue):
         """
         Return the realized PnLs for the given venue (if found).
+
+        If no positions exist for the venue or if any lookups fail internally,
+        an empty dictionary is returned.
 
         Parameters
         ----------
@@ -722,7 +684,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or ``None``
+        dict[Currency, Money]
 
         """
         Condition.not_none(venue, "venue")
@@ -752,6 +714,47 @@ cdef class Portfolio(PortfolioFacade):
 
         return {k: Money(v, k) for k, v in realized_pnls.items()}
 
+    cpdef dict unrealized_pnls(self, Venue venue):
+        """
+        Return the unrealized PnLs for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the unrealized PnLs.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef list positions_open = self._cache.positions_open(venue)
+        if not positions_open:
+            return {}  # Nothing to calculate
+
+        cdef set[InstrumentId] instrument_ids = {p.instrument_id for p in positions_open}
+
+        cdef dict[Currency, double] unrealized_pnls = {}  # type: dict[Currency, 0.0]
+
+        cdef:
+            InstrumentId instrument_id
+            Money pnl
+        for instrument_id in instrument_ids:
+            pnl = self._unrealized_pnls.get(instrument_id)
+            if pnl is not None:
+                # PnL already calculated
+                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
+                continue
+            # Calculate PnL
+            pnl = self._calculate_unrealized_pnl(instrument_id)
+            if pnl is None:
+                continue  # Error logged in `_calculate_unrealized_pnl`
+            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
+
+        return {k: Money(v, k) for k, v in unrealized_pnls.items()}
+
     cpdef dict total_pnls(self, Venue venue):
         """
         Return the total PnLs for the given venue (if found).
@@ -763,7 +766,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or ``None``
+        dict[Currency, Money]
 
         """
         Condition.not_none(venue, "venue")
@@ -819,9 +822,11 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             Position position
             Instrument instrument
-            Price last
+            Price price
             Currency settlement_currency
             double xrate
+            double net_exposure
+            double total_net_exposure
         for position in positions_open:
             instrument = self._cache.instrument(position.instrument_id)
             if instrument is None:
@@ -838,8 +843,8 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 continue  # Nothing to calculate
 
-            last = self._get_last_price(position)
-            if last is None:
+            price = self._get_price(position)
+            if price is None:
                 self._log.error(
                     f"Cannot calculate net exposures: "
                     f"no prices for {position.instrument_id}",
@@ -868,10 +873,7 @@ cdef class Portfolio(PortfolioFacade):
                 bet_position = self._bet_positions.get(instrument.id)
                 net_exposure = float(bet_position.exposure) * xrate if bet_position else 0.0
             else:
-                net_exposure = instrument.notional_value(
-                    position.quantity,
-                    last,
-                ).as_f64_c()
+                net_exposure = instrument.notional_value(position.quantity, price).as_f64_c()
                 net_exposure = round(net_exposure * xrate, settlement_currency.get_precision())
 
             total_net_exposure = net_exposures.get(settlement_currency, 0.0)
@@ -880,31 +882,6 @@ cdef class Portfolio(PortfolioFacade):
             net_exposures[settlement_currency] = total_net_exposure
 
         return {k: Money(v, k) for k, v in net_exposures.items()}
-
-    cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
-        """
-        Return the unrealized PnL for the given instrument ID (if found).
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument for the unrealized PnL.
-
-        Returns
-        -------
-        Money or ``None``
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        cdef Money pnl = self._unrealized_pnls.get(instrument_id)
-        if pnl is not None:
-            return pnl
-
-        pnl = self._calculate_unrealized_pnl(instrument_id)
-        self._unrealized_pnls[instrument_id] = pnl
-
-        return pnl
 
     cpdef Money realized_pnl(self, InstrumentId instrument_id):
         """
@@ -931,7 +908,49 @@ cdef class Portfolio(PortfolioFacade):
 
         return pnl
 
-    cpdef Money total_pnl(self, InstrumentId instrument_id):
+    cpdef Money unrealized_pnl(self, InstrumentId instrument_id, Price price=None):
+        """
+        Return the unrealized PnL for the given instrument ID (if found).
+
+        - If `price` is provided, a fresh calculation is performed without using or
+          updating the cache.
+        - If `price` is omitted, the method returns the cached PnL if available, or
+          computes and caches it if not.
+
+        Returns `None` if the calculation fails (e.g., the account or instrument cannot
+        be found), or zero-valued `Money` if no positions are open. Otherwise, it returns
+        a `Money` object (usually in the account’s base currency or the instrument’s
+        settlement currency).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument for the unrealized PnL.
+        price : Price, optional
+            The reference price for the calculation. This could be the last, mid, bid, ask,
+            a mark-to-market price, or any other suitably representative value.
+
+        Returns
+        -------
+        Money or ``None``
+            The unrealized PnL or None if the calculation cannot be performed.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if price is not None:
+            return self._calculate_unrealized_pnl(instrument_id, price)
+
+        cdef Money pnl = self._unrealized_pnls.get(instrument_id)
+        if pnl is not None:
+            return pnl
+
+        pnl = self._calculate_unrealized_pnl(instrument_id, price)
+        self._unrealized_pnls[instrument_id] = pnl
+
+        return pnl
+
+    cpdef Money total_pnl(self, InstrumentId instrument_id, Price price=None):
         """
         Return the total PnL for the given instrument ID (if found).
 
@@ -939,6 +958,9 @@ cdef class Portfolio(PortfolioFacade):
         ----------
         instrument_id : InstrumentId
             The instrument for the total PnL.
+        price : Price, optional
+            The reference price for the calculation. This could be the last, mid, bid, ask,
+            a mark-to-market price, or any other suitably representative value.
 
         Returns
         -------
@@ -948,7 +970,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef Money realized = self.realized_pnl(instrument_id)
-        cdef Money unrealized = self.unrealized_pnl(instrument_id)
+        cdef Money unrealized = self.unrealized_pnl(instrument_id, price)
 
         if realized is None and unrealized is None:
             return None
@@ -961,7 +983,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return Money.from_raw_c(realized._mem.raw + unrealized._mem.raw, realized.currency)
 
-    cpdef Money net_exposure(self, InstrumentId instrument_id):
+    cpdef Money net_exposure(self, InstrumentId instrument_id, Price price=None):
         """
         Return the net exposure for the given instrument (if found).
 
@@ -969,6 +991,9 @@ cdef class Portfolio(PortfolioFacade):
         ----------
         instrument_id : InstrumentId
             The instrument for the calculation.
+        price : Price, optional
+            The reference price for the calculation. This could be the last, mid, bid, ask,
+            a mark-to-market price, or any other suitably representative value.
 
         Returns
         -------
@@ -1004,12 +1029,11 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef:
             Position position
-            Price last
             double xrate
             Money notional_value
         for position in positions_open:
-            last = self._get_last_price(position)
-            if last is None:
+            price = price or self._get_price(position)
+            if price is None:
                 self._log.error(
                     f"Cannot calculate net exposure: "
                     f"no prices for {position.instrument_id}",
@@ -1033,10 +1057,7 @@ cdef class Portfolio(PortfolioFacade):
                 bet_position = self._bet_positions.get(instrument.id)
                 net_exposure += float(bet_position.exposure) * xrate if bet_position else 0.0
             else:
-                notional_value = instrument.notional_value(
-                    position.quantity,
-                    last,
-                )
+                notional_value = instrument.notional_value(position.quantity, price)
                 net_exposure += notional_value.as_f64_c() * xrate
 
         if account.base_currency is not None:
@@ -1220,90 +1241,6 @@ cdef class Portfolio(PortfolioFacade):
             if not self._pending_calcs:
                 self.initialized = True
 
-    cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
-        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
-        if account is None:
-            self._log.error(
-                f"Cannot calculate unrealized PnL: "
-                f"no account registered for {instrument_id.venue}",
-            )
-            return None  # Cannot calculate
-
-        cdef Instrument instrument = self._cache.instrument(instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot calculate unrealized PnL: "
-                f"no instrument for {instrument_id}",
-            )
-            return None  # Cannot calculate
-
-        cdef Currency currency
-        if account.base_currency is not None:
-            currency = account.base_currency
-        else:
-            currency = instrument.get_settlement_currency()
-
-        cdef list positions_open = self._cache.positions_open(
-            venue=None,  # Faster query filtering
-            instrument_id=instrument_id,
-        )
-        if not positions_open:
-            return Money(0, currency)
-
-        cdef double total_pnl = 0.0
-
-        cdef:
-            Position position
-            Price last
-            double pnl
-            double xrate
-        for position in positions_open:
-            if position.instrument_id != instrument_id:
-                continue  # Nothing to calculate
-
-            if position.side == PositionSide.FLAT:
-                continue  # Nothing to calculate
-
-            last = self._get_last_price(position)
-            if last is None:
-                self._log.debug(
-                    f"Cannot calculate unrealized PnL: no prices for {instrument_id}",
-                )
-                self._pending_calcs.add(instrument.id)
-                return None  # Cannot calculate
-
-            if isinstance(instrument, BettingInstrument):
-                bet_position = self._bet_positions.get(instrument.id)
-                if bet_position is None:
-                    self._log.error(
-                        f"Cannot calculate unrealized PnL: no `BetPosition` for {instrument_id}",
-                    )
-                    return None  # Cannot calculate
-
-                pnl = float(bet_position.unrealized_pnl(last.as_decimal()))
-            else:
-                pnl = position.unrealized_pnl(last).as_f64_c()
-
-            if account.base_currency is not None:
-                xrate = self._calculate_xrate_to_base(
-                    instrument=instrument,
-                    account=account,
-                    side=position.entry,
-                )
-
-                if xrate == 0.0:
-                    self._log.debug(
-                        f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.get_settlement_currency()}/{account.base_currency}",
-                    )
-                    self._pending_calcs.add(instrument.id)
-                    return None  # Cannot calculate
-
-                pnl = round(pnl * xrate, currency.get_precision())
-
-            total_pnl += pnl
-
-        return Money(total_pnl, currency)
 
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
@@ -1339,7 +1276,6 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef:
             Position position
-            Price last
             double pnl
             double xrate
         for position in positions:
@@ -1382,7 +1318,91 @@ cdef class Portfolio(PortfolioFacade):
 
         return Money(total_pnl, currency)
 
-    cdef Price _get_last_price(self, Position position):
+    cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id, Price price=None):
+        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
+        if account is None:
+            self._log.error(
+                f"Cannot calculate unrealized PnL: "
+                f"no account registered for {instrument_id.venue}",
+            )
+            return None  # Cannot calculate
+
+        cdef Instrument instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot calculate unrealized PnL: "
+                f"no instrument for {instrument_id}",
+            )
+            return None  # Cannot calculate
+
+        cdef Currency currency
+        if account.base_currency is not None:
+            currency = account.base_currency
+        else:
+            currency = instrument.get_settlement_currency()
+
+        cdef list positions_open = self._cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+        )
+        if not positions_open:
+            return Money(0, currency)
+
+        cdef double total_pnl = 0.0
+
+        cdef:
+            Position position
+            double pnl
+            double xrate
+        for position in positions_open:
+            if position.instrument_id != instrument_id:
+                continue  # Nothing to calculate
+
+            if position.side == PositionSide.FLAT:
+                continue  # Nothing to calculate
+
+            price = price or self._get_price(position)
+            if price is None:
+                self._log.debug(
+                    f"Cannot calculate unrealized PnL: no prices for {instrument_id}",
+                )
+                self._pending_calcs.add(instrument.id)
+                return None  # Cannot calculate
+
+            if isinstance(instrument, BettingInstrument):
+                bet_position = self._bet_positions.get(instrument.id)
+                if bet_position is None:
+                    self._log.error(
+                        f"Cannot calculate unrealized PnL: no `BetPosition` for {instrument_id}",
+                    )
+                    return None  # Cannot calculate
+
+                pnl = float(bet_position.unrealized_pnl(price.as_decimal()))
+            else:
+                pnl = position.unrealized_pnl(price).as_f64_c()
+
+            if account.base_currency is not None:
+                xrate = self._calculate_xrate_to_base(
+                    instrument=instrument,
+                    account=account,
+                    side=position.entry,
+                )
+
+                if xrate == 0.0:
+                    self._log.debug(
+                        f"Cannot calculate unrealized PnL: "
+                        f"insufficient data for {instrument.get_settlement_currency()}/{account.base_currency}",
+                    )
+                    self._pending_calcs.add(instrument.id)
+                    return None  # Cannot calculate
+
+                pnl = round(pnl * xrate, currency.get_precision())
+
+            total_pnl += pnl
+
+        return Money(total_pnl, currency)
+
+    cdef Price _get_price(self, Position position):
         cdef PriceType price_type
         if position.side == PositionSide.FLAT:
             price_type = PriceType.LAST
