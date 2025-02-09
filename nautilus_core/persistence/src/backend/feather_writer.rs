@@ -289,13 +289,16 @@ impl FileWriterManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datafusion::arrow::ipc::reader::FileReader;
     use nautilus_common::clock::TestClock;
+    use nautilus_model::data::Data;
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
+    use nautilus_serialization::arrow::DecodeDataFromRecordBatch;
     use object_store::local::LocalFileSystem;
     use object_store::ObjectStore;
     use std::sync::Arc;
@@ -370,86 +373,95 @@ mod tests {
         assert!(writer.size > 0);
     }
 
-    // #[tokio::test]
-    // async fn test_write_and_flush() {
-    //     // Create a temporary directory for base path.
-    //     let temp_dir = TempDir::new().unwrap();
-    //     let base_path = temp_dir.path().to_str().unwrap().to_string();
+    #[tokio::test]
+    async fn test_round_trip() {
+        // Create a temporary directory for base path.
+        // let temp_dir = TempDir::new_in(".").unwrap();
+        // let base_path = temp_dir.path().to_str().unwrap().to_string();
+        let base_path = ".".to_string();
 
-    //     // Create a LocalFileSystem based object store using the temp directory.
-    //     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    //     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+        // Create a LocalFileSystem based object store using the temp directory.
+        let local_fs = LocalFileSystem::new_with_prefix(&base_path).unwrap();
+        let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
 
-    //     // Create a test clock.
-    //     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-    //     let timestamp = clock.borrow().timestamp_ns();
+        // Create a test clock.
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let timestamp = clock.borrow().timestamp_ns();
 
-    //     let quote_type_str = QuoteTick::path_prefix();
+        let quote_type_str = QuoteTick::path_prefix();
 
-    //     let mut per_instrument = HashSet::new();
-    //     per_instrument.insert(quote_type_str.to_string());
+        let mut per_instrument = HashSet::new();
+        per_instrument.insert(quote_type_str.to_string());
 
-    //     let mut manager = FileWriterManager::new(
-    //         base_path.clone(),
-    //         store,
-    //         clock,
-    //         RotationConfig::NoRotation,
-    //         None,
-    //         Some(per_instrument),
-    //     );
+        let mut manager = FileWriterManager::new(
+            base_path.clone(),
+            store,
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            Some(per_instrument),
+        );
 
-    //     let instrument_id = "AAPL.AAPL";
-    //     // Write a dummy value.
-    //     let quote = QuoteTick::new(
-    //         InstrumentId::from(instrument_id),
-    //         Price::from("100.0"),
-    //         Price::from("100.0"),
-    //         Quantity::from("100.0"),
-    //         Quantity::from("100.0"),
-    //         UnixNanos::from(1000000000000000000),
-    //         UnixNanos::from(1000000000000000000),
-    //     );
+        let instrument_id = "AAPL.AAPL";
+        // Write a dummy value.
+        let quote = QuoteTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from("100.0"),
+            Price::from("100.0"),
+            Quantity::from("100.0"),
+            Quantity::from("100.0"),
+            UnixNanos::from(100),
+            UnixNanos::from(100),
+        );
 
-    //     let trade = TradeTick::new(
-    //         InstrumentId::from(instrument_id),
-    //         Price::from("100.0"),
-    //         Quantity::from("100.0"),
-    //         AggressorSide::Buyer,
-    //         TradeId::from("1"),
-    //         UnixNanos::from(1000000000000000000),
-    //         UnixNanos::from(1000000000000000000),
-    //     );
+        let trade = TradeTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from("100.0"),
+            Quantity::from("100.0"),
+            AggressorSide::Buyer,
+            TradeId::from("1"),
+            UnixNanos::from(100),
+            UnixNanos::from(100),
+        );
 
-    //     manager.write(quote).await.unwrap();
-    //     manager.write(trade).await.unwrap();
+        manager.write(quote).await.unwrap();
+        manager.write(trade).await.unwrap();
 
-    //     let paths = manager.writers.keys().collect::<Vec<_>>();
-    //     assert_eq!(paths.len(), 2);
+        let paths = manager.writers.keys().cloned().collect::<Vec<_>>();
+        assert_eq!(paths.len(), 2);
 
-    //     // Read files from the temporary directory.
-    //     let mut recovered_data = Vec::new();
-    //     for entry in std::fs::read_dir(temp_dir.path()).unwrap() {
-    //         let entry = entry.unwrap();
-    //         let path = entry.path();
-    //         if path
-    //             .extension()
-    //             .map(|ext| ext == "feather")
-    //             .unwrap_or(false)
-    //         {
-    //             let bytes = std::fs::read(&path).unwrap();
-    //             let mut reader = StreamReader::try_new(Cursor::new(bytes)).unwrap();
-    //             while let Some(batch) = reader.next() {
-    //                 let batch = batch.unwrap();
-    //                 let decoded = Dummy::decode_batch(&HashMap::new(), batch).unwrap();
-    //                 recovered_data.extend(decoded);
-    //             }
-    //         }
-    //     }
+        // Flush data
+        manager.flush().await.unwrap();
 
-    //     // Sort by value for comparison.
-    //     recovered_data.sort_by_key(|d| d.value);
-    //     assert_eq!(recovered_data.len(), 2);
-    //     assert_eq!(recovered_data[0].value, 10);
-    //     assert_eq!(recovered_data[1].value, 20);
-    // }
+        // Read files from the temporary directory.
+        let mut recovered_quotes = Vec::new();
+        let mut recovered_trades = Vec::new();
+        dbg!(&paths);
+        for path in paths {
+            let path_str = path.path.to_string();
+            let file = std::fs::File::open(&path_str).unwrap();
+            let mut reader = FileReader::try_new(file, None).unwrap();
+            let metadata = reader.custom_metadata().clone();
+            while let Some(batch) = reader.next() {
+                let batch = batch.unwrap();
+                if path_str.contains("quotes") {
+                    // Use QuoteTick's decode_batch for files with "quotes" in their paths.
+                    let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
+                    recovered_quotes.extend(decoded);
+                } else if path_str.contains("trades") {
+                    // Use TradeTick's decode_batch for files with "trades" in their paths.
+                    let decoded = TradeTick::decode_data_batch(&metadata, batch).unwrap();
+                    recovered_trades.extend(decoded);
+                }
+            }
+        }
+
+        // Assert that the recovered data matches the written data.
+        assert_eq!(recovered_quotes.len(), 1, "Expected one QuoteTick record");
+        assert_eq!(recovered_trades.len(), 1, "Expected one TradeTick record");
+
+        // Check key fields to ensure the data round-tripped correctly.
+        assert_eq!(recovered_quotes[0], Data::from(quote));
+        assert_eq!(recovered_trades[0], Data::from(trade));
+    }
 }
