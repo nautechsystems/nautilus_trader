@@ -90,9 +90,9 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
 
         // Create publish task (start the runtime here for now)
         let pub_handle = Some(get_runtime().spawn(async move {
-            publish_messages(pub_rx, trader_id, instance_id, config_clone)
-                .await
-                .expect("Error spawning task '{MSGBUS_PUBLISH}'}");
+            if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
+                log::error!("Failed to spawn task '{}': {}", MSGBUS_PUBLISH, e);
+            };
         }));
 
         // Conditionally create stream task and channel if external streams configured
@@ -104,9 +104,12 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             (
                 Some(stream_rx),
                 Some(get_runtime().spawn(async move {
-                    stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
-                        .await
-                        .expect("Error spawning task '{MSGBUS_STREAM}'}");
+                    if let Err(e) =
+                        stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
+                            .await
+                    {
+                        log::error!("Failed to spawn task '{}': {}", MSGBUS_STREAM, e);
+                    }
                 })),
             )
         } else {
@@ -416,9 +419,10 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
         }
 
         let topic = match &stream_msg[1] {
-            redis::Value::BulkString(bytes) => {
-                String::from_utf8(bytes.clone()).expect("Error parsing topic")
-            }
+            redis::Value::BulkString(bytes) => match String::from_utf8(bytes.clone()) {
+                Ok(topic) => topic,
+                Err(e) => anyhow::bail!("Error parsing topic: {}", e),
+            },
             _ => {
                 anyhow::bail!("Invalid topic format: {stream_msg:?}");
             }
