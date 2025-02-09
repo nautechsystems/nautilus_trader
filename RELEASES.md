@@ -105,6 +105,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed resolution of Tardis `BINANCE_DELIVERY` venue for COIN-margined contracts
 - Fixed hang in rate limiter (#2285), thanks @WyldeCat
 - Fixed typo in `InstrumentProviderConfig` docstring (#2284), thanks @ikeepo
+- Fixed handling of `tick_size_change` message for Polymarket
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
