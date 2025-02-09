@@ -17,6 +17,7 @@ nautilus-cryptography = { path = "../cryptography" }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
@@ -47,7 +48,6 @@ sqlx = { version = "0.8.3", features = [
   "runtime-tokio",
   "json"
 ], optional = true }
-async-trait = "0.1.86"
 
 [dev-dependencies]
 rstest = { workspace = true }
