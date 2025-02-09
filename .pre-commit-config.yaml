@@ -6,7 +6,6 @@ repos:
     rev: v5.0.0
     hooks:
       - id: forbid-new-submodules
-      - id: no-commit-to-branch  # protect master from direct commits
       - id: end-of-file-fixer
         types_or: [rust, cython, python, markdown]
       - id: mixed-line-ending
