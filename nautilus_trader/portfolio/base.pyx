@@ -17,6 +17,7 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class PortfolioFacade:
@@ -42,13 +43,13 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `margins_maint` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict unrealized_pnls(self, Venue venue):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `unrealized_pnls` must be implemented in the subclass")  # pragma: no cover
-
     cpdef dict realized_pnls(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `realized_pnls` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef dict unrealized_pnls(self, Venue venue):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `unrealized_pnls` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict total_pnls(self, Venue venue):
         """Abstract method (implement in subclass)."""
@@ -58,19 +59,19 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `net_exposure` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `unrealized_pnl` must be implemented in the subclass")  # pragma: no cover
-
     cpdef Money realized_pnl(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `realized_pnl` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef Money total_pnl(self, InstrumentId instrument_id):
+    cpdef Money unrealized_pnl(self, InstrumentId instrument_id, Price price=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `unrealized_pnl` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef Money total_pnl(self, InstrumentId instrument_id, Price price=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `total_pnl` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef Money net_exposure(self, InstrumentId instrument_id):
+    cpdef Money net_exposure(self, InstrumentId instrument_id, Price price=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `next_exposure` must be implemented in the subclass")  # pragma: no cover
 
