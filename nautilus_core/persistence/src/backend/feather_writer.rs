@@ -214,6 +214,9 @@ impl FileWriterManager {
     }
 
     /// Flushes all active FileWriters by writing any remaining buffered bytes to the object store.
+    ///
+    /// Note: This is not called automatically and must be called by the client.
+    /// It is expected that no other writes are performed after this.
     pub async fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         for (path, mut writer) in self.writers.drain() {
             let bytes = writer.take_buffer()?;
@@ -240,6 +243,7 @@ impl FileWriterManager {
         let type_str = path.type_str.clone();
         let instrument_id = path.instrument_id.clone();
         let timestamp = self.clock.borrow().timestamp_ns();
+        // Note: Path removes prefixing slashes
         let mut path = Path::from(self.base_path.clone());
         if let Some(ref instrument_id) = instrument_id {
             path = path.child(type_str.clone());
@@ -359,15 +363,17 @@ mod tests {
 
         // Check keys and paths for quotes and trades
         let path = manager.get_writer_path(&quote).unwrap();
-        let expected_path = format!("/{base_path}/quotes/{instrument_id}_{timestamp}.feather");
-        assert_eq!(path.path.to_string(), expected_path);
+        let expected_path = Path::from(format!(
+            "{base_path}/quotes/{instrument_id}_{timestamp}.feather"
+        ));
+        assert_eq!(path.path, expected_path);
         assert!(manager.writers.contains_key(&path));
         let writer = manager.writers.get(&path).unwrap();
         assert!(writer.size > 0);
 
         let path = manager.get_writer_path(&trade).unwrap();
-        let expected_path = format!("/{base_path}/trades_{timestamp}.feather");
-        assert_eq!(path.path.to_string(), expected_path);
+        let expected_path = Path::from(format!("{base_path}/trades_{timestamp}.feather"));
+        assert_eq!(path.path, expected_path);
         assert!(manager.writers.contains_key(&path));
         let writer = manager.writers.get(&path).unwrap();
         assert!(writer.size > 0);
