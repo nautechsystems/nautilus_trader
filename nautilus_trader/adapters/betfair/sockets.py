@@ -245,15 +245,22 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         self._loop.create_task(self._post_connection())
 
     async def _post_connection(self):
-        subscribe_msg = {
-            "op": "orderSubscription",
-            "id": self.unique_id,
-            "orderFilter": self.order_filter,
-            "initialClk": None,
-            "clk": None,
-        }
-        await self.send(msgspec.json.encode(self.auth_message()))
-        await self.send(msgspec.json.encode(subscribe_msg))
+        retries = 5
+        for i in range(retries):
+            try:
+                subscribe_msg = {
+                    "op": "orderSubscription",
+                    "id": self.unique_id,
+                    "orderFilter": self.order_filter,
+                    "initialClk": None,
+                    "clk": None,
+                }
+                await self.send(msgspec.json.encode(self.auth_message()))
+                await self.send(msgspec.json.encode(subscribe_msg))
+                return
+            except Exception as e:
+                self._log.error(f"Failed to send auth message({e}), retrying {i + 1}/{retries}...")
+                await asyncio.sleep(1.0)
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
@@ -365,4 +372,11 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         self._loop.create_task(self._post_connection())
 
     async def _post_connection(self) -> None:
-        await self.send(msgspec.json.encode(self.auth_message()))
+        retries = 5
+        for i in range(retries):
+            try:
+                await self.send(msgspec.json.encode(self.auth_message()))
+                return
+            except Exception as e:
+                self._log.error(f"Failed to send auth message({e}), retrying {i + 1}/{retries}...")
+                await asyncio.sleep(1.0)

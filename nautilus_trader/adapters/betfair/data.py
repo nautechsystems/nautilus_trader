@@ -341,21 +341,17 @@ class BetfairDataClient(LiveMarketDataClient):
                     self._log.warning(f"Stream conflation detected: latency ~{latency_ms}ms")
 
     def _handle_status_message(self, update: Status) -> None:
-        if update.is_error and update.connection_closed:
-            self._log.error(f"Betfair connection closed: {update.error_message}")
+        if update.is_error:
             if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
             elif update.error_code == StatusErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED:
                 raise RuntimeError("Subscription request limit exceeded")
-            elif update.error_code == StatusErrorCode.INVALID_SESSION_INFORMATION:
+
+            self._log.warning(f"Betfair API error: {update.error_message}")
+
+            if update.connection_closed:
+                self._log.warning("Betfair connection closed")
                 if self._is_reconnecting:
                     self._log.info("Reconnect already in progress")
                     return
-                self._log.info("Invalid session information, reconnecting client")
-                self.create_task(self._reconnect())
-            else:
-                if self._is_reconnecting:
-                    self._log.info("Reconnect already in progress")
-                    return
-                self._log.warning("Unknown API error, scheduling reconnect")
                 self.create_task(self._reconnect())
