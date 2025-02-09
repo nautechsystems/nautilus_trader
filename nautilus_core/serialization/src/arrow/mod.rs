@@ -44,7 +44,7 @@ use pyo3::prelude::*;
 
 // Define metadata key constants constants
 const KEY_BAR_TYPE: &str = "bar_type";
-const KEY_INSTRUMENT_ID: &str = "instrument_id";
+pub const KEY_INSTRUMENT_ID: &str = "instrument_id";
 const KEY_PRICE_PRECISION: &str = "price_precision";
 const KEY_SIZE_PRECISION: &str = "size_precision";
 
