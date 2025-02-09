@@ -172,7 +172,7 @@ impl FeatherWriter {
 
         // Create a new FileWriter if one does not exist.
         if !self.writers.contains_key(&path) {
-            self.create_writer::<T>(path.clone())?;
+            self.create_writer::<T>(path.clone(), &data)?;
         }
 
         // Encode the data into a RecordBatch using T's encoding logic.
@@ -204,11 +204,18 @@ impl FeatherWriter {
     }
 
     /// Creates (and inserts) a new FileWriter for type T.
-    fn create_writer<T>(&mut self, path: FileWriterPath) -> Result<(), ArrowError>
+    fn create_writer<T>(&mut self, path: FileWriterPath, data: &T) -> Result<(), ArrowError>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
-        let writer = FeatherBuffer::new(&T::get_schema(None), self.rotation_config.clone())?;
+        let schema = if self.per_instrument_types.contains(T::path_prefix()) {
+            let metadata = T::metadata(data);
+            T::get_schema(Some(metadata))
+        } else {
+            T::get_schema(None)
+        };
+
+        let writer = FeatherBuffer::new(&schema, self.rotation_config.clone())?;
         self.writers.insert(path, writer);
         Ok(())
     }
@@ -405,6 +412,10 @@ mod tests {
 
         let buffer = writer.take_buffer().unwrap();
         let mut reader = StreamReader::try_new(Cursor::new(buffer.as_slice()), None).unwrap();
+
+        let read_metadata = reader.schema().metadata().clone();
+        assert_eq!(read_metadata, metadata);
+
         let read_batch = reader.next().unwrap().unwrap();
         assert_eq!(read_batch.column(0), batch.column(0));
 
@@ -482,7 +493,6 @@ mod tests {
             let buffer = std::fs::File::open(&path_str).unwrap();
             let mut reader = StreamReader::try_new(buffer, None).unwrap();
             let metadata = reader.schema().metadata().clone();
-            dbg!(&metadata);
             while let Some(batch) = reader.next() {
                 let batch = batch.unwrap();
                 if path_str.to_str().unwrap().contains("quotes") {
