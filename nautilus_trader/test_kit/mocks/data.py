@@ -31,7 +31,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.singleton import clear_singleton_instances
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler

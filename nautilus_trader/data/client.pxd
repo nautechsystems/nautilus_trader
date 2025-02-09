@@ -16,7 +16,6 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
@@ -25,6 +24,24 @@ from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
+from nautilus_trader.data.messages cimport SubscribeBars
+from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeInstrument
+from nautilus_trader.data.messages cimport SubscribeInstrumentClose
+from nautilus_trader.data.messages cimport SubscribeInstruments
+from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeOrderBook
+from nautilus_trader.data.messages cimport SubscribeQuoteTicks
+from nautilus_trader.data.messages cimport SubscribeTradeTicks
+from nautilus_trader.data.messages cimport UnsubscribeBars
+from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeInstrument
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
+from nautilus_trader.data.messages cimport UnsubscribeInstruments
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeOrderBook
+from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
+from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
@@ -48,8 +65,8 @@ cdef class DataClient(Component):
 
     cpdef list subscribed_custom_data(self)
 
-    cpdef void subscribe(self, DataType data_type, dict[str, object] params=*)
-    cpdef void unsubscribe(self, DataType data_type, dict[str, object] params=*)
+    cpdef void subscribe(self, SubscribeData command)
+    cpdef void unsubscribe(self, UnsubscribeData command)
 
     cpdef void _add_subscription(self, DataType data_type)
     cpdef void _remove_subscription(self, DataType data_type)
@@ -87,24 +104,24 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
 
-    cpdef void subscribe_instruments(self, dict[str, object] params=*)
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict[str, object] params=*)
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict[str, object] params=*)
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void subscribe_bars(self, BarType bar_type, dict[str, object] params=*)
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_instruments(self, dict[str, object] params=*)
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_bars(self, BarType bar_type, dict[str, object] params=*)
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict[str, object] params=*)
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void subscribe_instruments(self, SubscribeInstruments command)
+    cpdef void subscribe_instrument(self, SubscribeInstrument command)
+    cpdef void subscribe_order_book_deltas(self, SubscribeOrderBook command)
+    cpdef void subscribe_order_book_snapshots(self, SubscribeOrderBook command)
+    cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command)
+    cpdef void subscribe_trade_ticks(self, SubscribeTradeTicks command)
+    cpdef void subscribe_bars(self, SubscribeBars command)
+    cpdef void subscribe_instrument_status(self, SubscribeInstrumentStatus command)
+    cpdef void subscribe_instrument_close(self, SubscribeInstrumentClose command)
+    cpdef void unsubscribe_instruments(self, UnsubscribeInstruments command)
+    cpdef void unsubscribe_instrument(self, UnsubscribeInstrument command)
+    cpdef void unsubscribe_order_book_deltas(self, UnsubscribeOrderBook command)
+    cpdef void unsubscribe_order_book_snapshots(self, UnsubscribeOrderBook command)
+    cpdef void unsubscribe_quote_ticks(self, UnsubscribeQuoteTicks command)
+    cpdef void unsubscribe_trade_ticks(self, UnsubscribeTradeTicks command)
+    cpdef void unsubscribe_bars(self, UnsubscribeBars command)
+    cpdef void unsubscribe_instrument_status(self, UnsubscribeInstrumentStatus command)
+    cpdef void unsubscribe_instrument_close(self, UnsubscribeInstrumentClose command)
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id)

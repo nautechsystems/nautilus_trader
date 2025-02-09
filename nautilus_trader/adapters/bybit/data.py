@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgspec
 
@@ -54,6 +54,14 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -264,14 +272,8 @@ class BybitDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type == BookType.L3_MBO:
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Bybit. "
@@ -279,23 +281,23 @@ class BybitDataClient(LiveMarketDataClient):
             )
             return
 
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
 
         # Validate depth
         match product_type:
             case BybitProductType.SPOT:
                 depths_available = BYBIT_SPOT_DEPTHS
-                depth = depth or BYBIT_SPOT_DEPTHS[-1]
+                depth = command.depth or BYBIT_SPOT_DEPTHS[-1]
             case BybitProductType.LINEAR:
                 depths_available = BYBIT_LINEAR_DEPTHS
-                depth = depth or BYBIT_LINEAR_DEPTHS[-1]
+                depth = command.depth or BYBIT_LINEAR_DEPTHS[-1]
             case BybitProductType.INVERSE:
                 depths_available = BYBIT_INVERSE_DEPTHS
-                depth = depth or BYBIT_INVERSE_DEPTHS[-1]
+                depth = command.depth or BYBIT_INVERSE_DEPTHS[-1]
             case BybitProductType.OPTION:
                 depths_available = BYBIT_OPTION_DEPTHS
-                depth = depth or BYBIT_OPTION_DEPTHS[-1]
+                depth = command.depth or BYBIT_OPTION_DEPTHS[-1]
             case _:
                 # Theoretically unreachable but retained to keep the match exhaustive
                 raise ValueError(
@@ -310,111 +312,79 @@ class BybitDataClient(LiveMarketDataClient):
             )
             return
 
-        if instrument_id in self._tob_quotes:
+        if command.instrument_id in self._tob_quotes:
             if depth == 1:
                 self._log.warning(
-                    f"Already subscribed to {instrument_id} top-of-book",
+                    f"Already subscribed to {command.instrument_id} top-of-book",
                     LogColor.MAGENTA,
                 )
                 return  # Already subscribed
 
-        if instrument_id in self._depths:
-            self._log.warning(f"Already subscribed to {instrument_id} order book deltas")
+        if command.instrument_id in self._depths:
+            self._log.warning(f"Already subscribed to {command.instrument_id} order book deltas")
             return
 
-        self._depths[instrument_id] = depth
+        self._depths[command.instrument_id] = depth
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
 
-        if bybit_symbol.is_spot or instrument_id not in self._depths:
+        if bybit_symbol.is_spot or command.instrument_id not in self._depths:
             # Subscribe top level (faster 10ms updates)
             self._log.debug(
-                f"Subscribing quotes {instrument_id} (faster top-of-book @10ms)",
+                f"Subscribing quotes {command.instrument_id} (faster top-of-book @10ms)",
                 LogColor.MAGENTA,
             )
-            self._tob_quotes.add(instrument_id)
+            self._tob_quotes.add(command.instrument_id)
             await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=1)
         else:
             await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        bybit_symbol = BybitSymbol(command.bar_type.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        interval_str = get_interval_from_bar_type(bar_type)
+        interval_str = get_interval_from_bar_type(command.bar_type)
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
-        self._topic_bar_type[topic] = bar_type
+        self._topic_bar_type[topic] = command.bar_type
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        depth = self._depths.get(instrument_id, 1)
+        depth = self._depths.get(command.instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        depth = self._depths.get(instrument_id, 1)
+        depth = self._depths.get(command.instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        if instrument_id in self._tob_quotes:
+        if command.instrument_id in self._tob_quotes:
             await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=1)
         else:
             await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        bybit_symbol = BybitSymbol(command.bar_type.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        interval_str = get_interval_from_bar_type(bar_type)
+        interval_str = get_interval_from_bar_type(command.bar_type)
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
         self._topic_bar_type.pop(topic, None)
         await ws_client.unsubscribe_klines(bybit_symbol.raw_symbol, interval_str)
@@ -428,7 +398,7 @@ class BybitDataClient(LiveMarketDataClient):
         return bybit_symbol.to_instrument_id()
 
     async def _request(self, request: RequestData) -> None:
-        if request.data_type.type == BybitTickerData:
+        if request.data_type.command.type == BybitTickerData:
             symbol = request.data_type.metadata["symbol"]
             await self._handle_ticker_data_request(symbol, request.id)
 

@@ -18,7 +18,7 @@ Provide a data client for the dYdX decentralized cypto exchange.
 
 import asyncio
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgspec
 
@@ -47,6 +47,14 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model import DataType
 from nautilus_trader.model.book import OrderBook
@@ -742,86 +750,67 @@ class DYDXDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
         await self._ws_client.subscribe_trades(dydx_symbol.raw_symbol)
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type in (BookType.L1_MBP, BookType.L3_MBO):
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type in (BookType.L1_MBP, BookType.L3_MBO):
             self._log.error(
                 "Cannot subscribe to order book deltas: L3_MBO data is not published by dYdX. The only valid book type is L2_MBP",
             )
             return
 
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is already subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
         self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
 
-        if instrument_id not in self._books:
-            self._books[instrument_id] = OrderBook(instrument_id, book_type)
+        if command.instrument_id not in self._books:
+            self._books[command.instrument_id] = OrderBook(command.instrument_id, command.book_type)
 
         if not self._ws_client.has_subscription(subscription):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         self._log.debug(
-            f"Subscribing deltas {instrument_id} (quotes are not available)",
+            f"Subscribing deltas {command.instrument_id} (quotes are not available)",
             LogColor.MAGENTA,
         )
         book_type = BookType.L2_MBP
 
         # Check if the websocket client is already subscribed.
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
         if not self._ws_client.has_subscription(subscription):
-            await self._subscribe_order_book_deltas(
-                instrument_id=instrument_id,
+            order_book_command = SubscribeOrderBook(
+                command_id=command.id,
+                instrument_id=command.instrument_id,
                 book_type=book_type,
+                # below is just to propagate information
+                client_id=command.client_id,
+                venue=command.venue,
+                ts_init=command.ts_init,
+                params=command.params,
             )
+            await self._subscribe_order_book_deltas(order_book_command)
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._log.info(f"Subscribe to {bar_type} bars")
-        dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
-        candles_resolution = get_interval_from_bar_type(bar_type)
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        self._log.info(f"Subscribe to {command.bar_type} bars")
+        dydx_symbol = DYDXSymbol(command.bar_type.instrument_id.symbol.value)
+        candles_resolution = get_interval_from_bar_type(command.bar_type)
         topic = f"{dydx_symbol.raw_symbol}/{candles_resolution.value}"
-        self._topic_bar_type[topic] = bar_type
+        self._topic_bar_type[topic] = command.bar_type
         await self._ws_client.subscribe_klines(dydx_symbol.raw_symbol, candles_resolution)
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
         await self._ws_client.unsubscribe_trades(dydx_symbol.raw_symbol)
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
@@ -832,26 +821,27 @@ class DYDXDataClient(LiveMarketDataClient):
         if self._ws_client.has_subscription(subscription):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
         if self._ws_client.has_subscription(subscription):
-            await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
+            order_book_command = UnsubscribeOrderBook(
+                command_id=command.id,
+                instrument_id=command.instrument_id,
+                # below is just to propagate information
+                client_id=command.client_id,
+                venue=command.venue,
+                ts_init=command.ts_init,
+                params=command.params,
+            )
+            await self._unsubscribe_order_book_deltas(order_book_command)
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
-        candles_resolution = get_interval_from_bar_type(bar_type)
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        dydx_symbol = DYDXSymbol(command.bar_type.instrument_id.symbol.value)
+        candles_resolution = get_interval_from_bar_type(command.bar_type)
         await self._ws_client.unsubscribe_klines(dydx_symbol.raw_symbol, candles_resolution)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:

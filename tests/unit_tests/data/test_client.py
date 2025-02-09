@@ -21,6 +21,8 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
@@ -80,7 +82,7 @@ class TestDataClient:
         data_type = DataType(Data, {"Type": "MyData"})
 
         # Act
-        self.client.subscribe(data_type)
+        self.client.subscribe(SubscribeData(UUID4(), data_type, ClientId("TEST_PROVIDER")))
 
         # Assert
         # TODO: Determine better way of asserting this than parsing logs
@@ -90,7 +92,7 @@ class TestDataClient:
         data_type = DataType(Data, {"Type": "MyData"})
 
         # Act
-        self.client.subscribe(data_type)
+        self.client.unsubscribe(UnsubscribeData(UUID4(), data_type, ClientId("TEST_PROVIDER")))
 
         # Assert
         # TODO: Determine better way of asserting this than parsing logs

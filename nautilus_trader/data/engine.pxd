@@ -36,13 +36,28 @@ from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
-from nautilus_trader.data.messages cimport Subscribe
-from nautilus_trader.data.messages cimport Unsubscribe
+from nautilus_trader.data.messages cimport SubscribeBars
+from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeInstrument
+from nautilus_trader.data.messages cimport SubscribeInstrumentClose
+from nautilus_trader.data.messages cimport SubscribeInstruments
+from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeOrderBook
+from nautilus_trader.data.messages cimport SubscribeQuoteTicks
+from nautilus_trader.data.messages cimport SubscribeTradeTicks
+from nautilus_trader.data.messages cimport UnsubscribeBars
+from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeInstrument
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
+from nautilus_trader.data.messages cimport UnsubscribeInstruments
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeOrderBook
+from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
+from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
-from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -135,40 +150,44 @@ cdef class DataEngine(Component):
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void _execute_command(self, DataCommand command)
-    cpdef void _handle_subscribe(self, DataClient client, Subscribe command)
-    cpdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command)
-    cpdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, dict params)
-    cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, BookType book_type, uint64_t depth, bint managed, dict params)  # noqa
-    cpdef void _handle_subscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, BookType book_type, uint64_t depth, uint64_t interval_ms, bint managed, dict params)  # noqa
-    cpdef void _setup_order_book(self, MarketDataClient client, InstrumentId instrument_id, BookType book_type, uint64_t depth, bint only_deltas, bint managed, dict params)  # noqa
+    cpdef void _handle_subscribe(self, DataClient client, SubscribeData command)
+    cpdef void _handle_unsubscribe(self, DataClient client, UnsubscribeData command)
+    cpdef void _handle_subscribe_instruments(self, MarketDataClient client, SubscribeInstruments command)
+    cpdef void _handle_subscribe_instrument(self, MarketDataClient client, SubscribeInstrument command)
+    cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, SubscribeOrderBook command)
+    cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command)
+    cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type)
-    cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
+    cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, SubscribeQuoteTicks command)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
-    cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
+    cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, SubscribeTradeTicks command)
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
-    cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, bint await_partial, dict params)
-    cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type, dict params)
-    cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, InstrumentId instrument_id, dict params)
-    cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id, dict params)
-    cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, dict params)
-    cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict params)  # noqa
-    cpdef void _handle_unsubscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict params)  # noqa
-    cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
-    cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict params)
-    cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type, dict params)
-    cpdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type, dict params)
+    cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command)
+    cpdef void _handle_subscribe_data(self, DataClient client, SubscribeData command)
+    cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, SubscribeInstrumentStatus command)
+    cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, SubscribeInstrumentClose command)
+    cpdef void _handle_unsubscribe_instruments(self, MarketDataClient client, UnsubscribeInstruments command)
+    cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, UnsubscribeInstrument command)
+    cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, UnsubscribeOrderBook command)
+    cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, UnsubscribeOrderBook command)
+    cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command)
+    cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, UnsubscribeTradeTicks command)
+    cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef void _handle_unsubscribe_data(self, DataClient client, UnsubscribeData command)
+    cpdef void _handle_unsubscribe_instrument_status(self, MarketDataClient client, UnsubscribeInstrumentStatus command)
+    cpdef void _handle_unsubscribe_instrument_close(self, MarketDataClient client, UnsubscribeInstrumentClose command)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
     cpdef tuple[datetime, object] _catalogs_last_timestamp(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*)
     cpdef void _handle_request(self, RequestData request)
-    cpdef void _handle_request_instruments(self, RequestInstruments request, DataClient client)
-    cpdef void _handle_request_instrument(self, RequestInstrument request, DataClient client)
-    cpdef void _handle_request_order_book_snapshot(self, RequestOrderBookSnapshot request, DataClient client)
-    cpdef void _handle_request_quote_ticks(self, RequestQuoteTicks request, DataClient client)
-    cpdef void _handle_request_trade_ticks(self, RequestTradeTicks request, DataClient client)
-    cpdef void _handle_request_bars(self, RequestBars request, DataClient client)
-    cpdef void _handle_request_data(self, RequestData request, DataClient client)
+    cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
+    cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
+    cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
+    cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
+    cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
+    cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
+    cpdef void _handle_request_data(self, DataClient client, RequestData request)
     cpdef void _query_catalog(self, RequestData request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
@@ -206,8 +225,8 @@ cdef class DataEngine(Component):
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
     cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type)
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type, bint await_partial, dict params)
-    cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type, dict params)
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
+    cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)
     cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update)
     cpdef void _update_synthetics_with_trade(self, list synthetics, TradeTick update)

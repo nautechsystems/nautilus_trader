@@ -19,7 +19,7 @@ from nautilus_trader.backtest.models import FixedFeeModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
