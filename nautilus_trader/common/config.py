@@ -256,7 +256,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
         The account password for the database connection.
         If a value is provided then it will be redacted in the string repr for this object.
     ssl : bool, default False
-        If database should use an SSL enabled connection.
+        If socket should use an SSL (TLS encryption) enabled connection.
     timeout : int, default 20
         The timeout (seconds) to wait for a new connection.
 
@@ -363,7 +363,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     load_all : bool, default False
         If all venue instruments should be loaded on start.
     load_ids : frozenset[InstrumentId], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
+        The list of instrument IDs to be loaded on start (if `load_all` is False).
     filters : frozendict or dict[str, Any], optional
         The venue specific instrument loading filters to apply.
     filter_callable: str, optional
@@ -415,10 +415,17 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
     component_id : ComponentId, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
+    log_events : bool, default True
+        If events should be logged by the actor.
+        If False, then only warning events and above are logged.
+    log_commands : bool, default True
+        If commands should be logged by the actor.
 
     """
 
     component_id: ComponentId | None = None
+    log_events: bool = True
+    log_commands: bool = True
 
 
 class ImportableActorConfig(NautilusConfig, frozen=True):

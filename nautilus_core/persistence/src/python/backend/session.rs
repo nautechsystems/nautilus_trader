@@ -100,7 +100,7 @@ impl DataQueryResult {
         match slf.next() {
             Some(acc) if !acc.is_empty() => {
                 let cvec = slf.set_chunk(acc);
-                Python::with_gil(|py| match PyCapsule::new_bound::<CVec>(py, cvec, None) {
+                Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
                     Ok(capsule) => Ok(Some(capsule.into_py(py))),
                     Err(e) => Err(to_pyruntime_err(e)),
                 })

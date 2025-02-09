@@ -48,7 +48,6 @@ from nautilus_trader.common.component cimport RES
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
@@ -76,6 +75,7 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -145,7 +145,7 @@ cdef class DataEngine(Component):
         self._query_group_n_components: dict[UUID4, int] = {}
         self._query_group_components: dict[UUID4, list] = {}
 
-        # Settings
+        # Configuration
         self.debug = config.debug
         self._time_bars_interval_type = config.time_bars_interval_type
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
@@ -899,9 +899,14 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(params, "params")
 
+        cdef Instrument instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.warning(
+                f"No instrument found for {instrument_id} on order book data subscription"
+            )
+
         cdef:
             list[Instrument] instruments
-            Instrument instrument
             str root
         if managed:
             # Create order book(s)
@@ -909,10 +914,9 @@ cdef class DataEngine(Component):
                 root = instrument_id.symbol.root()
                 instruments = self._cache.instruments(venue=instrument_id.venue, underlying=root)
                 for instrument in instruments:
-                    self._create_new_book(instrument, book_type)
+                    self._create_new_book(instrument.id, book_type)
             else:
-                instrument = self._cache.instrument(instrument_id)
-                self._create_new_book(instrument, book_type)
+                self._create_new_book(instrument_id, book_type)
 
         # Always re-subscribe to override previous settings
         try:
@@ -959,20 +963,14 @@ cdef class DataEngine(Component):
                 priority=10,
             )
 
-    cpdef void _create_new_book(self, Instrument instrument, BookType book_type):
-        if instrument is None:
-            self._log.error(
-                f"Cannot subscribe to {instrument.id} <OrderBook> data: "
-                f"no instrument found in the cache",
-            )
-            return
+    cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type):
         order_book = OrderBook(
-            instrument_id=instrument.id,
+            instrument_id=instrument_id,
             book_type=book_type,
         )
 
         self._cache.add_order_book(order_book)
-        self._log.debug(f"Created {type(order_book).__name__} for {instrument.id}")
+        self._log.debug(f"Created {type(order_book).__name__} for {instrument_id}")
 
     cpdef void _handle_subscribe_quote_ticks(
         self,

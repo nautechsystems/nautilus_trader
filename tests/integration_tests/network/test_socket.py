@@ -22,12 +22,8 @@ from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
-pytestmark = pytest.skip(reason="Investigating timeouts", allow_module_level=True)
-
-# pytestmark = pytest.mark.skipif(
-#     sys.platform == "win32",
-#     reason="Skip raw socket tests on Windows",
-# )
+pytestmark = pytest.mark.skip()
+# pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Run socket tests on Linux only")
 
 
 def _config(socket_server, handler):
@@ -50,9 +46,9 @@ async def test_connect_and_disconnect(socket_server):
     client = await SocketClient.connect(config)
 
     # Act, Assert
-    await eventually(lambda: client.is_alive())
-    await client.disconnect()
-    await eventually(lambda: not client.is_alive())
+    await eventually(lambda: client.is_active())
+    await client.close()
+    await eventually(lambda: not client.is_active())
 
 
 @pytest.mark.asyncio()
@@ -62,7 +58,7 @@ async def test_client_send_recv(socket_server):
     config = _config(socket_server, store.append)
     client = await SocketClient.connect(config)
 
-    await eventually(lambda: client.is_alive())
+    await eventually(lambda: client.is_active())
 
     # Act
     num_messages = 3
@@ -70,8 +66,8 @@ async def test_client_send_recv(socket_server):
         await client.send(b"Hello")
     await asyncio.sleep(0.1)
 
-    await client.disconnect()
-    await eventually(lambda: not client.is_alive())
+    await client.close()
+    await eventually(lambda: not client.is_active())
 
     # Assert
     await eventually(lambda: store == [b"connected"] + [b"hello"] * 2)
@@ -107,7 +103,7 @@ async def test_reconnect_after_close(closing_socket_server):
     config = _config(closing_socket_server, store.append)
     client = await SocketClient.connect(config)
 
-    await eventually(lambda: client.is_alive())
+    await eventually(lambda: client.is_active())
 
     # Act
     await asyncio.sleep(2)

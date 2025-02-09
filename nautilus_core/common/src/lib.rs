@@ -28,6 +28,18 @@
 //! - `python`: Enables Python bindings from `pyo3`.
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 
+#![warn(rustc::all)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
+// Uncomment once we've added trivial `Debug` impls everywhere
+// #![warn(missing_debug_implementations)]
+
+// TODO: We still rely on `IntoPy` for now, so temporarily ignore
+// these deprecations until fully migrated to `IntoPyObject`.
+#![allow(deprecated)]
+
 pub mod actor;
 pub mod cache;
 pub mod clock;

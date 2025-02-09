@@ -335,7 +335,7 @@ impl Position {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", stringify!(Position))?;
         let events_dict: PyResult<Vec<_>> = self.events.iter().map(|e| e.py_to_dict(py)).collect();
         dict.set_item("events", events_dict?)?;
@@ -389,17 +389,19 @@ impl Position {
             Some(realized_pnl) => dict.set_item("realized_pnl", realized_pnl.to_string())?,
             None => dict.set_item("realized_pnl", py.None())?,
         }
-        let venue_order_ids_list = PyList::new_bound(
+        let venue_order_ids_list = PyList::new(
             py,
             self.venue_order_ids()
                 .iter()
                 .map(std::string::ToString::to_string),
-        );
+        )
+        .expect("Invalid `ExactSizeIterator`");
         dict.set_item("venue_order_ids", venue_order_ids_list)?;
-        let trade_ids_list = PyList::new_bound(
+        let trade_ids_list = PyList::new(
             py,
             self.trade_ids.iter().map(std::string::ToString::to_string),
-        );
+        )
+        .expect("Invalid `ExactSizeIterator`");
         dict.set_item("trade_ids", trade_ids_list)?;
         dict.set_item("buy_qty", self.buy_qty.to_string())?;
         dict.set_item("sell_qty", self.sell_qty.to_string())?;

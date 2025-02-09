@@ -868,6 +868,7 @@ class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=Tr
     openInterestUpperCap: str | None = None
     tickSize: str | None = None
     stepSize: str | None = None
+    defaultFundingRate1H: str | None = None
 
 
 class DYDXMarketMessageContents(msgspec.Struct, forbid_unknown_fields=True):

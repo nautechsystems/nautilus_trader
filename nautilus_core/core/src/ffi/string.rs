@@ -34,7 +34,7 @@ use ustr::Ustr;
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Python::with_gil(|py| Bound::from_borrowed_ptr(py, ptr).to_string())
+    Python::with_gil(|py| unsafe { Bound::from_borrowed_ptr(py, ptr).to_string() })
 }
 
 /// Convert a C string pointer into an owned `String`.
@@ -50,7 +50,8 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 #[must_use]
 pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    Ustr::from(cstr.to_str().expect("CStr::from_ptr failed"))
 }
 
 /// Convert a C string pointer into bytes.
@@ -66,7 +67,8 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 #[must_use]
 pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    CStr::from_ptr(ptr).to_bytes().to_vec()
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    cstr.to_bytes().to_vec()
 }
 
 /// Convert a C string pointer into an owned `Option<Ustr>`.
@@ -84,7 +86,7 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     if ptr.is_null() {
         None
     } else {
-        Some(cstr_to_ustr(ptr))
+        Some(unsafe { cstr_to_ustr(ptr) })
     }
 }
 
@@ -101,7 +103,8 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 #[must_use]
 pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    cstr.to_str().expect("CStr::from_ptr failed")
 }
 
 /// Convert a C string pointer into an owned `Option<String>`.
@@ -114,7 +117,7 @@ pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     if ptr.is_null() {
         None
     } else {
-        Some(cstr_as_str(ptr))
+        Some(unsafe { cstr_as_str(ptr) })
     }
 }
 
@@ -137,7 +140,7 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 #[no_mangle]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    let cstring = CString::from_raw(ptr.cast_mut());
+    let cstring = unsafe { CString::from_raw(ptr.cast_mut()) };
     drop(cstring);
 }
 
@@ -155,7 +158,7 @@ mod tests {
     fn test_pystr_to_string() {
         pyo3::prepare_freethreaded_python();
         // Create a valid Python object pointer
-        let ptr = Python::with_gil(|py| PyString::new_bound(py, "test string1").as_ptr());
+        let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
         let result = unsafe { pystr_to_string(ptr) };
         assert_eq!(result, "test string1");
     }

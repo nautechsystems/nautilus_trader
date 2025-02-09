@@ -133,7 +133,7 @@ impl ExecutionMassStatus {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", stringify!(ExecutionMassStatus))?;
         dict.set_item("client_id", self.client_id.to_string())?;
         dict.set_item("account_id", self.account_id.to_string())?;
@@ -141,20 +141,20 @@ impl ExecutionMassStatus {
         dict.set_item("report_id", self.report_id.to_string())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
 
-        let order_reports_dict = PyDict::new_bound(py);
+        let order_reports_dict = PyDict::new(py);
         for (key, value) in &self.order_reports() {
             order_reports_dict.set_item(key.to_string(), value.py_to_dict(py)?)?;
         }
         dict.set_item("order_reports", order_reports_dict)?;
 
-        let fill_reports_dict = PyDict::new_bound(py);
+        let fill_reports_dict = PyDict::new(py);
         for (key, value) in &self.fill_reports() {
             let reports: PyResult<Vec<_>> = value.iter().map(|r| r.py_to_dict(py)).collect();
             fill_reports_dict.set_item(key.to_string(), reports?)?;
         }
         dict.set_item("fill_reports", fill_reports_dict)?;
 
-        let position_reports_dict = PyDict::new_bound(py);
+        let position_reports_dict = PyDict::new(py);
         for (key, value) in &self.position_reports() {
             let reports: PyResult<Vec<_>> = value.iter().map(|r| r.py_to_dict(py)).collect();
             position_reports_dict.set_item(key.to_string(), reports?)?;

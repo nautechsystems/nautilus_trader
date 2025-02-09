@@ -228,21 +228,22 @@ pub enum InstrumentClass {
     /// A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
     Future = 3,
     /// A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
-    FutureSpread = 4,
+    FuturesSpread = 4,
     /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
     Forward = 5,
     /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
     Cfd = 6,
     /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
     Bond = 7,
-    /// An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+    /// An option contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
     Option = 8,
-    /// An option spread instrument class. A strategy involving the purchase and/or sale of options on the same underlying asset with different strike prices or expiration dates to capitalize on expected market moves in a controlled cost environment.
+    /// An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
     OptionSpread = 9,
     /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     Warrant = 10,
-    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    /// A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
     SportsBetting = 11,
+    /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
     /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
     BinaryOption = 12,
 }
@@ -335,6 +336,58 @@ pub enum BarIntervalType {
     LeftOpen = 1,
     /// Right-open interval `[start, end)`: start is inclusive, end is exclusive.
     RightOpen = 2,
+}
+
+/// Represents the side of a bet in a betting market.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum BetSide {
+    /// A "Back" bet signifies support for a specific outcome.
+    Back = 1,
+    /// A "Lay" bet signifies opposition to a specific outcome.
+    Lay = 2,
+}
+
+impl BetSide {
+    /// Returns the opposite betting side.
+    #[must_use]
+    pub fn opposite(&self) -> Self {
+        match self {
+            Self::Back => Self::Lay,
+            Self::Lay => Self::Back,
+        }
+    }
+}
+
+impl From<OrderSide> for BetSide {
+    /// Returns the equivalent [`BetSide`] for a given [`OrderSide`].
+    fn from(side: OrderSide) -> Self {
+        match side {
+            OrderSide::Buy => BetSide::Back,
+            OrderSide::Sell => BetSide::Lay,
+            OrderSide::NoOrderSide => panic!("Invalid `OrderSide` for `BetSide`, was {side}"),
+        }
+    }
 }
 
 /// The type of order book action for an order book event.
@@ -717,7 +770,7 @@ pub enum OmsType {
     Hedging = 2,
 }
 
-/// The kind of options contract.
+/// The kind of option contract.
 #[repr(C)]
 #[derive(
     Copy,
@@ -833,6 +886,16 @@ pub enum OrderSideSpecified {
 }
 
 impl OrderSideSpecified {
+    /// Returns the opposite order side.
+    #[must_use]
+    pub fn opposite(&self) -> Self {
+        match &self {
+            Self::Buy => Self::Sell,
+            Self::Sell => Self::Buy,
+        }
+    }
+
+    /// Converts this specified side into an [`OrderSide`].
     #[must_use]
     pub fn as_order_side(&self) -> OrderSide {
         match &self {
@@ -1229,7 +1292,7 @@ pub enum TriggerType {
     DoubleLast = 6,
     /// Based on a 'double match' of the bid/ask price for the instrument
     DoubleBidAsk = 7,
-    /// Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
+    /// Based on both the [`TriggerType::LastPrice`] and [`TriggerType::BidAsk`].
     LastOrBidAsk = 8,
     /// Based on the mid-point of the [`TriggerType::BidAsk`].
     MidPoint = 9,

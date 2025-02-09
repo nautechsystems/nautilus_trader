@@ -21,7 +21,7 @@ use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
-    types::{Price, Quantity},
+    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
@@ -58,7 +58,7 @@ pub fn get_quantity_for_price(
 /// order book levels.
 #[must_use]
 pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookLevel>) -> f64 {
-    let mut cumulative_size_raw = 0u64;
+    let mut cumulative_size_raw: QuantityRaw = 0;
     let mut cumulative_value = 0.0;
 
     for (book_price, level) in levels {
@@ -86,7 +86,7 @@ pub fn get_avg_px_qty_for_exposure(
     levels: &BTreeMap<BookPrice, BookLevel>,
 ) -> (f64, f64, f64) {
     let mut cumulative_exposure = 0.0;
-    let mut cumulative_size_raw = 0u64;
+    let mut cumulative_size_raw: QuantityRaw = 0;
     let mut final_price = levels
         .first_key_value()
         .map(|(price, _)| price.value.as_f64())
@@ -99,7 +99,7 @@ pub fn get_avg_px_qty_for_exposure(
         let level_exposure = price * level.size_raw() as f64;
         let exposure_this_level =
             level_exposure.min(target_exposure.raw as f64 - cumulative_exposure);
-        let size_this_level = (exposure_this_level / price).floor() as u64;
+        let size_this_level = (exposure_this_level / price).floor() as QuantityRaw;
 
         cumulative_exposure += price * size_this_level as f64;
         cumulative_size_raw += size_this_level;
@@ -113,7 +113,11 @@ pub fn get_avg_px_qty_for_exposure(
         (0.0, 0.0, final_price)
     } else {
         let avg_price = cumulative_exposure / cumulative_size_raw as f64;
-        (avg_price, cumulative_size_raw as f64, final_price)
+        (
+            avg_price,
+            cumulative_size_raw as f64 / FIXED_SCALAR,
+            final_price,
+        )
     }
 }
 

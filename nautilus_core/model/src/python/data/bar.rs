@@ -20,14 +20,13 @@ use std::{
 };
 
 use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    python::{
+        serialization::{from_dict_pyo3, to_dict_pyo3},
+        to_pyvalue_err,
+    },
     serialization::Serializable,
 };
-use pyo3::{
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBytes, PyDict},
-};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -38,7 +37,10 @@ use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
-    types::{Price, Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::{Quantity, QuantityRaw},
+    },
 };
 
 #[pymethods]
@@ -173,23 +175,23 @@ impl Bar {
 
         let open_py: Bound<'_, PyAny> = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
-        let open_raw: i64 = open_py.getattr("raw")?.extract()?;
+        let open_raw: PriceRaw = open_py.getattr("raw")?.extract()?;
         let open = Price::from_raw(open_raw, price_prec);
 
         let high_py: Bound<'_, PyAny> = obj.getattr("high")?;
-        let high_raw: i64 = high_py.getattr("raw")?.extract()?;
+        let high_raw: PriceRaw = high_py.getattr("raw")?.extract()?;
         let high = Price::from_raw(high_raw, price_prec);
 
         let low_py: Bound<'_, PyAny> = obj.getattr("low")?;
-        let low_raw: i64 = low_py.getattr("raw")?.extract()?;
+        let low_raw: PriceRaw = low_py.getattr("raw")?.extract()?;
         let low = Price::from_raw(low_raw, price_prec);
 
         let close_py: Bound<'_, PyAny> = obj.getattr("close")?;
-        let close_raw: i64 = close_py.getattr("raw")?.extract()?;
+        let close_raw: PriceRaw = close_py.getattr("raw")?.extract()?;
         let close = Price::from_raw(close_raw, price_prec);
 
         let volume_py: Bound<'_, PyAny> = obj.getattr("volume")?;
-        let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
+        let volume_raw: QuantityRaw = volume_py.getattr("raw")?.extract()?;
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
         let volume = Quantity::from_raw(volume_raw, volume_prec);
 
@@ -329,7 +331,7 @@ impl Bar {
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
-        let py_dict = PyDict::new_bound(py);
+        let py_dict = PyDict::new(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }
@@ -379,15 +381,7 @@ impl Bar {
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let json_bytes: Vec<u8> = serde_json::to_vec(self).map_err(to_pyvalue_err)?;
-
-        // Parse JSON into a Python dictionary
-        let py_bytes = PyBytes::new_bound(py, &json_bytes);
-        let py_dict: Py<PyDict> = PyModule::import_bound(py, "msgspec.json")?
-            .call_method("decode", (py_bytes,), None)?
-            .extract()?;
-
-        Ok(py_dict)
+        to_dict_pyo3(py, self)
     }
 
     /// Return JSON encoded bytes representation of the object.

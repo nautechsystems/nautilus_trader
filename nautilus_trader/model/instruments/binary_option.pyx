@@ -50,9 +50,9 @@ cdef class BinaryOption(Instrument):
     raw_symbol : Symbol
         The raw/local/native symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The options contract asset class.
+        The option contract asset class.
     currency : Currency
-        The options contract currency.
+        The option contract currency.
     price_precision : int
         The price decimal precision.
     size_precision : int

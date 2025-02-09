@@ -19,6 +19,7 @@ use nautilus_model::identifiers::{OrderListId, StrategyId, TraderId};
 use super::get_datetime_tag;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct OrderListIdGenerator {
     clock: &'static AtomicTime,
     trader_id: TraderId,
@@ -43,11 +44,11 @@ impl OrderListIdGenerator {
         }
     }
 
-    pub fn set_count(&mut self, count: usize) {
+    pub const fn set_count(&mut self, count: usize) {
         self.count = count;
     }
 
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.count = 0;
     }
 

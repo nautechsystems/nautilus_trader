@@ -26,6 +26,7 @@ attempts to operate without a managing `Trader` instance.
 
 import asyncio
 from concurrent.futures import Executor
+from typing import Callable
 
 import cython
 
@@ -34,8 +35,10 @@ from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.signal import generate_signal_class
-from nautilus_trader.model.greeks import GreeksData
-from nautilus_trader.model.greeks import PortfolioGreeks
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import InstrumentId
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -54,7 +57,6 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport BookType
-from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
@@ -71,10 +73,10 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
@@ -101,7 +103,7 @@ cdef class Actor(Component):
     - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
-    def __init__(self, config: ActorConfig | None = None):
+    def __init__(self, config: ActorConfig | None = None) -> None:
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
@@ -120,7 +122,6 @@ cdef class Actor(Component):
         self._warning_events: set[type] = set()
         self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
         self._pyo3_conversion_types = set()
-        self._future_greeks: dict[InstrumentId, list[GreeksData]] = {}
         self._signal_classes: dict[str, type] = {}
 
         # Indicators
@@ -130,12 +131,15 @@ cdef class Actor(Component):
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
         # Configuration
+        self._log_events = config.log_events
+        self._log_commands = config.log_commands
         self.config = config
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
         self.clock = None      # Initialized when registered
+        self.greeks = None     # Initialized when registered
         self.log = self._log
 
     def to_importable_config(self) -> ImportableActorConfig:
@@ -580,6 +584,8 @@ cdef class Actor(Component):
         self.cache = cache
         self.clock = self._clock
         self.log = self._log
+
+        self.greeks = GreeksCalculator(msgbus, cache, self.clock, self.log)
 
     cpdef void register_executor(
         self,
@@ -1108,6 +1114,9 @@ cdef class Actor(Component):
         """
         Subscribe to data of the given data type.
 
+        Once subscribed, any matching data published on the message bus is forwarded
+        to the `on_data` handler.
+
         Parameters
         ----------
         data_type : DataType
@@ -1150,6 +1159,9 @@ cdef class Actor(Component):
         """
         Subscribe to update `Instrument` data for the given venue.
 
+        Once subscribed, any matching instrument data published on the message bus is forwarded
+        the `on_instrument` handler.
+
         Parameters
         ----------
         venue : Venue
@@ -1188,6 +1200,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to update `Instrument` data for the given instrument ID.
+
+        Once subscribed, any matching instrument data published on the message bus is forwarded
+        to the `on_instrument` handler.
 
         Parameters
         ----------
@@ -1234,6 +1249,9 @@ cdef class Actor(Component):
         """
         Subscribe to the order book data stream, being a snapshot then deltas
         for the given instrument ID.
+
+        Once subscribed, any matching order book data published on the message bus is forwarded
+        to the `on_order_book_deltas` handler.
 
         Parameters
         ----------
@@ -1298,6 +1316,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to an `OrderBook` at a specified interval for the given instrument ID.
+
+        Once subscribed, any matching order book updates published on the message bus are forwarded
+        to the `on_order_book` handler.
 
         The `DataEngine` will only maintain one order book for each instrument.
         Because of this - the level, depth and params for the stream will be set
@@ -1381,6 +1402,9 @@ cdef class Actor(Component):
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
 
+        Once subscribed, any matching quote tick data published on the message bus is forwarded
+        to the `on_quote_tick` handler.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -1421,6 +1445,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to streaming `TradeTick` data for the given instrument ID.
+
+        Once subscribed, any matching trade tick data published on the message bus is forwarded
+        to the `on_trade_tick` handler.
 
         Parameters
         ----------
@@ -1463,6 +1490,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to streaming `Bar` data for the given bar type.
+
+        Once subscribed, any matching bar data published on the message bus is forwarded
+        to the `on_bar` handler.
 
         Parameters
         ----------
@@ -1509,6 +1539,9 @@ cdef class Actor(Component):
         """
         Subscribe to status updates for the given instrument ID.
 
+        Once subscribed, any matching instrument status data published on the message bus is forwarded
+        to the `on_instrument_status` handler.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -1548,6 +1581,9 @@ cdef class Actor(Component):
     ):
         """
         Subscribe to close updates for the given instrument ID.
+
+        Once subscribed, any matching instrument close data published on the message bus is forwarded
+        to the `on_instrument_close` handler.
 
         Parameters
         ----------
@@ -2014,6 +2050,9 @@ cdef class Actor(Component):
         """
         Subscribe to a specific signal by name, or to all signals if no name is provided.
 
+        Once subscribed, any matching signal data published on the message bus is forwarded
+        to the `on_signal` handler.
+
         Parameters
         ----------
         name : str, optional
@@ -2044,6 +2083,11 @@ cdef class Actor(Component):
     ):
         """
         Request custom data for the given data type from the given data client.
+
+        Once the response is received, the data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2106,6 +2150,11 @@ cdef class Actor(Component):
         Request `Instrument` data for the given instrument ID.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the instrument data is forwarded from the message bus
+        to the `on_instrument` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2194,6 +2243,11 @@ cdef class Actor(Component):
 
         If `end` is ``None`` then will request up to the most recent data.
 
+        Once the response is received, the instrument data is forwarded from the message bus
+        to the `on_instrument` handler.
+
+        If the request fails, then an error is logged.
+
         Parameters
         ----------
         venue : Venue
@@ -2277,6 +2331,11 @@ cdef class Actor(Component):
         """
         Request an order book snapshot.
 
+        Once the response is received, the order book data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -2343,6 +2402,11 @@ cdef class Actor(Component):
         Request historical `QuoteTick` data.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the quote tick data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2431,6 +2495,11 @@ cdef class Actor(Component):
 
         If `end` is ``None`` then will request up to the most recent data.
 
+        Once the response is received, the trade tick data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -2517,6 +2586,11 @@ cdef class Actor(Component):
         Request historical `Bar` data.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the bar data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -2610,6 +2684,12 @@ cdef class Actor(Component):
         This external bar type will be queried.
 
         If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the bar data is forwarded from the message bus
+        to the `on_historical_data` handler. Any tick data used for aggregation is also
+        forwarded to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
 
         Parameters
         ----------
@@ -3290,7 +3370,7 @@ cdef class Actor(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command):
-        if is_logging_initialized():
+        if self._log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
@@ -3298,87 +3378,3 @@ cdef class Actor(Component):
         if is_logging_initialized():
             self._log.info(f"{REQ}{SENT} {request}")
         self._msgbus.request(endpoint="DataEngine.request", request=request)
-
-# -- GREEKS ---------------------------------------------------------------------------------------
-
-    def instrument_greeks_data(self, InstrumentId instrument_id) -> GreeksData:
-        """
-        Retrieve the Greeks data for a given instrument.
-
-        This method handles both options and futures instruments. For options,
-        it retrieves the Greeks data from the cache. For futures, it creates
-        a GreeksData object based on the instrument's delta and multiplier.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The identifier of the instrument for which to retrieve Greeks data.
-
-        Returns
-        -------
-        GreeksData
-            The Greeks data for the specified instrument, including vol, price, delta, gamma, vega, theta.
-
-        """
-        from nautilus_trader.risk.greeks import greeks_key
-
-        # Option case, to avoid querying definition
-        if " " in instrument_id.symbol.value:
-            return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
-
-        # Future case
-        if instrument_id not in self._future_greeks:
-            future_definition = self.cache.instrument(instrument_id)
-            self._future_greeks[instrument_id] = GreeksData.from_delta(instrument_id, int(future_definition.multiplier))
-
-        return self._future_greeks[instrument_id]
-
-    def portfolio_greeks(
-        self, str underlying = "",
-        Venue venue = None,
-        InstrumentId instrument_id = None,
-        StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NO_POSITION_SIDE,
-    ) -> PortfolioGreeks:
-        """
-        Calculate the portfolio Greeks for a given set of positions.
-
-        This method aggregates the Greeks data for all open positions that match the specified criteria.
-
-        Parameters
-        ----------
-        underlying : str, optional
-            The underlying asset symbol to filter positions. If provided, only positions with instruments
-            starting with this symbol will be included. Default is an empty string (no filtering).
-        venue : Venue, optional
-            The venue to filter positions. If provided, only positions from this venue will be included.
-        instrument_id : InstrumentId, optional
-            The instrument ID to filter positions. If provided, only positions for this instrument will be included.
-        strategy_id : StrategyId, optional
-            The strategy ID to filter positions. If provided, only positions for this strategy will be included.
-        side : PositionSide, optional
-            The position side to filter. If provided, only positions with this side will be included.
-            Default is PositionSide.NO_POSITION_SIDE (no filtering).
-
-        Returns
-        -------
-        PortfolioGreeks
-            The aggregated Greeks data for the portfolio, including delta, gamma, vega, theta.
-
-        """
-        ts_event = self.clock.timestamp_ns()
-        portfolio_greeks = PortfolioGreeks(ts_event, ts_event)
-        open_positions = self.cache.positions_open(venue, instrument_id, strategy_id, side)
-
-        for position in open_positions:
-            position_instrument_id = position.instrument_id
-
-            if underlying != "" and not position_instrument_id.value.startswith(underlying):
-                continue
-
-            quantity = float(position.signed_qty)
-            instrument_greeks = self.instrument_greeks_data(position_instrument_id)
-            position_greeks = quantity * instrument_greeks
-            portfolio_greeks += position_greeks
-
-        return portfolio_greeks

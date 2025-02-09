@@ -54,7 +54,7 @@ impl RedisMessageBusDatabase {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
-                Python::with_gil(|py| call_python(py, &callback, msg.into_py(py)))?
+                Python::with_gil(|py| call_python(py, &callback, msg.into_py(py)))
             }
             Ok(())
         })
@@ -66,10 +66,8 @@ impl RedisMessageBusDatabase {
     }
 }
 
-fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
-    callback.call1(py, (py_obj,)).map_err(|e| {
+fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+    if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
-        e
-    })?;
-    Ok(())
+    }
 }

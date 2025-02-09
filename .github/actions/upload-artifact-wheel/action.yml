@@ -1,0 +1,21 @@
+name: Upload wheel artifact to GitHub Actions
+description: Upload wheel artifact to GitHub Actions
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set release output
+      shell: bash
+      if: github.event_name == 'push'
+      id: vars
+      run: |
+        echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
+        cd dist
+        echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+
+    - name: Upload wheel artifact
+      if: github.event_name == 'push'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.ASSET_NAME }}
+        path: ${{ env.ASSET_PATH }}

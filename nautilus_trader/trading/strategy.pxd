@@ -25,11 +25,6 @@ from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
-from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.data cimport Bar
-from nautilus_trader.model.data cimport BarType
-from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -53,7 +48,6 @@ from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -81,8 +75,6 @@ cdef class Strategy(Actor):
     """If contingent orders should be managed automatically by the strategy.\n\n:returns: `bool`"""
     cdef readonly bint manage_gtd_expiry
     """If all order GTD time in force expirations should be managed automatically by the strategy.\n\n:returns: `bool`"""
-    cdef readonly bint event_logging
-    """If event logging should be enabled for the strategy.\n\n:returns: `bool`"""
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -127,13 +119,13 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
-        ClientId client_id=*,
+        ClientId client_id=*, dict[str, object] params=*,
     )
     cpdef void submit_order_list(
         self,
         OrderList order_list,
         PositionId position_id=*,
-        ClientId client_id=*,
+        ClientId client_id=*, dict[str, object] params=*,
     )
     cpdef void modify_order(
         self,
@@ -141,14 +133,14 @@ cdef class Strategy(Actor):
         Quantity quantity=*,
         Price price=*,
         Price trigger_price=*,
-        ClientId client_id=*,
+        ClientId client_id=*, dict[str, object] params=*,
     )
-    cpdef void cancel_order(self, Order order, ClientId client_id=*)
-    cpdef void cancel_orders(self, list orders, ClientId client_id=*)
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*)
-    cpdef void close_position(self, Position position, ClientId client_id=*, list[str] tags=*, bint reduce_only=*)
-    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, bint reduce_only=*)
-    cpdef void query_order(self, Order order, ClientId client_id=*)
+    cpdef void cancel_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void cancel_orders(self, list orders, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void close_position(self, Position position, ClientId client_id=*, list[str] tags=*, bint reduce_only=*, dict[str, object] params=*)
+    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, bint reduce_only=*, dict[str, object] params=*)
+    cpdef void query_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
     cdef ModifyOrder _create_modify_order(
         self,
         Order order,
@@ -156,8 +148,9 @@ cdef class Strategy(Actor):
         Price price=*,
         Price trigger_price=*,
         ClientId client_id=*,
+        dict[str, object] params=*,
     )
-    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id=*)
+    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
 
     cpdef void cancel_gtd_expiry(self, Order order)
     cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id)

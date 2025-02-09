@@ -1532,9 +1532,9 @@ cdef class Component:
         self.id = component_id
         self.type = type(self)
 
-        self._msgbus = msgbus
         self._clock = clock
         self._log = Logger(name=component_name)
+        self._msgbus = msgbus
         self._fsm = ComponentFSMFactory.create()
         self._config = config.json_primitives() if config is not None else {}
 

@@ -12,19 +12,24 @@ The architecture guide dives deep into the foundational principles, structures, 
 the platform. Whether you're a developer, system architect, or just curious about the inner workings
 of NautilusTrader.
 
+## [Actors](actors.md)
+
+The `Actor` serves as the foundational component for interacting with the trading system.
+The **Actors** guide covers capabilities and implementation specifics.
+
 ## [Strategies](strategies.md)
 
-The heart of the NautilusTrader user experience is in writing and working with
+The `Strategy` is at the heart of the NautilusTrader user experience when writing and working with
 trading strategies. The **Strategies** guide covers how to implement trading strategies for the platform.
 
 ## [Instruments](instruments.md)
 
 The instrument definitions provide the specification for any tradable asset/contract.
 
-## [Orders](orders.md)
+## [Data](data.md)
 
-The orders guide provides more details about the available order types for the platform, along with
-the execution instructions supported for each.
+The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
+a trading domain
 
 ## [Execution](execution.md)
 
@@ -32,14 +37,23 @@ NautilusTrader can handle trade execution and order management for multiple stra
 simultaneously (per instance). Several interacting components are involved in execution, making it
 crucial to understand the possible flows of execution messages (commands and events).
 
-## [Data](data.md)
+## [Orders](orders.md)
 
-The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
-a trading domain
+The orders guide provides more details about the available order types for the platform, along with
+the execution instructions supported for each.
 
 ## [Cache](cache.md)
 
 The Cache is a central in-memory database, that automatically stores and manages all trading-related data.
+
+## [Message Bus](message_bus.md)
+
+The core communication system enabling decoupled messaging patterns between components, including
+point-to-point, publish/subscribe, and request/response.
+
+## [Logging](logging.md)
+
+The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
 
 ## [Backtesting](backtesting.md)
 
@@ -56,15 +70,6 @@ key differences between backtesting and live trading.
 
 The NautilusTrader design allows for integrating data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage.
-
-## [Logging](logging.md)
-
-The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
-
-## [Message Bus](message_bus.md)
-
-The heart of the communication channels between components, providing decoupled messaging patterns such as
-point-to-point, publish/subscribe and request/response.
 
 ## [Advanced](advanced/index.md)
 

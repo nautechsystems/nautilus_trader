@@ -14,9 +14,9 @@ NautilusTrader's design, architecture, and implementation philosophy holds softw
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset-class-agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
-adapters. Thus, it can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
+The platform is also universal and asset-class-agnostic — with any REST, WebSocket or FIX API able to be integrated via modular
+adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
+including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
 ## Features
 
@@ -59,9 +59,9 @@ with CPython C extension modules then able to offer a Python-native environment,
 
 There are three main use cases for this software package:
 
-- Backtesting trading systems with historical data (`backtest`)
-- Testing trading systems with real-time data and simulated execution (`sandbox`)
-- Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`)
+- Backtesting trading systems with historical data (`backtest`).
+- Testing trading systems with real-time data and simulated execution (`sandbox`).
+- Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`).
 
 The projects codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
 the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
@@ -208,3 +208,32 @@ The following order types are available (when possible on a venue):
 - `LIMIT_IF_TOUCHED`
 - `TRAILING_STOP_MARKET`
 - `TRAILING_STOP_LIMIT`
+
+## Value Types
+
+The following value types are backed by either 128-bit or 64-bit raw integer values, depending on the
+[precision mode](../getting_started/installation.md#precision-mode) used during compilation.
+
+- `Price`
+- `Quantity`
+- `Money`
+
+### High-precision mode (128-bit)
+
+When the `high-precision` feature flag is **enabled** (default), values use the specification:
+
+| Type         | Raw backing | Max precision | Min value           | Max value          |
+|:-------------|:------------|:--------------|:--------------------|:-------------------|
+| `Price`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
+| `Money`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
+| `Quantity`   | `u128`      | 16            | 0                   | 34,028,236,692,093 |
+
+### Standard-precision mode (64-bit)
+
+When the `high-precision` feature flag is **disabled**, values use the specification:
+
+| Type         | Raw backing | Max precision | Min value           | Max value          |
+|:-------------|:------------|:--------------|:--------------------|:-------------------|
+| `Price`      | `i64`       | 9             | -9,223,372,036      | 9,223,372,036      |
+| `Money`      | `i64`       | 9             | -9,223,372,036      | 9,223,372,036      |
+| `Quantity`   | `u64`       | 9             | 0                   | 18,446,744,073     |

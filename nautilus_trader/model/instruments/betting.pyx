@@ -17,6 +17,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.core import nautilus_pyo3
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int8_t
 from libc.stdint cimport int64_t
@@ -25,6 +27,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -64,13 +67,17 @@ cdef class BettingInstrument(Instrument):
         int8_t size_precision,
         uint64_t ts_event,
         uint64_t ts_init,
-        str tick_scheme_name = None,
-        Price min_price: Price | None = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
         Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         margin_init: Decimal | None = None,
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         assert event_open_date.tzinfo or market_start_time.tzinfo is not None
@@ -116,12 +123,12 @@ cdef class BettingInstrument(Instrument):
             size_increment=Quantity(0.01, precision=size_precision),
             multiplier=Quantity.from_int_c(1),
             lot_size=Quantity.from_int_c(1),
-            max_quantity=None,   # Can be None
-            min_quantity=None,   # Can be None
-            max_notional=None,   # Can be None
-            min_notional=Money(1, Currency.from_str_c(currency)),
-            max_price=None,      # Can be None
-            min_price=None,      # Can be None
+            max_quantity=max_quantity,
+            min_quantity=min_quantity,
+            max_notional=max_notional,
+            min_notional=min_notional,
+            max_price=max_price,
+            min_price=min_price,
             margin_init=margin_init or Decimal(1),
             margin_maint=margin_maint or Decimal(1),
             maker_fee=maker_fee or Decimal(0),
@@ -143,6 +150,30 @@ cdef class BettingInstrument(Instrument):
         data["event_open_date"] = pd.Timestamp(data["event_open_date"], tz="UTC")
         data["market_start_time"] = pd.Timestamp(data["market_start_time"], tz="UTC")
 
+        max_quantity = data.get("max_quantity")
+        if max_quantity:
+            data["max_quantity"] = Quantity.from_str(max_quantity)
+
+        min_quantity = data.get("min_quantity")
+        if min_quantity:
+            data["min_quantity"] = Quantity.from_str(min_quantity)
+
+        max_notional = data.get("max_notional")
+        if max_notional:
+            data["max_notional"] = Money.from_str(max_notional)
+
+        min_notional = data.get("min_notional")
+        if min_notional:
+            data["min_notional"] = Money.from_str(min_notional)
+
+        max_price = data.get("max_price")
+        if max_price:
+            data["max_price"] = Price.from_str(max_price)
+
+        min_price = data.get("min_price")
+        if min_price:
+            data["min_price"] = Price.from_str(min_price)
+
         margin_init = data.get("margin_init")
         if margin_init:
             data["margin_init"] = Decimal(margin_init)
@@ -162,12 +193,6 @@ cdef class BettingInstrument(Instrument):
         data.pop("raw_symbol", None)
         data.pop("price_increment", None)
         data.pop("size_increment", None)
-        data.pop("max_quantity", None)
-        data.pop("min_quantity", None)
-        data.pop("max_notional", None)
-        data.pop("min_notional", None)
-        data.pop("max_price", None)
-        data.pop("min_price", None)
         return BettingInstrument(**{k: v for k, v in data.items() if k not in ("id", "type")})
 
     @staticmethod
@@ -271,3 +296,10 @@ cpdef Symbol make_symbol(
 cpdef double null_handicap():
     cdef double NULL_HANDICAP = -9999999.0
     return NULL_HANDICAP
+
+
+cpdef object order_side_to_bet_side(OrderSide order_side):
+    if order_side == OrderSide.BUY:
+        return nautilus_pyo3.BetSide.BACK
+    else:  # order_side == OrderSide.SELL
+        return nautilus_pyo3.BetSide.LAY

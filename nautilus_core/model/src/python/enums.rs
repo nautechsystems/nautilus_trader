@@ -22,8 +22,8 @@ use pyo3::{prelude::*, types::PyType, PyTypeInfo};
 
 use crate::{
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BetSide,
+        BookAction, BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
         OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
         TrailingOffsetType, TriggerType,
@@ -35,7 +35,7 @@ use crate::{
 impl AccountType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -104,7 +104,7 @@ impl AccountType {
 impl AggregationSource {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -167,7 +167,7 @@ impl AggregationSource {
 impl AggressorSide {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -236,7 +236,7 @@ impl AggressorSide {
 impl AssetClass {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -329,7 +329,7 @@ impl AssetClass {
 impl InstrumentClass {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -434,7 +434,7 @@ impl InstrumentClass {
 impl BarAggregation {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -577,10 +577,84 @@ impl BarAggregation {
 }
 
 #[pymethods]
+impl BetSide {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(BetSide),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_order_side")]
+    fn py_from_order_side(_: &Bound<'_, PyType>, order_side: OrderSide) -> Self {
+        order_side.into()
+    }
+
+    #[classattr]
+    #[pyo3(name = "BACK")]
+    fn py_back() -> Self {
+        Self::Back
+    }
+
+    #[classattr]
+    #[pyo3(name = "LAY")]
+    fn py_lay() -> Self {
+        Self::Lay
+    }
+
+    #[pyo3(name = "opposite")]
+    fn py_opposite(&self) -> Self {
+        self.opposite()
+    }
+}
+
+#[pymethods]
 impl BookAction {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -655,7 +729,7 @@ impl BookAction {
 impl ContingencyType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -730,7 +804,7 @@ impl ContingencyType {
 impl CurrencyType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -799,7 +873,7 @@ impl CurrencyType {
 impl InstrumentCloseType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -862,7 +936,7 @@ impl InstrumentCloseType {
 impl LiquiditySide {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -931,7 +1005,7 @@ impl LiquiditySide {
 impl MarketStatus {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1019,7 +1093,7 @@ impl MarketStatus {
 impl MarketStatusAction {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1166,7 +1240,7 @@ impl MarketStatusAction {
 impl OmsType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1235,7 +1309,7 @@ impl OmsType {
 impl OptionKind {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1298,7 +1372,7 @@ impl OptionKind {
 impl OrderSide {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1367,7 +1441,7 @@ impl OrderSide {
 impl OrderStatus {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1502,7 +1576,7 @@ impl OrderStatus {
 impl OrderType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1607,7 +1681,7 @@ impl OrderType {
 impl PositionSide {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1709,7 +1783,7 @@ impl PriceType {
 impl RecordFlag {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1789,7 +1863,7 @@ impl RecordFlag {
 impl TimeInForce {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1882,7 +1956,7 @@ impl TimeInForce {
 impl TrailingOffsetType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -1963,7 +2037,7 @@ impl TrailingOffsetType {
 impl TriggerType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -2074,7 +2148,7 @@ impl TriggerType {
 impl BookType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
@@ -2143,7 +2217,7 @@ impl BookType {
 impl TradingState {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let t = Self::type_object_bound(py);
+        let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 

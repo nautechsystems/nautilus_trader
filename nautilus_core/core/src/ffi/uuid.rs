@@ -39,7 +39,9 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    UUID4::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    let value = cstr.to_str().expect("Failed to convert C string to UTF-8");
+    UUID4::from(value)
 }
 
 #[no_mangle]

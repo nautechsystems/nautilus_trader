@@ -315,7 +315,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             await self._subscribe_instrument(instrument_id)
         except asyncio.CancelledError:
             self._log.warning(
-                "`_ensure_subscribed_for_instrument` was canceled while still pending",
+                "Canceled task 'ensure_subscribed_for_instrument'",
             )
 
     async def _get_dataset_range(
@@ -350,7 +350,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             return available_start, available_end
         except asyncio.CancelledError:
-            self._log.warning("`_get_dataset_range` was canceled while still pending")
+            self._log.warning("Canceled task 'get_dataset_range'")
             return (None, pd.Timestamp.utcnow())
         except Exception as e:  # More specific exception
             self._log.error(f"Error requesting dataset range: {e}")
@@ -405,7 +405,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_imbalance` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_imbalance'")
 
     async def _subscribe_statistics(self, data_type: DataType) -> None:
         try:
@@ -419,7 +419,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_imbalance` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_statistics'")
 
     async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         # Replace method in child class, for exchange specific data types.
@@ -442,7 +442,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_instrument` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_instrument'")
 
     async def _subscribe_parent_symbols(
         self,
@@ -460,7 +460,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_parent_symbols` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_parent_symbols'")
 
     async def _subscribe_instrument_ids(
         self,
@@ -477,7 +477,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_instrument_ids` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_instrument_ids'")
 
     async def _subscribe_order_book_deltas(
         self,
@@ -516,7 +516,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._subscribe_order_book_deltas_batch([instrument_id])
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_order_book_deltas` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_order_book_deltas'")
 
     async def _subscribe_order_book_deltas_batch(
         self,
@@ -569,7 +569,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
-                "`_subscribe_order_book_deltas_batch` was canceled while still pending",
+                "Canceled task 'subscribe_order_book_deltas_batch'",
             )
 
     async def _subscribe_order_book_snapshots(
@@ -601,7 +601,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_order_book_snapshots'")
 
     async def _subscribe_quote_ticks(
         self,
@@ -635,7 +635,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_quote_ticks` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_quote_ticks'")
 
     async def _subscribe_trade_ticks(
         self,
@@ -659,7 +659,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_trade_ticks` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_trade_ticks'")
 
     async def _subscribe_bars(
         self,
@@ -685,7 +685,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_bars` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_bars'")
 
     async def _subscribe_instrument_status(
         self,
@@ -702,7 +702,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_bars` was canceled while still pending")
+            self._log.warning("Canceled task 'subscribe_instrument_status'")
 
     async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(

@@ -21,6 +21,8 @@ import pyarrow as pa
 
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import FIXED_PRECISION_BYTES
+from nautilus_trader.model.objects import FIXED_SCALAR
 
 
 class WranglerBase(abc.ABC):
@@ -119,44 +121,79 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
             A list of PyO3 [pyclass] `OrderBookDelta` objects.
 
         """
-        # Rename columns (temporary pre-processing?)
-        df = df.rename(
-            columns={
-                "timestamp": "ts_event",
-                "ts_recv": "ts_init",
-                "quantity": "size",
-            },
-        )
+        # Rename columns
+        expected_columns = {
+            "timestamp": "ts_event",
+            "ts_recv": "ts_init",
+            "quantity": "size",
+        }
+        df = df.rename(columns=expected_columns)
 
-        # Scale prices and quantities
-        df["price"] = (df["price"] * 1e9).astype(pd.Int64Dtype())
-        df["size"] = (df["size"] * 1e9).round().astype(pd.UInt64Dtype())
-
-        df["order_id"] = df["order_id"].astype(pd.UInt64Dtype())
+        if "action" not in df.columns:
+            df["action"] = 0
+        if "flags" not in df.columns:
+            df["flags"] = 0
 
         # Process timestamps
-        df["ts_event"] = (
+        ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
             .astype("int64")
-            .astype("uint64")
-        )
+        ).to_numpy(dtype="uint64")
 
         if "ts_init" in df.columns:
-            df["ts_init"] = (
+            ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
                 .astype("int64")
-                .astype("uint64")
-            )
+            ).to_numpy(dtype="uint64")
         else:
-            df["ts_init"] = df["ts_event"] + ts_init_delta
+            ts_init = ts_event + ts_init_delta
 
-        # Reorder the columns and drop index column
-        df = df[["price", "size", "aggressor_side", "trade_id", "ts_event", "ts_init"]]
-        df = df.reset_index(drop=True)
+        # Convert prices and sizes to fixed binary
+        price = (
+            (df["price"] * FIXED_SCALAR)
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="big", signed=True))
+            .to_numpy()
+        )
+        size = (
+            (df["quantity"] if "quantity" in df else df["size"] * FIXED_SCALAR)
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="big", signed=False))
+            .to_numpy()
+        )
 
-        table = pa.Table.from_pandas(df)
+        # Other uint fields
+        order_id = df["order_id"].to_numpy(dtype="uint64")
+        sequence = df.index.to_numpy(dtype="uint64")  # Default to index if not provided
+        action = df["action"].to_numpy(dtype="uint8")
+        flags = df["flags"].to_numpy(dtype="uint8")
+        side = df["aggressor_side"].to_numpy(dtype="uint8")
+
+        arrays = [
+            pa.array(action, type=pa.uint8()),
+            pa.array(side, type=pa.uint8()),
+            pa.array(price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(size, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(order_id, type=pa.uint64()),
+            pa.array(flags, type=pa.uint8()),
+            pa.array(sequence, type=pa.uint64()),
+            pa.array(ts_event, type=pa.uint64()),
+            pa.array(ts_init, type=pa.uint64()),
+        ]
+
+        fields = [
+            pa.field("action", pa.uint8(), nullable=False),
+            pa.field("side", pa.uint8(), nullable=False),
+            pa.field("price", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("size", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("order_id", pa.uint64(), nullable=False),
+            pa.field("flags", pa.uint8(), nullable=False),
+            pa.field("sequence", pa.uint64(), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("ts_init", pa.uint64(), nullable=False),
+        ]
+
+        table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
 
         return self.from_arrow(table)
 
@@ -227,54 +264,80 @@ class QuoteTickDataWranglerV2(WranglerBase):
 
         """
         # Rename columns
-        df = df.rename(
-            columns={
-                "bid": "bid_price",
-                "ask": "ask_price",
-                "timestamp": "ts_event",
-                "ts_recv": "ts_init",
-            },
-        )
+        expected_columns = {
+            "bid": "bid_price",
+            "ask": "ask_price",
+            "timestamp": "ts_event",
+            "ts_recv": "ts_init",
+        }
+        df = df.rename(columns=expected_columns)
 
-        # Scale prices and quantities
-        df["bid_price"] = (df["bid_price"] * 1e9).astype(pd.Int64Dtype())
-        df["ask_price"] = (df["ask_price"] * 1e9).astype(pd.Int64Dtype())
-
-        # Create bid_size and ask_size columns
-        if "bid_size" in df.columns:
-            df["bid_size"] = (df["bid_size"] * 1e9).astype(pd.Int64Dtype())
-        else:
-            df["bid_size"] = pd.Series([default_size * 1e9] * len(df), dtype=pd.UInt64Dtype())
-
-        if "ask_size" in df.columns:
-            df["ask_size"] = (df["ask_size"] * 1e9).astype(pd.Int64Dtype())
-        else:
-            df["ask_size"] = pd.Series([default_size * 1e9] * len(df), dtype=pd.UInt64Dtype())
+        if "bid_size" not in df.columns:
+            df["bid_size"] = default_size
+        if "ask_size" not in df.columns:
+            df["ask_size"] = default_size
 
         # Process timestamps
-        df["ts_event"] = (
+        ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
             .astype("int64")
-            .astype("uint64")
-        )
+        ).to_numpy(dtype="uint64")
 
         if "ts_init" in df.columns:
-            df["ts_init"] = (
+            ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
                 .astype("int64")
-                .astype("uint64")
-            )
+            ).to_numpy(dtype="uint64")
         else:
-            df["ts_init"] = df["ts_event"] + ts_init_delta
+            ts_init = ts_event + ts_init_delta
 
-        # Reorder the columns and drop index column
-        df = df[["bid_price", "ask_price", "bid_size", "ask_size", "ts_event", "ts_init"]]
-        df = df.reset_index(drop=True)
+        # Convert prices and sizes to fixed binary
+        bid_price = (
+            df["bid_price"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+            .to_numpy()
+        )
+        ask_price = (
+            df["ask_price"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+            .to_numpy()
+        )
+        bid_size = (
+            df["bid_size"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=False))
+            .to_numpy()
+        )
+        ask_size = (
+            df["ask_size"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=False))
+            .to_numpy()
+        )
 
-        table = pa.Table.from_pandas(df)
+        fields = [
+            pa.field("bid_price", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("ask_price", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("bid_size", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("ask_size", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("ts_init", pa.uint64(), nullable=False),
+        ]
 
+        arrays = [
+            pa.array(bid_price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(ask_price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(bid_size, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(ask_size, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(ts_event, type=pa.uint64()),
+            pa.array(ts_init, type=pa.uint64()),
+        ]
+
+        table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
         return self.from_arrow(table)
 
 
@@ -347,47 +410,66 @@ class TradeTickDataWranglerV2(WranglerBase):
             A list of PyO3 [pyclass] `TradeTick` objects.
 
         """
-        # Rename columns (temporary pre-processing?)
-        df = df.rename(
-            columns={
-                "timestamp": "ts_event",
-                "ts_recv": "ts_init",
-                "quantity": "size",
-                "buyer_maker": "aggressor_side",
-            },
-        )
-
-        # Scale prices and quantities
-        df["price"] = (df["price"] * 1e9).astype(pd.Int64Dtype())
-        df["size"] = (df["size"] * 1e9).round().astype(pd.UInt64Dtype())
-
-        df["aggressor_side"] = df["aggressor_side"].map(_map_aggressor_side).astype(pd.UInt8Dtype())
-        df["trade_id"] = df["trade_id"].astype(str)
+        # Rename columns
+        expected_columns = {
+            "timestamp": "ts_event",
+            "ts_recv": "ts_init",
+            "quantity": "size",
+            "buyer_maker": "aggressor_side",
+        }
+        df = df.rename(columns=expected_columns)
 
         # Process timestamps
-        df["ts_event"] = (
+        ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
             .astype("int64")
-            .astype("uint64")
-        )
+        ).to_numpy(dtype="uint64")
 
         if "ts_init" in df.columns:
-            df["ts_init"] = (
+            ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
                 .astype("int64")
-                .astype("uint64")
-            )
+            ).to_numpy(dtype="uint64")
         else:
-            df["ts_init"] = df["ts_event"] + ts_init_delta
+            ts_init = ts_event + ts_init_delta
 
-        # Reorder the columns and drop index column
-        df = df[["price", "size", "aggressor_side", "trade_id", "ts_event", "ts_init"]]
-        df = df.reset_index(drop=True)
+        # Convert prices and sizes to fixed binary
+        price = (
+            df["price"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+        )
 
-        table = pa.Table.from_pandas(df)
+        size = (
+            df["size"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=False))
+        )
 
+        aggressor_side = df["aggressor_side"].map(_map_aggressor_side)
+        trade_id = df["trade_id"].astype(str)
+
+        fields = [
+            pa.field("price", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("size", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("aggressor_side", pa.uint8(), nullable=False),
+            pa.field("trade_id", pa.string(), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("ts_init", pa.uint64(), nullable=False),
+        ]
+
+        arrays = [
+            pa.array(price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(size, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(aggressor_side, type=pa.uint8()),
+            pa.array(trade_id, type=pa.string()),
+            pa.array(ts_event, type=pa.uint64()),
+            pa.array(ts_init, type=pa.uint64()),
+        ]
+
+        table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
         return self.from_arrow(table)
 
 
@@ -468,40 +550,78 @@ class BarDataWranglerV2(WranglerBase):
             A list of PyO3 [pyclass] `Bar` objects.
 
         """
-        # Rename column
-        df = df.rename(columns={"timestamp": "ts_event"})
+        # Rename columns
+        expected_columns = {
+            "timestamp": "ts_event",
+        }
+        df = df.rename(columns=expected_columns)
 
-        # Scale prices and quantities
-        df["open"] = (df["open"] * 1e9).astype(pd.Int64Dtype())
-        df["high"] = (df["high"] * 1e9).astype(pd.Int64Dtype())
-        df["low"] = (df["low"] * 1e9).astype(pd.Int64Dtype())
-        df["close"] = (df["close"] * 1e9).astype(pd.Int64Dtype())
-
+        # Handle default volume
         if "volume" not in df.columns:
-            df["volume"] = pd.Series([default_volume * 1e9] * len(df), dtype=pd.UInt64Dtype())
+            df["volume"] = default_volume
 
         # Process timestamps
-        df["ts_event"] = (
+        ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
             .astype("int64")
-            .astype("uint64")
-        )
+        ).to_numpy(dtype="uint64")
 
         if "ts_init" in df.columns:
-            df["ts_init"] = (
+            ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
                 .astype("int64")
-                .astype("uint64")
-            )
+            ).to_numpy(dtype="uint64")
         else:
-            df["ts_init"] = df["ts_event"] + ts_init_delta
+            ts_init = ts_event + ts_init_delta
 
-        # Reorder the columns and drop index column
-        df = df[["open", "high", "low", "close", "volume", "ts_event", "ts_init"]]
-        df = df.reset_index(drop=True)
+        # Convert prices and sizes to fixed binary
+        open_price = (
+            df["open"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+        )
+        high_price = (
+            df["high"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+        )
+        low_price = (
+            df["low"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+        )
+        close_price = (
+            df["close"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=True))
+        )
+        volume = (
+            df["volume"]
+            .apply(lambda x: int(x * FIXED_SCALAR))
+            .apply(lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="little", signed=False))
+        )
 
-        table = pa.Table.from_pandas(df)
+        fields = [
+            pa.field("open", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("high", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("low", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("close", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("volume", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("ts_init", pa.uint64(), nullable=False),
+        ]
 
+        arrays = [
+            pa.array(open_price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(high_price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(low_price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(close_price, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(volume, type=pa.binary(FIXED_PRECISION_BYTES)),
+            pa.array(ts_event, type=pa.uint64()),
+            pa.array(ts_init, type=pa.uint64()),
+        ]
+
+        table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
         return self.from_arrow(table)

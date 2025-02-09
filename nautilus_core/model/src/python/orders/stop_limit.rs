@@ -356,7 +356,7 @@ impl StopLimitOrder {
 
     #[pyo3(name = "to_dict")]
     fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -498,8 +498,15 @@ impl StopLimitOrder {
         let reduce_only = dict.get_item("is_reduce_only")?.extract::<bool>()?;
         let quote_quantity = dict.get_item("is_quote_quantity")?.extract::<bool>()?;
         let expire_time = dict
-            .get_item("expire_time")
-            .map(|x| Some(UnixNanos::from(x.extract::<u64>().unwrap())))?;
+            .get_item("expire_time_ns")
+            .map(|x| {
+                let extracted = x.extract::<u64>();
+                match extracted {
+                    Ok(item) => Some(UnixNanos::from(item)),
+                    Err(_) => None,
+                }
+            })
+            .unwrap();
         let display_quantity = dict
             .get_item("display_qty")
             .map(|x| x.extract::<Quantity>().ok())

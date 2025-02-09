@@ -31,7 +31,7 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -341,12 +341,12 @@ class TestInstrument:
 
     def test_option_instrument_to_dict(self):
         # Arrange, Act
-        result = OptionsContract.to_dict(AAPL_OPTION)
+        result = OptionContract.to_dict(AAPL_OPTION)
 
         # Assert
-        assert OptionsContract.from_dict(result) == AAPL_OPTION
+        assert OptionContract.from_dict(result) == AAPL_OPTION
         assert result == {
-            "type": "OptionsContract",
+            "type": "OptionContract",
             "id": "AAPL211217C00150000.OPRA",
             "raw_symbol": "AAPL211217C00150000",
             "asset_class": "EQUITY",
@@ -609,10 +609,10 @@ def test_pyo3_option_to_legacy_option() -> None:
     pyo3_instrument = TestInstrumentProviderPyo3.aapl_option()
 
     # Act
-    instrument = OptionsContract.from_dict(pyo3_instrument.to_dict())
+    instrument = OptionContract.from_dict(pyo3_instrument.to_dict())
 
     # Assert
-    assert isinstance(instrument, OptionsContract)
+    assert isinstance(instrument, OptionContract)
     assert instrument.id == InstrumentId.from_str("AAPL211217C00150000.OPRA")
 
 

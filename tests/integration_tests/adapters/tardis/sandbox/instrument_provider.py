@@ -19,31 +19,44 @@ from nautilus_trader.adapters.tardis.factories import get_tardis_http_client
 from nautilus_trader.adapters.tardis.factories import get_tardis_instrument_provider
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.config import InstrumentProviderConfig
+from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.core import nautilus_pyo3
 
 
 async def run():
-    _guard = init_logging()
+    nautilus_pyo3.init_tracing()
+    _guard = init_logging(level_stdout=LogLevel.TRACE)
+
     http_client = get_tardis_http_client()
 
     # Test loading all instrument for specified exchanges
-    exchanges = ["bitmex", "binance", "bybit"]
-    filters = {"exchanges": frozenset(exchanges)}
+    exchanges = ["binance-delivery"]
+    filters = {
+        "venues": frozenset(exchanges),
+        # "quote_currency": frozenset(["BTC"]),
+        # "base_currency": frozenset(["USDC"]),
+        "instrument_type": frozenset(["perpetual"]),
+    }
 
+    # config = InstrumentProviderConfig(load_all=True, filters=filters)
+    # provider = get_tardis_instrument_provider(http_client, config)
+    #
+    # await provider.initialize()
+
+    # Test loading only specified instruments
+    # instrument_ids = [
+    #     "XBT-USD.OKEX",
+    #     "ETH-USD.OKEX",
+    # ]
+
+    # config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
     config = InstrumentProviderConfig(load_all=True, filters=filters)
     provider = get_tardis_instrument_provider(http_client, config)
 
     await provider.initialize()
 
-    # Test loading only specified instruments
-    instrument_ids = [
-        "XBTUSD.BITMEX",
-        "ETHUSD.BITMEX",
-    ]
-
-    config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
-    provider = get_tardis_instrument_provider(http_client, config)
-
-    await provider.initialize()
+    for instrument in provider.list_all():
+        print(instrument.id)
 
 
 if __name__ == "__main__":

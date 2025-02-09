@@ -27,5 +27,14 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(clippy::missing_errors_doc)]
+
 pub mod engine;
 pub mod sizing;
+
+// Re-exports
+pub use engine::RiskEngine;

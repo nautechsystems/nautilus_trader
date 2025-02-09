@@ -83,9 +83,6 @@ class BybitWebSocketClient:
         Whether the client is a private channel.
     is_trade : bool, optional
         Whether the client is a trade channel.
-    max_reconnection_tries: int, default 3
-        The number of retries to reconnect the websocket connection if the
-        connection is broken.
     ws_trade_timeout_secs: float, default 5.0
         The timeout for trade websocket messages.
 
@@ -107,7 +104,6 @@ class BybitWebSocketClient:
         loop: asyncio.AbstractEventLoop,
         is_private: bool | None = False,
         is_trade: bool | None = False,
-        max_reconnection_tries: int | None = 3,
         ws_trade_timeout_secs: float | None = 5.0,
     ) -> None:
         if is_private and is_trade:
@@ -120,7 +116,6 @@ class BybitWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
-        self._max_reconnection_tries = max_reconnection_tries
         self._ws_trade_timeout_secs = ws_trade_timeout_secs
 
         self._client: WebSocketClient | None = None
@@ -168,7 +163,6 @@ class BybitWebSocketClient:
             heartbeat=20,
             heartbeat_msg=msgspec_json.encode({"op": "ping"}).decode(),
             headers=[],
-            max_reconnection_tries=self._max_reconnection_tries,
         )
         client = await WebSocketClient.connect(
             config=config,

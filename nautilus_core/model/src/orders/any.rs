@@ -150,6 +150,20 @@ impl OrderAny {
         }
     }
 
+    pub fn events(&self) -> Vec<&OrderEventAny> {
+        match self {
+            Self::Limit(order) => order.events(),
+            Self::LimitIfTouched(order) => order.events(),
+            Self::Market(order) => order.events(),
+            Self::MarketIfTouched(order) => order.events(),
+            Self::MarketToLimit(order) => order.events(),
+            Self::StopLimit(order) => order.events(),
+            Self::StopMarket(order) => order.events(),
+            Self::TrailingStopLimit(order) => order.events(),
+            Self::TrailingStopMarket(order) => order.events(),
+        }
+    }
+
     #[must_use]
     pub fn last_event(&self) -> &OrderEventAny {
         match self {
@@ -735,6 +749,35 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn is_aggressive(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_aggressive(),
+            Self::LimitIfTouched(order) => order.is_aggressive(),
+            Self::Market(order) => order.is_aggressive(),
+            Self::MarketIfTouched(order) => order.is_aggressive(),
+            Self::MarketToLimit(order) => order.is_aggressive(),
+            Self::StopLimit(order) => order.is_aggressive(),
+            Self::StopMarket(order) => order.is_aggressive(),
+            Self::TrailingStopLimit(order) => order.is_aggressive(),
+            Self::TrailingStopMarket(order) => order.is_aggressive(),
+        }
+    }
+
+    pub fn is_passive(&self) -> bool {
+        match self {
+            OrderAny::Limit(order) => order.is_passive(),
+            OrderAny::LimitIfTouched(order) => order.is_passive(),
+            OrderAny::Market(order) => order.is_passive(),
+            OrderAny::MarketIfTouched(order) => order.is_passive(),
+            OrderAny::MarketToLimit(order) => order.is_passive(),
+            OrderAny::StopLimit(order) => order.is_passive(),
+            OrderAny::StopMarket(order) => order.is_passive(),
+            OrderAny::TrailingStopLimit(order) => order.is_passive(),
+            OrderAny::TrailingStopMarket(order) => order.is_passive(),
+        }
+    }
+
+    #[must_use]
     pub fn price(&self) -> Option<Price> {
         match self {
             Self::Limit(order) => Some(order.price),
@@ -1018,6 +1061,20 @@ impl OrderAny {
             Self::TrailingStopMarket(order) => order.is_quote_quantity = is_quote_quantity,
         }
     }
+
+    pub fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
+        match self {
+            Self::Limit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::LimitIfTouched(order) => order.liquidity_side = Some(liquidity_side),
+            Self::Market(order) => order.liquidity_side = Some(liquidity_side),
+            Self::MarketIfTouched(order) => order.liquidity_side = Some(liquidity_side),
+            Self::MarketToLimit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::StopLimit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::StopMarket(order) => order.liquidity_side = Some(liquidity_side),
+            Self::TrailingStopLimit(order) => order.liquidity_side = Some(liquidity_side),
+            Self::TrailingStopMarket(order) => order.liquidity_side = Some(liquidity_side),
+        }
+    }
 }
 
 impl PartialEq for OrderAny {
@@ -1129,6 +1186,8 @@ impl From<OrderAny> for LimitOrderAny {
         match order {
             OrderAny::Limit(order) => LimitOrderAny::Limit(order),
             OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
+            OrderAny::StopLimit(order) => LimitOrderAny::StopLimit(order),
+            OrderAny::TrailingStopLimit(order) => LimitOrderAny::TrailingStopLimit(order),
             _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
         }
     }
@@ -1189,10 +1248,42 @@ impl PassiveOrderAny {
     }
 
     #[must_use]
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_open(),
+            Self::Stop(order) => order.is_open(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_inflight(),
+            Self::Stop(order) => order.is_inflight(),
+        }
+    }
+
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::Limit(order) => order.expire_time(),
             Self::Stop(order) => order.expire_time(),
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::Limit(order) => order.contingency_type(),
+            Self::Stop(order) => order.contingency_type(),
+        }
+    }
+
+    #[must_use]
+    pub fn to_any(&self) -> OrderAny {
+        match self {
+            Self::Limit(order) => order.clone().into(),
+            Self::Stop(order) => order.clone().into(),
         }
     }
 }
@@ -1256,12 +1347,42 @@ impl LimitOrderAny {
     }
 
     #[must_use]
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_open(),
+            Self::MarketToLimit(order) => order.is_open(),
+            Self::StopLimit(order) => order.is_open(),
+            Self::TrailingStopLimit(order) => order.is_open(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_inflight(),
+            Self::MarketToLimit(order) => order.is_inflight(),
+            Self::StopLimit(order) => order.is_inflight(),
+            Self::TrailingStopLimit(order) => order.is_inflight(),
+        }
+    }
+
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::Limit(order) => order.expire_time,
             Self::MarketToLimit(order) => order.expire_time,
             Self::StopLimit(order) => order.expire_time,
             Self::TrailingStopLimit(order) => order.expire_time,
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::Limit(order) => order.contingency_type,
+            Self::MarketToLimit(order) => order.contingency_type,
+            Self::StopLimit(order) => order.contingency_type,
+            Self::TrailingStopLimit(order) => order.contingency_type,
         }
     }
 }
@@ -1337,6 +1458,30 @@ impl StopOrderAny {
     }
 
     #[must_use]
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::LimitIfTouched(order) => order.is_open(),
+            Self::MarketIfTouched(order) => order.is_open(),
+            Self::StopLimit(order) => order.is_open(),
+            Self::StopMarket(order) => order.is_open(),
+            Self::TrailingStopLimit(order) => order.is_open(),
+            Self::TrailingStopMarket(order) => order.is_open(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
+        match self {
+            Self::LimitIfTouched(order) => order.is_inflight(),
+            Self::MarketIfTouched(order) => order.is_inflight(),
+            Self::StopLimit(order) => order.is_inflight(),
+            Self::StopMarket(order) => order.is_inflight(),
+            Self::TrailingStopLimit(order) => order.is_inflight(),
+            Self::TrailingStopMarket(order) => order.is_inflight(),
+        }
+    }
+
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::LimitIfTouched(order) => order.expire_time,
@@ -1345,6 +1490,18 @@ impl StopOrderAny {
             Self::StopMarket(order) => order.expire_time,
             Self::TrailingStopLimit(order) => order.expire_time,
             Self::TrailingStopMarket(order) => order.expire_time,
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::LimitIfTouched(order) => order.contingency_type,
+            Self::MarketIfTouched(order) => order.contingency_type,
+            Self::StopLimit(order) => order.contingency_type,
+            Self::StopMarket(order) => order.contingency_type,
+            Self::TrailingStopLimit(order) => order.contingency_type,
+            Self::TrailingStopMarket(order) => order.contingency_type,
         }
     }
 }

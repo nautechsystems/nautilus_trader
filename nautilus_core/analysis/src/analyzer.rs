@@ -547,6 +547,10 @@ mod tests {
         ) -> Result<Money, anyhow::Error> {
             todo!()
         }
+
+        fn balance(&self, _: Option<Currency>) -> Option<&AccountBalance> {
+            todo!()
+        }
     }
 
     #[test]

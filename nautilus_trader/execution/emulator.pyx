@@ -136,7 +136,7 @@ cdef class OrderEmulator(Actor):
         self._subscribed_strategies: set[StrategyId] = set()
         self._monitored_positions: set[PositionId] = set()
 
-        # Settings
+        # Configuration
         self.debug: bool = config.debug
 
         # Counters

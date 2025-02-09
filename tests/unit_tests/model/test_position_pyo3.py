@@ -742,7 +742,7 @@ def test_position_closed_and_reopened() -> None:
     assert repr(position) == "Position(LONG 150_000 AUD/USD.SIM, id=P-123456)"
 
 
-def test_position_realised_pnl_with_interleaved_order_sides():
+def test_position_realized_pnl_with_interleaved_order_sides():
     instrument = TestInstrumentProviderPyo3.btcusdt_binance()
     order1 = TestOrderProviderPyo3.market_order(
         instrument_id=instrument.id,

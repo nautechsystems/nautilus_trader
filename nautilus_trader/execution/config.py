@@ -52,6 +52,8 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         available in the cache.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+    portfolio_bar_updates : bool, default True
+        If external bars should be considered to update portfolio unrealized and realized pnls.
 
     """
 
@@ -60,6 +62,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     snapshot_positions: bool = False
     snapshot_positions_interval_secs: PositiveFloat | None = None
     debug: bool = False
+    portfolio_bar_updates: bool = True
 
 
 class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
@@ -71,10 +74,17 @@ class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
     exec_algorithm_id : ExecAlgorithmId, optional
         The unique ID for the execution algorithm.
         If not ``None`` then will become the execution algorithm ID.
+    log_events : bool, default True
+        If events should be logged by the execution algorithm.
+        If False, then only warning events and above are logged.
+    log_commands : bool, default True
+        If commands should be logged by the execution algorithm.
 
     """
 
     exec_algorithm_id: ExecAlgorithmId | None = None
+    log_events: bool = True
+    log_commands: bool = True
 
 
 class ImportableExecAlgorithmConfig(NautilusConfig, frozen=True):

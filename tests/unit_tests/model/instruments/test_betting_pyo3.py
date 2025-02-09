@@ -58,6 +58,12 @@ def test_to_dict():
         "size_precision": 2,
         "price_increment": "0.01",
         "size_increment": "0.01",
+        "max_quantity": None,
+        "min_quantity": None,
+        "max_notional": None,
+        "min_notional": "1.00 GBP",
+        "max_price": None,
+        "min_price": None,
         "margin_init": "1",
         "margin_maint": "1",
         "maker_fee": "0",
@@ -65,12 +71,6 @@ def test_to_dict():
         "ts_event": 0,
         "ts_init": 0,
         "info": {},
-        "max_quantity": None,
-        "min_quantity": None,
-        "max_notional": None,
-        "min_notional": None,
-        "max_price": None,
-        "min_price": None,
     }
 
 

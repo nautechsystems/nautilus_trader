@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
@@ -29,6 +30,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -67,28 +69,42 @@ async def main(
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        timeout_disconnection=30.0,
-        timeout_post_stop=30.0,
+        timeout_disconnection=10.0,
+        timeout_post_stop=5.0,
         logging=LoggingConfig(log_level=log_level, use_pyo3=True),
+        # cache=CacheConfig(
+        #     database=DatabaseConfig(),
+        #     timestamps_as_iso8601=True,
+        #     buffer_interval_ms=100,
+        #     flush_on_start=False,
+        # ),
+        exec_engine=LiveExecEngineConfig(
+            reconciliation=True,
+            # snapshot_orders=True,
+            # snapshot_positions=True,
+            # snapshot_positions_interval_secs=5.0,
+            # open_check_interval_secs=5.0,
+        ),
         data_clients={
-            "BETFAIR": BetfairDataClientConfig(
+            BETFAIR: BetfairDataClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
                 # username=None, # 'BETFAIR_USERNAME' env var
                 # password=None, # 'BETFAIR_PASSWORD' env var
                 # app_key=None, # 'BETFAIR_APP_KEY' env var
-                # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+                # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
+                stream_conflate_ms=0,  # Ensures no stream conflation
             ),
         },
         exec_clients={
-            # # UNCOMMENT TO SEND ORDERS
-            "BETFAIR": BetfairExecClientConfig(
+            BETFAIR: BetfairExecClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
                 # username=None, # 'BETFAIR_USERNAME' env var
                 # password=None, # 'BETFAIR_PASSWORD' env var
                 # app_key=None, # 'BETFAIR_APP_KEY' env var
-                # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
+                # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
+                reconcile_market_ids_only=True,
             ),
         },
     )
@@ -99,6 +115,7 @@ async def main(
                 max_trade_size=Decimal(10),
                 trigger_min_size=2,
                 order_id_tag=instrument.selection_id,
+                dry_run=True,  # Change to False to submit new orders
             ),
         )
         for instrument in instruments
@@ -109,8 +126,8 @@ async def main(
     node.trader.add_strategies(strategies)
 
     # Register your client factories with the node (can take user-defined factories)
-    node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-    node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
+    node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
+    node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
     node.build()
 
     try:
@@ -119,8 +136,6 @@ async def main(
         print(e)
         print(traceback.format_exc())
     finally:
-        await node.stop_async()
-        await asyncio.sleep(1)
         return node
 
 
@@ -129,8 +144,8 @@ if __name__ == "__main__":
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
-        account_currency="GBP",
-        market_ids=["1.176878927"],
+        account_currency="AUD",
+        market_ids=["1.239058028"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()

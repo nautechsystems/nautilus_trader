@@ -19,7 +19,10 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
 use pyo3::prelude::*;
 
-use crate::{enums::Exchange, http::TardisHttpClient};
+use crate::{
+    enums::Exchange,
+    http::{query::InstrumentFilterBuilder, TardisHttpClient},
+};
 
 #[pymethods]
 impl TardisHttpClient {
@@ -35,10 +38,14 @@ impl TardisHttpClient {
     }
 
     #[pyo3(name = "instrument")]
+    #[pyo3(signature = (exchange, symbol, start=None, end=None, ts_init=None))]
     fn py_instrument<'py>(
         &self,
         exchange: &str,
         symbol: &str,
+        start: Option<u64>,
+        end: Option<u64>,
+        ts_init: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let exchange = Exchange::from_str(exchange).map_err(to_pyvalue_err)?;
@@ -46,23 +53,52 @@ impl TardisHttpClient {
         let self_clone = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let instrument = self_clone
-                .instrument(exchange, &symbol)
+            let instruments = self_clone
+                .instrument(exchange, &symbol, start, end, ts_init)
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            Python::with_gil(|py| Ok(instrument_any_to_pyobject(py, instrument)?.into_py(py)))
+            Python::with_gil(|py| {
+                let mut py_instruments = Vec::new();
+                for inst in instruments {
+                    py_instruments.push(instrument_any_to_pyobject(py, inst)?);
+                }
+                Ok(py_instruments.into_py(py))
+            })
         })
     }
 
     #[pyo3(name = "instruments")]
-    fn py_instruments<'py>(&self, exchange: &str, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature = (exchange, start=None, end=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, ts_init=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_instruments<'py>(
+        &self,
+        exchange: &str,
+        start: Option<u64>,
+        end: Option<u64>,
+        base_currency: Option<Vec<String>>,
+        quote_currency: Option<Vec<String>>,
+        instrument_type: Option<Vec<String>>,
+        contract_type: Option<Vec<String>>,
+        active: Option<bool>,
+        ts_init: Option<u64>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let exchange = Exchange::from_str(exchange).map_err(to_pyvalue_err)?;
+        let filter = InstrumentFilterBuilder::default()
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .instrument_type(instrument_type)
+            .contract_type(contract_type)
+            .active(active)
+            .build()
+            .unwrap(); // SAFETY: Safe since all fields are Option
+
         let self_clone = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = self_clone
-                .instruments(exchange)
+                .instruments(exchange, start, end, ts_init, Some(&filter))
                 .await
                 .map_err(to_pyruntime_err)?;
 

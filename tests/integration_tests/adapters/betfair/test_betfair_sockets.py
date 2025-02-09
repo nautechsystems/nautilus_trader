@@ -80,7 +80,7 @@ class TestBetfairSockets:
         await client.connect()
 
         # Assert
-        assert client.is_connected
+        assert client.is_active()
         await client.disconnect()
 
     @pytest.mark.asyncio
@@ -92,8 +92,22 @@ class TestBetfairSockets:
 
         # Act
         await client.connect()
-        await asyncio.sleep(2)
+        await client.reconnect()
 
         # Assert
-        assert client.is_connected
+        assert client.is_active()
+        await client.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_socket_client_disconnect(self, closing_socket_server):
+        # Arrange
+        messages = []
+        host, port = closing_socket_server
+        client = self._build_stream_client(host=host, port=port, handler=messages.append)
+
+        # Act
+        await client.connect()
+
+        # Assert
+        assert client.is_active()
         await client.disconnect()

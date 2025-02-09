@@ -39,6 +39,7 @@ from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -121,6 +122,21 @@ class LiveExecutionEngine(ExecutionEngine):
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._inflight_check_retries: Counter[ClientOrderId] = Counter()
 
+        self._cmd_enqueuer: ThrottledEnqueuer[TradingCommand] = ThrottledEnqueuer(
+            qname="cmd_queue",
+            queue=self._cmd_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+        self._evt_enqueuer: ThrottledEnqueuer[OrderEvent] = ThrottledEnqueuer(
+            qname="evt_queue",
+            queue=self._evt_queue,
+            loop=self._loop,
+            clock=self._clock,
+            logger=self._log,
+        )
+
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
         self._evt_queue_task: asyncio.Task | None = None
@@ -128,7 +144,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._open_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
-        # Settings
+        # Configuration
         self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
         self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
@@ -138,6 +154,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self.inflight_check_max_retries: int = config.inflight_check_retries
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
+        self.open_check_open_only: float | None = config.open_check_open_only
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
@@ -148,6 +165,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.open_check_open_only=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -290,54 +308,24 @@ class LiveExecutionEngine(ExecutionEngine):
         command : TradingCommand
             The command to execute.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(command, "command")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_cmd_queue.put` as queue full "
-                f"at {self._cmd_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._cmd_queue.put(command))
+        self._cmd_enqueuer.enqueue(command)
 
     def process(self, event: OrderEvent) -> None:
         """
-        Process the given event.
+        Process the given event message.
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+        If the internal queue is at or near capacity, it logs a warning (throttled)
+        and schedules an asynchronous `put()` operation. This ensures all messages are
+        eventually enqueued and processed without blocking the caller when the queue is full.
 
         Parameters
         ----------
         event : OrderEvent
             The event to process.
 
-        Warnings
-        --------
-        This method is not thread-safe and should only be called from the same thread the event
-        loop is running on. Calling it from a different thread may lead to unexpected behavior.
-
         """
-        PyCondition.not_none(event, "event")
-
-        try:
-            self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, event)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_evt_queue.put` as queue full "
-                f"at {self._evt_queue.qsize():_} items",
-            )
-            # Schedule the `put` operation to be executed once there is space in the queue
-            self._loop.create_task(self._evt_queue.put(event))
+        self._evt_enqueuer.enqueue(event)
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 
@@ -397,7 +385,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("Command message queue canceled")
+            self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -418,7 +406,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     break
                 self._handle_event(event)
         except asyncio.CancelledError:
-            self._log.warning("Event message queue canceled")
+            self._log.warning("Canceled task 'run_evt_queue'")
         except Exception as e:
             self._log.error(repr(e))
         finally:
@@ -437,7 +425,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 except Exception as e:
                     self._log.error(f"Failed to check in-flight orders: {e}")
         except asyncio.CancelledError:
-            self._log.debug("In-flight check loop task canceled")
+            self._log.debug("Canceled task 'inflight_check_loop'")
 
     async def _check_inflight_orders(self) -> None:
         self._log.debug("Checking in-flight orders status")
@@ -476,25 +464,43 @@ class LiveExecutionEngine(ExecutionEngine):
                 await asyncio.sleep(interval_secs)
                 await self._check_open_orders()
         except asyncio.CancelledError:
-            self._log.debug("Open check loop task canceled")
+            self._log.debug("Canceled task 'open_check_loop'")
 
     async def _check_open_orders(self) -> None:
-        self._log.debug("Checking open orders status")
+        try:
+            self._log.debug("Checking open orders status")
 
-        open_order_ids: list[ClientOrderId] = self._cache.client_order_ids_open()
-        open_len = len(open_order_ids)
-        self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open")
+            open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()
+            open_orders: list[Order] = self._cache.orders_open()
+            open_len = len(open_orders)
+            self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open")
 
-        if not open_order_ids:
-            return  # Nothing further to check
+            # In full-history mode, if there are no cached open orders, skip the venue check
+            # In open-only mode, the venue is always queried regardless of cache state
+            if not open_orders and not self.open_check_open_only:
+                return  # Nothing further to check
 
-        tasks = [c.generate_order_status_reports(open_only=True) for c in self._clients.values()]
-        order_reports_all = await asyncio.gather(*tasks)
-        all_order_reports = [r for reports in order_reports_all for r in reports]
+            if self.open_check_open_only:
+                clients = self._clients.values()
+            else:
+                clients = self.get_clients_for_orders(open_orders)
 
-        for report in all_order_reports:
-            if not report.is_open and report.client_order_id in open_order_ids:
-                self._reconcile_order_report(report, trades=[])
+            tasks = [
+                c.generate_order_status_reports(open_only=self.open_check_open_only)
+                for c in clients
+            ]
+            order_reports_all = await asyncio.gather(*tasks)
+            all_order_reports = [r for reports in order_reports_all for r in reports]
+
+            # For each report, compare the reported open status with our cache
+            # If there's a discrepancy, reconcile the order report
+            for report in all_order_reports:
+                is_in_open_ids = report.client_order_id in open_order_ids
+                if report.is_open != is_in_open_ids:
+                    self._reconcile_order_report(report, trades=[])
+        except Exception as e:
+            # Catch all exception for error visibility in task
+            self._log.error(f"Error in check_open_orders: {e}")
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
@@ -988,7 +994,7 @@ class LiveExecutionEngine(ExecutionEngine):
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
             account_id=report.account_id,
-            position_id=PositionId(f"{instrument.id}-EXTERNAL"),
+            position_id=report.venue_position_id or PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(UUID4().value),
             order_side=order.side,
             order_type=order.order_type,

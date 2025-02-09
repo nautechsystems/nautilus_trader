@@ -30,9 +30,9 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 async-stream = { workspace = true }
 chrono = { workspace = true }
+derive_builder = { workspace = true }
 futures-util = { workspace = true }
 heck = { workspace = true }
-parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
@@ -60,7 +60,7 @@ rstest = { workspace = true }
 tracing-test = { workspace = true }
 
 [features]
-default = ["python"]
+default = ["python", "nautilus-core/ffi"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",

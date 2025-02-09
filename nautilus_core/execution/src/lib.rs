@@ -27,6 +27,19 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
+// Uncomment once we've added trivial debug impls everywhere
+// #![deny(missing_debug_implementations)]
+
+// TODO: We still rely on `IntoPy` for now, so temporarily ignore
+// these deprecations until fully migrated to `IntoPyObject`.
+#![allow(deprecated)]
+
 pub mod client;
 pub mod emulator;
 pub mod engine;

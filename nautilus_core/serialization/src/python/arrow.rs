@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// TODO: We still rely on `IntoPy` for now, so temporarily ignore
+// these deprecations until fully migrated to `IntoPyObject`.
+#![allow(deprecated)]
+
 use std::io::Cursor;
 
 use arrow::{ipc::writer::StreamWriter, record_batch::RecordBatch};
@@ -54,7 +58,7 @@ fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<
     }
 
     let buffer = cursor.into_inner();
-    let pybytes = PyBytes::new_bound(py, &buffer);
+    let pybytes = PyBytes::new(py, &buffer);
 
     Ok(pybytes.into())
 }

@@ -25,6 +25,10 @@ pub mod order;
 pub mod position;
 
 /// Loaded as nautilus_pyo3.execution
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 #[rustfmt::skip]
 pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

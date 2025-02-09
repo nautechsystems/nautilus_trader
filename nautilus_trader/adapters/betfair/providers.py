@@ -20,6 +20,7 @@ import pandas as pd
 from betfair_parser.spec.betting.enums import MarketProjection
 from betfair_parser.spec.betting.type_definitions import MarketCatalogue
 from betfair_parser.spec.betting.type_definitions import MarketFilter
+from betfair_parser.spec.common import TimeRange
 from betfair_parser.spec.common import decode as bf_decode
 from betfair_parser.spec.common import encode as bf_encode
 from betfair_parser.spec.navigation import FlattenedMarket
@@ -33,21 +34,59 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
+from nautilus_trader.common.config import PositiveFloat
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 
 
 class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_only=True):
+    """
+    Configuration for ``BetfairInstrumentProvider`` instances.
+
+    Parameters
+    ----------
+    account_currency : str
+        The Betfair account currency.
+    default_min_notional : PositiveFloat, optional
+        The default minimum notional value for instrument definitions (in account currency).
+    event_type_ids : list[int], optional
+        The event type IDs to filter for.
+    event_ids : list[int], optional
+        The event IDs to filter for.
+    market_ids : list[str], optional
+        The market IDs to filter for.
+    country_codes : list[str], optional
+        The country codes to filter for.
+    market_types : list[str], optional
+        The market types to filter for.
+    min_market_start_time : pd.Timestamp, optional
+        The minimum market start time (UTC) to filter from (date granularity only).
+    max_market_start_time : pd.Timestamp, optional
+        The maximum market start time (UTC) to filter to (date granularity only).
+
+    Notes
+    -----
+    For each filter parameter, if not provided (None), then no filtering is done on that attribute.
+
+    """
+
     account_currency: str
-    event_type_ids: list[str] | None = None
-    event_ids: list[str] | None = None
+    default_min_notional: PositiveFloat | None = None
+    event_type_ids: list[int] | None = None
+    event_ids: list[int] | None = None
     market_ids: list[str] | None = None
     country_codes: list[str] | None = None
     market_types: list[str] | None = None
     event_type_names: list[str] | None = None
+    min_market_start_time: pd.Timestamp | None = None
+    max_market_start_time: pd.Timestamp | None = None
 
 
 class BetfairInstrumentProvider(InstrumentProvider):
@@ -56,22 +95,23 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    client : BetfairClient, optional
-        The client for the provider.
-    config : InstrumentProviderConfig, optional
+    client : BetfairHttpClient
+        The Betfair HTTP client for the provider.
+    config : InstrumentProviderConfig
         The configuration for the provider.
 
     """
 
     def __init__(
         self,
-        client: BetfairHttpClient | None,
+        client: BetfairHttpClient,
         config: BetfairInstrumentProviderConfig,
-    ):
-        assert config is not None, "Must pass config to BetfairInstrumentProvider"
+    ) -> None:
+        PyCondition.not_none(client, "client")
+        PyCondition.not_none(config, "config")
         super().__init__(config=config)
 
-        self._config = config
+        self.config: BetfairInstrumentProviderConfig = config
         self._client = client
         self._account_currency = config.account_currency
 
@@ -93,30 +133,51 @@ class BetfairInstrumentProvider(InstrumentProvider):
         currency = await self.get_account_currency()
         filters = filters or {}
 
-        self._log.info(f"Loading markets with market_filter={self._config}")
+        self._log.info(f"Loading markets with market_filter={self.config}")
         markets: list[FlattenedMarket] = await load_markets(
             self._client,
-            event_type_ids=filters.get("event_type_ids") or self._config.event_type_ids,
-            event_ids=filters.get("event_ids") or self._config.event_ids,
-            market_ids=filters.get("market_ids") or self._config.market_ids,
-            event_country_codes=filters.get("country_codes") or self._config.country_codes,
-            market_market_types=filters.get("market_types") or self._config.market_types,
-            event_type_names=filters.get("event_type_names") or self._config.event_type_names,
+            event_type_ids=filters.get("event_type_ids") or self.config.event_type_ids,
+            event_ids=filters.get("event_ids") or self.config.event_ids,
+            market_ids=filters.get("market_ids") or self.config.market_ids,
+            event_country_codes=filters.get("country_codes") or self.config.country_codes,
+            market_market_types=filters.get("market_types") or self.config.market_types,
+            event_type_names=filters.get("event_type_names") or self.config.event_type_names,
         )
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
-        market_metadata = await load_markets_metadata(client=self._client, markets=markets)
+        market_metadata = await load_markets_metadata(
+            client=self._client,
+            markets=markets,
+            min_market_start_time=filters.get("min_market_start_time")
+            or self.config.min_market_start_time,
+            max_market_start_time=filters.get("max_market_start_time")
+            or self.config.max_market_start_time,
+        )
+
+        account_currency = Currency.from_str(self.config.account_currency)
+        default_min_notional = (
+            Money(self.config.default_min_notional, account_currency)
+            if self.config.default_min_notional
+            else None
+        )
 
         self._log.info("Creating instruments...")
+        self._log.info(f"default_min_notional={default_min_notional}", LogColor.BLUE)
         instruments = [
             instrument
             for metadata in market_metadata
-            for instrument in make_instruments(metadata, currency=currency, ts_event=0, ts_init=0)
+            for instrument in make_instruments(
+                metadata,
+                currency=currency,
+                ts_event=0,
+                ts_init=0,
+                min_notional=default_min_notional,
+            )
         ]
         for instrument in instruments:
             self.add(instrument=instrument)
 
-        self._log.info(f"{len(instruments)} Instruments created")
+        self._log.info(f"{len(instruments)} BettingInstrument(s) created")
 
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
@@ -125,16 +186,12 @@ class BetfairInstrumentProvider(InstrumentProvider):
         return self._account_currency
 
 
-def _parse_date(s, tz):
-    # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
-    return pd.Timestamp(s, tz=tz)
-
-
 def market_catalog_to_instruments(
     market_catalog: MarketCatalogue,
     currency: str,
     ts_event: int,
     ts_init: int,
+    min_notional: Money | None,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_catalog.runners:
@@ -160,6 +217,7 @@ def market_catalog_to_instruments(
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             price_precision=BETFAIR_PRICE_PRECISION,
             size_precision=BETFAIR_QUANTITY_PRECISION,
+            min_notional=min_notional,
             ts_event=ts_event,
             ts_init=ts_init,
             info=msgspec.json.decode(bf_encode(market_catalog).decode()),
@@ -173,6 +231,7 @@ def market_definition_to_instruments(
     currency: str,
     ts_event: int,
     ts_init: int,
+    min_notional: Money | None,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_definition.runners:
@@ -202,6 +261,7 @@ def market_definition_to_instruments(
             currency=currency,
             price_precision=BETFAIR_PRICE_PRECISION,
             size_precision=BETFAIR_QUANTITY_PRECISION,
+            min_notional=min_notional,
             ts_event=ts_event,
             ts_init=ts_init,
             info=msgspec.json.decode(msgspec.json.encode(market_definition)),
@@ -215,6 +275,7 @@ def make_instruments(
     currency: str,
     ts_event: int,
     ts_init: int,
+    min_notional: Money | None = None,
 ) -> list[BettingInstrument]:
     if isinstance(market, MarketCatalogue):
         return market_catalog_to_instruments(
@@ -222,6 +283,7 @@ def make_instruments(
             currency=currency,
             ts_event=ts_event,
             ts_init=ts_init,
+            min_notional=min_notional,
         )
     elif isinstance(market, MarketDefinition):
         return market_definition_to_instruments(
@@ -229,8 +291,10 @@ def make_instruments(
             currency=currency,
             ts_event=ts_event,
             ts_init=ts_init,
+            min_notional=min_notional,
         )
     else:
+        # Unreachable unless code changes
         raise TypeError(type(market))
 
 
@@ -257,8 +321,8 @@ def check_market_filter_keys(keys: Iterable[str]) -> None:
 
 async def load_markets(
     client: BetfairHttpClient,
-    event_type_ids: list[str] | None = None,
-    event_ids: list[str] | None = None,
+    event_type_ids: list[int] | None = None,
+    event_ids: list[int] | None = None,
     market_ids: list[str] | None = None,
     event_country_codes: list[str] | None = None,
     market_market_types: list[str] | None = None,
@@ -287,7 +351,13 @@ def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalogue]:
 async def load_markets_metadata(
     client: BetfairHttpClient,
     markets: list[FlattenedMarket],
+    min_market_start_time: pd.Timestamp | None = None,
+    max_market_start_time: pd.Timestamp | None = None,
 ) -> list[MarketCatalogue]:
+    market_start_time_range = TimeRange(
+        from_=min_market_start_time.date() if min_market_start_time else None,
+        to=max_market_start_time.date() if max_market_start_time else None,
+    )
     all_results: list[MarketCatalogue] = []
     for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):
         results = await client.list_market_catalogue(
@@ -300,7 +370,10 @@ async def load_markets_metadata(
                 MarketProjection.RUNNER_DESCRIPTION,
                 MarketProjection.MARKET_START_TIME,
             ],
-            filter_=MarketFilter(market_ids=market_id_chunk),
+            filter_=MarketFilter(
+                market_ids=market_id_chunk,
+                market_start_time=market_start_time_range,
+            ),
             max_results=len(market_id_chunk),
         )
         all_results.extend(results)

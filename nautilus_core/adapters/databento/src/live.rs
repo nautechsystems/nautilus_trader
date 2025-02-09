@@ -30,10 +30,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
 };
-use tokio::{
-    sync::mpsc::error::TryRecvError,
-    time::{timeout, Duration},
-};
+use tokio::{sync::mpsc::error::TryRecvError, time::Duration};
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
@@ -68,6 +65,7 @@ pub enum LiveMessage {
 /// [`LiveCommand`] messages are recieved synchronously across a channel,
 /// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
 /// back to a message processing task.
+#[derive(Debug)]
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,
@@ -110,9 +108,10 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
         let mut deltas_count = 0_u64;
+        let timeout = Duration::from_secs(5); // Hard-coded timeout for now
 
-        let result = timeout(
-            Duration::from_secs(5), // Hard-coded timeout for now
+        let result = tokio::time::timeout(
+            timeout,
             databento::LiveClient::builder()
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
@@ -131,7 +130,7 @@ impl DatabentoFeedHandler {
         };
 
         // Timeout awaiting the next record before checking for a command
-        let timeout_duration = Duration::from_millis(10);
+        let timeout = Duration::from_millis(10);
 
         // Flag to control whether to continue to await next record
         let mut running = false;
@@ -140,7 +139,7 @@ impl DatabentoFeedHandler {
             if self.msg_tx.is_closed() {
                 tracing::debug!("Message channel was closed: stopping");
                 break;
-            };
+            }
 
             match self.cmd_rx.try_recv() {
                 Ok(cmd) => {
@@ -153,9 +152,10 @@ impl DatabentoFeedHandler {
                             client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
                         }
                         LiveCommand::Start => {
-                            buffering_start = match self.replay {
-                                true => Some(clock.get_time_ns()),
-                                false => None,
+                            buffering_start = if self.replay {
+                                Some(clock.get_time_ns())
+                            } else {
+                                None
                             };
                             client.start().await.map_err(to_pyruntime_err)?;
                             running = true;
@@ -180,10 +180,10 @@ impl DatabentoFeedHandler {
 
             if !running {
                 continue;
-            };
+            }
 
             // Await the next record with a timeout
-            let result = timeout(timeout_duration, client.next_record()).await;
+            let result = tokio::time::timeout(timeout, client.next_record()).await;
             let record_opt = match result {
                 Ok(record_opt) => record_opt,
                 Err(_) => continue, // Timeout
@@ -222,7 +222,7 @@ impl DatabentoFeedHandler {
                         msg.hd.instrument_id,
                         msg.exchange()?,
                     );
-                };
+                }
                 let data = handle_instrument_def_msg(
                     msg,
                     &record,
@@ -318,15 +318,15 @@ impl DatabentoFeedHandler {
                         let deltas = OrderBookDeltas_API::new(deltas);
                         data1 = Some(Data::Deltas(deltas));
                     }
-                };
+                }
 
                 if let Some(data) = data1 {
                     self.send_msg(LiveMessage::Data(data)).await;
-                };
+                }
 
                 if let Some(data) = data2 {
                     self.send_msg(LiveMessage::Data(data)).await;
-                };
+                }
             }
         }
 

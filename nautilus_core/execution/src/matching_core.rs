@@ -84,6 +84,18 @@ impl OrderMatchingCore {
     }
 
     #[must_use]
+    pub fn get_order(&self, client_order_id: ClientOrderId) -> Option<&PassiveOrderAny> {
+        self.orders_bid
+            .iter()
+            .find(|o| o.client_order_id() == client_order_id)
+            .or_else(|| {
+                self.orders_ask
+                    .iter()
+                    .find(|o| o.client_order_id() == client_order_id)
+            })
+    }
+
+    #[must_use]
     pub fn get_orders_bid(&self) -> &[PassiveOrderAny] {
         self.orders_bid.as_slice()
     }
@@ -106,17 +118,17 @@ impl OrderMatchingCore {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
-    pub fn set_last_raw(&mut self, last: Price) {
+    pub const fn set_last_raw(&mut self, last: Price) {
         self.last = Some(last);
         self.is_last_initialized = true;
     }
 
-    pub fn set_bid_raw(&mut self, bid: Price) {
+    pub const fn set_bid_raw(&mut self, bid: Price) {
         self.bid = Some(bid);
         self.is_bid_initialized = true;
     }
 
-    pub fn set_ask_raw(&mut self, ask: Price) {
+    pub const fn set_ask_raw(&mut self, ask: Price) {
         self.ask = Some(ask);
         self.is_ask_initialized = true;
     }

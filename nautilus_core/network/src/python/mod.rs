@@ -15,6 +15,12 @@
 
 //! Python bindings from `pyo3`.
 
+// We need to allow `unexpected_cfgs` because the PyO3 macros internally check for
+// the `gil-refs` feature. We don’t define or enable `gil-refs` ourselves (due to a
+// memory leak), so the compiler raises an error about an unknown cfg feature.
+// This attribute prevents those errors without actually enabling `gil-refs`.
+#![allow(unexpected_cfgs)]
+
 pub mod http;
 pub mod socket;
 pub mod websocket;
@@ -27,6 +33,10 @@ use crate::python::{
 };
 
 /// Loaded as nautilus_pyo3.network
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HttpClient>()?;
@@ -41,15 +51,15 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add error classes
     m.add(
         <WebSocketClientError as PyTypeCheck>::NAME,
-        m.py().get_type_bound::<WebSocketClientError>(),
+        m.py().get_type::<WebSocketClientError>(),
     )?;
     m.add(
         <HttpError as PyTypeCheck>::NAME,
-        m.py().get_type_bound::<HttpError>(),
+        m.py().get_type::<HttpError>(),
     )?;
     m.add(
         <HttpTimeoutError as PyTypeCheck>::NAME,
-        m.py().get_type_bound::<HttpTimeoutError>(),
+        m.py().get_type::<HttpTimeoutError>(),
     )?;
 
     Ok(())

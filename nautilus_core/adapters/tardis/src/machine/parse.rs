@@ -22,7 +22,7 @@ use nautilus_model::{
         Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
         QuoteTick, TradeTick,
     },
-    enums::{AggregationSource, OrderSide, RecordFlag},
+    enums::{AggregationSource, BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
@@ -37,12 +37,22 @@ use crate::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
 #[must_use]
 pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) -> Option<Data> {
     match msg {
-        WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg_as_deltas(
-            msg,
-            info.price_precision,
-            info.size_precision,
-            info.instrument_id,
-        ))),
+        WsMessage::BookChange(msg) => {
+            if msg.bids.is_empty() && msg.asks.is_empty() {
+                tracing::error!(
+                    "Invalid book change for {} {} (empty bids and asks)",
+                    msg.exchange,
+                    msg.symbol
+                );
+                return None;
+            }
+            Some(Data::Deltas(parse_book_change_msg_as_deltas(
+                msg,
+                info.price_precision,
+                info.size_precision,
+                info.instrument_id,
+            )))
+        }
         WsMessage::BookSnapshot(msg) => match msg.bids.len() {
             1 => Some(Data::Quote(parse_book_snapshot_msg_as_quote(
                 msg,
@@ -186,6 +196,11 @@ pub fn parse_book_level(
         0
     };
     let sequence = 0; // Not available
+
+    assert!(
+        !(action != BookAction::Delete && size.is_zero()),
+        "Invalid zero size for {action}"
+    );
 
     OrderBookDelta::new(
         instrument_id,

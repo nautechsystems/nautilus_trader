@@ -50,8 +50,10 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
-    ws_connection_delay_secs : PositiveInt, default 5
-        The delay (seconds) prior to main websocket connection to allow initial subscriptions to arrive.
+    ws_connection_initial_delay_secs: PositiveFloat, default 5
+        The delay (seconds) prior to the first websocket connection to allow initial subscriptions to arrive.
+    ws_connection_delay_secs : PositiveFloat, default 0.1
+        The delay (seconds) prior to making a new websocket connection to allow non-initial subscriptions to arrive.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between updating Polymarket instruments.
     compute_effective_deltas : bool, default False
@@ -69,7 +71,8 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     passphrase: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    ws_connection_delay_secs: PositiveInt = 5
+    ws_connection_initial_delay_secs: PositiveFloat = 5
+    ws_connection_delay_secs: PositiveFloat = 0.1
     update_instruments_interval_mins: PositiveInt | None = 60
     compute_effective_deltas: bool = False
 

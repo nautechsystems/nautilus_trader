@@ -53,6 +53,7 @@ def test_betfair_backtest():
     )
 
     # Add instruments
+    min_notional = Money(1, GBP)
     instruments = [
         betting_instrument(
             market_id="1-166811431",
@@ -71,7 +72,7 @@ def test_betfair_backtest():
     # Add data
     raw = list(BetfairDataProvider.market_updates())
     parser = BetfairParser(currency="GBP")
-    updates = [upd for update in raw for upd in parser.parse(update)]
+    updates = [upd for update in raw for upd in parser.parse(update, min_notional=min_notional)]
     engine.add_data(updates, client_id=ClientId("BETFAIR"))
 
     # Configure your strategy

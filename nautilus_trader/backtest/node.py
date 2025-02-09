@@ -171,7 +171,7 @@ class BacktestNode:
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
                 if not is_logging_initialized():
-                    init_logging()
+                    _guard = init_logging()
                 log = Logger(type(self).__name__)
                 log.error(f"Error running backtest: {e}")
                 log.info(f"Config: {config}")

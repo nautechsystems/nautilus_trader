@@ -6,7 +6,7 @@ We are currently working on this guide.
 
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation. This system is composed of various components
-including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](advanced/actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
+including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
 and other user-defined modules. The entire trading simulation is predicated on a stream of historical data processed by a
 `BacktestEngine`. Once this data stream is exhausted, the engine concludes its operation, producing
 detailed results and performance metrics for in-depth analysis.
@@ -97,6 +97,22 @@ For some trading strategies, it can be practical to start development with bar d
 If the strategy looks promising, but is more sensitive to precise execution timing (e.g., requires fills at specific prices
 between OHLC levels, or uses tight take-profit/stop-loss levels), you can then invest in higher granularity data
 for more accurate validation.
+:::
+
+### Portfolio limitations with bar data
+
+The Portfolio component cannot calculate position metrics correctly when using bar data alone - it needs trade tick
+or quote tick data. When running bar-only backtests, `portfolio.unrealized_pnl()` will return `None` when positions are open,
+and `portfolio.realized_pnl()` may return zero values even when positions are closed with profit or loss.
+
+Currently, if you need accurate Portfolio metrics when using bar data, you should either:
+- Convert your bar data into synthetic trade ticks
+- Use trade tick / quote tick data in your strategy
+
+:::note
+Future versions of Nautilus plan to implement full bar data support for Portfolio calculations, making bars
+a first-class citizen in the platform. This will enable accurate backtesting using readily available bar data without
+requiring tick-level granularity.
 :::
 
 ## Venues

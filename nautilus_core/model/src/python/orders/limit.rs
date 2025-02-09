@@ -404,9 +404,16 @@ impl LimitOrder {
             .extract::<&str>()?
             .parse::<TimeInForce>()
             .unwrap();
-        let expire_time_ns = dict
+        let expire_time = dict
             .get_item("expire_time_ns")
-            .map(|x| x.extract::<u64>().ok())?;
+            .map(|x| {
+                let extracted = x.extract::<u64>();
+                match extracted {
+                    Ok(item) => Some(UnixNanos::from(item)),
+                    Err(_) => None,
+                }
+            })
+            .unwrap();
         let is_post_only = dict.get_item("is_post_only")?.extract::<bool>()?;
         let is_reduce_only = dict.get_item("is_reduce_only")?.extract::<bool>()?;
         let is_quote_quantity = dict.get_item("is_quote_quantity")?.extract::<bool>()?;
@@ -493,7 +500,7 @@ impl LimitOrder {
             quantity,
             price,
             time_in_force,
-            expire_time_ns.map(UnixNanos::from),
+            expire_time,
             is_post_only,
             is_reduce_only,
             is_quote_quantity,
@@ -517,7 +524,7 @@ impl LimitOrder {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -570,12 +577,13 @@ impl LimitOrder {
         self.linked_order_ids.clone().map_or_else(
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
-                let linked_order_ids_list = PyList::new_bound(
+                let linked_order_ids_list = PyList::new(
                     py,
                     linked_order_ids
                         .iter()
                         .map(std::string::ToString::to_string),
-                );
+                )
+                .expect("Invalid `ExactSizeIterator`");
                 dict.set_item("linked_order_ids", linked_order_ids_list)
             },
         )?;
@@ -589,7 +597,7 @@ impl LimitOrder {
         )?;
         match &self.exec_algorithm_params {
             Some(exec_algorithm_params) => {
-                let py_exec_algorithm_params = PyDict::new_bound(py);
+                let py_exec_algorithm_params = PyDict::new(py);
                 for (key, value) in exec_algorithm_params {
                     py_exec_algorithm_params.set_item(key.to_string(), value.to_string())?;
                 }

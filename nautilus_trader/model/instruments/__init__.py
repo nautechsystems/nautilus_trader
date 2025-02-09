@@ -30,8 +30,8 @@ from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.futures_contract import FuturesContract
 from nautilus_trader.model.instruments.futures_spread import FuturesSpread
 from nautilus_trader.model.instruments.index import IndexInstrument
-from nautilus_trader.model.instruments.options_contract import OptionsContract
-from nautilus_trader.model.instruments.options_spread import OptionsSpread
+from nautilus_trader.model.instruments.option_contract import OptionContract
+from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
 
 
@@ -48,8 +48,8 @@ __all__ = [
     "FuturesSpread",
     "IndexInstrument",
     "Instrument",
-    "OptionsContract",
-    "OptionsSpread",
+    "OptionContract",
+    "OptionSpread",
     "SyntheticInstrument",
     "instruments_from_pyo3",
 ]

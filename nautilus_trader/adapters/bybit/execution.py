@@ -180,10 +180,10 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.max_ws_reconnection_tries=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
+        self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
 
         self._enum_parser = BybitEnumParser()
 
@@ -206,7 +206,6 @@ class BybitExecutionClient(LiveExecutionClient):
             api_key=config.api_key or get_api_key(config.demo, config.testnet),
             api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
             loop=loop,
-            max_reconnection_tries=config.max_ws_reconnection_tries,
         )
 
         # WebSocket trade client
@@ -222,7 +221,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 api_key=config.api_key or get_api_key(config.demo, config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
-                max_reconnection_tries=config.max_ws_reconnection_tries,
                 ws_trade_timeout_secs=config.ws_trade_timeout_secs,
             )
             self._order_single_client = self._ws_order_client
@@ -261,7 +259,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._pending_trailing_stops: dict[ClientOrderId, Order] = {}
 
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 0.0,
@@ -390,10 +388,10 @@ class BybitExecutionClient(LiveExecutionClient):
             if len(bybit_orders) == 0:
                 self._log.error(f"Received no order for {venue_order_id}")
                 return None
-            targetOrder = bybit_orders[0]
+            target_order = bybit_orders[0]
             if len(bybit_orders) > 1:
                 self._log.warning(f"Received more than one order for {venue_order_id}")
-                targetOrder = bybit_orders[0]
+                target_order = bybit_orders[0]
 
             order_link_id = bybit_orders[0].orderLinkId
             client_order_id = ClientOrderId(order_link_id) if order_link_id else None
@@ -401,7 +399,7 @@ class BybitExecutionClient(LiveExecutionClient):
             if client_order_id is None:
                 client_order_id = self._cache.client_order_id(venue_order_id)
 
-            order_report = targetOrder.parse_to_order_status_report(
+            order_report = target_order.parse_to_order_status_report(
                 client_order_id=client_order_id,
                 account_id=self.account_id,
                 instrument_id=instrument_id,

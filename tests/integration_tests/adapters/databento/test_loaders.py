@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -127,8 +127,8 @@ def test_loader_definition_glbx_options() -> None:
 
     # Assert
     assert len(data) == 2
-    assert isinstance(data[0], OptionsContract)
-    assert isinstance(data[1], OptionsContract)
+    assert isinstance(data[0], OptionContract)
+    assert isinstance(data[1], OptionContract)
     instrument = data[0]
     assert instrument.id == InstrumentId.from_str("ESM4 C4250.GLBX")
     assert instrument.raw_symbol == Symbol("ESM4 C4250")
@@ -159,8 +159,8 @@ def test_loader_definition_opra_pillar() -> None:
 
     # Assert
     assert len(data) == 2
-    assert isinstance(data[0], OptionsContract)
-    assert isinstance(data[1], OptionsContract)
+    assert isinstance(data[0], OptionContract)
+    assert isinstance(data[1], OptionContract)
     instrument = data[0]
     assert instrument.id == InstrumentId.from_str("SPY   240119P00340000.OPRA")  # OSS symbol
     assert instrument.raw_symbol == Symbol("SPY   240119P00340000")

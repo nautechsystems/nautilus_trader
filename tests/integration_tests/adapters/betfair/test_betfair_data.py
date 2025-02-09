@@ -91,8 +91,8 @@ def instrument_list(mock_load_markets_metadata):
 @pytest.mark.asyncio()
 async def test_connect(mocker, data_client, instrument):
     # Arrange
-    mocker.patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
     mocker.patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
+    mocker.patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
     mocker.patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
 
     # Act
@@ -213,7 +213,12 @@ def test_market_bsp(data_client, mock_data_engine_process):
     provider = data_client.instrument_provider
     for mc in stream_decode(update[0]).mc:
         market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
-        instruments = make_instruments(market=market_def, currency="GBP", ts_event=0, ts_init=0)
+        instruments = make_instruments(
+            market=market_def,
+            currency="GBP",
+            ts_event=0,
+            ts_init=0,
+        )
         provider.add_bulk(instruments)
 
     # Act

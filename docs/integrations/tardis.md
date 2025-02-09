@@ -48,7 +48,7 @@ The following normalized Tardis formats are supported by NautilusTrader:
 | [quote_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)       | `QuoteTick`                                                          |
 | [trade](https://docs.tardis.dev/api/tardis-machine#trade)                                                                   | `Trade`                                                              |
 | [trade_bar_*](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix)                            | `Bar`                                                                |
-| [instrument](https://docs.tardis.dev/api/instruments-metadata-api)                                                          | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract` |
+| [instrument](https://docs.tardis.dev/api/instruments-metadata-api)                                                          | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionContract` |
 | [derivative_ticker](https://docs.tardis.dev/api/tardis-machine#derivative_ticker)                                           | *Not yet supported*                                                  |
 | [disconnect](https://docs.tardis.dev/api/tardis-machine#disconnect)                                                         | *Not applicable*                                                     |
 
@@ -108,7 +108,8 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | Nautilus venue          | Tardis exchange(s)                                    |
 |:------------------------|:------------------------------------------------------|
 | `ASCENDEX`              | `ascendex`                                            |
-| `BINANCE`               | `binance`, `binance-delivery`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BINANCE`               | `binance`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BINANCE_DELIVERY`      | `binance-delivery` (*COIN-margined contracts*)        |
 | `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
 | `BITFLYER`              | `bitflyer`                                            |
 | `BITMEX`                | `bitmex`                                              |
@@ -123,9 +124,9 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `DELTA`                 | `delta`                                               |
 | `DERIBIT`               | `deribit`                                             |
 | `DYDX`                  | `dydx`                                                |
-| `FTX`                   | `ftx` (*for historical research*)                     |
-| `FTX_US`                | `ftx-us` (*for historical research*)                  |
-| `GATEIO`                | `gate-io`, `gate-io-futures`                          |
+| `FTX`                   | `ftx` (*historical research*)                         |
+| `FTX_US`                | `ftx-us` (*historical research*)                      |
+| `GATE_IO`               | `gate-io`, `gate-io-futures`                          |
 | `GEMINI`                | `gemini`                                              |
 | `HITBTC`                | `hitbtc`                                              |
 | `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options`, `huobi-dm-swap` |
@@ -136,7 +137,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-swap`   |
 | `PHEMEX`                | `phemex`                                              |
 | `POLONIEX`              | `poloniex`                                            |
-| `SERUM`                 | `serum` (*for historical research*)                   |
+| `SERUM`                 | `serum` (*historical research*)                       |
 | `STARATLAS`             | `staratlas`                                           |
 | `UPBIT`                 | `upbit`                                               |
 | `WOOX`                  | `woo-x`                                               |
@@ -358,7 +359,7 @@ async fn main() {
 ## Requesting instrument definitions
 
 You can request instrument definitions in both Python and Rust using the `TardisHttpClient`.
-This client interacts with the [Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to fetch and parse instrument metadata into Nautilus instruments.
+This client interacts with the [Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to request and parse instrument metadata into Nautilus instruments.
 
 The `TardisHttpClient` constructor accepts optional parameters for `api_key`, `base_url`, and `timeout_secs` (default is 60 seconds).
 
@@ -420,7 +421,7 @@ async fn main() {
 
 ## Instrument provider
 
-The `TardisInstrumentProvider` fetches and parses instrument definitions from Tardis through the HTTP instrument metadata API.
+The `TardisInstrumentProvider` requests and parses instrument definitions from Tardis through the HTTP instrument metadata API.
 Since there are multiple [Tardis-supported exchanges](#venues), when loading all instruments,
 you must filter for the desired venues using an `InstrumentProviderConfig`:
 

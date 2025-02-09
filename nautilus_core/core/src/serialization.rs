@@ -27,21 +27,37 @@ use serde::{Deserialize, Serialize};
 /// Represents types which are serializable for JSON and `MsgPack` specifications.
 pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// Deserialize an object from JSON encoded bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns serialization errors.
     fn from_json_bytes(data: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(data)
     }
 
     /// Deserialize an object from `MsgPack` encoded bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns serialization errors.
     fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
         rmp_serde::from_slice(data)
     }
 
     /// Serialize an object to JSON encoded bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns serialization errors.
     fn as_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
         serde_json::to_vec(self).map(Bytes::from)
     }
 
     /// Serialize an object to `MsgPack` encoded bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns serialization errors.
     fn as_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
         rmp_serde::to_vec_named(self).map(Bytes::from)
     }
@@ -50,7 +66,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
 impl Visitor<'_> for BoolVisitor {
     type Value = u8;
 
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("a boolean as u8")
     }
 
@@ -73,6 +89,11 @@ impl Visitor<'_> for BoolVisitor {
     }
 }
 
+/// Deserialize the boolean value as a `u8`.
+///
+/// # Errors
+///
+/// Returns serialization errors.
 pub fn from_bool_as_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
 where
     D: Deserializer<'de>,

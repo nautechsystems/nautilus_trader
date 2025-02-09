@@ -191,17 +191,25 @@ class BinanceHttpClient:
             keys=ratelimiter_keys,
         )
 
-        if 400 <= response.status < 500:
-            raise BinanceClientError(
-                status=response.status,
-                message=msgspec.json.decode(response.body) if response.body else None,
-                headers=response.headers,
-            )
-        elif response.status >= 500:
-            raise BinanceServerError(
-                status=response.status,
-                message=msgspec.json.decode(response.body) if response.body else None,
-                headers=response.headers,
-            )
+        response_body = response.body
+
+        if response.status >= 400:
+            try:
+                message = msgspec.json.decode(response_body) if response_body else None
+            except msgspec.DecodeError:
+                message = response_body.decode()
+
+            if response.status >= 500:
+                raise BinanceServerError(
+                    status=response.status,
+                    message=message,
+                    headers=response.headers,
+                )
+            else:
+                raise BinanceClientError(
+                    status=response.status,
+                    message=message,
+                    headers=response.headers,
+                )
 
         return response.body

@@ -20,9 +20,7 @@ futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 tokio = { workspace = true }
-thiserror = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
@@ -44,9 +42,9 @@ ffi = [
 ]
 python = [
   "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
 ]
 clock_v2 = ["nautilus-common/clock_v2"]
+high-precision = ["nautilus-model/high-precision"]

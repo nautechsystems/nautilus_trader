@@ -15,32 +15,20 @@
 
 use std::{env, time::Duration};
 
-use chrono::Utc;
 use nautilus_core::{consts::USER_AGENT, UnixNanos};
 use nautilus_model::instruments::InstrumentAny;
+use reqwest::Response;
 
 use super::{
+    error::{Error, TardisErrorResponse},
+    models::InstrumentInfo,
     parse::parse_instrument_any,
-    types::{InstrumentInfo, Response},
+    query::InstrumentFilter,
     TARDIS_BASE_URL,
 };
 use crate::enums::Exchange;
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// HTTP errors for the Tardis HTTP client.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    /// An error when sending a request to the server.
-    #[error("Error sending request: {0}")]
-    Request(#[from] reqwest::Error),
-    /// An API error returned by Tardis.
-    #[error("Tardis API error {code}: {message}")]
-    ApiError { code: u64, message: String },
-    /// An error when deserializing the response from the server.
-    #[error("Error deserializing message: {0}")]
-    Deserialization(#[from] serde_json::Error),
-}
 
 /// A Tardis HTTP API client.
 /// See <https://docs.tardis.dev/api/http>.
@@ -89,82 +77,144 @@ impl TardisHttpClient {
         })
     }
 
+    async fn handle_error_response<T>(resp: Response) -> Result<T> {
+        let status = resp.status().as_u16();
+        let error_text = resp.text().await.unwrap_or_default();
+
+        if let Ok(error) = serde_json::from_str::<TardisErrorResponse>(&error_text) {
+            Err(Error::ApiError {
+                status,
+                code: error.code,
+                message: error.message,
+            })
+        } else {
+            Err(Error::ApiError {
+                status,
+                code: 0,
+                message: error_text,
+            })
+        }
+    }
+
     /// Returns all Tardis instrument definitions for the given `exchange`.
-    /// See <https://docs.tardis.dev/api/instruments-metadata-api>
+    ///
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
     pub async fn instruments_info(
         &self,
         exchange: Exchange,
-    ) -> Result<Response<Vec<InstrumentInfo>>> {
-        tracing::debug!("Requesting instruments for {exchange}");
+        filter: Option<&InstrumentFilter>,
+    ) -> Result<Vec<InstrumentInfo>> {
+        let mut url = format!("{}/instruments/{exchange}", &self.base_url);
+        if let Some(filter) = filter {
+            if let Ok(filter_json) = serde_json::to_string(filter) {
+                url.push_str(&format!("?filter={}", urlencoding::encode(&filter_json)));
+            }
+        }
+        tracing::debug!("Requesting: {url}");
 
-        Ok(self
+        let resp = self
             .client
-            .get(format!("{}/instruments/{exchange}", &self.base_url))
+            .get(url)
             .bearer_auth(&self.api_key)
             .send()
-            .await?
-            .json::<Response<Vec<InstrumentInfo>>>()
-            .await?)
+            .await?;
+        tracing::debug!("Response status: {}", resp.status());
+
+        if !resp.status().is_success() {
+            return Self::handle_error_response(resp).await;
+        }
+
+        let body = resp.text().await?;
+        tracing::trace!("{body}");
+
+        match serde_json::from_str(&body) {
+            Ok(parsed) => Ok(parsed),
+            Err(e) => {
+                tracing::error!("Failed to parse response: {}", e);
+                tracing::debug!("Response body was: {}", body);
+                Err(Error::ResponseParse(e.to_string()))
+            }
+        }
     }
 
     /// Returns the Tardis instrument definition for a given `exchange` and `symbol`.
-    /// See <https://docs.tardis.dev/api/instruments-metadata-api#single-instrument-info-endpoint>
+    ///
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api#single-instrument-info-endpoint>.
     pub async fn instrument_info(
         &self,
         exchange: Exchange,
         symbol: &str,
-    ) -> Result<Response<InstrumentInfo>> {
-        tracing::debug!("Requesting instrument {exchange} {symbol}");
+    ) -> Result<InstrumentInfo> {
+        let url = format!("{}/instruments/{exchange}/{symbol}", &self.base_url);
+        tracing::debug!("Requesting {url}");
 
-        Ok(self
+        let resp = self
             .client
-            .get(format!(
-                "{}/instruments/{exchange}/{symbol}",
-                &self.base_url
-            ))
+            .get(url)
             .bearer_auth(&self.api_key)
             .send()
-            .await?
-            .json::<Response<InstrumentInfo>>()
-            .await?)
+            .await?;
+        tracing::debug!("Response status: {}", resp.status());
+
+        if !resp.status().is_success() {
+            return Self::handle_error_response(resp).await;
+        }
+
+        let body = resp.text().await?;
+        tracing::trace!("{body}");
+
+        match serde_json::from_str(&body) {
+            Ok(parsed) => Ok(parsed),
+            Err(e) => {
+                tracing::error!("Failed to parse response: {}", e);
+                tracing::debug!("Response body was: {}", body);
+                Err(Error::ResponseParse(e.to_string()))
+            }
+        }
     }
 
     /// Returns all Nautilus instrument definitions for the given `exchange`.
-    /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instruments(&self, exchange: Exchange) -> Result<Vec<InstrumentAny>> {
-        let response = self.instruments_info(exchange).await?;
+    ///
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
+    pub async fn instruments(
+        &self,
+        exchange: Exchange,
+        start: Option<u64>,
+        end: Option<u64>,
+        ts_init: Option<u64>,
+        filter: Option<&InstrumentFilter>,
+    ) -> Result<Vec<InstrumentAny>> {
+        let response = self.instruments_info(exchange, filter).await?;
+        let ts_init = ts_init.map(UnixNanos::from);
 
-        let infos = match response {
-            Response::Success(data) => data,
-            Response::Error { code, message } => {
-                return Err(Error::ApiError { code, message });
-            }
-        };
-
-        let now = Utc::now();
-        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
-
-        infos
+        Ok(response
             .into_iter()
-            .map(|info| Ok(parse_instrument_any(info, ts_init, self.normalize_symbols)))
-            .collect()
+            .flat_map(|info| {
+                parse_instrument_any(info, start, end, ts_init, self.normalize_symbols)
+            })
+            .collect())
     }
 
     /// Returns a Nautilus instrument definition for the given `exchange` and `symbol`.
-    /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instrument(&self, exchange: Exchange, symbol: &str) -> Result<InstrumentAny> {
+    ///
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
+    pub async fn instrument(
+        &self,
+        exchange: Exchange,
+        symbol: &str,
+        start: Option<u64>,
+        end: Option<u64>,
+        ts_init: Option<u64>,
+    ) -> Result<Vec<InstrumentAny>> {
         let response = self.instrument_info(exchange, symbol).await?;
+        let ts_init = ts_init.map(UnixNanos::from);
 
-        let info = match response {
-            Response::Success(data) => data,
-            Response::Error { code, message } => {
-                return Err(Error::ApiError { code, message });
-            }
-        };
-
-        let now = Utc::now();
-        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
-
-        Ok(parse_instrument_any(info, ts_init, self.normalize_symbols))
+        Ok(parse_instrument_any(
+            response,
+            start,
+            end,
+            ts_init,
+            self.normalize_symbols,
+        ))
     }
 }

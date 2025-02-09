@@ -18,9 +18,9 @@
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//!
 //! The platform is modularly designed to work with *adapters*, enabling connectivity to trading venues
-//! and data providers by converting their raw APIs into a unified interface.
+//! and data providers by translating their raw APIs into a unified interface and normalized domain
+//! model.
 //!
 //! # Feature flags
 //!
@@ -29,6 +29,12 @@
 //! for the main `nautilus_trader` Python package, or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from `pyo3`.
+
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod providers;
 pub mod signing;

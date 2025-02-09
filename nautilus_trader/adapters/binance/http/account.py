@@ -478,7 +478,7 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
         endTime : int, optional
             The end time (UNIX milliseconds) filter for the request.
         fromId : int, optional
-            TradeId to fetch from. Default gets most recent trades.
+            Trade ID to fetch from. Default gets most recent trades.
         limit : int, optional
             The limit for the response.
             Default 500, max 1000

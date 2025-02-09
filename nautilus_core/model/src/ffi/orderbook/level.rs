@@ -24,7 +24,7 @@ use crate::{
     types::Price,
 };
 
-/// C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+/// C compatible Foreign Function Interface (FFI) for an underlying order book[`BookLevel`].
 ///
 /// This struct wraps `Level` in a way that makes it compatible with C function
 /// calls, enabling interaction with `Level` in a C environment.
@@ -60,6 +60,7 @@ impl DerefMut for BookLevel_API {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> BookLevel_API {
     let CVec { ptr, len, cap } = orders;
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
@@ -83,6 +84,7 @@ pub extern "C" fn level_clone(level: &BookLevel_API) -> BookLevel_API {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_price(level: &BookLevel_API) -> Price {
     level.price.value
 }

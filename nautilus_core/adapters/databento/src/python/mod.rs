@@ -24,6 +24,10 @@ pub mod types;
 use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.databento
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::enums::DatabentoStatisticType>()?;

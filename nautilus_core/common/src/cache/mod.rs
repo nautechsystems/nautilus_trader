@@ -141,6 +141,7 @@ impl CacheConfig {
 }
 
 /// A key-value lookup index for a `Cache`.
+#[derive(Debug)]
 pub struct CacheIndex {
     venue_account: HashMap<Venue, AccountId>,
     venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,
@@ -222,7 +223,7 @@ pub struct Cache {
     accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
-    pub positions: HashMap<PositionId, Position>,
+    positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Bytes>,
 }
 
@@ -1226,7 +1227,7 @@ impl Cache {
                     otherwise this is probably a bug."
                 );
             }
-        };
+        }
 
         self.index
             .client_order_ids
@@ -1293,7 +1294,7 @@ impl Cache {
                 stringify!(orders),
             )
             .expect(FAILED);
-        };
+        }
 
         log::debug!("Adding {order:?}");
 
@@ -1481,7 +1482,7 @@ impl Cache {
             if !self.index.venue_order_ids.contains_key(&venue_order_id) {
                 // TODO: If the last event was `OrderUpdated` then overwrite should be true
                 self.add_venue_order_id(&order.client_order_id(), &venue_order_id, false)?;
-            };
+            }
         }
 
         // Update in-flight state
@@ -1516,6 +1517,9 @@ impl Cache {
             //     database.snapshot_order_state(order)?;
             // }
         }
+
+        // update the order in the cache
+        self.orders.insert(client_order_id, order.clone());
 
         Ok(())
     }
@@ -1639,7 +1643,7 @@ impl Cache {
                     .get(venue)
                     .map_or(HashSet::new(), |o| o.iter().copied().collect()),
             );
-        };
+        }
 
         if let Some(instrument_id) = instrument_id {
             let instrument_orders = self
@@ -1655,8 +1659,8 @@ impl Cache {
                     .collect();
             } else {
                 query = Some(instrument_orders);
-            };
-        };
+            }
+        }
 
         if let Some(strategy_id) = strategy_id {
             let strategy_orders = self
@@ -1672,8 +1676,8 @@ impl Cache {
                     .collect();
             } else {
                 query = Some(strategy_orders);
-            };
-        };
+            }
+        }
 
         query
     }
@@ -1693,7 +1697,7 @@ impl Cache {
                     .get(venue)
                     .map_or(HashSet::new(), |p| p.iter().copied().collect()),
             );
-        };
+        }
 
         if let Some(instrument_id) = instrument_id {
             let instrument_positions = self
@@ -1711,8 +1715,8 @@ impl Cache {
                 );
             } else {
                 query = Some(instrument_positions);
-            };
-        };
+            }
+        }
 
         if let Some(strategy_id) = strategy_id {
             let strategy_positions = self
@@ -1730,8 +1734,8 @@ impl Cache {
                 );
             } else {
                 query = Some(strategy_positions);
-            };
-        };
+            }
+        }
 
         query
     }
@@ -1751,7 +1755,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
             if side == OrderSide::NoOrderSide || side == order.order_side() {
                 orders.push(order);
-            };
+            }
         }
 
         orders
@@ -1772,7 +1776,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Position {position_id} not found"));
             if side == PositionSide::NoPositionSide || side == position.side {
                 positions.push(position);
-            };
+            }
         }
 
         positions
@@ -1952,6 +1956,12 @@ impl Cache {
     #[must_use]
     pub fn order(&self, client_order_id: &ClientOrderId) -> Option<&OrderAny> {
         self.orders.get(client_order_id)
+    }
+
+    /// Gets a reference to the order with the given `client_order_id` (if found).
+    #[must_use]
+    pub fn mut_order(&mut self, client_order_id: &ClientOrderId) -> Option<&mut OrderAny> {
+        self.orders.get_mut(client_order_id)
     }
 
     /// Gets a reference to the client order ID for given `venue_order_id` (if found).

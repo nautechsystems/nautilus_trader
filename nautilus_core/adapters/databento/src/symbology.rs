@@ -58,7 +58,7 @@ pub fn decode_nautilus_instrument_id(
         if let Some(venue) = symbol_venue_map.get(&instrument_id.symbol) {
             instrument_id.venue = *venue;
         }
-    };
+    }
 
     Ok(instrument_id)
 }

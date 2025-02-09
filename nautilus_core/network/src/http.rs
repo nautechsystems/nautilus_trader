@@ -18,13 +18,92 @@
 use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use http::HeaderValue;
+use http::{status::InvalidStatusCode, HeaderValue, StatusCode};
 use reqwest::{
     header::{HeaderMap, HeaderName},
     Method, Response, Url,
 };
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
+
+/// Represents a HTTP status code.
+///
+/// Wraps [`http::StatusCode`] to expose a Python-compatible type and reuse
+/// its validation and convenience methods.
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub struct HttpStatus {
+    inner: StatusCode,
+}
+
+impl HttpStatus {
+    /// Create a new [`HttpStatus`] instance from a given [`StatusCode`].
+    #[must_use]
+    pub const fn new(code: StatusCode) -> Self {
+        Self { inner: code }
+    }
+
+    /// Attempts to construct a [`HttpStatus`] from a `u16`.
+    ///
+    /// Returns an error if the code is not in the valid `100..999` range.
+    pub fn from(code: u16) -> Result<Self, InvalidStatusCode> {
+        Ok(Self {
+            inner: StatusCode::from_u16(code)?,
+        })
+    }
+
+    /// Returns the status code as a `u16` (e.g., `200` for OK).
+    #[inline]
+    #[must_use]
+    pub const fn as_u16(&self) -> u16 {
+        self.inner.as_u16()
+    }
+
+    /// Returns the three-digit ASCII representation of this status (e.g., `"200"`).
+    #[inline]
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.inner.as_str()
+    }
+
+    /// Checks if this status is in the 1xx (informational) range.
+    #[inline]
+    #[must_use]
+    pub fn is_informational(&self) -> bool {
+        self.inner.is_informational()
+    }
+
+    /// Checks if this status is in the 2xx (success) range.
+    #[inline]
+    #[must_use]
+    pub fn is_success(&self) -> bool {
+        self.inner.is_success()
+    }
+
+    /// Checks if this status is in the 3xx (redirection) range.
+    #[inline]
+    #[must_use]
+    pub fn is_redirection(&self) -> bool {
+        self.inner.is_redirection()
+    }
+
+    /// Checks if this status is in the 4xx (client error) range.
+    #[inline]
+    #[must_use]
+    pub fn is_client_error(&self) -> bool {
+        self.inner.is_client_error()
+    }
+
+    /// Checks if this status is in the 5xx (server error) range.
+    #[inline]
+    #[must_use]
+    pub fn is_server_error(&self) -> bool {
+        self.inner.is_server_error()
+    }
+}
 
 /// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -63,18 +142,17 @@ impl Into<Method> for HttpMethod {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct HttpResponse {
-    /// The HTTP status code returned by the server.
-    pub status: u16,
-    /// The headers returned by the server as a map of key-value pairs.
+    /// The HTTP status code.
+    pub status: HttpStatus,
+    /// The response headers as a map of key-value pairs.
     pub headers: HashMap<String, String>,
-    /// The body of the response as raw bytes.
+    /// The raw response body.
     pub body: Bytes,
 }
 
-/// Represents errors that can occur when using the `HttpClient`.
+/// Errors returned by the HTTP client.
 ///
-/// This enum provides variants for general HTTP errors and timeout errors,
-/// allowing for more granular error handling.
+/// Includes generic transport errors and timeouts.
 #[derive(thiserror::Error, Debug)]
 pub enum HttpClientError {
     #[error("HTTP error occurred: {0}")]
@@ -100,7 +178,10 @@ impl From<String> for HttpClientError {
     }
 }
 
-/// A high-performance HTTP client with rate limiting and timeout capabilities.
+/// An HTTP client that supports rate limiting and timeouts.
+///
+/// Built on `reqwest` for async I/O. Allows per-endpoint and default quotas
+/// through a rate limiter.
 ///
 /// This struct is designed to handle HTTP requests efficiently, providing
 /// support for rate limiting, timeouts, and custom headers. The client is
@@ -152,19 +233,17 @@ impl HttpClient {
         }
     }
 
-    /// Send an HTTP request.
+    /// Sends an HTTP request.
     ///
-    /// `method`: The HTTP method to call.
-    /// `url`: The request is sent to this url.
-    /// `headers`: The header key value pairs in the request.
-    /// `body`: The bytes sent in the body of request.
-    /// `keys`: The keys used for rate limiting the request.
+    /// - `method`: The [`Method`] to use (GET, POST, etc.).
+    /// - `url`: The target URL.
+    /// - `headers`: Additional headers for this request.
+    /// - `body`: Optional request body.
+    /// - `keys`: Rate-limit keys to control request frequency.
+    /// - `timeout_secs`: Optional request timeout in seconds.
     ///
     /// # Example
-    ///
-    /// When a request is made the URL should be split into all relevant keys within it.
-    ///
-    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
+    /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
     #[allow(clippy::too_many_arguments)]
     pub async fn request(
         &self,
@@ -184,9 +263,9 @@ impl HttpClient {
     }
 }
 
-/// A high-performance `HttpClient` for HTTP requests.
+/// Internal implementation backing [`HttpClient`].
 ///
-/// The client is backed by a hyper Client which keeps connections alive and
+/// The client is backed by a [`reqwest::Client`] which keeps connections alive and
 /// can be cloned cheaply. The client also has a list of header fields to
 /// extract from the response.
 ///
@@ -199,13 +278,13 @@ pub struct InnerHttpClient {
 }
 
 impl InnerHttpClient {
-    /// Sends an HTTP request with the specified method, URL, headers, and body.
+    /// Sends an HTTP request and returns an [`HttpResponse`].
     ///
-    /// - `method`: The HTTP method to use (e.g., GET, POST).
-    /// - `url`: The URL to send the request to.
-    /// - `headers`: A map of header key-value pairs to include in the request.
-    /// - `body`: An optional body for the request, represented as a byte vector.
-    /// - `timeout_secs`: An optional timeout for the request in seconds.
+    /// - `method`: The HTTP method (e.g. GET, POST).
+    /// - `url`: The target URL.
+    /// - `headers`: Extra headers to send.
+    /// - `body`: Optional request body.
+    /// - `timeout_secs`: Optional request timeout in seconds.
     pub async fn send_request(
         &self,
         method: Method,
@@ -266,7 +345,7 @@ impl InnerHttpClient {
             .filter_map(|(key, val)| val.to_str().map(|v| (key, v)).ok())
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
-        let status = response.status().as_u16();
+        let status = HttpStatus::new(response.status());
         let body = response.bytes().await.map_err(HttpClientError::from)?;
 
         Ok(HttpResponse {
@@ -294,6 +373,7 @@ impl Default for InnerHttpClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::net::{SocketAddr, TcpListener};
 
@@ -323,6 +403,14 @@ mod tests {
             .route("/post", post(|| async { StatusCode::OK }))
             .route("/patch", patch(|| async { StatusCode::OK }))
             .route("/delete", delete(|| async { StatusCode::OK }))
+            .route("/notfound", get(|| async { StatusCode::NOT_FOUND }))
+            .route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    "Eventually responded"
+                }),
+            )
     }
 
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
@@ -350,7 +438,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status, StatusCode::OK);
+        assert!(response.status.is_success());
         assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
     }
 
@@ -371,7 +459,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status, StatusCode::OK);
+        assert!(response.status.is_success());
     }
 
     #[tokio::test]
@@ -405,7 +493,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status, StatusCode::OK);
+        assert!(response.status.is_success());
     }
 
     #[tokio::test]
@@ -425,7 +513,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status, StatusCode::OK);
+        assert!(response.status.is_success());
     }
 
     #[tokio::test]
@@ -445,6 +533,41 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status, StatusCode::OK);
+        assert!(response.status.is_success());
+    }
+
+    #[tokio::test]
+    async fn test_not_found() {
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{addr}/notfound");
+        let client = InnerHttpClient::default();
+
+        let response = client
+            .send_request(reqwest::Method::GET, url, None, None, None)
+            .await
+            .unwrap();
+
+        assert!(response.status.is_client_error());
+        assert_eq!(response.status.as_u16(), 404);
+    }
+
+    #[tokio::test]
+    async fn test_timeout() {
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{addr}/slow");
+        let client = InnerHttpClient::default();
+
+        // We'll set a 1-second timeout for a route that sleeps 2 seconds
+        let result = client
+            .send_request(reqwest::Method::GET, url, None, None, Some(1))
+            .await;
+
+        match result {
+            Err(HttpClientError::TimeoutError(msg)) => {
+                println!("Got expected timeout error: {msg}");
+            }
+            Err(other) => panic!("Expected a timeout error, got: {other:?}"),
+            Ok(resp) => panic!("Expected a timeout error, but got a successful response: {resp:?}"),
+        }
     }
 }

@@ -20,10 +20,6 @@
 //! includes sending commands to, and receiving events from, the trading venue
 //! endpoints via its registered execution clients.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 pub mod config;
 
 use std::{
@@ -380,7 +376,10 @@ impl ExecutionEngine {
                     quote_qty = Some(order.quantity());
                 }
 
-                if last_px.is_none() {
+                if let Some(px) = last_px {
+                    let base_qty = instrument.get_base_quantity(order.quantity(), px);
+                    self.set_order_base_qty(order, base_qty);
+                } else {
                     for order in &command.order_list.orders {
                         self.deny_order(
                             order,
@@ -389,9 +388,6 @@ impl ExecutionEngine {
                     }
                     return; // Denied
                 }
-
-                let base_qty = instrument.get_base_quantity(order.quantity(), last_px.unwrap());
-                self.set_order_base_qty(order, base_qty);
             }
         }
 
@@ -422,7 +418,7 @@ impl ExecutionEngine {
     fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(command) {
             log::error!("Error canceling all orders: {e}");
-        };
+        }
     }
 
     fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
@@ -528,8 +524,7 @@ impl ExecutionEngine {
             }
         };
 
-        drop(borrowed_cache); // Drop immutable borrow before mutable operations
-
+        drop(borrowed_cache);
         match event {
             OrderEventAny::Filled(order_filled) => {
                 let oms_type = self.determine_oms_type(order_filled);
@@ -601,7 +596,6 @@ impl ExecutionEngine {
 
         // Check execution spawn orders
         if let Some(spawn_id) = order.exec_spawn_id() {
-            let cache = self.cache.borrow();
             let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
             for spawned_order in spawn_orders {
                 if let Some(pos_id) = spawned_order.position_id() {
@@ -665,15 +659,13 @@ impl ExecutionEngine {
                 return;
             };
 
-        let account = if let Some(account_id) = self.cache.borrow().account(&fill.account_id) {
-            account_id
-        } else {
+        if self.cache.borrow().account(&fill.account_id).is_none() {
             log::error!(
                 "Cannot handle order fill: no account found for {}, {fill}",
                 fill.instrument_id.venue,
             );
             return;
-        };
+        }
 
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
@@ -682,13 +674,9 @@ impl ExecutionEngine {
             return;
         };
 
-        // TODO: fix clone
         let mut position = match self.cache.borrow().position(&position_id) {
             Some(pos) if !pos.is_closed() => pos.clone(),
-            Some(pos) => self
-                .open_position(instrument.clone(), None, fill, oms_type)
-                .unwrap(),
-            None => self
+            _ => self
                 .open_position(instrument.clone(), None, fill, oms_type)
                 .unwrap(),
         };
@@ -696,17 +684,15 @@ impl ExecutionEngine {
         if self.will_flip_position(&position, fill) {
             self.flip_position(instrument, &mut position, fill, oms_type);
         } else {
-            self.update_position(instrument, &mut position, fill, oms_type);
+            self.update_position(&mut position, fill);
         }
 
         if matches!(order.contingency_type(), Some(ContingencyType::Oto)) && position.is_open() {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
-                let cache = self.cache.borrow();
-                let contingent_order = cache.order(&client_order_id);
+                let mut cache = self.cache.borrow_mut();
+                let contingent_order = cache.mut_order(&client_order_id);
                 if let Some(contingent_order) = contingent_order {
                     if contingent_order.position_id().is_none() {
-                        // TODO: check this
-                        let mut contingent_order = contingent_order.clone();
                         contingent_order.set_position_id(Some(position_id));
 
                         if let Err(e) = self.cache.borrow_mut().add_position_id(
@@ -759,13 +745,7 @@ impl ExecutionEngine {
         Ok(position)
     }
 
-    fn update_position(
-        &self,
-        instrument: InstrumentAny,
-        position: &mut Position,
-        fill: OrderFilled,
-        oms_type: OmsType,
-    ) {
+    fn update_position(&self, position: &mut Position, fill: OrderFilled) {
         position.apply(&fill);
 
         if let Err(e) = self.cache.borrow_mut().update_position(position) {
@@ -789,7 +769,7 @@ impl ExecutionEngine {
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
             msgbus.publish(&topic, &event);
-        };
+        }
     }
 
     fn will_flip_position(&self, position: &Position, fill: OrderFilled) -> bool {
@@ -851,7 +831,7 @@ impl ExecutionEngine {
                 commission1,
             ));
 
-            self.update_position(instrument.clone(), position, fill_split1.unwrap(), oms_type);
+            self.update_position(position, fill_split1.unwrap());
         }
 
         // Guard against flipping a position with a zero fill size
@@ -887,7 +867,7 @@ impl ExecutionEngine {
             fill.trade_id,
             fill.order_side,
             fill.order_type,
-            position.quantity,
+            difference,
             fill.last_px,
             fill.currency,
             fill.liquidity_side,
@@ -895,7 +875,7 @@ impl ExecutionEngine {
             fill.ts_event,
             fill.ts_init,
             fill.reconciliation,
-            fill.position_id,
+            position_id_flip,
             commission2,
         );
 
@@ -911,7 +891,7 @@ impl ExecutionEngine {
         // Open flipped position
         if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
             log::error!("Failed to open flipped position: {e:?}");
-        };
+        }
     }
 
     // -- INTERNAL ------------------------------------------------------------
@@ -979,7 +959,7 @@ impl ExecutionEngine {
 
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
-                match self.cache.borrow().order(&client_order_id) {
+                match self.cache.borrow_mut().mut_order(&client_order_id) {
                     Some(contingent_order) => {
                         if !contingent_order.is_quote_quantity() {
                             continue; // Already base quantity
@@ -1001,10 +981,9 @@ impl ExecutionEngine {
                             base_qty
                         );
 
-                        todo!();
-                        // contingent_order.set_quantity(base_qty);
-                        // contingent_order.set_leaves_qty(base_qty);
-                        // contingent_order.set_is_quote_quantity(false);
+                        contingent_order.set_quantity(base_qty);
+                        contingent_order.set_leaves_qty(base_qty);
+                        contingent_order.set_is_quote_quantity(false);
                     }
                     None => {
                         log::error!("Contingency order {client_order_id} not found");
@@ -1058,4 +1037,45 @@ impl ExecutionEngine {
             self.create_order_state_snapshot(&order);
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
+    use rstest::fixture;
+
+    use super::*;
+
+    #[fixture]
+    fn msgbus() -> MessageBus {
+        MessageBus::default()
+    }
+
+    #[fixture]
+    fn simple_cache() -> Cache {
+        Cache::new(None, None)
+    }
+
+    #[fixture]
+    fn clock() -> TestClock {
+        TestClock::new()
+    }
+
+    // Helpers
+    fn _get_exec_engine(
+        msgbus: Rc<RefCell<MessageBus>>,
+        cache: Rc<RefCell<Cache>>,
+        clock: Rc<RefCell<TestClock>>,
+        config: Option<ExecutionEngineConfig>,
+    ) -> ExecutionEngine {
+        let config = config.unwrap_or_default();
+        ExecutionEngine::new(clock, cache, msgbus, config)
+    }
+
+    // TODO: After Implementing ExecutionClient & Strategy
 }

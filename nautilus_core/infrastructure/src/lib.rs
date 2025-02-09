@@ -28,6 +28,16 @@
 //! - `redis`: Enables the Redis cache database and message bus backing implementations.
 //! - `sql`: Enables the SQL models and cache database.
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(rustdoc::broken_intra_doc_links)]
+// #![deny(clippy::missing_errors_doc)]
+
+// TODO: We still rely on `IntoPy` for now, so temporarily ignore
+// these deprecations until fully migrated to `IntoPyObject`.
+#![allow(deprecated)]
+
 #[cfg(feature = "python")]
 pub mod python;
 

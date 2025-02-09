@@ -31,9 +31,16 @@ pub mod position;
 pub mod types;
 
 /// Loaded as nautilus_pyo3.model
+///
+/// # Errors
+///
+/// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types
+    m.add("HIGH_PRECISION", crate::types::fixed::HIGH_PRECISION_MODE)?;
+    m.add("FIXED_SCALAR", crate::types::fixed::FIXED_SCALAR)?;
+    m.add("FIXED_PRECISION", crate::types::fixed::FIXED_PRECISION)?;
     m.add_class::<crate::types::currency::Currency>()?;
     m.add_class::<crate::types::money::Money>()?;
     m.add_class::<crate::types::price::Price>()?;
@@ -46,6 +53,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::bar::BarSpecification>()?;
     m.add_class::<crate::data::bar::BarType>()?;
     m.add_class::<crate::data::bar::Bar>()?;
+    m.add_class::<crate::data::bet::Bet>()?;
+    m.add_class::<crate::data::bet::BetPosition>()?;
     m.add_class::<crate::data::order::BookOrder>()?;
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
@@ -74,6 +83,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::AssetClass>()?;
     m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::BarAggregation>()?;
+    m.add_class::<crate::enums::BetSide>()?;
     m.add_class::<crate::enums::BookAction>()?;
     m.add_class::<crate::enums::BookType>()?;
     m.add_class::<crate::enums::ContingencyType>()?;
@@ -128,8 +138,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::Equity>()?;
     m.add_class::<crate::instruments::FuturesContract>()?;
     m.add_class::<crate::instruments::FuturesSpread>()?;
-    m.add_class::<crate::instruments::OptionsContract>()?;
-    m.add_class::<crate::instruments::OptionsSpread>()?;
+    m.add_class::<crate::instruments::OptionContract>()?;
+    m.add_class::<crate::instruments::OptionSpread>()?;
     m.add_class::<crate::instruments::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;
@@ -171,6 +181,18 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         crate::python::account::transformer::margin_account_from_account_events,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::bet::py_calc_bets_pnl,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::bet::py_probability_to_bet,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::bet::py_inverse_probability_to_bet,
         m
     )?)?;
     Ok(())

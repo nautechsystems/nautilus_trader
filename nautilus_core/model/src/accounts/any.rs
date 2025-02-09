@@ -19,12 +19,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
-    enums::AccountType,
+    enums::{AccountType, LiquiditySide},
     events::{AccountState, OrderFilled},
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,
-    types::{AccountBalance, Currency, Money},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AccountAny {
@@ -107,6 +107,39 @@ impl AccountAny {
             AccountAny::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
         }
     }
+
+    pub fn calculate_commission(
+        &self,
+        instrument: InstrumentAny,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        match self {
+            AccountAny::Margin(margin) => margin.calculate_commission(
+                instrument,
+                last_qty,
+                last_px,
+                liquidity_side,
+                use_quote_for_inverse,
+            ),
+            AccountAny::Cash(cash) => cash.calculate_commission(
+                instrument,
+                last_qty,
+                last_px,
+                liquidity_side,
+                use_quote_for_inverse,
+            ),
+        }
+    }
+
+    pub fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
+        match self {
+            AccountAny::Margin(margin) => margin.balance(currency),
+            AccountAny::Cash(cash) => cash.balance(currency),
+        }
+    }
 }
 
 impl From<AccountState> for AccountAny {
@@ -116,13 +149,6 @@ impl From<AccountState> for AccountAny {
             AccountType::Cash => AccountAny::Cash(CashAccount::new(event, false)),
             AccountType::Betting => todo!("Betting account not implemented"),
         }
-    }
-}
-
-impl Default for AccountAny {
-    /// Creates a new default [`AccountAny`] instance.
-    fn default() -> Self {
-        AccountAny::Cash(CashAccount::default())
     }
 }
 

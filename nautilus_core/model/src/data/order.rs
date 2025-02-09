@@ -47,12 +47,11 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 
 /// Represents an order in a book.
 #[repr(C)]
-#[derive(Clone, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BookOrder {
     /// The order side.
     pub side: OrderSide,
@@ -67,7 +66,7 @@ pub struct BookOrder {
 impl BookOrder {
     /// Creates a new [`BookOrder`] instance.
     #[must_use]
-    pub fn new(side: OrderSide, price: Price, size: Quantity, order_id: u64) -> Self {
+    pub fn new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
         Self {
             side,
             price,

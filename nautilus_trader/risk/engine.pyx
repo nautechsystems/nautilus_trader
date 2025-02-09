@@ -123,7 +123,7 @@ cdef class RiskEngine(Component):
         self._portfolio = portfolio
         self._cache = cache
 
-        # Settings
+        # Configuration
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.bypass
         self.debug = config.debug
@@ -427,7 +427,7 @@ cdef class RiskEngine(Component):
         if instrument is None:
             self._deny_command(
                 command=command,
-                reason=f"Instrument for {command.instrument_id} not found",
+                reason=f"Instrument for {order.instrument_id} not found",
             )
             return  # Denied
 
@@ -777,7 +777,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
         if instrument.instrument_class != InstrumentClass.OPTION:
-            if price.raw_int64_c() <= 0:
+            if price.raw_int_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
 

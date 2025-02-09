@@ -29,6 +29,8 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
+use crate::parse::parse_price;
+
 use super::{
     csv::record::{
         TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
@@ -79,7 +81,7 @@ pub fn load_deltas<P: AsRef<Path>>(
             None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let side = parse_order_side(&record.side);
-        let price = Price::new(record.price, price_precision);
+        let price = parse_price(record.price, price_precision);
         let size = Quantity::new(record.amount, size_precision);
         let order_id = 0; // Not applicable for L2 data
         let order = BookOrder::new(side, price, size, order_id);

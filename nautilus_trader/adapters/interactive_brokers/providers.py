@@ -59,7 +59,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         """
         super().__init__(config=config)
 
-        # Settings
+        # Configuration
         self._load_contracts_on_start = (
             set(config.load_contracts) if config.load_contracts is not None else None
         )

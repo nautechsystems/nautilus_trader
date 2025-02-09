@@ -288,12 +288,12 @@ cdef class PerContractFeeModel(FeeModel):
     Raises
     ------
     ValueError
-        If `commission` is not a positive amount.
+        If `commission` is negative (< 0).
 
     """
 
     def __init__(self, Money commission not None):
-        Condition.positive(commission, "commission")
+        Condition.not_negative(commission, "commission")
 
         self._commission = commission
 

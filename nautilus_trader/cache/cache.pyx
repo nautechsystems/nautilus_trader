@@ -41,7 +41,6 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TriggerType
-from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
@@ -126,6 +125,8 @@ cdef class Cache(CacheFacade):
         self._order_lists: dict[OrderListId, OrderList] = {}
         self._positions: dict[PositionId, Position] = {}
         self._position_snapshots: dict[PositionId, list[bytes]] = {}
+        self._greeks: dict[InstrumentId, object] = {}
+        self._interest_rate_curves: dict[str, object] = {}
 
         # Cache index
         self._index_venue_account: dict[Venue, AccountId] = {}
@@ -981,7 +982,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """
-        Load the instrument associated with the given instrument_id (if found).
+        Load the instrument associated with the given instrument ID (if found).
 
         Parameters
         ----------
@@ -1687,6 +1688,64 @@ cdef class Cache(CacheFacade):
 
         # Update database
         self._database.add_position(position)
+
+    cpdef void add_greeks(self, object greeks):
+        """
+        Add greeks to the cache.
+
+        Parameters
+        ----------
+        greeks : GreeksData
+            The greeks to add.
+
+        """
+        self._greeks[greeks.instrument_id] = greeks
+
+    cpdef void add_interest_rate_curve(self, object interest_rate_curve):
+        """
+        Add an interest rate curve to the cache.
+
+        Parameters
+        ----------
+        interest_rate_curve : InterestRateCurveData
+            The interest rate curve to add.
+
+        """
+        self._interest_rate_curves[interest_rate_curve.currency] = interest_rate_curve
+
+    cpdef object greeks(self, InstrumentId instrument_id):
+        """
+        Return the latest cached greeks for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to get the greeks for.
+
+        Returns
+        -------
+        GreeksData
+            The greeks for the given instrument ID.
+
+        """
+        return self._greeks.get(instrument_id)
+
+    cpdef object interest_rate_curve(self, str currency):
+        """
+        Return the latest cached interest rate curve for the given currency.
+
+        Parameters
+        ----------
+        currency : str
+            The currency to get the interest rate curve for.
+
+        Returns
+        -------
+        InterestRateCurveData
+            The interest rate curve for the given currency.
+
+        """
+        return self._interest_rate_curves.get(currency)
 
     cpdef void snapshot_position(self, Position position):
         """
@@ -2540,7 +2599,7 @@ cdef class Cache(CacheFacade):
             bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == price_type]
 
         if aggregation_source is not None:
-            bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == aggregation_source]
+            bar_types = [bar_type for bar_type in bar_types if bar_type.aggregation_source == aggregation_source]
 
         if instrument_id and price_type:
             bar_types.sort(key=self._get_timedelta)

@@ -1,3 +1,131 @@
+# NautilusTrader 1.211.0 Beta
+
+Released on 9th February 2025 (UTC).
+
+This release introduces [high-precision mode](https://nautilustrader.io/docs/nightly/concepts/overview#value-types), where value types such as `Price`, `Quantity` and `Money` are now
+backed by 128-bit integers (instead of 64-bit), thereby increasing maximum precision to 16, and vastly expanding the allowable value ranges.
+
+This will address precision and value range issues experienced by some crypto users, alleviate higher timeframe bar volume limitations, as well as future proofing the platform.
+See the [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) for more details. For an explanation on compiling with or without high-precision mode, see the [precision-mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode) section of the installation guide.
+
+This release will be the final version that uses Poetry for package and dependency management.
+
+### Enhancements
+- Added `high-precision` mode for 128-bit integer backed value types (#2072), thanks @twitu
+- Added instrument definitions range requests for `TardisHttpClient` with optional `start` and `end` filter parameters
+- Added `quote_currency`, `base_currency`, `instrument_type`, `contract_type`, `active`, `start` and `end` filters for `TardisInstrumentProvider`
+- Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
+- Added additional limit parameters for `BettingInstrument` constructor
+- Added `venue_position_id` parameter for `OrderStatusReport`
+- Added bars update support for `Portfolio` PnLs (#2239), thanks @faysou
+- Added optional `params` for `Strategy` order management methods (symmetry with `Actor` data methods) (#2251), thanks @faysou
+- Added heartbeats for Betfair clients to keep streams alive (more robust when initial subscription delays)
+- Added `timeout_shutdown` config option for `NautilusKernelConfig`
+- Added IOC time in force mapping for Betfair orders
+- Added `min_market_start_time` and `max_market_start_time` time range filtering for `BetfairInstrumentProviderConfig`
+- Added `default_min_notional` config option for `BetfairInstrumentProviderConfig`
+- Added `stream_conflate_ms` config option for `BetfairDataClientConfig`
+- Added `recv_window_ms` config option for `BybitDataClientConfig` and `BybitExecClientConfig`
+- Added `open_check_open_only` config option for `LiveExecEngineConfig`
+- Added `BetSide` enum (to support `Bet` and `BetPosition`)
+- Added `Bet` and `BetPosition` for betting market risk and PnL calculations
+- Added `total_pnl` and `total_pnls` methods for `Portfolio`
+- Added optional `price` parameter for `Portfolio` unrealized PnL and net exposure methods
+
+### Breaking Changes
+- Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)
+- Renamed `OptionsSpread` instrument to `OptionSpread` for more technically correct terminology (singular)
+- Renamed `options_contract` modules to `option_contract` (see above)
+- Renamed `options_spread` modules to `option_spread` (see above)
+- Renamed `InstrumentClass.FUTURE_SPREAD` to `InstrumentClass.FUTURES_SPREAD` for more technically correct terminology
+- Renamed `event_logging` config option to `log_events`
+- Renamed `BetfairExecClientConfig.request_account_state_period` to `request_account_state_secs`
+- Moved SQL schema directory to `schemas/sql` (reinstall the Nautilus CLI with `make install-cli`)
+- Changed `BettingInstrument` default `min_notional` to `None`
+- Changed meaning of `ws_connection_delay_secs` for [PolymarketDataClientConfig](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_trader/adapters/polymarket/config.py) to be **non-initial** delay (#2271)
+- Changed `GATEIO` Tardis venue to `GATE_IO` for consistency with `CRYPTO_COM` and `BLOCKCHAIN_COM`
+- Removed `max_ws_reconnection_tries` for dYdX configs (no longer applicable with infinite retries and exponential backoff)
+- Removed `max_ws_reconnection_tries` for Bybit configs (no longer applicable with infinite retries and exponential backoff)
+- Removed remaining `max_ws_reconnection_tries` for Bybit configs (#2290), thanks @sunlei
+
+### Internal Improvements
+- Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
+- Added `OrderBookDeltaTestBuilder` in Rust to improve testing (#2234), thanks @filipmacek
+- Added custom certificate loading for `SocketClient` TLS
+- Added `check_nonempty_string` for string validation in Rust
+- Improved Polymarket WebSocket subscription handling by configurable delay (#2271), thanks @ryantam626
+- Improved `WebSocketClient` with state management, error handling, timeouts and robust reconnects with exponential backoff
+- Improved `SocketClient` with state management, error handling, timeouts and robust reconnects with exponential backoff
+- Improved `TradingNode` shutdown when running with `asyncio.run()` (more orderly handling of event loop)
+- Improved `NautilusKernel` pending tasks cancellation on shutdown
+- Improved `TardisHttpClient` requests and error handling
+- Improved log file writer to strip ANSI escape codes and unprintable chars
+- Improved `clean` make target behavior and added `distclean` make target (#2286), @demonkoryu
+- Refined `Currency` `name` to accept non-ASCII characters (common for foreign currencies)
+- Refactored CI with composite actions (#2242), thanks @sunlei
+- Refactored Option Greeks feature (#2266), thanks @faysou
+- Changed validation to allow zero commission for `PerContractFeeModel` (#2282), thanks @stefansimik
+- Changed to use `mold` as the linker in CI (#2254), thanks @sunlei
+- Ported market order processing for `OrderMatchingEngine` in Rust (#2202), thanks @filipmacek
+- Ported limit order processing for `OrderMatchingEngine` in Rust (#2212), thanks @filipmacek
+- Ported stop limit order processing for `OrderMatchingEngine` in Rust (#2225), thanks @filipmacek
+- Ported `CancelOrder` processing for `OrderMatchingEngine` in Rust (#2231), thanks @filipmacek
+- Ported `CancelAllOrders` processing for `OrderMatchingEngine` in Rust (#2253), thanks @filipmacek
+- Ported `BatchCancelOrders` processing for `OrderMatchingEngine` in Rust (#2256), thanks @filipmacek
+- Ported expire order processing for `OrderMatchingEngine` in Rust (#2259), thanks @filipmacek
+- Ported modify order processing for `OrderMatchingEngine` in Rust (#2261), thanks @filipmacek
+- Ported generate fresh account state for `SimulatedExchange` in Rust (#2272), thanks @filipmacek
+- Ported adjust account for SimulatedExchange in Rust (#2273), thanks @filipmacek
+- Continued porting `RiskEngine` to Rust (#2210), thanks @Pushkarm029
+- Continued porting `ExecutionEngine` to Rust (#2214), thanks @Pushkarm029
+- Continued porting `OrderEmulator` to Rust (#2219, #2226), thanks @Pushkarm029
+- Moved `model` crate stubs into defaults (#2235), thanks @fhill2
+- Upgraded `pyo3` crate to v0.23.4
+- Upgraded `pyo3-async-runtimes` crate to v0.23.0
+
+### Fixes
+- Fixed `LiveTimer` immediate fire when start time zero (#2270), thanks for reporting @bartolootrit
+- Fixed order book action parsing for Tardis (ensures zero sizes in snapshots work with the tighter validation for `action` vs `size`)
+- Fixed PnL calculations for betting instruments in `Portfolio`
+- Fixed net exposure for betting instruments in `Portfolio`
+- Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
+- Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
+- Fixed databento helper function (#2208), thanks @faysou
+- Fixed live reconciliation of generated order fills to use the `venue_position_id` (when provided), thanks for reporting @sdk451
+- Fixed `InstrumentProvider` initialization behavior when `reload` flag `True`, thanks @ryantam626
+- Fixed handling of Binance HTTP error messages (not always JSON-parsable, leading to `msgspec.DecodeError`)
+- Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
+- Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
+- Fixed memory leak in network PyO3 layer caused by the `gil-refs` feature (#2229), thanks for reporting @davidsblom
+- Fixed reconnect handling for Betfair (#2232, #2288, #2289), thanks @limx0
+- Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
+- Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
+- Fixed realized pnl calculation in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
+- Fixed update order in `Cache` for Rust (#2248), thanks @filipmacek
+- Fixed websocket schema for market updates of dYdX (#2258), thanks @davidsblom
+- Fixed handling of empty book messages for Tardis (resulted in `deltas` cannot be empty panicking)
+- Fixed `Cache.bar_types` `aggregation_source` filtering, was incorrectly using `price_type` (#2269), thanks @faysou
+- Fixed missing `combo` instrument type for Tardis integration
+- Fixed quote tick processing from bars in `OrderMatchingEngine` resulting in sizes below the minimum increment (#2275), thanks for reporting @miller-moore
+- Fixed initialization of `BinanceErrorCode`s requiring `int`
+- Fixed resolution of Tardis `BINANCE_DELIVERY` venue for COIN-margined contracts
+- Fixed hang in rate limiter (#2285), thanks @WyldeCat
+- Fixed typo in `InstrumentProviderConfig` docstring (#2284), thanks @ikeepo
+- Fixed handling of `tick_size_change` message for Polymarket
+
+### Documentation Updates
+- Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
+- Added docs for Actor (#2233), thanks @stefansimik
+- Added docs for Portfolio limitations with bar data (#2233), thanks @stefansimik
+- Added docs overview for example locations in repository (#2287), thanks @stefansimik
+- Improved docstrings for Actor subscription and request methods
+- Refined `streaming` parameter description (#2293), thanks @faysou and @stefansimik
+
+### Deprecations
+- The [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage for indicators is deprecated and will be removed in a future version, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2206)
+
+---
+
 # NautilusTrader 1.210.0 Beta
 
 Released on 10th January 2025 (UTC).
@@ -37,7 +165,7 @@ Released on 10th January 2025 (UTC).
 - Refined private WebSocket message processing for Bybit (#2170), thanks @sunlei
 - Refined WebSocket client re-subscribe log for Bybit (#2179), thanks @sunlei
 - Refined margin balance report for dYdX (#2154), thanks @davidsblom
-- Enhance `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
+- Enhanced `lotSizeFilter` field for Bybit (#2166), thanks @sunlei
 - Renamed WebSocket private client for Bybit (#2180), thanks @sunlei
 - Added unit tests for custom dYdX types (#2163), thanks @davidsblom
 - Allow bar aggregators to persist after `request_aggregated_bars` (#2144), thanks @faysou
@@ -126,8 +254,8 @@ Released on 15th December 2024 (UTC).
 - Added `max_ws_reconnection_tries` to `BybitExecClientConfig` (#2109), thanks @sunlei
 - Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesContract`
 - Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `FuturesSpread`
-- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsContract`
-- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionsSpread`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionContract`
+- Added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee` params and attributes for `OptionSpread`
 - Improved Databento symbology support for Interactive Brokers (#2113), thanks @rsmb7z
 - Improved support of `STOP_MARKET` and `STOP_LIMIT` orders for dYdX (#2069), thanks @Saransh-Bhandari
 - Improved timer validation for `interval_ns` (avoids panicking from Rust)
@@ -152,8 +280,8 @@ Released on 15th December 2024 (UTC).
 - Renamed `Ladder` to `BookLadder` (standardizes order book type naming conventions)
 - Changed `FuturesContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 - Changed `FuturesSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
-- Changed `OptionsContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
-- Changed `OptionsSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionContract` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
+- Changed `OptionSpread` Arrow schema (added `margin_init`, `margin_maint`, `maker_fee`, `taker_fee`)
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
@@ -338,7 +466,7 @@ Released on 22nd October 2024 (UTC).
 - Ported `BettingInstrument` to Rust
 - Refined `RateLimiter` for `WebSocketClient` and add tests (#2000), thanks @Pushkarm029
 - Refined `WebSocketClient` to close existing tasks on reconnect (#1986), thanks @davidsblom
-- Remove mutable references in `CacheDatabaseAdapter` trait in Rust (#2015), thanks @filipmacek
+- Removed mutable references in `CacheDatabaseAdapter` trait in Rust (#2015), thanks @filipmacek
 - Use Rust rate limiter for dYdX websockets (#1996, #1999), thanks @davidsblom
 - Improved error logs for dYdX websocket subscriptions (#1993), thanks @davidsblom
 - Standardized log and error message syntax in Rust
@@ -450,9 +578,9 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Fixed `Cfd` instrument Arrow schema and serialization
 - Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
 - Fixed Databento parent and continuous contract subscriptions (using new symbol root)
-- Fixed Databento `FuturesSpread` and `OptionsSpread` instrument decoding (was not correctly handling price increments and empty underlyings)
+- Fixed Databento `FuturesSpread` and `OptionSpread` instrument decoding (was not correctly handling price increments and empty underlyings)
 - Fixed `FuturesSpread` serialization
-- Fixed `OptionsSpread` serialization
+- Fixed `OptionSpread` serialization
 
 ---
 
@@ -540,7 +668,7 @@ Released on 19th August 2024 (UTC).
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
-- Changed `OptionsContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
+- Changed `OptionContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
 - Renamed `snapshot_positions_interval` to `snapshot_positions_interval_secs` (more explicitly indicates time units)
 - Moved `snapshot_orders` config option to `ExecEngineConfig` (can now be used for all environment contexts)
 - Moved `snapshot_positions` config option to `ExecEngineConfig` (can now be used for all environment contexts)
@@ -751,7 +879,7 @@ Released on 18th May 2024 (UTC).
 ### Enhancements
 - Added Nautilus CLI (see [docs](https://nautilustrader.io/docs/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
-- Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
+- Added `OrderMatchingEngine` futures and option contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 - Added `ParquetDataCatalog` S3 support (#1620), thanks @benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks @rsmb7z
@@ -863,10 +991,10 @@ Released on 15th March 2024 (UTC).
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
 - Added `LoggingConfig.use_pyo3` config option for PyO3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
-- Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread` (optional)
+- Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionContract` and `OptionSpread` (optional)
 
 ### Breaking Changes
-- Changed Arrow schema adding `exchange` field for `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread`
+- Changed Arrow schema adding `exchange` field for `FuturesContract`, `FuturesSpread`, `OptionContract` and `OptionSpread`
 
 ### Fixes
 - Fixed `MessageBus` handling of subscriptions after a topic has been published on (was previously dropping messages for these late subscribers)
@@ -891,7 +1019,7 @@ Released on 25th February 2024 (UTC).
 
 ### Enhancements
 - Added `FuturesSpread` instrument type
-- Added `OptionsSpread` instrument type
+- Added `OptionSpread` instrument type
 - Added `InstrumentClass.FUTURE_SPREAD`
 - Added `InstrumentClass.OPTION_SPREAD`
 - Added `managed` parameter to `subscribe_order_book_deltas`, default `True` to retain current behavior (if false then the data engine will not automatically manage a book)
@@ -970,7 +1098,7 @@ None
 Released on 26th January 2024 (UTC).
 
 ### Enhancements
-- Add warning log when `bypass_logging` is set true for a `LIVE` context
+- Added warning log when `bypass_logging` is set true for a `LIVE` context
 - Improved `register_serializable object` to also add type to internal `_EXTERNAL_PUBLIHSABLE_TYPES`
 - Improved Interactive Brokers expiration contract parsing, thanks @fhill2
 
@@ -1002,7 +1130,7 @@ Released on 22nd January 2024 (UTC).
 - Renamed `LoggerAdapter` to `Logger` (and removed old `Logger` class)
 - Renamed `Logger` `component_name` parameter to `name` (matches Python built-in `logging` API)
 - Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
-- Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
+- Renamed `OptionContract` Arrow schema field `kind` to `option_kind`
 - Changed `level_file` log level to `OFF` (file logging is off by default)
 
 ### Fixes
@@ -1151,18 +1279,18 @@ Released on 3rd November 2023 (UTC).
 - Added `support_contingent_orders` config option for venues (to simulate venues which do not support contingent orders)
 - Added `StrategyConfig.manage_contingent_orders` config option (to automatically manage **open** contingent orders)
 - Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
-- Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `FuturesContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
-- Added `OptionsContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 
 ### Breaking Changes
 - Renamed `FuturesContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
-- Renamed `OptionsContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Renamed `OptionContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Renamed `CryptoFuture.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Changed `FuturesContract` Arrow schema
-- Changed `OptionsContract` Arrow schema
+- Changed `OptionContract` Arrow schema
 - Changed `CryptoFuture` Arrow schema
 - Transformed orders will now retain the original `ts_init` timestamp
 - Removed unimplemented `batch_more` option for `Strategy.modify_order`
@@ -1449,7 +1577,7 @@ Released on 30th April 2023 (UTC).
 - Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
 - Removed redundant rate limiting from Rust logger (and associated `rate_limit` config params)
 - Renamed `Future` instrument to `FuturesContract` (avoids ambiguity)
-- Renamed `Option` instrument to `OptionsContract` (avoids ambiguity and naming conflicts in Rust)
+- Renamed `Option` instrument to `OptionContract` (avoids ambiguity and naming conflicts in Rust)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
 - Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid)
 
@@ -2870,7 +2998,7 @@ hood' code cleanup and consolidation.
 - Refactored `PositionEvent` types
 
 ### Enhancements
-- Add pre-trade risk checks to `RiskEngine` iteration 2
+- Added pre-trade risk checks to `RiskEngine` iteration 2
 - Improve `Throttler` functionality and performance
 - Removed redundant `OrderInvalid` state and associated code
 - Improve analysis reports
@@ -3113,7 +3241,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Removed redundant `OrderFilled.leaves_qty`
 - `BacktestEngine` constructor simplified
 - `BacktestMarketDataClient` no longer needs instruments
-- Rename `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`
+- Renamed `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`
 
 ### Enhancements
 - Re-engineered `BacktestEngine` to take data directly
@@ -3174,8 +3302,8 @@ None
 
 ### Enhancements
 - Performance test refactoring
-- Remove redundant performance harness
-- Add `Queue.peek()` to high-performance queue
+- Removed redundant performance harness
+- Added `Queue.peek()` to high-performance queue
 - GitHub action refactoring, CI for Windows
 - Builds for 32-bit platforms
 
@@ -3195,10 +3323,10 @@ Further fundamental changes to the core API have been made.
 
 ### Breaking Changes
 - Introduce `ClientId` for data and execution client identification
-- Standardize client IDs to upper case
-- Rename `OrderBookOperation` to `OrderBookDelta`
-- Rename `OrderBookOperations` to `OrderBookDeltas`
-- Rename `OrderBookOperationType` to `OrderBookDeltaType`
+- Standardized client IDs to upper case
+- Renamed `OrderBookOperation` to `OrderBookDelta`
+- Renamed `OrderBookOperations` to `OrderBookDeltas`
+- Renamed `OrderBookOperationType` to `OrderBookDeltaType`
 
 ### Enhancements
 None
@@ -3225,16 +3353,16 @@ its full name `Order.venue_order_id`. This naturally resulted in `ClientOrderId`
 being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 
 ### Breaking Changes
-- Rename `OrderId` to `VenueOrderId`
-- Rename `Order.id` to `Order.venue_order_id`
-- Rename `Order.cl_ord_id` to `Order.client_order_id`
-- Rename `AssetClass.STOCK` to `AssetClass.EQUITY`
-- Remove redundant flag `generate_position_ids` (handled by `OmsType`)
+- Renamed `OrderId` to `VenueOrderId`
+- Renamed `Order.id` to `Order.venue_order_id`
+- Renamed `Order.cl_ord_id` to `Order.client_order_id`
+- Renamed `AssetClass.STOCK` to `AssetClass.EQUITY`
+- Removed redundant flag `generate_position_ids` (handled by `OmsType`)
 
 ### Enhancements
 - Introduce integration for Betfair.
-- Add `AssetClass.METAL` and `AssetClass.ENERGY`
-- Add `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`
+- Added `AssetClass.METAL` and `AssetClass.ENERGY`
+- Added `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`
 - Usage of `np.ndarray` to improve function and indicator performance
 
 ### Fixes
@@ -3252,16 +3380,16 @@ Further standardization of naming conventions along with internal refinements
 and fixes.
 
 ### Breaking Changes
-- Rename `AmendOrder` to `UpdateOrder`
-- Rename `OrderAmended` to `OrderUpdated`
-- Rename `amend` and `amended` related methods to `update` and `updated`
-- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
+- Renamed `AmendOrder` to `UpdateOrder`
+- Renamed `OrderAmended` to `OrderUpdated`
+- Renamed `amend` and `amended` related methods to `update` and `updated`
+- Renamed `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
 
 ### Enhancements
 - Improve efficiency of data wrangling
 - Simplify `Logger` and general system logging
-- Add `stdout` and `stderr` log streams with configuration
-- Add `OrderBookData` base class
+- Added `stdout` and `stderr` log streams with configuration
+- Added `OrderBookData` base class
 
 ### Fixes
 - Backtest handling of `GenericData` and `OrderBook` related data
@@ -3279,10 +3407,10 @@ Further standardization of naming conventions along with internal refinements
 and fixes.
 
 ### Breaking Changes
-- Rename `AmendOrder` to `UpdateOrder`
-- Rename `OrderAmended` to `OrderUpdated`
-- Rename `amend` and `amended` related methods to `update` and `updated`
-- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
+- Renamed `AmendOrder` to `UpdateOrder`
+- Renamed `OrderAmended` to `OrderUpdated`
+- Renamed `amend` and `amended` related methods to `update` and `updated`
+- Renamed `OrderCancelReject` to `OrderCancelRejected` (standardize tense)
 
 ### Enhancements
 - Introduce `OrderUpdateRejected`, event separated for clarity
@@ -3313,26 +3441,26 @@ closely with established financial market terminology with reference to the
 FIX5.0 SP2 specification, and CME MDP 3.0.
 
 ### Breaking Changes
-- Move `BarType` into `Bar` as a property
-- Change signature of `Bar` handling methods due to above
-- Remove `Instrument.leverage` (incorrect place for concept)
-- Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`
-- Change serialization of timestamp datatype to `int64`
-- Extensive changes to serialization constant names
-- Rename `OrderFilled.filled_qty` to `OrderFilled.last_qty`
-- Rename `OrderFilled.filled_price` to `OrderFilled.last_px`
-- Rename `avg_price` to `avg_px` in methods and properties
-- Rename `avg_open` to `avg_px_open` in methods and properties
-- Rename `avg_close` to `avg_px_close` in methods and properties
-- Rename `Position.relative_quantity` to `Position.relative_qty`
-- Rename `Position.peak_quantity` to `Position.peak_qty`
+- Moved `BarType` into `Bar` as a property
+- Changed signature of `Bar` handling methods due to above
+- Removed `Instrument.leverage` (incorrect place for concept)
+- Changed `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`
+- Changed serialization of timestamp datatype to `int64`
+- Changed serialization constant names extensively
+- Renamed `OrderFilled.filled_qty` to `OrderFilled.last_qty`
+- Renamed `OrderFilled.filled_price` to `OrderFilled.last_px`
+- Renamed `avg_price` to `avg_px` in methods and properties
+- Renamed `avg_open` to `avg_px_open` in methods and properties
+- Renamed `avg_close` to `avg_px_close` in methods and properties
+- Renamed `Position.relative_quantity` to `Position.relative_qty`
+- Renamed `Position.peak_quantity` to `Position.peak_qty`
 
 ### Enhancements
-- Standardize nanosecond timestamps
-- Add time unit conversion functions as found in `nautilus_trader.core.datetime`
-- Add optional `broker` property to `Venue` to assist with routing
-- Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`
-- Add internal messages to aid state reconciliation
+- Standardized nanosecond timestamps
+- Added time unit conversion functions as found in `nautilus_trader.core.datetime`
+- Added optional `broker` property to `Venue` to assist with routing
+- Enhanced state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`
+- Added internal messages to aid state reconciliation
 
 ### Fixes
 - `DataCache` incorrectly caching bars
@@ -3351,13 +3479,13 @@ None
 ### Enhancements
 - `RiskEngine` built out including configuration options hook and
   `LiveRiskEngine` implementation
-- Add generic `Throttler`
-- Add details `dict` to `instrument_id` related requests to cover IB futures
+- Added generic `Throttler`
+- Added details `dict` to `instrument_id` related requests to cover IB futures
   contracts
-- Add missing Fiat currencies
-- Add additional Crypto currencies
-- Add ISO 4217 codes
-- Add currency names
+- Added missing Fiat currencies
+- Added additional Crypto currencies
+- Added ISO 4217 codes
+- Added currency names
 
 ### Fixes
 - Queue `put` coroutines in live engines when blocking at `maxlen` was not
@@ -3387,8 +3515,8 @@ A `RiskEngine` base class has also been scaffolded.
 - `on_data` methods now take `GenericData`
 
 ### Enhancements
-- Add `GenericData`
-- Add `Future` instrument
+- Added `GenericData`
+- Added`Future` instrument
 
 ### Fixes
 None
@@ -3411,7 +3539,7 @@ Errors in the CCXT clients caused by the last release have been addressed.
 
 ### Enhancements
 - Ensure `TestTimer` advances monotonically increase
-- Add `AssetClass.BETTING`
+- Added `AssetClass.BETTING`
 
 ### Fixes
 - CCXT data and execution clients regarding `instrument_id` vs `symbol` naming
@@ -3442,7 +3570,7 @@ symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
 ### Enhancements
 - Reports now include full instrument_id name
-- Add `AssetType.WARRANT`
+- Added `AssetType.WARRANT`
 
 ### Fixes
 - `StopLimitOrder` serialization
@@ -3489,7 +3617,7 @@ None
 
 ### Enhancements
 - Refactored `SimulatedExchange` order matching and amendment logic
-- Add `risk` subpackage to group risk components
+- Added `risk` subpackage to group risk components
 
 ### Fixes
 - `StopLimitOrder` triggering behavior
@@ -3509,10 +3637,10 @@ integration, and begin adding platform capabilities to support this effort.
 
 ### Enhancements
 - Scaffold Interactive Brokers integration in `adapters/ib`
-- Add the `Future` instrument type
-- Add the `StopLimitOrder` order type
-- Add the `Data` and `DataType` types to support custom data handling
-- Add the `InstrumentId` identifier types initial implementation to support extending the platforms capabilities
+- Added the `Future` instrument type
+- Added the `StopLimitOrder` order type
+- Added the `Data` and `DataType` types to support custom data handling
+- Added the `InstrumentId` identifier types initial implementation to support extending the platforms capabilities
 
 ### Fixes
 - `BracketOrder` correctness

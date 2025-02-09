@@ -281,7 +281,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._block_height: int = 0
         self._oracle_prices: dict[InstrumentId, Decimal] = {}
 
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 1.0,
@@ -960,7 +960,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             # Skip order filled message and best effort canceled message. The _handle_fill_message generates
             # a fill report.
             # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
-            self._log.debug(f"Skip order message: {order_msg}")
+            self._log.info(f"Skip order message: {order_msg}")
         else:
             message = f"Unknown order status `{order_msg.status}`"
             self._log.error(message)

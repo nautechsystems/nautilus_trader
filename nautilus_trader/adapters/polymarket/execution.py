@@ -163,7 +163,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # HTTP API
         self._signature_type = 0
         self._http_client = http_client
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 0.0,
@@ -234,16 +234,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         condition_id = get_polymarket_condition_id(instrument_id)
         if condition_id in self._active_markets:
             return  # Already active
-
-        # Update balance and allowances
-        token_id = get_polymarket_token_id(instrument_id)
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.CONDITIONAL,
-            token_id=token_id,
-            signature_type=self._signature_type,
-        )
-        self._log.info(f"Updating {params}")
-        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
 
         if not self._ws_client.is_connected():
             ws_client = self._ws_client

@@ -144,7 +144,6 @@ class DYDXDataClient(LiveMarketDataClient):
             handler_reconnect=None,
             base_url=ws_base_url,
             loop=loop,
-            max_reconnection_tries=config.max_ws_reconnection_tries,
             max_send_retries=config.max_ws_send_retries,
             retry_delay_secs=config.max_ws_retry_delay_secs,
         )
@@ -207,7 +206,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("Canceled 'update_instruments' task")
+            self._log.debug("Canceled task 'update_instruments'")
 
     async def _resubscribe_orderbooks_on_interval(self) -> None:
         """
@@ -222,7 +221,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 await asyncio.sleep(self._update_orderbook_interval_secs)
                 await self._resubscribe_orderbooks()
         except asyncio.CancelledError:
-            self._log.debug("Canceled 'resubscribe_orderbook' task")
+            self._log.debug("Canceled task 'resubscribe_orderbook'")
 
     async def _resubscribe_orderbooks(self) -> None:
         """

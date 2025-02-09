@@ -52,6 +52,8 @@ cdef class TradingCommand(Command):
         The commands ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
 
     Warnings
     --------
@@ -66,6 +68,7 @@ cdef class TradingCommand(Command):
         InstrumentId instrument_id not None,
         UUID4 command_id not None,
         uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
     ):
         super().__init__(command_id, ts_init)
 
@@ -73,6 +76,7 @@ cdef class TradingCommand(Command):
         self.trader_id = trader_id
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
+        self.params = params
 
 
 cdef class SubmitOrder(TradingCommand):
@@ -95,6 +99,8 @@ cdef class SubmitOrder(TradingCommand):
         The position ID for the command.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
 
     References
     ----------
@@ -110,6 +116,7 @@ cdef class SubmitOrder(TradingCommand):
         uint64_t ts_init,
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -118,6 +125,7 @@ cdef class SubmitOrder(TradingCommand):
             instrument_id=order.instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.order = order
@@ -229,6 +237,8 @@ cdef class SubmitOrderList(TradingCommand):
         The position ID for the command.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
 
     References
     ----------
@@ -244,6 +254,7 @@ cdef class SubmitOrderList(TradingCommand):
         uint64_t ts_init,
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -252,6 +263,7 @@ cdef class SubmitOrderList(TradingCommand):
             instrument_id=order_list.instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.order_list = order_list
@@ -372,6 +384,8 @@ cdef class ModifyOrder(TradingCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
 
     References
     ----------
@@ -391,6 +405,7 @@ cdef class ModifyOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -399,6 +414,7 @@ cdef class ModifyOrder(TradingCommand):
             instrument_id=instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.client_order_id = client_order_id
@@ -526,6 +542,8 @@ cdef class CancelOrder(TradingCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
 
     References
     ----------
@@ -542,6 +560,7 @@ cdef class CancelOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         if client_id is None:
             client_id = ClientId(instrument_id.venue.value)
@@ -552,6 +571,7 @@ cdef class CancelOrder(TradingCommand):
             instrument_id=instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.client_order_id = client_order_id
@@ -659,6 +679,8 @@ cdef class CancelAllOrders(TradingCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
     """
 
     def __init__(
@@ -670,6 +692,7 @@ cdef class CancelAllOrders(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -678,6 +701,7 @@ cdef class CancelAllOrders(TradingCommand):
             instrument_id=instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.order_side = order_side
@@ -779,6 +803,8 @@ cdef class BatchCancelOrders(TradingCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
 
     Raises
     ------
@@ -797,6 +823,7 @@ cdef class BatchCancelOrders(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         Condition.not_empty(cancels, "cancels")
         Condition.list_type(cancels, CancelOrder, "cancels")
@@ -807,6 +834,7 @@ cdef class BatchCancelOrders(TradingCommand):
             instrument_id=instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.cancels = cancels
@@ -910,6 +938,8 @@ cdef class QueryOrder(TradingCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
     """
 
     def __init__(
@@ -922,6 +952,7 @@ cdef class QueryOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
     ):
         if client_id is None:
             client_id = ClientId(instrument_id.venue.value)
@@ -932,6 +963,7 @@ cdef class QueryOrder(TradingCommand):
             instrument_id=instrument_id,
             command_id=command_id,
             ts_init=ts_init,
+            params=params,
         )
 
         self.client_order_id = client_order_id

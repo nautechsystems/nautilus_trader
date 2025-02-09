@@ -50,9 +50,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the Bybit testnet API.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
-    max_ws_reconnection_tries: int, default 3
-        The number of retries to reconnect the websocket connection if the
-        connection is broken.
+    recv_window_ms : PositiveInt, default 5000
+        The receive window (milliseconds) for Bybit HTTP requests.
 
     """
 
@@ -63,7 +62,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     demo: bool = False
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
-    max_ws_reconnection_tries: int | None = 3
+    recv_window_ms: PositiveInt = 5_000
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -80,7 +79,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
         `BYBIT_TESTNET_API_KEY` environment variables.
-    product_type : list[BybitProductType], optional
+    product_types : list[BybitProductType], optional
         The Bybit product type for the client.
         If None then will default to 'SPOT', you also cannot mix 'SPOT' with
         any other product type for execution, and it will use a `CASH` account
@@ -107,9 +106,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
-    max_ws_reconnection_tries: int, default 3
-        The number of retries to reconnect the websocket connection if the
-        connection is broken.
+    recv_window_ms : PositiveInt, default 5000
+        The receive window (milliseconds) for Bybit HTTP requests.
     ws_trade_timeout_secs : float, default 5.0
         The timeout for trade websocket messages.
 
@@ -133,5 +131,5 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_http_batch_api: bool = False
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
-    max_ws_reconnection_tries: int | None = 3
+    recv_window_ms: PositiveInt = 5_000
     ws_trade_timeout_secs: float | None = 5.0

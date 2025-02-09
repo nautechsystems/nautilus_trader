@@ -106,9 +106,6 @@ async def _setup_order_state(
                             price=betfair_float_to_price(order_update.p),
                             client_order_id=client_order_id,
                         )
-                        exec_client.venue_order_id_to_client_order_id[venue_order_id] = (
-                            client_order_id
-                        )
                         await _accept_order(order, venue_order_id, exec_client, strategy, cache)
 
                         if include_fills and order_update.sm:
@@ -449,9 +446,9 @@ async def test_order_multiple_fills(exec_client, setup_order_state, events):
 
 
 @pytest.mark.asyncio()
-async def test_connection_account_state(exec_client, cache, account_id):
+async def test_request_account_state(exec_client, cache, account_id):
     # Arrange, Act
-    await exec_client.connection_account_state()
+    await exec_client.request_account_state()
 
     # Assert
     assert cache.account(account_id)
@@ -951,7 +948,6 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
         time_in_force=TimeInForce.FOK,
         client_order_id=client_order_id,
     )
-    exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
     await _accept_order(limit_order, venue_order_id, exec_client, strategy, cache)
 
     # Act
@@ -995,7 +991,7 @@ async def test_generate_order_status_reports_executable(exec_client):
     reports = await exec_client.generate_order_status_reports()
 
     # Assert
-    assert len(reports) == 4
+    assert len(reports) == 2
     assert reports[0].order_side == OrderSide.SELL
     assert reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
     assert reports[0].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
@@ -1023,7 +1019,7 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     reports = await exec_client.generate_order_status_reports()
 
     # Assert
-    assert len(reports) == 4
+    assert len(reports) == 2
 
     # Back
     assert reports[0].order_side == OrderSide.SELL

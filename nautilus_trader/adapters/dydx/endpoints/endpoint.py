@@ -58,7 +58,7 @@ class DYDXHttpEndpoint:
             DYDXEndpointType.ACCOUNT: self.client.send_request,
         }
 
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=5,
             retry_delay_secs=1.0,

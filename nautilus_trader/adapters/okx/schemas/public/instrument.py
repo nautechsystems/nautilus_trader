@@ -26,7 +26,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.objects import QUANTITY_MAX
 from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Currency
@@ -79,7 +79,7 @@ class OKXInstrumentBase(msgspec.Struct):
         margin_maint: str | Decimal,
         ts_event: int,
         ts_init: int,
-    ) -> CryptoPerpetual | CurrencyPair | CryptoFuture | OptionsContract:
+    ) -> CryptoPerpetual | CurrencyPair | CryptoFuture | OptionContract:
         pass
 
     def _clip_qty(self, value: str) -> float:

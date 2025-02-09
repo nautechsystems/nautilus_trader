@@ -18,6 +18,7 @@ use nautilus_model::{
     data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol},
+    types::{Price, ERROR_PRICE, PRICE_MAX, PRICE_MIN},
 };
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
@@ -36,7 +37,7 @@ where
 pub fn normalize_symbol_str(
     symbol: Ustr,
     exchange: &Exchange,
-    instrument_type: InstrumentType,
+    instrument_type: &InstrumentType,
     is_inverse: Option<bool>,
 ) -> Ustr {
     match exchange {
@@ -45,7 +46,7 @@ pub fn normalize_symbol_str(
         | Exchange::BinanceUs
         | Exchange::BinanceDex
         | Exchange::BinanceJersey
-            if instrument_type == InstrumentType::Perpetual =>
+            if instrument_type == &InstrumentType::Perpetual =>
         {
             append_suffix(symbol, "-PERP")
         }
@@ -66,11 +67,11 @@ pub fn normalize_symbol_str(
             _ => symbol,
         },
 
-        Exchange::Dydx if instrument_type == InstrumentType::Perpetual => {
+        Exchange::Dydx if instrument_type == &InstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
-        Exchange::GateIoFutures if instrument_type == InstrumentType::Perpetual => {
+        Exchange::GateIoFutures if instrument_type == &InstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
@@ -95,11 +96,22 @@ pub fn parse_instrument_id(exchange: &Exchange, symbol: Ustr) -> InstrumentId {
 pub fn normalize_instrument_id(
     exchange: &Exchange,
     symbol: Ustr,
-    instrument_type: InstrumentType,
+    instrument_type: &InstrumentType,
     is_inverse: Option<bool>,
 ) -> InstrumentId {
     let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
     parse_instrument_id(exchange, symbol)
+}
+
+/// Parses a Nautilus price from the given `value`.
+///
+/// If `value` is outside the valid range, then will return an [`ERROR_PRICE`].
+#[must_use]
+pub fn parse_price(value: f64, precision: u8) -> Price {
+    match value {
+        PRICE_MIN..=PRICE_MAX => Price::new(value, precision),
+        _ => ERROR_PRICE,
+    }
 }
 
 /// Parses a Nautilus order side from the given Tardis string `value`.
@@ -140,10 +152,10 @@ pub fn parse_timestamp(value_us: u64) -> UnixNanos {
 /// Parses a Nautilus book action inferred from the given Tardis values.
 #[must_use]
 pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
-    if is_snapshot {
-        BookAction::Add
-    } else if amount == 0.0 {
+    if amount == 0.0 {
         BookAction::Delete
+    } else if is_snapshot {
+        BookAction::Add
     } else {
         BookAction::Update
     }
@@ -268,7 +280,8 @@ mod tests {
         #[case] is_inverse: Option<bool>,
         #[case] expected: &str,
     ) {
-        let instrument_id = normalize_instrument_id(&exchange, symbol, instrument_type, is_inverse);
+        let instrument_id =
+            normalize_instrument_id(&exchange, symbol, &instrument_type, is_inverse);
         let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
         assert_eq!(instrument_id, expected_instrument_id);
     }

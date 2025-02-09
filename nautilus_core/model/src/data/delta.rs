@@ -22,11 +22,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{
-    correctness::{check_positive_u64, FAILED},
-    serialization::Serializable,
-    UnixNanos,
-};
+use nautilus_core::{correctness::FAILED, serialization::Serializable, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -36,17 +32,17 @@ use super::{
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::InstrumentId,
+    types::quantity::check_positive_quantity,
 };
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OrderBookDelta {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
@@ -85,7 +81,7 @@ impl OrderBookDelta {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         if matches!(action, BookAction::Add | BookAction::Update) {
-            check_positive_u64(order.size.raw, "order.size.raw")?;
+            check_positive_quantity(order.size.raw, "order.size.raw")?;
         }
 
         Ok(Self {
@@ -127,7 +123,7 @@ impl OrderBookDelta {
         .expect(FAILED)
     }
 
-    /// Creates a new [`OrderBookDelta`] instance with a `Clear` action and and NULL order.
+    /// Creates a new [`OrderBookDelta`] instance with a `Clear` action and NULL order.
     #[must_use]
     pub fn clear(
         instrument_id: InstrumentId,

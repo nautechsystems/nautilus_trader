@@ -197,7 +197,7 @@ impl CashAccount {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
         let events_list: PyResult<Vec<PyObject>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();

@@ -41,6 +41,7 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
+#[derive(Debug)]
 pub struct DatabentoLiveClient {
     #[pyo3(get)]
     pub key: String,
@@ -70,27 +71,27 @@ impl DatabentoLiveClient {
         // Continue to process messages until channel is hung up
         while let Some(msg) = msg_rx.recv().await {
             tracing::trace!("Received message: {msg:?}");
-            let result = match msg {
+            match msg {
                 LiveMessage::Data(data) => Python::with_gil(|py| {
                     let py_obj = data_to_pycapsule(py, data);
-                    call_python(py, &callback, py_obj)
+                    call_python(py, &callback, py_obj);
                 }),
                 LiveMessage::Instrument(data) => Python::with_gil(|py| {
                     let py_obj =
                         instrument_any_to_pyobject(py, data).expect("Failed creating instrument");
-                    call_python(py, &callback, py_obj)
+                    call_python(py, &callback, py_obj);
                 }),
                 LiveMessage::Status(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
-                    call_python(py, &callback_pyo3, py_obj)
+                    call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Imbalance(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
-                    call_python(py, &callback_pyo3, py_obj)
+                    call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Statistics(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
-                    call_python(py, &callback_pyo3, py_obj)
+                    call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Close => {
                     // Graceful close
@@ -100,9 +101,7 @@ impl DatabentoLiveClient {
                     // Return error to Python
                     return Err(to_pyruntime_err(e));
                 }
-            };
-
-            result?;
+            }
         }
 
         msg_rx.close();
@@ -116,12 +115,10 @@ impl DatabentoLiveClient {
     }
 }
 
-fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
-    callback.call1(py, (py_obj,)).map_err(|e| {
+fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+    if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
-        e
-    })?;
-    Ok(())
+    }
 }
 
 #[pymethods]
@@ -193,7 +190,7 @@ impl DatabentoLiveClient {
             let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
                 .map_err(to_pyvalue_err)?;
             sub.start = Some(start);
-        };
+        }
         sub.use_snapshot = snapshot.unwrap_or(false);
 
         self.send_command(LiveCommand::Subscribe(sub))
@@ -208,10 +205,10 @@ impl DatabentoLiveClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
-        };
+        }
         if self.is_running {
             return Err(to_pyruntime_err("Client already running"));
-        };
+        }
 
         tracing::debug!("Starting client");
 
@@ -259,10 +256,10 @@ impl DatabentoLiveClient {
     fn py_close(&mut self) -> PyResult<()> {
         if !self.is_running {
             return Err(to_pyruntime_err("Client never started"));
-        };
+        }
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
-        };
+        }
 
         tracing::debug!("Closing client");
 

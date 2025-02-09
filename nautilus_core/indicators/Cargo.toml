@@ -14,7 +14,6 @@ crate-type = ["rlib", "cdylib"]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
-log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 

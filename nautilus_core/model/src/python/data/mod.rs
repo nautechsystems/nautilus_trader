@@ -16,6 +16,7 @@
 //! Data types for the trading domain model.
 
 pub mod bar;
+pub mod bet;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
@@ -83,8 +84,8 @@ impl DataType {
 /// Rust data structure.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
-    let capsule = PyCapsule::new_bound(py, data, None).expect("Error creating `PyCapsule`");
-    capsule.into_py(py)
+    let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
+    capsule.into_any().unbind()
 }
 
 /// Drops a `PyCapsule` containing a `CVec` structure.

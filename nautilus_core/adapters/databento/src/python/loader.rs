@@ -91,7 +91,9 @@ impl DatabentoDataLoader {
             data.push(py_object);
         }
 
-        Ok(PyList::new_bound(py, &data).into())
+        Ok(PyList::new(py, &data)
+            .expect("Invalid `ExactSizeIterator`")
+            .into())
     }
 
     // Cannot include trades
@@ -393,7 +395,7 @@ fn exhaust_data_iter_to_pycapsule(
     }
 
     let cvec: CVec = data.into();
-    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
 
     Ok(capsule.into_py(py))
 }

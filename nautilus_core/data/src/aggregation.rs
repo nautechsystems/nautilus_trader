@@ -38,7 +38,7 @@ use nautilus_model::{
         QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BarAggregation, BarIntervalType},
-    types::{fixed::FIXED_SCALAR, Price, Quantity},
+    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
 };
 
 pub trait BarAggregator {
@@ -292,11 +292,11 @@ where
         }
     }
 
-    pub fn set_await_partial(&mut self, value: bool) {
+    pub const fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
     }
 
-    pub fn set_is_running(&mut self, value: bool) {
+    pub const fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
     }
 
@@ -515,7 +515,7 @@ where
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
         let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
         let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
@@ -543,7 +543,7 @@ where
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
         let mut raw_volume_update = volume.raw;
         let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
         let mut _raw_volume_diff = 0;
 
         while raw_volume_update > 0 {

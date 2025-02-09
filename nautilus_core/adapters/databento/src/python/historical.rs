@@ -62,6 +62,7 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
+#[derive(Debug)]
 pub struct DatabentoHistoricalClient {
     #[pyo3(get)]
     pub key: String,
@@ -112,7 +113,7 @@ impl DatabentoHistoricalClient {
             let response = client.metadata().get_dataset_range(&dataset).await;
             match response {
                 Ok(res) => Python::with_gil(|py| {
-                    let dict = PyDict::new_bound(py);
+                    let dict = PyDict::new(py);
                     dict.set_item("start", res.start.to_string())?;
                     dict.set_item("end", res.end.to_string())?;
                     Ok(dict.to_object(py))
@@ -198,7 +199,7 @@ impl DatabentoHistoricalClient {
                 match result {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => tracing::error!("{e:?}"),
-                };
+                }
             }
 
             Python::with_gil(|py| {
@@ -207,7 +208,11 @@ impl DatabentoHistoricalClient {
                     .map(|result| instrument_any_to_pyobject(py, result))
                     .collect();
 
-                py_results.map(|objs| PyList::new_bound(py, &objs).to_object(py))
+                py_results.map(|objs| {
+                    PyList::new(py, &objs)
+                        .expect("Invalid `ExactSizeIterator`")
+                        .to_object(py)
+                })
             })
         })
     }
@@ -249,7 +254,7 @@ impl DatabentoHistoricalClient {
                     "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m",
                 ))
             }
-        };
+        }
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)

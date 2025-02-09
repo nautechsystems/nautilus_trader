@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
@@ -24,14 +25,27 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
+    account_currency : str
+        The currency for the Betfair account.
     username : str, optional
         The Betfair account username.
     password : str, optional
         The Betfair account password.
     app_key : str, optional
-        The betfair application key.
+        The Betfair application key.
     cert_dir : str, optional
-        The local directory that contains the betfair certificates.
+        The local directory that contains the Betfair certificates.
+    instrument_config : BetfairInstrumentProviderConfig, None
+        The Betfair instrument provider config.
+    subscription_delay_secs : PositiveInt, default 3
+        The delay (seconds) before sending the *initial* subscription message.
+    keep_alive_secs : PositiveInt, default 36_000 (10 hours)
+        The keep alive interval (seconds) for the HTTP client.
+    stream_conflate_ms : PositiveInt, optional
+        The Betfair data stream conflation setting. Default of `None` means no explicit value is
+        set for the conflation interval. Betfair interprets this as using its default behaviour for
+        conflation. The default typically applies conflation, so you need to ensure
+        stream_conflate_ms=0 is explicitly set to guarantee no conflation.
 
     """
 
@@ -39,8 +53,11 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     username: str | None = None
     password: str | None = None
     app_key: str | None = None
-    cert_dir: str | None = None
+    certs_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
+    subscription_delay_secs: PositiveInt | None = 3
+    keep_alive_secs: PositiveInt = 36_000  # 10 hours
+    stream_conflate_ms: PositiveInt | None = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
@@ -49,14 +66,23 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
+    account_currency : str
+        The currency for the Betfair account.
     username : str, optional
         The Betfair account username.
     password : str, optional
         The Betfair account password.
     app_key : str, optional
-        The betfair application key.
-    cert_dir : str, optional
-        The local directory that contains the betfair certificates.
+        The Betfair application key.
+    certs_dir : str, optional
+        The local directory that contains the Betfair certificates.
+    instrument_config : BetfairInstrumentProviderConfig, None
+        The Betfair instrument provider config.
+    request_account_state_secs : PositiveInt, default 300 (5 minutes)
+        The request interval (seconds) for account state checks.
+    reconcile_market_ids_only : bool, default False
+        If True, reconciliation only requests orders matching the market IDs listed
+        in the `instrument_config`. If False, all orders are reconciled.
 
     """
 
@@ -64,6 +90,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     username: str | None = None
     password: str | None = None
     app_key: str | None = None
-    cert_dir: str | None = None
+    certs_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
-    request_account_state_period: int | None = None
+    request_account_state_secs: PositiveInt = 300
+    reconcile_market_ids_only: bool = False

@@ -15,7 +15,11 @@
 
 use pyo3::prelude::*;
 
-use crate::{data::order::BookOrder, orderbook::BookLevel, types::Price};
+use crate::{
+    data::order::BookOrder,
+    orderbook::BookLevel,
+    types::{price::Price, quantity::QuantityRaw},
+};
 
 #[pymethods]
 impl BookLevel {
@@ -50,7 +54,7 @@ impl BookLevel {
     }
 
     #[pyo3(name = "size_raw")]
-    fn py_size_raw(&self) -> u64 {
+    fn py_size_raw(&self) -> QuantityRaw {
         self.size_raw()
     }
 
@@ -60,7 +64,7 @@ impl BookLevel {
     }
 
     #[pyo3(name = "exposure_raw")]
-    fn py_exposure_raw(&self) -> u64 {
+    fn py_exposure_raw(&self) -> QuantityRaw {
         self.exposure_raw()
     }
 

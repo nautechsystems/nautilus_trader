@@ -28,8 +28,8 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import FuturesSpread
 from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.model.instruments import OptionsSpread
+from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments import OptionSpread
 
 
 SCHEMAS = {
@@ -265,7 +265,7 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
     ),
-    OptionsContract: pa.schema(
+    OptionContract: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),
@@ -292,7 +292,7 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
     ),
-    OptionsSpread: pa.schema(
+    OptionSpread: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),
@@ -374,8 +374,8 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
         b"FuturesContract": FuturesContract,
         b"FuturesSpread": FuturesSpread,
         b"IndexInstrument": IndexInstrument,
-        b"OptionsContract": OptionsContract,
-        b"OptionsSpread": OptionsSpread,
+        b"OptionContract": OptionContract,
+        b"OptionSpread": OptionSpread,
     }[ins_type]
 
     maps = batch.to_pylist()

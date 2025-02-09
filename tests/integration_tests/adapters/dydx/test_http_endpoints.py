@@ -329,7 +329,7 @@ def test_parse_to_fill_report(fills_response: DYDXFillsResponse) -> None:
         order_side=OrderSide.BUY,
         last_qty=Quantity(0.002, 8),
         last_px=Price(3178.5, 7),
-        commission=Money(Decimal(0.003179), Currency.from_str("USDC")),
+        commission=Money(Decimal("0.003179"), Currency.from_str("USDC")),
         liquidity_side=LiquiditySide.TAKER,
         report_id=report_id,
         ts_event=1722496165767000000,
@@ -443,6 +443,23 @@ def test_list_perpetual_markets(
 
     # Assert
     assert len(list_perpetual_markets_response.markets) == expected_num_markets
+
+
+def test_list_perpetual_markets_v8() -> None:
+    """
+    Test decoding the /v4/perpetualMarkets endpoint for protocol v8.
+    """
+    # Prepare
+    expected_num_markets = 1
+    decoder = msgspec.json.Decoder(DYDXListPerpetualMarketsResponse)
+
+    # Act
+    with Path("tests/test_data/dydx/http/list_perpetual_markets_v8.json").open() as file_reader:
+        list_perpetual_markets_response = decoder.decode(file_reader.read())
+
+    # Assert
+    assert len(list_perpetual_markets_response.markets) == expected_num_markets
+    assert list_perpetual_markets_response.markets["BTC-USD"].defaultFundingRate1H == "0"
 
 
 def test_list_perpetual_markets_null_oracle_price() -> None:
@@ -587,6 +604,7 @@ def test_parse_to_instrument(
             "ticker": "BTC-USD",
             "trades24H": 65786,
             "volume24H": "224881682.4025",
+            "defaultFundingRate1H": None,
         },
     )
 

@@ -42,10 +42,7 @@ use nautilus_serialization::{
 use thousands::Separable;
 use ustr::Ustr;
 
-use super::{
-    enums::Exchange,
-    http::types::{InstrumentInfo, Response},
-};
+use super::{enums::Exchange, http::models::InstrumentInfo};
 use crate::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
@@ -87,14 +84,8 @@ async fn gather_instruments_info(
         tracing::info!("Requesting instruments for {exchange}");
 
         async move {
-            match client.instruments_info(exchange.clone()).await {
-                Ok(Response::Success(instruments)) => Some((exchange, instruments)),
-                Ok(Response::Error { code, message }) => {
-                    tracing::error!(
-                        "Error fetching instruments for {exchange}: [{code}] {message}",
-                    );
-                    None
-                }
+            match client.instruments_info(exchange.clone(), None).await {
+                Ok(instruments) => Some((exchange, instruments)),
                 Err(e) => {
                     tracing::error!("Error fetching instruments for {exchange}: {e}");
                     None
@@ -149,7 +140,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
 
             let instrument_id = if normalize_symbols {
-                normalize_instrument_id(exchange, inst.id, instrument_type, inst.inverse)
+                normalize_instrument_id(exchange, inst.id, &instrument_type, inst.inverse)
             } else {
                 parse_instrument_id(exchange, inst.id)
             };
@@ -252,7 +243,7 @@ fn handle_deltas_msg(
     if deltas.ts_init > cursor.end_ns {
         if let Some(deltas_vec) = map.remove(&deltas.instrument_id) {
             batch_and_write_deltas(deltas_vec, &deltas.instrument_id, cursor.date_utc, path);
-        };
+        }
         // Update cursor
         *cursor = DateCursor::new(deltas.ts_init);
     }
@@ -275,7 +266,7 @@ fn handle_depth10_msg(
     if depth10.ts_init > cursor.end_ns {
         if let Some(depths_vec) = map.remove(&depth10.instrument_id) {
             batch_and_write_depths(depths_vec, &depth10.instrument_id, cursor.date_utc, path);
-        };
+        }
         // Update cursor
         *cursor = DateCursor::new(depth10.ts_init);
     }
@@ -298,7 +289,7 @@ fn handle_quote_msg(
     if quote.ts_init > cursor.end_ns {
         if let Some(quotes_vec) = map.remove(&quote.instrument_id) {
             batch_and_write_quotes(quotes_vec, &quote.instrument_id, cursor.date_utc, path);
-        };
+        }
         // Update cursor
         *cursor = DateCursor::new(quote.ts_init);
     }
@@ -321,7 +312,7 @@ fn handle_trade_msg(
     if trade.ts_init > cursor.end_ns {
         if let Some(trades_vec) = map.remove(&trade.instrument_id) {
             batch_and_write_trades(trades_vec, &trade.instrument_id, cursor.date_utc, path);
-        };
+        }
         // Update cursor
         *cursor = DateCursor::new(trade.ts_init);
     }
@@ -344,7 +335,7 @@ fn handle_bar_msg(
     if bar.ts_init > cursor.end_ns {
         if let Some(bars_vec) = map.remove(&bar.bar_type) {
             batch_and_write_bars(bars_vec, &bar.bar_type, cursor.date_utc, path);
-        };
+        }
         // Update cursor
         *cursor = DateCursor::new(bar.ts_init);
     }
@@ -366,7 +357,7 @@ fn batch_and_write_deltas(
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
-    };
+    }
 }
 
 fn batch_and_write_depths(
@@ -381,7 +372,7 @@ fn batch_and_write_depths(
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
-    };
+    }
 }
 
 fn batch_and_write_quotes(
@@ -396,7 +387,7 @@ fn batch_and_write_quotes(
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
-    };
+    }
 }
 
 fn batch_and_write_trades(
@@ -411,7 +402,7 @@ fn batch_and_write_trades(
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
-    };
+    }
 }
 
 fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, path: &Path) {

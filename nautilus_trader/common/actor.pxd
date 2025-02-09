@@ -13,12 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
-
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
-
-from nautilus_trader.risk.greeks import GreeksData
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
@@ -41,6 +37,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
@@ -51,10 +48,11 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class Actor(Component):
     cdef object _executor
+    cdef bint _log_events
+    cdef bint _log_commands
     cdef set[type] _warning_events
     cdef dict[UUID4, object] _pending_requests
     cdef set[type] _pyo3_conversion_types
-    cdef dict[InstrumentId, list[GreeksData]] _future_greeks
     cdef dict[str, type] _signal_classes
     cdef list[Indicator] _indicators
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
@@ -73,6 +71,8 @@ cdef class Actor(Component):
     """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
+    cdef readonly GreeksCalculator greeks
+    """The read-only greeks calculator for the actor.\n\n:returns: `GreeksCalculator`"""
 
     cpdef bint indicators_initialized(self)
 

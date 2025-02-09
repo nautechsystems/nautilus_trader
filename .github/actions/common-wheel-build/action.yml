@@ -1,0 +1,42 @@
+name: common-wheel-build
+description: Common wheel build and install
+
+inputs:
+  python-version:
+    description: The Python version to setup
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Update version in pyproject.toml
+      shell: bash
+      run: |
+        bash ./scripts/ci/update-pyproject-version.sh
+
+    - name: Generate updated lock file
+      shell: bash
+      run: poetry lock --no-update
+
+    - name: Build Python wheel
+      shell: bash
+      run: |
+        poetry build --format wheel
+        ls -lh dist/
+
+    - name: Install Python wheel
+      shell: bash
+      run: |
+        python -m pip install --upgrade poetry-plugin-export
+        poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
+        python -m pip install -r requirements-test.txt
+        pip install "$(ls dist/*.whl)"
+
+    # TODO: Temporarily locate this here for now
+    - name: Cached test data
+      id: cached-testdata-large
+      uses: actions/cache@v4
+      with:
+        path: tests/test_data/large
+        key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        restore-keys: ${{ runner.os }}-large-files-

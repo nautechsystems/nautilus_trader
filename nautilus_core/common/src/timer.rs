@@ -307,7 +307,7 @@ impl TestTimer {
     /// Cancels the timer (the timer will not generate an event).
     ///
     /// Used to stop the timer before its scheduled stop time.
-    pub fn cancel(&mut self) {
+    pub const fn cancel(&mut self) {
         self.is_expired = true;
     }
 }
@@ -347,6 +347,7 @@ impl Iterator for TestTimer {
 ///
 /// `LiveTimer` triggers events at specified intervals in a real-time environment,
 /// using Tokio's async runtime to handle scheduling and execution.
+#[derive(Debug)]
 pub struct LiveTimer {
     /// The name of the timer.
     pub name: Ustr,
@@ -469,14 +470,11 @@ impl LiveTimer {
             let clock = get_atomic_clock_realtime();
             let now_ns = clock.get_time_ns();
 
-            let start = if next_time_ns <= now_ns {
-                Instant::now()
-            } else {
-                // Timer initialization delay
-                let delay = Duration::from_millis(1);
-                let diff: u64 = (next_time_ns - now_ns).into();
-                Instant::now() + Duration::from_nanos(diff) - delay
-            };
+            // 1-millisecond delay to account for the overhead of initializing a tokio timer
+            let overhead = Duration::from_millis(1);
+            let delay_ns = next_time_ns.saturating_sub(now_ns.as_u64());
+            let delay = Duration::from_nanos(delay_ns).saturating_sub(overhead);
+            let start = Instant::now() + delay;
 
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
 
@@ -494,7 +492,7 @@ impl LiveTimer {
                         }
                         // Note: Clock v1 style path should not be called with Rust callback
                         TimeEventCallback::Rust(_) => {}
-                    };
+                    }
                 }
 
                 #[cfg(feature = "clock_v2")]
@@ -542,14 +540,14 @@ fn call_python_with_time_event(
     Python::with_gil(|py| {
         // Create new time event
         let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
-        let capsule: PyObject = PyCapsule::new_bound(py, event, None)
+        let capsule: PyObject = PyCapsule::new(py, event, None)
             .expect("Error creating `PyCapsule`")
             .into_py(py);
 
         match callback.call1(py, (capsule,)) {
             Ok(_) => {}
             Err(e) => tracing::error!("Error on callback: {e:?}"),
-        };
+        }
     });
 }
 
@@ -642,5 +640,20 @@ mod tests {
         );
         assert_eq!(timer.advance(UnixNanos::from(10)).count(), 5);
         assert!(timer.is_expired);
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_exact_boundary() {
+        let mut timer = TestTimer::new(
+            "boundary_timer",
+            NonZeroU64::new(5).unwrap(),
+            UnixNanos::from(0),
+            None,
+        );
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(5)).collect();
+        assert_eq!(events.len(), 1, "Expected one event at the 5 ns boundary");
+
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(10)).collect();
+        assert_eq!(events.len(), 1, "Expected one event at the 10 ns boundary");
     }
 }

@@ -217,7 +217,7 @@ pub fn build_query(
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence", unsendable)
 )]
 pub struct DataQueryResult {
     pub chunk: Option<CVec>,

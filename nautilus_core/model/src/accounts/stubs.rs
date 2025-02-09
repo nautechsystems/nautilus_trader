@@ -16,12 +16,43 @@
 use rstest::fixture;
 
 use crate::{
-    accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
-    enums::LiquiditySide,
+    accounts::{base::Account, cash::CashAccount, margin::MarginAccount, AccountAny},
+    enums::{AccountType, LiquiditySide},
     events::account::{state::AccountState, stubs::*},
+    identifiers::stubs::{account_id, uuid4},
     instruments::InstrumentAny,
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
+
+impl Default for CashAccount {
+    /// Creates a new default [`CashAccount`] instance.
+    fn default() -> Self {
+        // million dollar account
+        let init_event = AccountState::new(
+            account_id(),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000000 USD"),
+                Money::from("0 USD"),
+                Money::from("1000000 USD"),
+            )],
+            vec![],
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            Some(Currency::USD()),
+        );
+        Self::new(init_event, false)
+    }
+}
+
+impl Default for AccountAny {
+    /// Creates a new default [`AccountAny`] instance.
+    fn default() -> Self {
+        AccountAny::Cash(CashAccount::default())
+    }
+}
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {

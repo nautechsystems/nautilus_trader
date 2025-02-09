@@ -46,13 +46,14 @@ from nautilus_trader.trading.strategy import Strategy
 
 instrument_ids = [
     InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    InstrumentId.from_str("BTCUSD_PERP.BINANCE_DELIVERY"),
     # InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
     # InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
     # InstrumentId.from_str("BTCUSDT.BINANCE"),
     # InstrumentId.from_str("XBTUSDT.BITMEX"),
     # InstrumentId.from_str("ETHUSDT.BITMEX"),
-    # InstrumentId.from_str("BTC_USDT.GATEIO"),
-    # InstrumentId.from_str("BTC_USDT-PERP.GATEIO"),
+    InstrumentId.from_str("BTC_USDT.GATE_IO"),
+    InstrumentId.from_str("BTC_USDT-PERP.GATE_IO"),
 ]
 
 # See supported venues https://nautilustrader.io/docs/nightly/integrations/tardis#venues
@@ -181,10 +182,10 @@ class DataSubscriber(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         for instrument_id in self.config.instrument_ids:
-            self.unsubscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                client_id=self.client_id,
-            )
+            # self.unsubscribe_order_book_deltas(
+            #     instrument_id=instrument_id,
+            #     client_id=self.client_id,
+            # )
             self.unsubscribe_quote_ticks(instrument_id, client_id=self.client_id)
             self.unsubscribe_trade_ticks(instrument_id, client_id=self.client_id)
 

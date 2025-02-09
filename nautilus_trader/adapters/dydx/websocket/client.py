@@ -54,9 +54,6 @@ class DYDXWebsocketClient:
         The event loop for the client.
     subscription_rate_limit_per_second : int, default 2
         The maximum number of subscription message to send to the venue.
-    max_reconnection_tries : int, default 3
-        The number of retries to reconnect the websocket connection if the
-        connection is broken.
     max_send_retries : int, optional
         Maximum retries when sending websocket messages.
     retry_delay_secs : float, optional
@@ -89,7 +86,6 @@ class DYDXWebsocketClient:
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
         self._subscription_rate_limit_per_second = subscription_rate_limit_per_second
-        self._max_reconnection_tries = max_reconnection_tries
         self._msg_timestamp = self._clock.utc_now()
         self._msg_timeout_secs: int = 60
         self._reconnect_task: asyncio.Task | None = None
@@ -105,7 +101,7 @@ class DYDXWebsocketClient:
         bool
 
         """
-        return self._client is not None and self._client.is_alive()
+        return self._client is not None and self._client.is_active()
 
     def is_disconnected(self) -> bool:
         """
@@ -153,7 +149,7 @@ class DYDXWebsocketClient:
         Connect to the websocket server.
         """
         self._is_running = True
-        self._retry_manager_pool = RetryManagerPool(
+        self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=self._max_send_retries or 0,
             retry_delay_secs=self._retry_delay_secs or 1.0,
@@ -169,7 +165,6 @@ class DYDXWebsocketClient:
             heartbeat=10,
             headers=[],
             ping_handler=self._handle_ping,
-            max_reconnection_tries=self._max_reconnection_tries,
         )
         client = await WebSocketClient.connect(
             config=config,
@@ -258,7 +253,7 @@ class DYDXWebsocketClient:
                         self._client = None
 
         except asyncio.CancelledError:
-            self._log.debug("Canceled 'reconnect_guard' task")
+            self._log.debug("Canceled task 'reconnect_guard'")
 
     def reconnect(self) -> None:
         """

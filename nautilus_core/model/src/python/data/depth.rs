@@ -19,14 +19,13 @@ use std::{
 };
 
 use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    python::{
+        serialization::{from_dict_pyo3, to_dict_pyo3},
+        to_pyvalue_err,
+    },
     serialization::Serializable,
 };
-use pyo3::{
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBytes, PyDict},
-};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -168,7 +167,7 @@ impl OrderBookDepth10 {
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
-        let py_dict = PyDict::new_bound(py);
+        let py_dict = PyDict::new(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }
@@ -283,15 +282,7 @@ impl OrderBookDepth10 {
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let json_bytes: Vec<u8> = serde_json::to_vec(self).map_err(to_pyvalue_err)?;
-
-        // Parse JSON into a Python dictionary
-        let py_bytes = PyBytes::new_bound(py, &json_bytes);
-        let py_dict: Py<PyDict> = PyModule::import_bound(py, "msgspec.json")?
-            .call_method("decode", (py_bytes,), None)?
-            .extract()?;
-
-        Ok(py_dict)
+        to_dict_pyo3(py, self)
     }
 
     /// Return JSON encoded bytes representation of the object.

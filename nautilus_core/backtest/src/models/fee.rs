@@ -115,9 +115,10 @@ impl FeeModel for MakerTakerFeeModel {
             Some(LiquiditySide::Taker) => notional * instrument.taker_fee().to_f64().unwrap(),
             Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set."),
         };
-        match instrument.is_inverse() {
-            true => Ok(Money::new(commission, instrument.base_currency().unwrap())),
-            false => Ok(Money::new(commission, instrument.quote_currency())),
+        if instrument.is_inverse() {
+            Ok(Money::new(commission, instrument.base_currency().unwrap()))
+        } else {
+            Ok(Money::new(commission, instrument.quote_currency()))
         }
     }
 }
