@@ -24,6 +24,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStat
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
@@ -127,4 +128,34 @@ def parse_instrument(
         ts_event=ts_init,
         ts_init=ts_init,
         info=market_info,
+    )
+
+
+def update_instrument(
+    instrument: BinaryOption,
+    change: PolymarketTickSizeChange,
+    ts_init: int,
+) -> BinaryOption:
+    price_increment = Price.from_str(change.new_tick_size)
+
+    return BinaryOption(
+        instrument_id=instrument.instrument_id,
+        raw_symbol=instrument.raw_symbol,
+        outcome=instrument.outcome,
+        description=instrument.description,
+        asset_class=AssetClass.ALTERNATIVE,
+        currency=USDC,
+        price_increment=price_increment,
+        price_precision=price_increment.precision,
+        size_increment=instrument.size_increment,
+        size_precision=instrument.size_precision,
+        activation_ns=0,  # TBD?
+        expiration_ns=instrument.expiration_ns,
+        max_quantity=None,
+        min_quantity=instrument.min_quantity,
+        maker_fee=instrument.maker_fee,
+        taker_fee=instrument.taker_fee,
+        ts_event=ts_init,
+        ts_init=ts_init,
+        info=instrument.info,
     )

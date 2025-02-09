@@ -21,6 +21,7 @@ import pytest
 from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
@@ -320,3 +321,21 @@ def test_parse_user_trade_to_dict() -> None:
         "trader_side": "MAKER",
         "type": "TRADE",
     }
+
+
+def test_parse_tick_size_change() -> None:
+    # Arrange
+    data = pkgutil.get_data(
+        "tests.integration_tests.adapters.polymarket.resources.ws_messages",
+        "tick_size_change.json",
+    )
+    assert data
+
+    decoder = msgspec.json.Decoder(PolymarketTickSizeChange)
+
+    # Act
+    msg = decoder.decode(data)
+
+    # Assert
+    assert isinstance(msg, PolymarketTickSizeChange)
+    assert msg.new_tick_size == "0.001"
