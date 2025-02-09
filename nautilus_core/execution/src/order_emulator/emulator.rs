@@ -514,7 +514,7 @@ impl OrderEmulator {
                     "Cannot handle `ModifyOrder`: no matching core for trigger instrument {}",
                     trigger_instrument_id
                 );
-            };
+            }
         } else {
             log::error!("Cannot modify order: {} not found", command.client_order_id);
         };
@@ -645,7 +645,7 @@ impl OrderEmulator {
                 "Cannot handle `OrderBookDeltas`: no matching core for instrument {}",
                 deltas.instrument_id
             );
-        };
+        }
     }
 
     pub fn on_quote_tick(&mut self, tick: QuoteTick) {
@@ -662,7 +662,7 @@ impl OrderEmulator {
                 "Cannot handle `QuoteTick`: no matching core for instrument {}",
                 tick.instrument_id
             );
-        };
+        }
     }
 
     pub fn on_trade_tick(&mut self, tick: TradeTick) {
@@ -682,7 +682,7 @@ impl OrderEmulator {
                 "Cannot handle `TradeTick`: no matching core for instrument {}",
                 tick.instrument_id
             );
-        };
+        }
     }
 
     fn iterate_orders(&mut self, instrument_id: &InstrumentId) {

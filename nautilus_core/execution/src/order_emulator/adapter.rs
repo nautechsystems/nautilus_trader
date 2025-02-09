@@ -53,7 +53,7 @@ impl OrderEmulatorAdapter {
         )));
 
         Self::initialize_execute_handler(emulator.clone(), msgbus.clone());
-        Self::initialize_on_event_handler(emulator.clone(), msgbus.clone());
+        Self::initialize_on_event_handler(emulator.clone(), msgbus);
         Self::initialize_submit_order_handler(emulator.clone());
         Self::initialize_cancel_order_handler(emulator.clone());
         Self::initialize_modify_order_handler(emulator.clone());
@@ -82,7 +82,7 @@ impl OrderEmulatorAdapter {
     ) {
         let handler = ShareableMessageHandler(Rc::new(OrderEmulatorExecuteHandler {
             id: Ustr::from(&UUID4::new().to_string()),
-            emulator: emulator.clone(),
+            emulator,
         }));
 
         msgbus
@@ -96,7 +96,7 @@ impl OrderEmulatorAdapter {
     ) {
         let handler = ShareableMessageHandler(Rc::new(OrderEmulatorOnEventHandler {
             id: Ustr::from(&UUID4::new().to_string()),
-            emulator: emulator.clone(),
+            emulator,
         }));
 
         msgbus
@@ -104,10 +104,12 @@ impl OrderEmulatorAdapter {
             .register("OrderEmulator.on_event", handler);
     }
 
+    #[must_use]
     pub fn get_emulator(&self) -> Ref<OrderEmulator> {
         self.emulator.borrow()
     }
 
+    #[must_use]
     pub fn get_emulator_mut(&self) -> RefMut<OrderEmulator> {
         self.emulator.borrow_mut()
     }

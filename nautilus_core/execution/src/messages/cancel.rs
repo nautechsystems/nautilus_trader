@@ -86,7 +86,7 @@ pub enum CancelOrderHandlerAny {
 impl CancelOrderHandler for CancelOrderHandlerAny {
     fn handle_cancel_order(&self, order: &OrderAny) {
         match self {
-            CancelOrderHandlerAny::OrderEmulator(order_emulator) => {
+            Self::OrderEmulator(order_emulator) => {
                 order_emulator.borrow_mut().cancel_order(order);
             }
         }

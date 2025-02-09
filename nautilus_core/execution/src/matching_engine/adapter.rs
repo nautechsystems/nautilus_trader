@@ -105,10 +105,12 @@ impl OrderEngineAdapter {
             .set_trigger_stop_order_handler(handler);
     }
 
+    #[must_use]
     pub fn get_engine(&self) -> Ref<OrderMatchingEngine> {
         self.engine.borrow()
     }
 
+    #[must_use]
     pub fn get_engine_mut(&self) -> RefMut<OrderMatchingEngine> {
         self.engine.borrow_mut()
     }

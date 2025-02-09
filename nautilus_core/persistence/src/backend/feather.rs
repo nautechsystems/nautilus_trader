@@ -1,19 +1,19 @@
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 
-use datafusion::arrow::datatypes::Schema;
-use datafusion::arrow::error::ArrowError;
-use datafusion::arrow::ipc::writer::StreamWriter;
-use datafusion::arrow::record_batch::RecordBatch;
-
-use object_store::{path::Path, ObjectStore};
-
-use super::catalog::CatalogPathPrefix;
+use datafusion::arrow::{
+    datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
+};
 use nautilus_common::clock::Clock;
 use nautilus_core::UnixNanos;
 use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
+use object_store::{path::Path, ObjectStore};
+
+use super::catalog::CatalogPathPrefix;
 
 #[derive(Debug, Default, PartialEq, PartialOrd, Hash, Eq, Clone)]
 pub struct FileWriterPath {
@@ -22,11 +22,11 @@ pub struct FileWriterPath {
     instrument_id: Option<String>,
 }
 
-/// A FeatherBuffer encodes data via an Arrow StreamWriter.
+/// A `FeatherBuffer` encodes data via an Arrow `StreamWriter`.
 ///
 /// It flushes the internal byte buffer according to rotation policy.
 pub struct FeatherBuffer {
-    /// Arrow StreamWriter that writes to an in-memory Vec<u8>.
+    /// Arrow `StreamWriter` that writes to an in-memory Vec<u8>.
     writer: StreamWriter<Vec<u8>>,
     /// Current size in bytes.
     size: u64,
@@ -41,14 +41,14 @@ pub struct FeatherBuffer {
 }
 
 impl FeatherBuffer {
-    /// Creates a new FileWriter using the given path, schema and maximum buffer size.
+    /// Creates a new `FileWriter` using the given path, schema and maximum buffer size.
     pub fn new(schema: &Schema, rotation_config: RotationConfig) -> Result<Self, ArrowError> {
         let writer = StreamWriter::try_new(Vec::new(), schema)?;
         let mut max_buffer_size = 1_000_000_000_000; // 1 GB
 
         if let RotationConfig::Size { max_size } = &rotation_config {
             max_buffer_size = *max_size;
-        };
+        }
 
         Ok(Self {
             writer,
@@ -60,7 +60,7 @@ impl FeatherBuffer {
         })
     }
 
-    /// Writes the given RecordBatch to the internal buffer.
+    /// Writes the given `RecordBatch` to the internal buffer.
     ///
     /// Returns true if it should be rotated according rotation policy
     pub fn write_record_batch(&mut self, batch: &RecordBatch) -> Result<bool, ArrowError> {
@@ -69,7 +69,7 @@ impl FeatherBuffer {
         Ok(self.size >= self.max_buffer_size)
     }
 
-    /// Consumes the writer and returns the buffer of bytes from the StreamWriter
+    /// Consumes the writer and returns the buffer of bytes from the `StreamWriter`
     pub fn take_buffer(&mut self) -> Result<Vec<u8>, ArrowError> {
         let mut writer = StreamWriter::try_new(Vec::new(), &self.schema)?;
         std::mem::swap(&mut self.writer, &mut writer);
@@ -80,7 +80,8 @@ impl FeatherBuffer {
     }
 
     /// Should rotate
-    pub fn should_rotate(&self) -> bool {
+    #[must_use]
+    pub const fn should_rotate(&self) -> bool {
         match &self.rotation_config {
             RotationConfig::Size { max_size } => self.size >= *max_size,
             _ => false,
@@ -112,11 +113,11 @@ pub enum RotationConfig {
     NoRotation,
 }
 
-/// Manages multiple FeatherBuffers and handles encoding, rotation, and flushing to the object store.
+/// Manages multiple `FeatherBuffers` and handles encoding, rotation, and flushing to the object store.
 ///
 /// The `write()` method is the single entry point for clients: they supply a data value (of generic type T)
-/// and the manager encodes it (using T's metadata via EncodeToRecordBatch), routes it by CatalogPathPrefix,
-/// and writes it to the appropriate FileWriter. When a writer's buffer is full or rotation criteria are met,
+/// and the manager encodes it (using T's metadata via `EncodeToRecordBatch`), routes it by `CatalogPathPrefix`,
+/// and writes it to the appropriate `FileWriter`. When a writer's buffer is full or rotation criteria are met,
 /// its contents are flushed to the object store and it is replaced.
 pub struct FeatherWriter {
     /// Base directory for writing files.
@@ -131,12 +132,12 @@ pub struct FeatherWriter {
     included_types: Option<HashSet<String>>,
     /// Set of types that should be split by instrument.
     per_instrument_types: HashSet<String>,
-    /// Map of active FeatherBuffers keyed by their path.
+    /// Map of active `FeatherBuffers` keyed by their path.
     writers: HashMap<FileWriterPath, FeatherBuffer>,
 }
 
 impl FeatherWriter {
-    /// Creates a new FileWriterManager instance.
+    /// Creates a new `FileWriterManager` instance.
     pub fn new(
         base_path: String,
         store: Arc<dyn ObjectStore>,
@@ -157,9 +158,9 @@ impl FeatherWriter {
     }
 
     /// Writes a single data value.
-    /// This is the user entry point. The data is encoded into a RecordBatch and written to the appropriate FileWriter.
+    /// This is the user entry point. The data is encoded into a `RecordBatch` and written to the appropriate `FileWriter`.
     /// If the writer's buffer reaches capacity or meets rotation criteria (based on the rotation configuration),
-    /// the FileWriter is flushed to the object store and replaced.
+    /// the `FileWriter` is flushed to the object store and replaced.
     pub async fn write<T>(&mut self, data: T) -> Result<(), Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
@@ -189,7 +190,7 @@ impl FeatherWriter {
         Ok(())
     }
 
-    /// Flushes and rotates FileWriter associated with `key`.
+    /// Flushes and rotates `FileWriter` associated with `key`.
     /// TODO: Fix error type to handle arrow error and object store error
     async fn rotate_writer(
         &mut self,
@@ -203,7 +204,7 @@ impl FeatherWriter {
         Ok(())
     }
 
-    /// Creates (and inserts) a new FileWriter for type T.
+    /// Creates (and inserts) a new `FileWriter` for type T.
     fn create_writer<T>(&mut self, path: FileWriterPath, data: &T) -> Result<(), ArrowError>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
@@ -220,7 +221,7 @@ impl FeatherWriter {
         Ok(())
     }
 
-    /// Flushes all active FeatherBuffers by writing any remaining buffered bytes to the object store.
+    /// Flushes all active `FeatherBuffers` by writing any remaining buffered bytes to the object store.
     ///
     /// Note: This is not called automatically and must be called by the client.
     /// It is expected that no other writes are performed after this.
@@ -234,13 +235,10 @@ impl FeatherWriter {
 
     /// Determines whether type T should be written, based on the inclusion filter.
     fn should_write<T: CatalogPathPrefix>(&self) -> bool {
-        self.included_types
-            .as_ref()
-            .map(|included| {
-                let path = T::path_prefix();
-                included.contains(path)
-            })
-            .unwrap_or(true)
+        self.included_types.as_ref().is_none_or(|included| {
+            let path = T::path_prefix();
+            included.contains(path)
+        })
     }
 
     fn regen_writer_path(
@@ -254,9 +252,9 @@ impl FeatherWriter {
         let mut path = Path::from(self.base_path.clone());
         if let Some(ref instrument_id) = instrument_id {
             path = path.child(type_str.clone());
-            path = path.child(format!("{}_{}.feather", instrument_id, timestamp));
+            path = path.child(format!("{instrument_id}_{timestamp}.feather"));
         } else {
-            path = path.child(format!("{}_{}.feather", type_str, timestamp));
+            path = path.child(format!("{type_str}_{timestamp}.feather"));
         }
 
         Ok(FileWriterPath {
@@ -266,7 +264,7 @@ impl FeatherWriter {
         })
     }
 
-    /// Generates a key for a FileWriter based on type T and optional instrument ID.
+    /// Generates a key for a `FileWriter` based on type T and optional instrument ID.
     fn get_writer_path<T>(&self, data: &T) -> Result<FileWriterPath, Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix,
@@ -284,9 +282,9 @@ impl FeatherWriter {
         let mut path = Path::from(self.base_path.clone());
         if let Some(ref instrument_id) = instrument_id {
             path = path.child(type_str);
-            path = path.child(format!("{}_{}.feather", instrument_id, timestamp));
+            path = path.child(format!("{instrument_id}_{timestamp}.feather"));
         } else {
-            path = path.child(format!("{}_{}.feather", type_str, timestamp));
+            path = path.child(format!("{type_str}_{timestamp}.feather"));
         }
 
         Ok(FileWriterPath {
@@ -299,12 +297,12 @@ impl FeatherWriter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{io::Cursor, sync::Arc};
+
     use datafusion::arrow::ipc::reader::StreamReader;
     use nautilus_common::clock::TestClock;
-    use nautilus_model::data::Data;
     use nautilus_model::{
-        data::{QuoteTick, TradeTick},
+        data::{Data, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
@@ -312,12 +310,10 @@ mod tests {
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
     };
-    use object_store::local::LocalFileSystem;
-    use object_store::ObjectStore;
-
-    use std::io::Cursor;
-    use std::sync::Arc;
+    use object_store::{local::LocalFileSystem, ObjectStore};
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_writer_manager_keys() {
@@ -493,7 +489,7 @@ mod tests {
             let buffer = std::fs::File::open(&path_str).unwrap();
             let mut reader = StreamReader::try_new(buffer, None).unwrap();
             let metadata = reader.schema().metadata().clone();
-            while let Some(batch) = reader.next() {
+            for batch in reader {
                 let batch = batch.unwrap();
                 if path_str.to_str().unwrap().contains("quotes") {
                     let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
