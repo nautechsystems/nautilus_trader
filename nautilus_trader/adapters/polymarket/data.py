@@ -23,12 +23,14 @@ from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
+from nautilus_trader.adapters.polymarket.common.parsing import update_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketChannel
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketClient
@@ -392,7 +394,7 @@ class PolymarketDataClient(LiveMarketDataClient):
     ) -> None:
         self._log.error("Cannot request historical bars: not published by Polymarket")
 
-    def _handle_ws_message(self, raw: bytes) -> None:
+    def _handle_ws_message(self, raw: bytes) -> None:  # noqa: C901 (too complex)
         # Uncomment for development
         # self._log.info(str(raw), LogColor.MAGENTA)
         try:
@@ -419,6 +421,8 @@ class PolymarketDataClient(LiveMarketDataClient):
                         self._handle_quote(instrument=instrument, ws_message=msg)
                     elif isinstance(msg, PolymarketTrade):
                         self._handle_trade(instrument=instrument, ws_message=msg)
+                    elif isinstance(msg, PolymarketTickSizeChange):
+                        self._handle_instrument_update(instrument=instrument, ws_message=msg)
                     else:
                         self._log.error(f"Unknown websocket message topic: {ws_message}")
         except Exception as e:
@@ -504,3 +508,13 @@ class PolymarketDataClient(LiveMarketDataClient):
         now_ns = self._clock.timestamp_ns()
         trade = ws_message.parse_to_trade_tick(instrument=instrument, ts_init=now_ns)
         self._handle_data(trade)
+
+    def _handle_instrument_update(
+        self,
+        instrument: BinaryOption,
+        ws_message: PolymarketTickSizeChange,
+    ) -> None:
+        now_ns = self._clock.timestamp_ns()
+        instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
+        self._log.warning(f"Instrument tick size changed: {instrument}")
+        self._handle_data(instrument)

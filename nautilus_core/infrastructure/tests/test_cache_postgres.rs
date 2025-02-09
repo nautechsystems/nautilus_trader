@@ -22,10 +22,14 @@ pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache
 
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Databases only supported on Linux
+
 mod serial_tests {
     use std::time::Duration;
 
-    use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
+    use nautilus_common::{
+        cache::database::CacheDatabaseAdapter,
+        testing::{wait_until, wait_until_async},
+    };
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::AccountAny,
@@ -54,17 +58,18 @@ mod serial_tests {
         database.add_currency(&eth).unwrap();
         database.add_currency(&usdt).unwrap();
         database.add_instrument(&crypto_perpetual).unwrap();
-        wait_until(
-            || {
-                let currencies = database.load_currencies().unwrap();
-                let instruments = database.load_instruments().unwrap();
+        wait_until_async(
+            || async {
+                let currencies = database.load_currencies().await.unwrap();
+                let instruments = database.load_instruments().await.unwrap();
                 currencies.len() >= 2 && !instruments.is_empty()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Load instruments and build indexes
-        cache.cache_instruments().unwrap();
+        cache.cache_instruments().await.unwrap();
         cache.build_index();
 
         let cached_instrument_ids = cache.instrument_ids(None);
@@ -112,7 +117,7 @@ mod serial_tests {
         );
 
         // Load orders and build indexes
-        cache.cache_orders().unwrap();
+        cache.cache_orders().await.unwrap();
         cache.build_index();
 
         let cached_order_ids = cache.client_order_ids(None, None, None);
@@ -148,7 +153,7 @@ mod serial_tests {
         );
 
         // Load accounts and build indexes
-        cache.cache_accounts().unwrap();
+        cache.cache_accounts().await.unwrap();
         cache.build_index();
 
         let cached_accounts = cache.accounts(&account.id());

@@ -30,7 +30,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use database::CacheDatabaseAdapter;
+use database::{CacheDatabaseAdapter, CacheMap};
 use nautilus_core::{
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
@@ -318,10 +318,26 @@ impl Cache {
         Ok(())
     }
 
+    /// Loads all caches (currencies, instruments, synthetics, accounts, orders, positions) from the database.
+    pub async fn cache_all(&mut self) -> anyhow::Result<()> {
+        let cache_map = match &self.database {
+            Some(db) => db.load_all().await?,
+            None => CacheMap::default(),
+        };
+
+        self.currencies = cache_map.currencies;
+        self.instruments = cache_map.instruments;
+        self.synthetics = cache_map.synthetics;
+        self.accounts = cache_map.accounts;
+        self.orders = cache_map.orders;
+        self.positions = cache_map.positions;
+        Ok(())
+    }
+
     /// Clears the current currencies cache and loads currencies from the cache database.
-    pub fn cache_currencies(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_currencies(&mut self) -> anyhow::Result<()> {
         self.currencies = match &mut self.database {
-            Some(db) => db.load_currencies()?,
+            Some(db) => db.load_currencies().await?,
             None => HashMap::new(),
         };
 
@@ -330,9 +346,9 @@ impl Cache {
     }
 
     /// Clears the current instruments cache and loads instruments from the cache database.
-    pub fn cache_instruments(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_instruments(&mut self) -> anyhow::Result<()> {
         self.instruments = match &mut self.database {
-            Some(db) => db.load_instruments()?,
+            Some(db) => db.load_instruments().await?,
             None => HashMap::new(),
         };
 
@@ -342,9 +358,9 @@ impl Cache {
 
     /// Clears the current synthetic instruments cache and loads synthetic instruments from the cache
     /// database.
-    pub fn cache_synthetics(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_synthetics(&mut self) -> anyhow::Result<()> {
         self.synthetics = match &mut self.database {
-            Some(db) => db.load_synthetics()?,
+            Some(db) => db.load_synthetics().await?,
             None => HashMap::new(),
         };
 
@@ -356,9 +372,9 @@ impl Cache {
     }
 
     /// Clears the current accounts cache and loads accounts from the cache database.
-    pub fn cache_accounts(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_accounts(&mut self) -> anyhow::Result<()> {
         self.accounts = match &mut self.database {
-            Some(db) => db.load_accounts()?,
+            Some(db) => db.load_accounts().await?,
             None => HashMap::new(),
         };
 
@@ -370,9 +386,9 @@ impl Cache {
     }
 
     /// Clears the current orders cache and loads orders from the cache database.
-    pub fn cache_orders(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &mut self.database {
-            Some(db) => db.load_orders()?,
+            Some(db) => db.load_orders().await?,
             None => HashMap::new(),
         };
 
@@ -381,9 +397,9 @@ impl Cache {
     }
 
     /// Clears the current positions cache and loads positions from the cache database.
-    pub fn cache_positions(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &mut self.database {
-            Some(db) => db.load_positions()?,
+            Some(db) => db.load_positions().await?,
             None => HashMap::new(),
         };
 

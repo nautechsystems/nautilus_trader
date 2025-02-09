@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
@@ -44,3 +45,4 @@ cdef class BettingInstrument(Instrument):
 
 
 cpdef double null_handicap()
+cpdef object order_side_to_bet_side(OrderSide order_side)

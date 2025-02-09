@@ -41,24 +41,37 @@ use ustr::Ustr;
 
 use crate::{custom::CustomData, signal::Signal};
 
+#[derive(Default)]
+pub struct CacheMap {
+    pub currencies: HashMap<Ustr, Currency>,
+    pub instruments: HashMap<InstrumentId, InstrumentAny>,
+    pub synthetics: HashMap<InstrumentId, SyntheticInstrument>,
+    pub accounts: HashMap<AccountId, AccountAny>,
+    pub orders: HashMap<ClientOrderId, OrderAny>,
+    pub positions: HashMap<PositionId, Position>,
+}
+
+#[async_trait::async_trait]
 pub trait CacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()>;
 
     fn flush(&mut self) -> anyhow::Result<()>;
 
+    async fn load_all(&self) -> anyhow::Result<CacheMap>;
+
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>>;
 
-    fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>>;
+    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>>;
 
-    fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
+    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
 
-    fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
+    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
+    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
 
-    fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
+    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
 
-    fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>>;
+    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>>;
 
     fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
 

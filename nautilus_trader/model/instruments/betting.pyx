@@ -17,6 +17,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.core import nautilus_pyo3
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int8_t
 from libc.stdint cimport int64_t
@@ -25,6 +27,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -293,3 +296,10 @@ cpdef Symbol make_symbol(
 cpdef double null_handicap():
     cdef double NULL_HANDICAP = -9999999.0
     return NULL_HANDICAP
+
+
+cpdef object order_side_to_bet_side(OrderSide order_side):
+    if order_side == OrderSide.BUY:
+        return nautilus_pyo3.BetSide.BACK
+    else:  # order_side == OrderSide.SELL
+        return nautilus_pyo3.BetSide.LAY

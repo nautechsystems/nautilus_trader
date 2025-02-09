@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.211.0"
+version = "1.212.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -92,7 +92,7 @@ mypy = "^1.15.0"
 pandas-stubs = "^2.2.2"
 pre-commit = "^4.1.0"
 requests = "^2.32.3"  # Required for fsspec github FS
-ruff = "^0.9.4"
+ruff = "^0.9.5"
 types-pytz = "^2024.2"
 types-requests = "^2.32"
 types-toml = "^0.10.2"
@@ -101,7 +101,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.6.10"
+coverage = "^7.6.11"
 pytest = "^7.4.4"
 pytest-aiohttp = "^1.1.0"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type

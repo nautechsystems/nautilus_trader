@@ -230,3 +230,16 @@ class PolymarketTrade(msgspec.Struct, tag="last_trade_price", tag_field="event_t
             ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )
+
+
+class PolymarketTickSizeChange(
+    msgspec.Struct,
+    tag="tick_size_change",
+    tag_field="event_type",
+    frozen=True,
+):
+    market: str
+    asset_id: str
+    new_tick_size: str
+    old_tick_size: str
+    timestamp: str

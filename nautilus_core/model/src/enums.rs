@@ -379,6 +379,17 @@ impl BetSide {
     }
 }
 
+impl From<OrderSide> for BetSide {
+    /// Returns the equivalent [`BetSide`] for a given [`OrderSide`].
+    fn from(side: OrderSide) -> Self {
+        match side {
+            OrderSide::Buy => BetSide::Back,
+            OrderSide::Sell => BetSide::Lay,
+            OrderSide::NoOrderSide => panic!("Invalid `OrderSide` for `BetSide`, was {side}"),
+        }
+    }
+}
+
 /// The type of order book action for an order book event.
 #[repr(C)]
 #[derive(

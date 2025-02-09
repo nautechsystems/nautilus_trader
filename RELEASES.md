@@ -1,11 +1,41 @@
-# NautilusTrader 1.211.0 Beta
+# NautilusTrader 1.212.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+None
+
+### Fixes
+None
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.211.0 Beta
+
+Released on 9th February 2025 (UTC).
+
+This release introduces [high-precision mode](https://nautilustrader.io/docs/nightly/concepts/overview#value-types), where value types such as `Price`, `Quantity` and `Money` are now
+backed by 128-bit integers (instead of 64-bit), thereby increasing maximum precision to 16, and vastly expanding the allowable value ranges.
+
+This will address precision and value range issues experienced by some crypto users, alleviate higher timeframe bar volume limitations, as well as future proofing the platform.
+See the [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) for more details. For an explanation on compiling with or without high-precision mode, see the [precision-mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode) section of the installation guide.
 
 This release will be the final version that uses Poetry for package and dependency management.
 
 ### Enhancements
-- Added `high-precision` mode for 128-bit integer backed value types, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) and [precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) docs (#2072), thanks @twitu
+- Added `high-precision` mode for 128-bit integer backed value types (#2072), thanks @twitu
 - Added instrument definitions range requests for `TardisHttpClient` with optional `start` and `end` filter parameters
 - Added `quote_currency`, `base_currency`, `instrument_type`, `contract_type`, `active`, `start` and `end` filters for `TardisInstrumentProvider`
 - Added `log_commands` config option for `ActorConfig`, `StrategyConfig`, `ExecAlgorithmConfig` for more efficient log filtering
@@ -23,6 +53,8 @@ This release will be the final version that uses Poetry for package and dependen
 - Added `open_check_open_only` config option for `LiveExecEngineConfig`
 - Added `BetSide` enum (to support `Bet` and `BetPosition`)
 - Added `Bet` and `BetPosition` for betting market risk and PnL calculations
+- Added `total_pnl` and `total_pnls` methods for `Portfolio`
+- Added optional `price` parameter for `Portfolio` unrealized PnL and net exposure methods
 
 ### Breaking Changes
 - Renamed `OptionsContract` instrument to `OptionContract` for more technically correct terminology (singular)
@@ -38,6 +70,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Changed `GATEIO` Tardis venue to `GATE_IO` for consistency with `CRYPTO_COM` and `BLOCKCHAIN_COM`
 - Removed `max_ws_reconnection_tries` for dYdX configs (no longer applicable with infinite retries and exponential backoff)
 - Removed `max_ws_reconnection_tries` for Bybit configs (no longer applicable with infinite retries and exponential backoff)
+- Removed remaining `max_ws_reconnection_tries` for Bybit configs (#2290), thanks @sunlei
 
 ### Internal Improvements
 - Added `ThrottledEnqueuer` for more efficient and robust live engines queue management and logging
@@ -77,6 +110,8 @@ This release will be the final version that uses Poetry for package and dependen
 ### Fixes
 - Fixed `LiveTimer` immediate fire when start time zero (#2270), thanks for reporting @bartolootrit
 - Fixed order book action parsing for Tardis (ensures zero sizes in snapshots work with the tighter validation for `action` vs `size`)
+- Fixed PnL calculations for betting instruments in `Portfolio`
+- Fixed net exposure for betting instruments in `Portfolio`
 - Fixed backtest start and end time validation assertion (#2203), thanks @davidsblom
 - Fixed `CustomData` import in `DataEngine` (#2207), thanks @graceyangfan and @faysou
 - Fixed databento helper function (#2208), thanks @faysou
@@ -86,7 +121,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed `CARGO_TARGET_DIR` environment variable for build script (#2228), thanks @sunlei
 - Fixed typo in `delta.rs` doc comment (#2230), thanks @eltociear
 - Fixed memory leak in network PyO3 layer caused by the `gil-refs` feature (#2229), thanks for reporting @davidsblom
-- Fixed reconnect handling for Betfair (#2232), thanks @limx0
+- Fixed reconnect handling for Betfair (#2232, #2288, #2289), thanks @limx0
 - Fixed `instrument.id` null dereferences in error logs (#2237), thanks for reporting @ryantam626
 - Fixed schema for listing markets of dYdX (#2240), thanks @davidsblom
 - Fixed realized pnl calculation in `Portfolio` where flat positions were not included in cumulative sum (#2243), thanks @faysou
@@ -98,6 +133,9 @@ This release will be the final version that uses Poetry for package and dependen
 - Fixed quote tick processing from bars in `OrderMatchingEngine` resulting in sizes below the minimum increment (#2275), thanks for reporting @miller-moore
 - Fixed initialization of `BinanceErrorCode`s requiring `int`
 - Fixed resolution of Tardis `BINANCE_DELIVERY` venue for COIN-margined contracts
+- Fixed hang in rate limiter (#2285), thanks @WyldeCat
+- Fixed typo in `InstrumentProviderConfig` docstring (#2284), thanks @ikeepo
+- Fixed handling of `tick_size_change` message for Polymarket
 
 ### Documentation Updates
 - Added Databento overview tutorial (#2233, #2252), thanks @stefansimik
@@ -105,6 +143,7 @@ This release will be the final version that uses Poetry for package and dependen
 - Added docs for Portfolio limitations with bar data (#2233), thanks @stefansimik
 - Added docs overview for example locations in repository (#2287), thanks @stefansimik
 - Improved docstrings for Actor subscription and request methods
+- Refined `streaming` parameter description (#2293), thanks @faysou and @stefansimik
 
 ### Deprecations
 - The [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage for indicators is deprecated and will be removed in a future version, see [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2206)
