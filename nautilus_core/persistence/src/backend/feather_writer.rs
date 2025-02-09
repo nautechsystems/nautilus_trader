@@ -22,10 +22,10 @@ pub struct FileWriterPath {
     instrument_id: Option<String>,
 }
 
-/// A FileWriter encodes data via an Arrow StreamWriter.
+/// A FeatherBuffer encodes data via an Arrow StreamWriter.
 ///
-/// It flushes the internal buffer to the object according to rotation policy.
-pub struct FileWriter {
+/// It flushes the internal byte buffer according to rotation policy.
+pub struct FeatherBuffer {
     /// Arrow StreamWriter that writes to an in-memory Vec<u8>.
     writer: StreamWriter<Vec<u8>>,
     /// Current size in bytes.
@@ -40,7 +40,7 @@ pub struct FileWriter {
     rotation_config: RotationConfig,
 }
 
-impl FileWriter {
+impl FeatherBuffer {
     /// Creates a new FileWriter using the given path, schema and maximum buffer size.
     pub fn new(schema: &Schema, rotation_config: RotationConfig) -> Result<Self, ArrowError> {
         let writer = StreamWriter::try_new(Vec::new(), schema)?;
@@ -112,13 +112,13 @@ pub enum RotationConfig {
     NoRotation,
 }
 
-/// Manages multiple FileWriters and handles encoding, rotation, and flushing to the object store.
+/// Manages multiple FeatherBuffers and handles encoding, rotation, and flushing to the object store.
 ///
 /// The `write()` method is the single entry point for clients: they supply a data value (of generic type T)
 /// and the manager encodes it (using T's metadata via EncodeToRecordBatch), routes it by CatalogPathPrefix,
 /// and writes it to the appropriate FileWriter. When a writer's buffer is full or rotation criteria are met,
 /// its contents are flushed to the object store and it is replaced.
-pub struct FileWriterManager {
+pub struct FeatherWriter {
     /// Base directory for writing files.
     base_path: String,
     /// Object store for persistence.
@@ -131,11 +131,11 @@ pub struct FileWriterManager {
     included_types: Option<HashSet<String>>,
     /// Set of types that should be split by instrument.
     per_instrument_types: HashSet<String>,
-    /// Map of active FileWriters keyed by their writer key.
-    writers: HashMap<FileWriterPath, FileWriter>,
+    /// Map of active FeatherBuffers keyed by their path.
+    writers: HashMap<FileWriterPath, FeatherBuffer>,
 }
 
-impl FileWriterManager {
+impl FeatherWriter {
     /// Creates a new FileWriterManager instance.
     pub fn new(
         base_path: String,
@@ -208,12 +208,12 @@ impl FileWriterManager {
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
-        let writer = FileWriter::new(&T::get_schema(None), self.rotation_config.clone())?;
+        let writer = FeatherBuffer::new(&T::get_schema(None), self.rotation_config.clone())?;
         self.writers.insert(path, writer);
         Ok(())
     }
 
-    /// Flushes all active FileWriters by writing any remaining buffered bytes to the object store.
+    /// Flushes all active FeatherBuffers by writing any remaining buffered bytes to the object store.
     ///
     /// Note: This is not called automatically and must be called by the client.
     /// It is expected that no other writes are performed after this.
@@ -293,7 +293,7 @@ impl FileWriterManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion::arrow::ipc::reader::FileReader;
+    use datafusion::arrow::ipc::reader::StreamReader;
     use nautilus_common::clock::TestClock;
     use nautilus_model::data::Data;
     use nautilus_model::{
@@ -302,9 +302,13 @@ mod tests {
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
-    use nautilus_serialization::arrow::DecodeDataFromRecordBatch;
+    use nautilus_serialization::arrow::{
+        ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
+    };
     use object_store::local::LocalFileSystem;
     use object_store::ObjectStore;
+
+    use std::io::Cursor;
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -327,7 +331,7 @@ mod tests {
         let mut per_instrument = HashSet::new();
         per_instrument.insert(quote_type_str.to_string());
 
-        let mut manager = FileWriterManager::new(
+        let mut manager = FeatherWriter::new(
             base_path.clone(),
             store,
             clock,
@@ -379,12 +383,40 @@ mod tests {
         assert!(writer.size > 0);
     }
 
+    #[test]
+    fn test_file_writer_round_trip() {
+        let instrument_id = "AAPL.AAPL";
+        // Write a dummy value.
+        let quote = QuoteTick::new(
+            InstrumentId::from(instrument_id),
+            Price::from("100.0"),
+            Price::from("100.0"),
+            Quantity::from("100.0"),
+            Quantity::from("100.0"),
+            UnixNanos::from(100),
+            UnixNanos::from(100),
+        );
+        let metadata = QuoteTick::metadata(&quote);
+        let schema = QuoteTick::get_schema(Some(metadata.clone()));
+        let batch = QuoteTick::encode_batch(&QuoteTick::metadata(&quote), &[quote]).unwrap();
+
+        let mut writer = FeatherBuffer::new(&schema, RotationConfig::NoRotation).unwrap();
+        writer.write_record_batch(&batch).unwrap();
+
+        let buffer = writer.take_buffer().unwrap();
+        let mut reader = StreamReader::try_new(Cursor::new(buffer.as_slice()), None).unwrap();
+        let read_batch = reader.next().unwrap().unwrap();
+        assert_eq!(read_batch.column(0), batch.column(0));
+
+        let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
+        assert_eq!(decoded[0], Data::from(quote));
+    }
+
     #[tokio::test]
     async fn test_round_trip() {
         // Create a temporary directory for base path.
-        // let temp_dir = TempDir::new_in(".").unwrap();
-        // let base_path = temp_dir.path().to_str().unwrap().to_string();
-        let base_path = ".".to_string();
+        let temp_dir = TempDir::new_in(".").unwrap();
+        let base_path = temp_dir.path().to_str().unwrap().to_string();
 
         // Create a LocalFileSystem based object store using the temp directory.
         let local_fs = LocalFileSystem::new_with_prefix(&base_path).unwrap();
@@ -395,11 +427,13 @@ mod tests {
         let timestamp = clock.borrow().timestamp_ns();
 
         let quote_type_str = QuoteTick::path_prefix();
+        let trade_type_str = TradeTick::path_prefix();
 
         let mut per_instrument = HashSet::new();
         per_instrument.insert(quote_type_str.to_string());
+        per_instrument.insert(trade_type_str.to_string());
 
-        let mut manager = FileWriterManager::new(
+        let mut manager = FeatherWriter::new(
             base_path.clone(),
             store,
             clock,
@@ -442,20 +476,19 @@ mod tests {
         // Read files from the temporary directory.
         let mut recovered_quotes = Vec::new();
         let mut recovered_trades = Vec::new();
-        dbg!(&paths);
+        let local_fs = LocalFileSystem::new_with_prefix(&base_path).unwrap();
         for path in paths {
-            let path_str = path.path.to_string();
-            let file = std::fs::File::open(&path_str).unwrap();
-            let mut reader = FileReader::try_new(file, None).unwrap();
-            let metadata = reader.custom_metadata().clone();
+            let path_str = local_fs.path_to_filesystem(&path.path).unwrap();
+            let buffer = std::fs::File::open(&path_str).unwrap();
+            let mut reader = StreamReader::try_new(buffer, None).unwrap();
+            let metadata = reader.schema().metadata().clone();
+            dbg!(&metadata);
             while let Some(batch) = reader.next() {
                 let batch = batch.unwrap();
-                if path_str.contains("quotes") {
-                    // Use QuoteTick's decode_batch for files with "quotes" in their paths.
+                if path_str.to_str().unwrap().contains("quotes") {
                     let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
                     recovered_quotes.extend(decoded);
-                } else if path_str.contains("trades") {
-                    // Use TradeTick's decode_batch for files with "trades" in their paths.
+                } else if path_str.to_str().unwrap().contains("trades") {
                     let decoded = TradeTick::decode_data_batch(&metadata, batch).unwrap();
                     recovered_trades.extend(decoded);
                 }
