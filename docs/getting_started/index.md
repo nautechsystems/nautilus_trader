@@ -17,12 +17,13 @@ available examples. For a complete collection, we recommend downloading the [Git
 
 The following table lists example locations ordered by recommended learning progression:
 
-| Directory           | Contains                                                                                                                     |
-|:--------------------|:-----------------------------------------------------------------------------------------------------------------------------|
-| `/examples`         | Fully runnable self-contained examples.                                                                                      |
-| `/docs/tutorials`   | Various examples in form of Jupyter notebooks.                                                                               |
-| `/docs/concepts`    | Contains numerous small code snippets that provide an overview of available features, but examples are mostly not runnable.  |
-| `/tests/unit_tests` | Unit-tests can be useful when looking for specific implementation details not covered in the examples.                       |
+| Directory                   | Contains                                                                                                                    |
+|:----------------------------|:----------------------------------------------------------------------------------------------------------------------------|
+| `/examples`                 | Fully runnable self-contained examples.                                                                                     |
+| `/docs/tutorials`           | Various examples in form of Jupyter notebooks.                                                                              |
+| `/docs/concepts`            | Contains numerous small code snippets that provide an overview of available features, but examples are mostly not runnable. |
+| `/nautilus_trader/examples` | Example implementations of basic strategies + indicators (in pure python) + algorithms.                                     |
+| `/tests/unit_tests`         | Unit-tests can be useful when looking for specific implementation details not covered in the examples.                      |
 
 ## Backtesting API levels
 
