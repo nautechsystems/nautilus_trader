@@ -15,6 +15,8 @@ None
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Ported StreamingFeatherWriter to Rust (#2292), thanks @twitu
+- Upgraded `arrow` and `parquet` crates to v54.1.0
+- Upgraded `datafusion` crate to v45.0.0
 
 ### Fixes
 None
