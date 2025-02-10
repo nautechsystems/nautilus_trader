@@ -53,15 +53,15 @@ cdef class SubscribeInstrument(SubscribeData):
 cdef class SubscribeOrderBook(SubscribeData):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
-    cdef BookType book_type
+    cdef readonly BookType book_type
     """The order book type."""
-    cdef int depth
+    cdef readonly int depth
     """The maximum depth for the subscription."""
-    cdef bint managed
+    cdef readonly bint managed
     """If an order book should be managed by the data engine based on the subscribed feed."""
-    cdef int interval_ms
+    cdef readonly int interval_ms
     """The order book snapshot interval in milliseconds (must be positive)."""
-    cdef bint only_deltas
+    cdef readonly bint only_deltas
     """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
 
 
@@ -76,9 +76,9 @@ cdef class SubscribeTradeTicks(SubscribeData):
 
 
 cdef class SubscribeBars(SubscribeData):
-    cdef BarType bar_type
+    cdef readonly BarType bar_type
     """The bar type for the subscription."""
-    cdef bint await_partial
+    cdef readonly bint await_partial
     """If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars."""
 
 
@@ -108,7 +108,7 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
 cdef class UnsubscribeOrderBook(UnsubscribeData):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
-    cdef bint only_deltas
+    cdef readonly bint only_deltas
     """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
 
 
@@ -124,7 +124,7 @@ cdef class UnsubscribeTradeTicks(UnsubscribeData):
 
 cdef class UnsubscribeBars(UnsubscribeData):
     cdef readonly BarType bar_type
-    """The bar type for the subscription."""
+    """The bar type for the subscription.\n\n:returns: `BarType`"""
 
 
 cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
@@ -140,9 +140,9 @@ cdef class UnsubscribeInstrumentClose(UnsubscribeData):
 cdef class RequestData(Request):
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
-    cdef datetime start
+    cdef readonly datetime start
     """The start datetime (UTC) of request time range (inclusive)."""
-    cdef datetime end
+    cdef readonly datetime end
     """The end datetime (UTC) of request time range."""
     cdef readonly int limit
     """The limit on the amount of data to return for the request."""
@@ -156,7 +156,7 @@ cdef class RequestData(Request):
 
 cdef class RequestInstrument(RequestData):
     cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request."""
+    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
 
 
 cdef class RequestInstruments(RequestData):
@@ -165,22 +165,22 @@ cdef class RequestInstruments(RequestData):
 
 cdef class RequestOrderBookSnapshot(RequestData):
     cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request."""
+    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
 
 
 cdef class RequestQuoteTicks(RequestData):
     cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request."""
+    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
 
 
 cdef class RequestTradeTicks(RequestData):
     cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request."""
+    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
 
 
 cdef class RequestBars(RequestData):
     cdef readonly BarType bar_type
-    """The bar type for the request."""
+    """The bar type for the request.\n\n:returns: `BarType`"""
 
 
 cdef class DataResponse(Response):
@@ -188,7 +188,7 @@ cdef class DataResponse(Response):
     """The data client ID for the response.\n\n:returns: `ClientId` or ``None``"""
     cdef readonly Venue venue
     """The venue for the response.\n\n:returns: `Venue` or ``None``"""
-    cdef DataType data_type
+    cdef readonly DataType data_type
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
