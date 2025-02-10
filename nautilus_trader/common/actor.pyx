@@ -36,10 +36,6 @@ from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.signal import generate_signal_class
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import InstrumentId
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -619,7 +615,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        loop : asyncio.AsbtractEventLoop
+        loop : asyncio.AbstractEventLoop
             The event loop of the application.
         executor : concurrent.futures.Executor
             The executor to register.
@@ -765,11 +761,6 @@ cdef class Actor(Component):
         dict[str, bytes]
             The strategy state to save.
 
-        Raises
-        ------
-        RuntimeError
-            If `actor/strategy` is not registered with a trader.
-
         Warnings
         --------
         Exceptions raised will be caught, logged, and reraised.
@@ -802,11 +793,6 @@ cdef class Actor(Component):
         ----------
         state : dict[str, bytes]
             The strategy state to load.
-
-        Raises
-        ------
-        RuntimeError
-            If `actor/strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -879,8 +865,8 @@ cdef class Actor(Component):
     cpdef queue_for_executor(
         self,
         func: Callable[..., Any],
-        tuple args=None,
-        dict kwargs=None,
+        tuple args = None,
+        dict kwargs = None,
     ):
         """
         Queues the callable `func` to be executed as `fn(*args, **kwargs)` sequentially.
@@ -931,8 +917,8 @@ cdef class Actor(Component):
     cpdef run_in_executor(
         self,
         func: Callable[..., Any],
-        tuple args=None,
-        dict kwargs=None,
+        tuple args = None,
+        dict kwargs = None,
     ):
         """
         Schedules the callable `func` to be executed as `fn(*args, **kwargs)`.
@@ -1044,7 +1030,7 @@ cdef class Actor(Component):
 
     cpdef bint has_any_tasks(self):
         """
-        Return a value indicating whether there are any queued or active tasks.
+        Return a value indicating whether there are any queued OR active tasks.
 
         Returns
         -------
@@ -1054,7 +1040,7 @@ cdef class Actor(Component):
         if self._executor is None:
             return False
 
-        return self._executor.has_queued_tasks() and self._executor.has_active_tasks()
+        return self._executor.has_queued_tasks() or self._executor.has_active_tasks()
 
     cpdef void cancel_task(self, task_id: TaskId):
         """
@@ -1351,8 +1337,8 @@ cdef class Actor(Component):
             The order book type.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
-        interval_ms : int
-            The order book snapshot interval in milliseconds (must be positive).
+        interval_ms : int, default 1000
+            The order book snapshot interval (milliseconds).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -1381,7 +1367,7 @@ cdef class Actor(Component):
         if book_type == BookType.L1_MBP and depth > 1:
             self._log.error(
                 "Cannot subscribe to order book snapshots: "
-                f"L1 TBBO book subscription depth > 1, was {depth}",
+                f"L1 MBP book subscription depth > 1, was {depth}",
             )
             return
 
@@ -1808,8 +1794,8 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        interval_ms : int
-            The order book snapshot interval in milliseconds.
+        interval_ms : int, default 1000
+            The order book snapshot interval (milliseconds).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2108,6 +2094,8 @@ cdef class Actor(Component):
         ----------
         data_type : DataType
             The data type for the request.
+        client_id : ClientId
+            The data client ID.
         start : datetime, optional
             The start datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
@@ -2116,13 +2104,13 @@ cdef class Actor(Component):
             The inclusiveness depends on individual data client implementation.
         limit : int, optional
             The limit on the amount of data points received.
-        client_id : ClientId
-            The data client ID.
-        params : dict[str, Any], optional
-            Additional parameters potentially used by a specific client.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
+        update_catalog : bool, default False
+            If True, then updates the catalog with new data received from a client.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
 
         Returns
         -------
@@ -2199,7 +2187,7 @@ cdef class Actor(Component):
             The registered callback, to be called with the request ID when the response has
             completed processing.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2290,7 +2278,7 @@ cdef class Actor(Component):
             The registered callback, to be called with the request ID when the response has
             completed processing.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2346,9 +2334,9 @@ cdef class Actor(Component):
     cpdef UUID4 request_order_book_snapshot(
         self,
         InstrumentId instrument_id,
-        int limit = 5,
-        ClientId client_id=None,
-        callback: Callable[[UUID4], None] | None=None,
+        int limit = 0,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2364,14 +2352,14 @@ cdef class Actor(Component):
         instrument_id : InstrumentId
             The instrument ID for the order book snapshot request.
         limit : int, optional
-            The limit on the depth of the order book snapshot (default is None).
+            The limit on the depth of the order book snapshot.
         client_id : ClientId, optional
             The specific client ID for the command.
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2395,6 +2383,7 @@ cdef class Actor(Component):
         cdef UUID4 request_id = UUID4()
         cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
             instrument_id=instrument_id,
+            limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
             callback=self._handle_data_response,
@@ -2439,7 +2428,7 @@ cdef class Actor(Component):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        limit : int
+        limit : int, optional
             The limit on the amount of quote ticks received.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -2448,7 +2437,7 @@ cdef class Actor(Component):
             The registered callback, to be called with the request ID when the response has
             completed processing.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2534,7 +2523,7 @@ cdef class Actor(Component):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        limit : int
+        limit : int, optional
             The limit on the amount of trade ticks received.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -2543,7 +2532,7 @@ cdef class Actor(Component):
             The registered callback, to be called with the request ID when the response has
             completed processing.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2629,7 +2618,7 @@ cdef class Actor(Component):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        limit : int
+        limit : int, optional
             The limit on the amount of bars received.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -2638,7 +2627,7 @@ cdef class Actor(Component):
             The registered callback, to be called with the request ID when the response has
             completed processing.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2732,7 +2721,7 @@ cdef class Actor(Component):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        limit : int
+        limit : int, optional
             The limit on the amount of data received (quote ticks, trade ticks or bars).
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -2745,7 +2734,7 @@ cdef class Actor(Component):
         update_subscriptions : bool, default False
             If True, updates the aggregators of any existing or future subscription with the queried external data.
         update_catalog : bool, default False
-            If True then updates the catalog with new data received from a client.
+            If True, then updates the catalog with new data received from a client.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -3183,6 +3172,11 @@ cdef class Actor(Component):
         Warnings
         --------
         System method (not intended to be called by user code).
+
+        Raises
+        ------
+        RuntimeError
+            If bar data has incorrectly sorted timestamps (not monotonically increasing).
 
         """
         Condition.not_none(bars, "bars")  # Can be empty
