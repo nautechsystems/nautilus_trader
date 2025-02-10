@@ -413,14 +413,14 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `add_greeks` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void add_interest_rate_curve(self, object interest_rate_curve):
+    cpdef void add_yield_curve(self, object yield_curve):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `add_interest_rate_curve` must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `add_yield_curve` must be implemented in the subclass")  # pragma: no cover
 
     cpdef object greeks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `greeks` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef object interest_rate_curve(self, str currency):
+    cpdef object yield_curve(self, str curve_name):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `interest_rate_curve` must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `yield_curve` must be implemented in the subclass")  # pragma: no cover
