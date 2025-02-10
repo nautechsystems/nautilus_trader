@@ -192,7 +192,7 @@ test-examples:
 
 .PHONY: install-cli
 install-cli:
-	cargo install --path cli --bin nautilus --force
+	cargo install --path crates/cli --bin nautilus --force
 
 .PHONY: install-talib
 install-talib:
