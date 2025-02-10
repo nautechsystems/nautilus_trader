@@ -71,7 +71,7 @@ cdef class Cache(CacheFacade):
     cdef dict _positions
     cdef dict _position_snapshots
     cdef dict _greeks
-    cdef dict _interest_rate_curves
+    cdef dict _yield_curves
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders

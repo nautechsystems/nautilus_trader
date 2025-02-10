@@ -172,6 +172,6 @@ cdef class CacheFacade:
 # -- GREEKS QUERIES ---------------------------------------------------------------------------
 
     cpdef void add_greeks(self, object greeks)
-    cpdef void add_interest_rate_curve(self, object interest_rate_curve)
+    cpdef void add_yield_curve(self, object yield_curve)
     cpdef object greeks(self, InstrumentId instrument_id)
-    cpdef object interest_rate_curve(self, str currency)
+    cpdef object yield_curve(self, str curve_name)

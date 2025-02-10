@@ -126,7 +126,7 @@ cdef class Cache(CacheFacade):
         self._positions: dict[PositionId, Position] = {}
         self._position_snapshots: dict[PositionId, list[bytes]] = {}
         self._greeks: dict[InstrumentId, object] = {}
-        self._interest_rate_curves: dict[str, object] = {}
+        self._yield_curves: dict[str, object] = {}
 
         # Cache index
         self._index_venue_account: dict[Venue, AccountId] = {}
@@ -1701,17 +1701,17 @@ cdef class Cache(CacheFacade):
         """
         self._greeks[greeks.instrument_id] = greeks
 
-    cpdef void add_interest_rate_curve(self, object interest_rate_curve):
+    cpdef void add_yield_curve(self, object yield_curve):
         """
-        Add an interest rate curve to the cache.
+        Add a yield curve to the cache.
 
         Parameters
         ----------
-        interest_rate_curve : InterestRateCurveData
-            The interest rate curve to add.
+        yield_curve : YieldCurveData
+            The yield curve to add.
 
         """
-        self._interest_rate_curves[interest_rate_curve.currency] = interest_rate_curve
+        self._yield_curves[yield_curve.curve_name] = yield_curve
 
     cpdef object greeks(self, InstrumentId instrument_id):
         """
@@ -1730,22 +1730,22 @@ cdef class Cache(CacheFacade):
         """
         return self._greeks.get(instrument_id)
 
-    cpdef object interest_rate_curve(self, str currency):
+    cpdef object yield_curve(self, str curve_name):
         """
-        Return the latest cached interest rate curve for the given currency.
+        Return the latest cached yield curve for the given curve name.
 
         Parameters
         ----------
-        currency : str
-            The currency to get the interest rate curve for.
+        curve_name : str
+            The name of the yield curve to get.
 
         Returns
         -------
-        InterestRateCurveData
+        YieldCurveData
             The interest rate curve for the given currency.
 
         """
-        return self._interest_rate_curves.get(currency)
+        return self._yield_curves.get(curve_name)
 
     cpdef void snapshot_position(self, Position position):
         """

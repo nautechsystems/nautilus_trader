@@ -23,7 +23,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.greeks_data import InterestRateCurveData
+from nautilus_trader.model.greeks_data import YieldCurveData
 
 
 class CSVTickDataLoader:
@@ -174,13 +174,13 @@ class InterestRateProviderConfig(ActorConfig, frozen=True):
     ----------
     interest_rates_file : str
         Path to the file containing interest rate data.
-    currency : str, default "USD"
-        Name of the interest rate curve. Default is "USD_ShortTerm".
+    curve_name : str, default "USD"
+        Name of the interest rate curve.
 
     """
 
     interest_rates_file: str
-    currency: str = "USD"
+    curve_name: str = "USD"
 
 
 class InterestRateProvider(Actor):
@@ -225,21 +225,21 @@ class InterestRateProvider(Actor):
         month_string = f"{utc_now.year}-{str(utc_now.month).zfill(2)}"  # 2024-01
         interest_rate_value = float(self.interest_rates_df.loc[month_string, "interest_rate"])
 
-        interest_rate_curve = InterestRateCurveData(
+        yield_curve = YieldCurveData(
             utc_now_ns,
             utc_now_ns,
-            self.config.currency,
+            self.config.curve_name,
             np.array([0.0]),
             np.array([interest_rate_value]),
         )
 
         # caching interest rate data
-        self.cache.add_interest_rate_curve(interest_rate_curve)
+        self.cache.add_yield_curve(yield_curve)
 
         # publish interest rate on message bus
         self.publish_data(
-            DataType(InterestRateCurveData, metadata={"currency": interest_rate_curve.currency}),
-            interest_rate_curve,
+            DataType(YieldCurveData, metadata={"curve_name": yield_curve.curve_name}),
+            yield_curve,
         )
 
         # set an alert to update for the next month

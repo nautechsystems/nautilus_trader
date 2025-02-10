@@ -118,25 +118,25 @@ class PortfolioGreeks(Data):
 
 
 @customdataclass
-class InterestRateCurveData(Data):
+class YieldCurveData(Data):
     """
-    Represents an interest rate curve with associated tenors and rates.
+    Represents a yield curve with associated tenors and rates.
 
-    This class stores information about an interest rate curve (zero-rates, used for discount factors of the form
-    exp(- r * t) for example), including its name, tenors (time points), and corresponding interest rates.
+    This class stores information about an interest rate curve (zero-rates, used for example for discount factors of the form
+    exp(- r * t) for example), including its name, tenors (time points), and corresponding rates.
     It provides methods for interpolation and data conversion.
 
     Attributes:
-        curve_name (str): The name of the interest rate curve.
+        curve_name (str): The name of the yield curve.
         tenors (np.ndarray): An array of tenor points (in years).
         interest_rates (np.ndarray): An array of interest rates corresponding to the tenors.
 
     Methods:
-        __call__: Interpolates the interest rate for a given expiry time.
+        __call__: Interpolates the yield curve for a given expiry time.
 
     """
 
-    currency: str = "USD"
+    curve_name: str = "USD"
     tenors: np.ndarray = field(default_factory=lambda: np.array([0.5, 1.0, 1.5, 2.0, 2.5]))
     interest_rates: np.ndarray = field(
         default_factory=lambda: np.array([0.04, 0.04, 0.04, 0.04, 0.04]),
@@ -156,10 +156,10 @@ class InterestRateCurveData(Data):
 
     def to_dict(self, to_arrow=False):
         result = {
-            "currency": self.currency,
+            "curve_name": self.curve_name,
             "tenors": self.tenors.tobytes(),
             "interest_rates": self.interest_rates.tobytes(),
-            "type": "InterestRateCurveData",
+            "type": "YieldCurveData",
             "ts_event": self._ts_event,
             "ts_init": self._ts_init,
         }
@@ -177,4 +177,4 @@ class InterestRateCurveData(Data):
         data["tenors"] = np.frombuffer(data["tenors"])
         data["interest_rates"] = np.frombuffer(data["interest_rates"])
 
-        return InterestRateCurveData(**data)
+        return YieldCurveData(**data)
