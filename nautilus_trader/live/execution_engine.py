@@ -15,6 +15,7 @@
 
 import asyncio
 import math
+import traceback
 import uuid
 from asyncio import Queue
 from collections import Counter
@@ -387,7 +388,7 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -408,7 +409,7 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_evt_queue'")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
@@ -423,7 +424,9 @@ class LiveExecutionEngine(ExecutionEngine):
                 try:
                     await self._check_inflight_orders()
                 except Exception as e:
-                    self._log.error(f"Failed to check in-flight orders: {e}")
+                    self._log.error(
+                        f"Failed to check in-flight orders: {e!r}\n{traceback.format_exc()}",
+                    )
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'inflight_check_loop'")
 

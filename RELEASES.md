@@ -9,6 +9,7 @@ None
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
 
 ### Internal Improvements
+- Improved error logging for live engines to now include stacktrace for easier debugging
 - Improved Redis queries, error handling and connections (#2295), thanks @Pushkarm029
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
