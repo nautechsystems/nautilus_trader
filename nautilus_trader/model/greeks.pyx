@@ -158,8 +158,8 @@ cdef class GreeksCalculator:
             expiry_in_years = min((expiry_utc - utc_now).days, 1) / 365.25
 
             currency = instrument_definition.quote_currency.code
-            if (interest_rate_curve := self._cache.interest_rate_curve(currency)) is not None:
-                interest_rate = interest_rate_curve(expiry_in_years)
+            if (yield_curve := self._cache.yield_curve(currency)) is not None:
+                interest_rate = yield_curve(expiry_in_years)
             else:
                 interest_rate = flat_interest_rate
 

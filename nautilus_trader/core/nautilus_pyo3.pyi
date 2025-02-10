@@ -4841,6 +4841,9 @@ class GreeksData(Data):
     expiry: int
     forward: float
     expiry_in_years: float
+    multiplier: float
+    quantity: float
+    underlying_price: float
     interest_rate: float
     vol: float
     price: float
@@ -4848,7 +4851,6 @@ class GreeksData(Data):
     gamma: float
     vega: float
     theta: float
-    quantity: float
     itm_prob: float
 
     def __init__(
@@ -4859,8 +4861,10 @@ class GreeksData(Data):
         is_call: bool = True,
         strike: float = 0.0,
         expiry: int = 0,
-        forward: float = 0.0,
         expiry_in_years: float = 0.0,
+        multiplier: float = 0.0,
+        quantity: float = 0.0,
+        underlying_price: float = 0.0,
         interest_rate: float = 0.0,
         vol: float = 0.0,
         price: float = 0.0,
@@ -4868,7 +4872,6 @@ class GreeksData(Data):
         gamma: float = 0.0,
         vega: float = 0.0,
         theta: float = 0.0,
-        quantity: float = 0.0,
         itm_prob: float = 0.0,
     ): ...
 
@@ -4877,6 +4880,7 @@ class GreeksData(Data):
 
 
 class PortfolioGreeks(Data):
+    price: float
     delta: float
     gamma: float
     vega: float
@@ -4886,6 +4890,7 @@ class PortfolioGreeks(Data):
         self,
         ts_event: int = 0,
         ts_init: int = 0,
+        price: float = 0.0,
         delta: float = 0.0,
         gamma: float = 0.0,
         vega: float = 0.0,
@@ -4893,20 +4898,7 @@ class PortfolioGreeks(Data):
     ): ...
 
 
-class InterestRateData(Data):
-    curve_name: str
-    interest_rate: float
-
-    def __init__(
-        self,
-        ts_event: int = 0,
-        ts_init: int = 0,
-        curve_name: str = "USD",
-        interest_rate: float = 0.05,
-    ): ...
-
-
-class InterestRateCurveData(Data):
+class YieldCurveData(Data):
     curve_name: str
     tenors: np.ndarray
     interest_rates: np.ndarray
