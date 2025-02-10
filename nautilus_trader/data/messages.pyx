@@ -72,7 +72,7 @@ cdef class DataCommand(Command):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(command_id, ts_init)
 
@@ -133,7 +133,7 @@ cdef class SubscribeData(DataCommand):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             data_type,
@@ -175,7 +175,7 @@ cdef class SubscribeInstruments(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(Instrument),
@@ -235,7 +235,7 @@ cdef class SubscribeInstrument(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(Instrument),
@@ -281,7 +281,7 @@ cdef class SubscribeOrderBook(SubscribeData):
     managed: bool
         If an order book should be managed by the data engine based on the subscribed feed.
     interval_ms : int
-        The interval (in milliseconds) between snapshots.
+        The interval (milliseconds) between snapshots.
     only_deltas : bool
         If the subscription is for OrderBookDeltas or OrderBook snapshots.
     client_id : ClientId or ``None``
@@ -297,6 +297,8 @@ cdef class SubscribeOrderBook(SubscribeData):
     ------
     ValueError
         If both `client_id` and `venue` are both ``None`` (not enough routing info).
+    ValueError
+        If `interval_ms` is not positive (> 0).
     """
 
     def __init__(
@@ -312,7 +314,8 @@ cdef class SubscribeOrderBook(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
+        Condition.positive_int(interval_ms, "interval_ms")
         super().__init__(
             command_id,
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
@@ -390,7 +393,7 @@ cdef class SubscribeQuoteTicks(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(QuoteTick),
@@ -453,7 +456,7 @@ cdef class SubscribeTradeTicks(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(TradeTick),
@@ -519,7 +522,7 @@ cdef class SubscribeBars(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(Bar),
@@ -585,7 +588,7 @@ cdef class SubscribeInstrumentStatus(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(InstrumentStatus),
@@ -648,7 +651,7 @@ cdef class SubscribeInstrumentClose(SubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(InstrumentClose),
@@ -711,7 +714,7 @@ cdef class UnsubscribeData(DataCommand):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             data_type,
@@ -753,7 +756,7 @@ cdef class UnsubscribeInstruments(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(Instrument),
@@ -813,7 +816,7 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(Instrument),
@@ -879,7 +882,7 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
@@ -945,7 +948,7 @@ cdef class UnsubscribeQuoteTicks(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(QuoteTick),
@@ -1008,7 +1011,7 @@ cdef class UnsubscribeTradeTicks(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(TradeTick),
@@ -1071,7 +1074,7 @@ cdef class UnsubscribeBars(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(Bar),
@@ -1134,7 +1137,7 @@ cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(InstrumentStatus),
@@ -1197,7 +1200,7 @@ cdef class UnsubscribeInstrumentClose(UnsubscribeData):
         Venue venue: Venue | None = None,
         uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             command_id,
             DataType(InstrumentClose),
@@ -1273,7 +1276,7 @@ cdef class RequestData(Request):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
             callback,
@@ -1349,7 +1352,7 @@ cdef class RequestInstrument(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id,
+        InstrumentId instrument_id not None,
         datetime start : datetime | None,
         datetime end : datetime | None,
         ClientId client_id: ClientId | None,
@@ -1358,7 +1361,7 @@ cdef class RequestInstrument(RequestData):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         super().__init__(
             DataType(Instrument),
             start,
@@ -1439,7 +1442,7 @@ cdef class RequestInstruments(RequestData):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         super().__init__(
             DataType(Instrument),
             start,
@@ -1507,7 +1510,7 @@ cdef class RequestOrderBookSnapshot(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id,
+        InstrumentId instrument_id not None,
         int limit,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
@@ -1515,7 +1518,7 @@ cdef class RequestOrderBookSnapshot(RequestData):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         super().__init__(
             DataType(OrderBookDeltas),
             None,
@@ -1590,7 +1593,7 @@ cdef class RequestQuoteTicks(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id,
+        InstrumentId instrument_id not None,
         datetime start : datetime | None,
         datetime end : datetime | None,
         int limit,
@@ -1600,7 +1603,7 @@ cdef class RequestQuoteTicks(RequestData):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         super().__init__(
             DataType(QuoteTick),
             start,
@@ -1678,7 +1681,7 @@ cdef class RequestTradeTicks(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id,
+        InstrumentId instrument_id not None,
         datetime start : datetime | None,
         datetime end : datetime | None,
         int limit,
@@ -1688,7 +1691,7 @@ cdef class RequestTradeTicks(RequestData):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         super().__init__(
             DataType(TradeTick),
             start,
@@ -1767,7 +1770,7 @@ cdef class RequestBars(RequestData):
 
     def __init__(
         self,
-        BarType bar_type,
+        BarType bar_type not None,
         datetime start : datetime | None,
         datetime end : datetime | None,
         int limit,
@@ -1777,7 +1780,7 @@ cdef class RequestBars(RequestData):
         UUID4 request_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None,
-    ):
+    ) -> None:
         super().__init__(
             DataType(Bar),
             start,
@@ -1859,7 +1862,7 @@ cdef class DataResponse(Response):
             UUID4 response_id not None,
             uint64_t ts_init,
             dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
             correlation_id,
