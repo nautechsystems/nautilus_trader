@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from asyncio import Queue
 from typing import Final
 
@@ -366,7 +367,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.CancelledError:
             self._log.warning("DataCommand message queue canceled")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "DataCommand message queue stopped"
             if not self._cmd_queue.empty():
@@ -387,7 +388,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.CancelledError:
             self._log.warning("RequestData message queue canceled")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "RequestData message queue stopped"
             if not self._req_queue.empty():
@@ -408,7 +409,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.CancelledError:
             self._log.warning("DataResponse message queue canceled")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "DataResponse message queue stopped"
             if not self._res_queue.empty():
@@ -427,7 +428,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.CancelledError:
             self._log.warning("Data message queue canceled")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Data message queue stopped"
             if not self._data_queue.empty():

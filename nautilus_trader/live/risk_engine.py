@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from asyncio import Queue
 from typing import Final
 
@@ -236,7 +237,7 @@ class LiveRiskEngine(RiskEngine):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -257,7 +258,7 @@ class LiveRiskEngine(RiskEngine):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_evt_queue'")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
