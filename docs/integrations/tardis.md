@@ -203,7 +203,7 @@ Next, ensure you have a configuration JSON file available.
 | `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
 | `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
 
-An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_config.json):
+An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_config.json):
 
 ```json
 {
@@ -271,7 +271,7 @@ Make sure to enable Rust logging by exporting the following environment variable
 export RUST_LOG=debug
 ```
 
-A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_replay.rs).
+A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_replay.rs).
 
 This can also be run using cargo:
 
@@ -319,11 +319,11 @@ deltas = loader.load_deltas(filepath, limit)
 
 ### Loading CSV data in Rust
 
-You can load Tardis-format CSV data in Rust using the loading functions found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/csv/mod.rs).
+You can load Tardis-format CSV data in Rust using the loading functions found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/src/csv/mod.rs).
 When loading data, you can optionally specify the instrument ID but must specify both the price precision and size precision.
 Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
 
-For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_csv.rs).
+For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_csv.rs).
 
 To load the data, you can use code similar to the following:
 
@@ -397,7 +397,7 @@ if __name__ == "__main__":
 ### Requesting instruments in Rust
 
 To request instrument definitions in Rust, use code similar to the following.
-For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_http.rs).
+For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_http.rs).
 
 ```rust
 use nautilus_adapters::tardis::{enums::Exchange, http::client::TardisHttpClient};

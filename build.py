@@ -96,7 +96,7 @@ ENV_CARGO_TARGET_DIR = os.environ.get("CARGO_TARGET_DIR")
 CARGO_TARGET_DIR = (
     Path(ENV_CARGO_TARGET_DIR) / BUILD_MODE
     if ENV_CARGO_TARGET_DIR
-    else Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
+    else Path.cwd() / "target" / BUILD_MODE
 )
 
 # Directories with headers to include
@@ -141,7 +141,6 @@ def _build_rust_libs() -> None:
 
         subprocess.run(
             cmd_args,
-            cwd="nautilus_core",
             check=True,
         )
     except subprocess.CalledProcessError as e:

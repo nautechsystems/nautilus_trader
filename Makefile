@@ -45,7 +45,7 @@ clean:
 	find . -type d -name "__pycache" -print0 | xargs -0 rm -rf
 	find . -type f -a \( -name "*.so" -o -name "*.dll" \) -print0 | xargs -0 rm -f
 	rm -rf \
-		nautilus_core/target/ \
+		crates/target/ \
 		.benchmarks/ \
 		.mypy_cache/ \
 		.pytest_cache/ \
@@ -58,7 +58,7 @@ distclean: clean
 
 .PHONY: format
 format:
-	(cd nautilus_core && cargo +nightly fmt)
+	cargo +nightly fmt
 
 .PHONY: pre-commit
 pre-commit:
@@ -71,7 +71,7 @@ ruff:
 # Requires cargo-outdated v0.16.0+
 .PHONY: outdated
 outdated:
-	(cd nautilus_core && cargo outdated && poetry show --outdated)
+	cargo outdated && poetry show --outdated
 
 .PHONY: update cargo-update
 update: cargo-update
@@ -87,23 +87,23 @@ docs-python: install-docs
 
 .PHONY: docs-rust
 docs-rust:
-	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace)
+	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: clippy
 clippy:
-	(cd nautilus_core && cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
+	cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
 
 .PHONY: clippy-nightly
 clippy-nightly:
-	(cd nautilus_core && cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
+	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
 
 .PHONY: cargo-build
 cargo-build:
-	(cd nautilus_core && cargo build --release --all-features)
+	cargo build --release --all-features
 
 .PHONY: cargo-update
 cargo-update:
-	(cd nautilus_core && cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov)
+	cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov
 
 .PHONY: cargo-test
 cargo-test: RUST_BACKTRACE=1
@@ -113,7 +113,7 @@ cargo-test:
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	(cd nautilus_core && RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision")
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision"
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
@@ -123,7 +123,7 @@ cargo-test-standard-precision:
     echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
     exit 1; \
 	fi
-	(cd nautilus_core && RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi")
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage:
@@ -135,15 +135,15 @@ cargo-test-coverage:
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
 	fi
-	(cd nautilus_core && cargo llvm-cov nextest run --workspace)
+	cargo llvm-cov nextest run --workspace
 
 .PHONY: cargo-bench
 cargo-bench:
-	(cd nautilus_core && cargo bench)
+	cargo bench
 
 .PHONY: cargo-doc
 cargo-doc:
-	(cd nautilus_core && cargo doc)
+	cargo doc
 
 .PHONY: docker-build
 docker-build: clean
@@ -192,7 +192,7 @@ test-examples:
 
 .PHONY: install-cli
 install-cli:
-	(cd nautilus_core && cargo install --path cli --bin nautilus --force)
+	cargo install --path cli --bin nautilus --force
 
 .PHONY: install-talib
 install-talib:
