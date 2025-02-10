@@ -278,7 +278,7 @@ cdef class SubscribeOrderBook(SubscribeData):
         The order book type.
     depth : int
         The maximum depth for the subscription.
-    manaaged: bool
+    managed: bool
         If an order book should be managed by the data engine based on the subscribed feed.
     interval_ms : int
         The interval (in milliseconds) between snapshots.
