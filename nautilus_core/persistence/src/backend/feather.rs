@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -317,15 +332,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_writer_manager_keys() {
-        // Create a temporary directory for base path.
+        // Create a temporary directory for base path
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path().to_str().unwrap().to_string();
 
-        // Create a LocalFileSystem based object store using the temp directory.
+        // Create a LocalFileSystem based object store using the temp directory
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
 
-        // Create a test clock.
+        // Create a test clock
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let timestamp = clock.borrow().timestamp_ns();
 
@@ -344,7 +359,7 @@ mod tests {
         );
 
         let instrument_id = "AAPL.AAPL";
-        // Write a dummy value.
+        // Write a dummy value
         let quote = QuoteTick::new(
             InstrumentId::from(instrument_id),
             Price::from("100.0"),
@@ -421,17 +436,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_round_trip() {
-        // Create a temporary directory for base path.
+        // Create a temporary directory for base path
         let temp_dir = TempDir::new_in(".").unwrap();
         let base_path = temp_dir.path().to_str().unwrap().to_string();
 
-        // Create a LocalFileSystem based object store using the temp directory.
+        // Create a LocalFileSystem based object store using the temp directory
         let local_fs = LocalFileSystem::new_with_prefix(&base_path).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
 
-        // Create a test clock.
+        // Create a test clock
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-        let timestamp = clock.borrow().timestamp_ns();
 
         let quote_type_str = QuoteTick::path_prefix();
         let trade_type_str = TradeTick::path_prefix();
@@ -480,14 +494,14 @@ mod tests {
         // Flush data
         manager.flush().await.unwrap();
 
-        // Read files from the temporary directory.
+        // Read files from the temporary directory
         let mut recovered_quotes = Vec::new();
         let mut recovered_trades = Vec::new();
         let local_fs = LocalFileSystem::new_with_prefix(&base_path).unwrap();
         for path in paths {
             let path_str = local_fs.path_to_filesystem(&path.path).unwrap();
             let buffer = std::fs::File::open(&path_str).unwrap();
-            let mut reader = StreamReader::try_new(buffer, None).unwrap();
+            let reader = StreamReader::try_new(buffer, None).unwrap();
             let metadata = reader.schema().metadata().clone();
             for batch in reader {
                 let batch = batch.unwrap();
@@ -501,11 +515,11 @@ mod tests {
             }
         }
 
-        // Assert that the recovered data matches the written data.
+        // Assert that the recovered data matches the written data
         assert_eq!(recovered_quotes.len(), 1, "Expected one QuoteTick record");
         assert_eq!(recovered_trades.len(), 1, "Expected one TradeTick record");
 
-        // Check key fields to ensure the data round-tripped correctly.
+        // Check key fields to ensure the data round-tripped correctly
         assert_eq!(recovered_quotes[0], Data::from(quote));
         assert_eq!(recovered_trades[0], Data::from(trade));
     }
