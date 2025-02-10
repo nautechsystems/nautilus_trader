@@ -45,12 +45,12 @@ clean:
 	find . -type d -name "__pycache" -print0 | xargs -0 rm -rf
 	find . -type f -a \( -name "*.so" -o -name "*.dll" \) -print0 | xargs -0 rm -f
 	rm -rf \
-		crates/target/ \
 		.benchmarks/ \
 		.mypy_cache/ \
 		.pytest_cache/ \
 		.ruff_cache/ \
-		build/
+		build/ \
+		target/
 
 .PHONY: distclean
 distclean: clean
