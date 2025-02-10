@@ -398,7 +398,7 @@ class BybitDataClient(LiveMarketDataClient):
         return bybit_symbol.to_instrument_id()
 
     async def _request(self, request: RequestData) -> None:
-        if request.data_type.command.type == BybitTickerData:
+        if request.data_type.type == BybitTickerData:
             symbol = request.data_type.metadata["symbol"]
             await self._handle_ticker_data_request(symbol, request.id)
 
