@@ -173,7 +173,7 @@ runs:
     # > --------------------------------------------------
     - name: Install build and dev dependencies
       shell: bash
-      run: uv sync
+      run: uv sync --all-groups --all-extras
 
     # > --------------------------------------------------
     # > pre-commit

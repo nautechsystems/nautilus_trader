@@ -28,7 +28,7 @@ update_cython_version
 uv lock --no-upgrade
 
 export PROFILE_MODE=true
-uv sync
+uv sync --all-groups --all-extras
 uv run build.py
 uv run pytest \
     --cov-report=term \

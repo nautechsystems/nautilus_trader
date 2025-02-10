@@ -1,5 +1,5 @@
 #!/bin/bash
 
-uv sync
+uv sync --all-groups --all-extras
 uv run build.py
 uv run pytest tests/performance_tests --benchmark-disable-gc --codspeed
