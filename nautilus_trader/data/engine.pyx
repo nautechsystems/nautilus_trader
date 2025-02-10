@@ -887,8 +887,8 @@ cdef class DataEngine(Component):
 
         if "start" not in command.params:
             last_timestamp: datetime | None = self._catalogs_last_timestamp(
-                QuoteTick,
-                command.instrument_id,
+                data_cls=QuoteTick,
+                instrument_id=command.instrument_id,
             )[0]
 
             # Time in nanoseconds from pd.Timestamp
@@ -931,8 +931,8 @@ cdef class DataEngine(Component):
 
         if "start" not in command.params:
             last_timestamp: datetime | None = self._catalogs_last_timestamp(
-                TradeTick,
-                command.instrument_id,
+                data_cls=TradeTick,
+                instrument_id=command.instrument_id,
             )[0]
 
             # Time in nanoseconds from pd.Timestamp
@@ -984,7 +984,7 @@ cdef class DataEngine(Component):
 
             if "start" not in command.params:
                 last_timestamp: datetime | None = self._catalogs_last_timestamp(
-                    Bar,
+                    data_cls=Bar,
                     bar_type=command.bar_type,
                 )[0]
 
@@ -1000,7 +1000,7 @@ cdef class DataEngine(Component):
         try:
             if command.data_type not in client.subscribed_custom_data():
                 if "start" not in command.params:
-                    last_timestamp: datetime | None = self._catalogs_last_timestamp(command.data_type.type)[0]
+                    last_timestamp: datetime | None = self._catalogs_last_timestamp(data_cls=command.data_type.type)[0]
                     command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
                 client.subscribe(command)
@@ -1273,8 +1273,8 @@ cdef class DataEngine(Component):
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
-            Instrument,
-            request.instrument_id,
+            data_cls=Instrument,
+            instrument_id=request.instrument_id,
         )[0]
 
         if last_timestamp:
@@ -1302,8 +1302,8 @@ cdef class DataEngine(Component):
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
-            QuoteTick,
-            request.instrument_id,
+            data_cls=QuoteTick,
+            instrument_id=request.instrument_id,
         )[0]
 
         if last_timestamp:
@@ -1330,8 +1330,8 @@ cdef class DataEngine(Component):
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
-            TradeTick,
-            request.instrument_id,
+            data_cls=TradeTick,
+            instrument_id=request.instrument_id,
         )[0]
 
         if last_timestamp:
@@ -1358,7 +1358,7 @@ cdef class DataEngine(Component):
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
-            Bar,
+            data_cls=Bar,
             bar_type=request.bar_type,
         )[0]
 
@@ -1386,7 +1386,7 @@ cdef class DataEngine(Component):
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
-            request.data_type.type,
+            data_cls=request.data_type.type,
         )[0]
 
         if last_timestamp:
@@ -1757,9 +1757,15 @@ cdef class DataEngine(Component):
             return
 
         if type(ticks[0]) is Bar:
-            last_timestamp, last_timestamp_catalog = self._catalogs_last_timestamp(Bar, bar_type=ticks[0].bar_type)
+            last_timestamp, last_timestamp_catalog = self._catalogs_last_timestamp(
+                data_cls=Bar,
+                bar_type=ticks[0].bar_type,
+            )
         else:
-            last_timestamp, last_timestamp_catalog = self._catalogs_last_timestamp(type(ticks[0]), ticks[0].instrument_id)
+            last_timestamp, last_timestamp_catalog = self._catalogs_last_timestamp(
+                data_cls=type(ticks[0]),
+                instrument_id=ticks[0].instrument_id,
+            )
 
         # We don't want to write in the catalog several times the same instrument
         if last_timestamp_catalog and is_instrument:
