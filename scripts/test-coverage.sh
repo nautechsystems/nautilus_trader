@@ -25,11 +25,12 @@ update_cython_version() {
 
 # TODO: Temporarily change Cython version in pyproject.toml while we require v3.0.11 for coverage
 update_cython_version
-poetry lock --no-update
+uv lock --no-upgrade
 
 export PROFILE_MODE=true
-poetry install --with test --all-extras
-poetry run pytest \
+uv sync
+uv run build.py
+uv run pytest \
     --cov-report=term \
     --cov-report=xml \
     --cov=nautilus_trader

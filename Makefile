@@ -6,39 +6,27 @@ IMAGE_FULL?=${IMAGE}:${GIT_TAG}
 
 .PHONY: install
 install:
-	BUILD_MODE=release poetry install --with dev,test --all-extras
+	BUILD_MODE=release uv run build.py && uv build && uv pip install .
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug poetry install --with dev,test --all-extras --sync
-
-.PHONY: install-docs
-install-docs:
-	BUILD_MODE=debug poetry install --with docs --all-extras
-
-.PHONY: install-just-deps
-install-just-deps:
-	poetry install --with dev,test --all-extras --no-root
-
-.PHONY: install-just-deps-all
-install-just-deps-all:
-	poetry install --with dev,test,docs --all-extras --no-root
+	BUILD_MODE=debug uv run build.py && uv build && uv pip install .
 
 .PHONY: build
 build:
-	BUILD_MODE=release poetry run python build.py
+	BUILD_MODE=release uv run build.py
 
 .PHONY: build-debug
 build-debug:
-	BUILD_MODE=debug poetry run python build.py
+	BUILD_MODE=debug uv run build.py
 
 .PHONY: build-wheel
 build-wheel:
-	BUILD_MODE=release poetry build --format wheel
+	BUILD_MODE=release uv run build.py && uv build --wheel
 
 .PHONY: build-wheel-debug
 build-wheel-debug:
-	BUILD_MODE=debug poetry build --format wheel
+	BUILD_MODE=debug uv run build.py && uv build --wheel
 
 .PHONY: clean
 clean:
@@ -50,6 +38,7 @@ clean:
 		.pytest_cache/ \
 		.ruff_cache/ \
 		build/ \
+		dist/ \
 		target/
 
 .PHONY: distclean
@@ -62,7 +51,7 @@ format:
 
 .PHONY: pre-commit
 pre-commit:
-	poetry run pre-commit run --all-files
+	uv run pre-commit run --all-files
 
 .PHONY: ruff
 ruff:
@@ -71,19 +60,18 @@ ruff:
 # Requires cargo-outdated v0.16.0+
 .PHONY: outdated
 outdated:
-	cargo outdated && poetry show --outdated
+	cargo outdated
 
 .PHONY: update cargo-update
 update: cargo-update
-	poetry update
-	poetry install --with dev,test --all-extras --no-root
+	uv lock
 
 .PHONY: docs
 docs: docs-python docs-rust
 
 .PHONY: docs-python
 docs-python: install-docs
-	poetry run sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust:
