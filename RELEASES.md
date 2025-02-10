@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
 
 ### Internal Improvements
 - Improved Redis queries, error handling and connections (#2295), thanks @Pushkarm029
