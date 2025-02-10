@@ -34,7 +34,7 @@ pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
 
-pub fn convert_pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> {
+pub fn pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> {
     let order_type = order.getattr(py, "order_type")?.extract::<OrderType>(py)?;
     if order_type == OrderType::Limit {
         let limit = order.extract::<LimitOrder>(py)?;
@@ -68,7 +68,7 @@ pub fn convert_pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<Or
     }
 }
 
-pub fn convert_order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<PyObject> {
+pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<PyObject> {
     match order {
         OrderAny::Limit(limit_order) => Ok(limit_order.into_py(py)),
         OrderAny::LimitIfTouched(limit_if_touched_order) => Ok(limit_if_touched_order.into_py(py)),

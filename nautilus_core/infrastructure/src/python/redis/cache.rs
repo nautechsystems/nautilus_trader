@@ -19,7 +19,13 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     UUID4,
 };
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{
+    identifiers::TraderId,
+    python::{
+        account::account_any_to_pyobject, instruments::instrument_any_to_pyobject,
+        orders::order_any_to_pyobject,
+    },
+};
 use pyo3::{
     prelude::*,
     types::{PyBytes, PyDict},
@@ -60,6 +66,7 @@ impl RedisCacheDatabase {
             Ok(cache_map) => Python::with_gil(|py| {
                 let dict = PyDict::new(py);
 
+                // Load currencies
                 let currencies_dict = PyDict::new(py);
                 for (key, value) in cache_map.currencies {
                     currencies_dict
@@ -69,16 +76,18 @@ impl RedisCacheDatabase {
                 dict.set_item("currencies", currencies_dict)
                     .map_err(to_pyvalue_err)?;
 
-                // TODO: Fix this
-                // let instruments_dict = PyDict::new(py);
-                // for (key, value) in cache_map.instruments {
-                //     instruments_dict
-                //         .set_item(key, value)
-                //         .map_err(to_pyvalue_err)?;
-                // }
-                // dict.set_item("instruments", instruments_dict)
-                //     .map_err(to_pyvalue_err)?;
+                // Load instruments
+                let instruments_dict = PyDict::new(py);
+                for (key, value) in cache_map.instruments {
+                    let py_object = instrument_any_to_pyobject(py, value)?;
+                    instruments_dict
+                        .set_item(key, py_object)
+                        .map_err(to_pyvalue_err)?;
+                }
+                dict.set_item("instruments", instruments_dict)
+                    .map_err(to_pyvalue_err)?;
 
+                // Load synthetics
                 let synthetics_dict = PyDict::new(py);
                 for (key, value) in cache_map.synthetics {
                     synthetics_dict
@@ -88,20 +97,29 @@ impl RedisCacheDatabase {
                 dict.set_item("synthetics", synthetics_dict)
                     .map_err(to_pyvalue_err)?;
 
-                // let accounts_dict = PyDict::new(py);
-                // for (key, value) in cache_map.accounts {
-                //     accounts_dict.set_item(key, value).map_err(to_pyvalue_err)?;
-                // }
-                // dict.set_item("accounts", accounts_dict)
-                //     .map_err(to_pyvalue_err)?;
+                // Load accounts
+                let accounts_dict = PyDict::new(py);
+                for (key, value) in cache_map.accounts {
+                    let py_object = account_any_to_pyobject(py, value)?;
+                    accounts_dict
+                        .set_item(key, py_object)
+                        .map_err(to_pyvalue_err)?;
+                }
+                dict.set_item("accounts", accounts_dict)
+                    .map_err(to_pyvalue_err)?;
 
-                // let orders_dict = PyDict::new(py);
-                // for (key, value) in cache_map.orders {
-                //     orders_dict.set_item(key, value).map_err(to_pyvalue_err)?;
-                // }
-                // dict.set_item("orders", orders_dict)
-                //     .map_err(to_pyvalue_err)?;
+                // Load orders
+                let orders_dict = PyDict::new(py);
+                for (key, value) in cache_map.orders {
+                    let py_object = order_any_to_pyobject(py, value)?;
+                    orders_dict
+                        .set_item(key, py_object)
+                        .map_err(to_pyvalue_err)?;
+                }
+                dict.set_item("orders", orders_dict)
+                    .map_err(to_pyvalue_err)?;
 
+                // Load positions
                 let positions_dict = PyDict::new(py);
                 for (key, value) in cache_map.positions {
                     positions_dict

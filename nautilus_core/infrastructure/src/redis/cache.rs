@@ -162,7 +162,7 @@ impl RedisCacheDatabase {
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
-                log::error!("Failed to spawn task '{}': {}", CACHE_WRITE, e);
+                log::error!("Failed to spawn task '{CACHE_WRITE}': {e}");
             }
         });
 
@@ -209,7 +209,7 @@ impl RedisCacheDatabase {
 
     pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let collection = get_collection_key(key)?;
-        let key = format!("{}{REDIS_DELIMITER}{}", self.trader_key, key);
+        let key = format!("{}{REDIS_DELIMITER}{key}", self.trader_key);
 
         match collection {
             INDEX => read_index(&mut self.con, &key).await,
