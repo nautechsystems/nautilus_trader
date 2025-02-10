@@ -25,7 +25,7 @@ use crate::{
     enums::AccountType,
 };
 
-pub fn convert_pyobject_to_account_any(py: Python, account: PyObject) -> PyResult<AccountAny> {
+pub fn pyobject_to_account_any(py: Python, account: PyObject) -> PyResult<AccountAny> {
     let account_type = account
         .getattr(py, "account_type")?
         .extract::<AccountType>(py)?;
@@ -40,7 +40,7 @@ pub fn convert_pyobject_to_account_any(py: Python, account: PyObject) -> PyResul
     }
 }
 
-pub fn convert_account_any_to_pyobject(py: Python, account: AccountAny) -> PyResult<PyObject> {
+pub fn account_any_to_pyobject(py: Python, account: AccountAny) -> PyResult<PyObject> {
     match account {
         AccountAny::Cash(account) => Ok(account.into_py(py)),
         AccountAny::Margin(account) => Ok(account.into_py(py)),

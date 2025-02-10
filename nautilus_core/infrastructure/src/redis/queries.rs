@@ -55,7 +55,7 @@ impl DatabaseQueries {
             Self::load_orders(con),
             Self::load_positions(con)
         )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
         Ok(CacheMap {
             currencies,
@@ -83,7 +83,7 @@ impl DatabaseQueries {
                     let currency_code = match key.as_str().rsplit(':').next() {
                         Some(code) => Ustr::from(code),
                         None => {
-                            log::error!("Invalid key format: {}", key);
+                            log::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -91,11 +91,11 @@ impl DatabaseQueries {
                     match Self::load_currency(&con, &currency_code) {
                         Ok(Some(currency)) => Some((currency_code, currency)),
                         Ok(None) => {
-                            log::error!("Currency not found: {}", currency_code);
+                            log::error!("Currency not found: {currency_code}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load currency {}: {}", currency_code, e);
+                            log::error!("Failed to load currency {currency_code}: {e}");
                             None
                         }
                     }
@@ -126,12 +126,12 @@ impl DatabaseQueries {
                         .rsplit(':')
                         .next()
                         .ok_or_else(|| {
-                            log::error!("Invalid key format: {}", key);
+                            log::error!("Invalid key format: {key}");
                             "Invalid key format"
                         })
                         .and_then(|code| {
                             InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to convert to InstrumentId for {}: {}", key, e);
+                                log::error!("Failed to convert to InstrumentId for {key}: {e}");
                                 "Invalid instrument ID"
                             })
                         });
@@ -144,11 +144,11 @@ impl DatabaseQueries {
                     match Self::load_instrument(&con, &instrument_id) {
                         Ok(Some(instrument)) => Some((instrument_id, instrument)),
                         Ok(None) => {
-                            log::error!("Instrument not found: {}", instrument_id);
+                            log::error!("Instrument not found: {instrument_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load instrument {}: {}", instrument_id, e);
+                            log::error!("Failed to load instrument {instrument_id}: {e}");
                             None
                         }
                     }
@@ -179,12 +179,12 @@ impl DatabaseQueries {
                         .rsplit(':')
                         .next()
                         .ok_or_else(|| {
-                            log::error!("Invalid key format: {}", key);
+                            log::error!("Invalid key format: {key}");
                             "Invalid key format"
                         })
                         .and_then(|code| {
                             InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to parse InstrumentId for {}: {}", key, e);
+                                log::error!("Failed to parse InstrumentId for {key}: {e}");
                                 "Invalid instrument ID"
                             })
                         });
@@ -197,7 +197,7 @@ impl DatabaseQueries {
                     match Self::load_synthetic(&con, &instrument_id) {
                         Ok(synthetic) => Some((instrument_id, synthetic)),
                         Err(e) => {
-                            log::error!("Failed to load synthetic {}: {}", instrument_id, e);
+                            log::error!("Failed to load synthetic {instrument_id}: {e}");
                             None
                         }
                     }
@@ -226,7 +226,7 @@ impl DatabaseQueries {
                     let account_id = match key.as_str().rsplit(':').next() {
                         Some(code) => AccountId::from(code),
                         None => {
-                            log::error!("Invalid key format: {}", key);
+                            log::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -234,11 +234,11 @@ impl DatabaseQueries {
                     match Self::load_account(&con, &account_id) {
                         Ok(Some(account)) => Some((account_id, account)),
                         Ok(None) => {
-                            log::error!("Account not found: {}", account_id);
+                            log::error!("Account not found: {account_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load account {}: {}", account_id, e);
+                            log::error!("Failed to load account {account_id}: {e}");
                             None
                         }
                     }
@@ -267,7 +267,7 @@ impl DatabaseQueries {
                     let client_order_id = match key.as_str().rsplit(':').next() {
                         Some(code) => ClientOrderId::from(code),
                         None => {
-                            log::error!("Invalid key format: {}", key);
+                            log::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -275,11 +275,11 @@ impl DatabaseQueries {
                     match Self::load_order(&con, &client_order_id) {
                         Ok(Some(order)) => Some((client_order_id, order)),
                         Ok(None) => {
-                            log::error!("Order not found: {}", client_order_id);
+                            log::error!("Order not found: {client_order_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load order {}: {}", client_order_id, e);
+                            log::error!("Failed to load order {client_order_id}: {e}");
                             None
                         }
                     }
@@ -308,7 +308,7 @@ impl DatabaseQueries {
                     let position_id = match key.as_str().rsplit(':').next() {
                         Some(code) => PositionId::from(code),
                         None => {
-                            log::error!("Invalid key format: {}", key);
+                            log::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -316,7 +316,7 @@ impl DatabaseQueries {
                     match Self::load_position(&con, &position_id) {
                         Ok(position) => Some((position_id, position)),
                         Err(e) => {
-                            log::error!("Failed to load position {}: {}", position_id, e);
+                            log::error!("Failed to load position {position_id}: {e}");
                             None
                         }
                     }

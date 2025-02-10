@@ -25,10 +25,10 @@ use nautilus_model::{
     events::{OrderSnapshot, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     python::{
-        account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
+        account::{account_any_to_pyobject, pyobject_to_account_any},
         events::order::pyobject_to_order_event,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
-        orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
+        orders::{order_any_to_pyobject, pyobject_to_order_any},
     },
     types::Currency,
 };
@@ -130,7 +130,7 @@ impl PostgresCacheDatabase {
                 .unwrap();
             match result {
                 Some(order) => {
-                    let py_object = convert_order_any_to_pyobject(py, order)?;
+                    let py_object = order_any_to_pyobject(py, order)?;
                     Ok(Some(py_object))
                 }
                 None => Ok(None),
@@ -146,7 +146,7 @@ impl PostgresCacheDatabase {
                 .unwrap();
             match result {
                 Some(account) => {
-                    let py_object = convert_account_any_to_pyobject(py, account)?;
+                    let py_object = account_any_to_pyobject(py, account)?;
                     Ok(Some(py_object))
                 }
                 None => Ok(None),
@@ -266,7 +266,7 @@ impl PostgresCacheDatabase {
         order: PyObject,
         client_id: Option<ClientId>,
     ) -> PyResult<()> {
-        let order_any = convert_pyobject_to_order_any(py, order)?;
+        let order_any = pyobject_to_order_any(py, order)?;
         self.add_order(&order_any, client_id)
             .map_err(to_pyruntime_err)
     }
@@ -284,7 +284,7 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "add_account")]
     fn py_add_account(&self, py: Python, account: PyObject) -> PyResult<()> {
-        let account_any = convert_pyobject_to_account_any(py, account)?;
+        let account_any = pyobject_to_account_any(py, account)?;
         self.add_account(&account_any).map_err(to_pyruntime_err)
     }
 
@@ -321,7 +321,7 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "update_account")]
     fn py_update_account(&self, py: Python, order: PyObject) -> PyResult<()> {
-        let order_any = convert_pyobject_to_account_any(py, order)?;
+        let order_any = pyobject_to_account_any(py, order)?;
         self.update_account(&order_any).map_err(to_pyruntime_err)
     }
 }
