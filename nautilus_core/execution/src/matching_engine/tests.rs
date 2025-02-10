@@ -220,7 +220,6 @@ fn test_process_order_when_instrument_already_expired(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     mut market_order_buy: OrderAny,
 ) {
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
@@ -253,7 +252,6 @@ fn test_process_order_when_instrument_not_active(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     mut market_order_buy: OrderAny,
 ) {
     let activation = UnixNanos::from(
@@ -299,7 +297,6 @@ fn test_process_order_when_invalid_quantity_precision(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_eth_usdt: InstrumentAny,
 ) {
     // Register saving message handler to exec engine endpoint
@@ -342,7 +339,6 @@ fn test_process_order_when_invalid_price_precision(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_es: InstrumentAny,
 ) {
     // Register saving message handler to exec engine endpoint
@@ -385,7 +381,6 @@ fn test_process_order_when_invalid_trigger_price_precision(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_es: InstrumentAny,
 ) {
     // Register saving message handler to exec engine endpoint
@@ -427,7 +422,6 @@ fn test_process_order_when_shorting_equity_without_margin_account(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     equity_aapl: Equity,
 ) {
     let instrument = InstrumentAny::Equity(equity_aapl);
@@ -470,7 +464,6 @@ fn test_process_order_when_invalid_reduce_only(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_eth_usdt: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
@@ -512,7 +505,6 @@ fn test_process_order_when_invalid_contingent_orders(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_es: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
@@ -586,7 +578,6 @@ fn test_process_order_when_closed_linked_order(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_es: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
@@ -646,7 +637,7 @@ fn test_process_order_when_closed_linked_order(
         .borrow_mut()
         .add_order(stop_loss_order.clone(), None, None, false)
         .unwrap();
-    let stop_loss_closed_after = stop_loss_order.is_closed();
+    let _stop_loss_closed_after = stop_loss_order.is_closed();
     engine.process_order(&mut accepted_take_profit, account_id);
 
     // Get messages and test
@@ -665,7 +656,6 @@ fn test_process_market_order_no_market_rejected(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
     instrument_eth_usdt: InstrumentAny,
     mut market_order_buy: OrderAny,
     mut market_order_sell: OrderAny,
@@ -706,12 +696,7 @@ fn test_process_market_order_no_market_rejected(
 }
 
 #[rstest]
-fn test_bid_ask_initialized(
-    msgbus: MessageBus,
-    account_id: AccountId,
-    time: AtomicTime,
-    instrument_es: InstrumentAny,
-) {
+fn test_bid_ask_initialized(msgbus: MessageBus, instrument_es: InstrumentAny) {
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_es.clone(),
         Rc::new(RefCell::new(msgbus)),
@@ -752,7 +737,6 @@ fn test_not_enough_quantity_filled_fok_order(
     order_event_handler: ShareableMessageHandler,
     mut msgbus: MessageBus,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -809,7 +793,6 @@ fn test_valid_market_buy(
     order_event_handler: ShareableMessageHandler,
     mut msgbus: MessageBus,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -883,7 +866,6 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -944,7 +926,6 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -1007,7 +988,6 @@ fn test_process_limit_order_matched_immediate_fill(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -1069,7 +1049,6 @@ fn test_process_stop_market_order_triggered_rejected(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -1131,7 +1110,6 @@ fn test_process_stop_market_order_valid_trigger_filled(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1187,7 +1165,6 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1240,7 +1217,6 @@ fn test_process_stop_limit_order_triggered_not_filled(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1301,7 +1277,6 @@ fn test_process_stop_limit_order_triggered_filled(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1371,7 +1346,6 @@ fn test_process_cancel_command_valid(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1443,8 +1417,6 @@ fn test_process_cancel_command_order_not_found(
     instrument_eth_usdt: InstrumentAny,
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
-    account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1459,15 +1431,6 @@ fn test_process_cancel_command_order_not_found(
         None,
     );
 
-    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
-        .book_action(BookAction::Add)
-        .book_order(BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
-            1,
-        ))
-        .build();
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let account_id = AccountId::from("ACCOUNT-001");
     let cancel_command = CancelOrder::new(
@@ -1506,7 +1469,6 @@ fn test_process_cancel_all_command(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1642,7 +1604,6 @@ fn test_process_batch_cancel_command(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
@@ -1746,7 +1707,7 @@ fn test_process_batch_cancel_command(
         _ => panic!("Expected OrderCanceled event in third message"),
     };
     let order_event_fourth = saved_messages.get(3).unwrap();
-    let order_canceled_2 = match order_event_fourth {
+    let _order_canceled_2 = match order_event_fourth {
         OrderEventAny::Canceled(order_canceled) => order_canceled,
         _ => panic!("Expected OrderCanceled event in fourth message"),
     };
@@ -1759,13 +1720,11 @@ fn test_expire_order(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,
         order_event_handler.clone(),
     );
-    let cache = Rc::new(RefCell::new(Cache::default()));
 
     // Create order matching engine with gtd support
     let mut engine_config = OrderMatchingEngineConfig::default();
@@ -1847,7 +1806,6 @@ fn test_process_modify_order_rejected_not_found(
     mut msgbus: MessageBus,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
-    time: AtomicTime,
 ) {
     msgbus.register(
         msgbus.switchboard.exec_engine_process,

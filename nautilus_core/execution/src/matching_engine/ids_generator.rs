@@ -157,11 +157,10 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::cache::Cache;
-    use nautilus_core::time::AtomicTime;
     use nautilus_model::{
         enums::OmsType,
         events::OrderFilled,
-        identifiers::{stubs::account_id, AccountId, PositionId, Venue, VenueOrderId},
+        identifiers::{PositionId, Venue, VenueOrderId},
         instruments::InstrumentAny,
         orders::OrderAny,
         position::Position,
@@ -170,9 +169,7 @@ mod tests {
 
     use crate::matching_engine::{
         ids_generator::IdsGenerator,
-        tests::{
-            instrument_eth_usdt, market_order_buy, market_order_fill, market_order_sell, time,
-        },
+        tests::{instrument_eth_usdt, market_order_buy, market_order_fill, market_order_sell},
     };
 
     fn get_ids_generator(
@@ -192,8 +189,6 @@ mod tests {
 
     #[rstest]
     fn test_get_position_id_hedging_with_existing_position(
-        account_id: AccountId,
-        time: AtomicTime,
         instrument_eth_usdt: InstrumentAny,
         market_order_buy: OrderAny,
         market_order_fill: OrderFilled,
@@ -214,11 +209,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_position_id_hedging_with_generated_position(
-        instrument_eth_usdt: InstrumentAny,
-        account_id: AccountId,
-        market_order_buy: OrderAny,
-    ) {
+    fn test_get_position_id_hedging_with_generated_position(market_order_buy: OrderAny) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut ids_generator = get_ids_generator(cache, true, OmsType::Hedging);
 
@@ -229,7 +220,6 @@ mod tests {
     #[rstest]
     fn test_get_position_id_netting(
         instrument_eth_usdt: InstrumentAny,
-        account_id: AccountId,
         market_order_buy: OrderAny,
         market_order_fill: OrderFilled,
     ) {
@@ -254,11 +244,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_venue_position_id(
-        account_id: AccountId,
-        time: AtomicTime,
-        instrument_eth_usdt: InstrumentAny,
-    ) {
+    fn test_generate_venue_position_id() {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut ids_generator_with_position_ids =
             get_ids_generator(cache.clone(), true, OmsType::Netting);
@@ -276,13 +262,7 @@ mod tests {
     }
 
     #[rstest]
-    fn get_venue_position_id(
-        instrument_eth_usdt: InstrumentAny,
-        account_id: AccountId,
-        market_order_buy: OrderAny,
-        market_order_sell: OrderAny,
-        market_order_fill: OrderFilled,
-    ) {
+    fn get_venue_position_id(market_order_buy: OrderAny, market_order_sell: OrderAny) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut ids_generator = get_ids_generator(cache, true, OmsType::Netting);
 
