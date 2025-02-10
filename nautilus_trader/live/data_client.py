@@ -528,10 +528,10 @@ class LiveMarketDataClient(MarketDataClient):
             "aggregation_source is not EXTERNAL",
         )
 
-        self._add_subscription_bars(command)
+        self._add_subscription_bars(command.bar_type)
         self.create_task(
             self._subscribe_bars(command),
-            log_msg=f"subscribe: bars {command.vbar_type}",
+            log_msg=f"subscribe: bars {command.bar_type}",
             success_msg=f"Subscribed {command.bar_type} bars",
             success_color=LogColor.BLUE,
         )
