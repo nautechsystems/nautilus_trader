@@ -122,6 +122,7 @@ impl OrderStatus {
             (Self::Accepted, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::Accepted, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::Accepted, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::Accepted, OrderEventAny::Updated(_)) => Self::Accepted,  // Updates should preserve state
             (Self::Canceled, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,  // Real world possibility
             (Self::Canceled, OrderEventAny::Filled(_)) => Self::Filled,  // Real world possibility
             (Self::PendingUpdate, OrderEventAny::Rejected(_)) => Self::Rejected,

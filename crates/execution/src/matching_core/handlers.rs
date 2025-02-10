@@ -48,7 +48,7 @@ impl FillMarketOrderHandler for FillMarketOrderHandlerAny {
 pub struct ShareableFillMarketOrderHandler(pub FillMarketOrderHandlerAny);
 
 pub trait FillLimitOrderHandler {
-    fn fill_limit_order(&mut self, order: &OrderAny);
+    fn fill_limit_order(&mut self, order: &mut OrderAny);
 }
 
 #[derive(Clone)]
@@ -58,13 +58,13 @@ pub enum FillLimitOrderHandlerAny {
 }
 
 impl FillLimitOrderHandler for FillLimitOrderHandlerAny {
-    fn fill_limit_order(&mut self, order: &OrderAny) {
+    fn fill_limit_order(&mut self, order: &mut OrderAny) {
         match self {
             Self::OrderMatchingEngine(engine) => {
                 engine.borrow_mut().fill_limit_order(order);
             }
             Self::OrderEmulator(emulator) => {
-                emulator.borrow_mut().fill_limit_order(&mut order.clone());
+                emulator.borrow_mut().fill_limit_order(order);
             }
         }
     }
@@ -74,7 +74,7 @@ impl FillLimitOrderHandler for FillLimitOrderHandlerAny {
 pub struct ShareableFillLimitOrderHandler(pub FillLimitOrderHandlerAny);
 
 pub trait TriggerStopOrderHandler {
-    fn trigger_stop_order(&mut self, order: &OrderAny);
+    fn trigger_stop_order(&mut self, order: &mut OrderAny);
 }
 
 #[derive(Clone)]
@@ -84,13 +84,13 @@ pub enum TriggerStopOrderHandlerAny {
 }
 
 impl TriggerStopOrderHandler for TriggerStopOrderHandlerAny {
-    fn trigger_stop_order(&mut self, order: &OrderAny) {
+    fn trigger_stop_order(&mut self, order: &mut OrderAny) {
         match self {
             Self::OrderMatchingEngine(engine) => {
-                engine.borrow_mut().trigger_stop_order(&mut order.clone());
+                engine.borrow_mut().trigger_stop_order(order);
             }
             Self::OrderEmulator(emulator) => {
-                emulator.borrow_mut().trigger_stop_order(&mut order.clone());
+                emulator.borrow_mut().trigger_stop_order(order);
             }
         }
     }
