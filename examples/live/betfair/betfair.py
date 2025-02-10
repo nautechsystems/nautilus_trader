@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
 import traceback
 from decimal import Decimal
@@ -28,15 +12,19 @@ from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instru
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy, SubscribeStrategyConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
-
-
+from nautilus_trader.adapters.databento.data_utils import data_path
+from nautilus_trader.adapters.databento.data_utils import load_catalog
+from nautilus_trader.config import StreamingConfig
+from pathlib import Path
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+catalog_base_path = Path("/Users/netomenoci/Documents/data/catalogues")
+catalog_folder = "betfair_catalog"
+catalog = load_catalog(catalog_folder, base_path=catalog_base_path)
 
 async def main(
     instrument_config: BetfairInstrumentProviderConfig,
@@ -80,19 +68,11 @@ async def main(
         # ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=True,
-            # snapshot_orders=True,
-            # snapshot_positions=True,
-            # snapshot_positions_interval_secs=5.0,
-            # open_check_interval_secs=5.0,
         ),
         data_clients={
             BETFAIR: BetfairDataClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
-                # username=None, # 'BETFAIR_USERNAME' env var
-                # password=None, # 'BETFAIR_PASSWORD' env var
-                # app_key=None, # 'BETFAIR_APP_KEY' env var
-                # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
                 stream_conflate_ms=0,  # Ensures no stream conflation
             ),
         },
@@ -100,22 +80,20 @@ async def main(
             BETFAIR: BetfairExecClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
-                # username=None, # 'BETFAIR_USERNAME' env var
-                # password=None, # 'BETFAIR_PASSWORD' env var
-                # app_key=None, # 'BETFAIR_APP_KEY' env var
-                # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
                 reconcile_market_ids_only=True,
             ),
         },
+        streaming = StreamingConfig(
+            catalog_path=catalog.path,
+            fs_protocol="file",
+        ),  
+
     )
     strategies = [
-        OrderBookImbalance(
-            config=OrderBookImbalanceConfig(
+        SubscribeStrategy(
+            config=SubscribeStrategyConfig(
                 instrument_id=instrument.id,
-                max_trade_size=Decimal(10),
-                trigger_min_size=2,
-                order_id_tag=instrument.selection_id,
-                dry_run=True,  # Change to False to submit new orders
+                book_type = 2,
             ),
         )
         for instrument in instruments
@@ -140,12 +118,9 @@ async def main(
 
 
 if __name__ == "__main__":
-    # Update the market ID with something coming up in `Next Races` from
-    # https://www.betfair.com.au/exchange/plus/
-    # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
-        account_currency="AUD",
-        market_ids=["1.239058028"],
+        account_currency="USD",
+        market_types = ["MATCH_ODDS"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()

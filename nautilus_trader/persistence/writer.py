@@ -410,9 +410,13 @@ class StreamingFeatherWriter:
                 else:
                     self._rotate_regular_file(table, cls)
         except Exception as e:
+            mapped_cls = {OrderBookDeltas: OrderBookDelta}.get(cls, cls)
+            expected_schema = self._schemas.get(mapped_cls, None)
             self.logger.error(f"Failed to serialize {cls=}")
             self.logger.error(f"ERROR = `{e}`")
             self.logger.debug(f"data = {obj}")
+            self.logger.info(f"Serialized schema: {serialized.schema}")
+            self.logger.info(f"Expected schema: {expected_schema}")
 
     def check_flush(self) -> None:
         """

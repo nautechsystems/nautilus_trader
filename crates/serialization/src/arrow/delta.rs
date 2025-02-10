@@ -42,8 +42,8 @@ impl ArrowSchemaProvider for OrderBookDelta {
         let fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
-            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false), // Right type? 
+            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false), // Right type?
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),

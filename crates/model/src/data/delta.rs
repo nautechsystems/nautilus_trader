@@ -162,8 +162,8 @@ impl OrderBookDelta {
         let mut metadata = IndexMap::new();
         metadata.insert("action".to_string(), "UInt8".to_string());
         metadata.insert("side".to_string(), "UInt8".to_string());
-        metadata.insert("price".to_string(), "Int64".to_string());
-        metadata.insert("size".to_string(), "UInt64".to_string());
+        // metadata.insert("price".to_string(), "Int64".to_string()); // // Issue Int64 should be fixedsizebinary(16)
+        // metadata.insert("size".to_string(), "UInt64".to_string()); // // Issue UInt64 should be fixedsizebinary(16)
         metadata.insert("order_id".to_string(), "UInt64".to_string());
         metadata.insert("flags".to_string(), "UInt8".to_string());
         metadata.insert("sequence".to_string(), "UInt64".to_string());

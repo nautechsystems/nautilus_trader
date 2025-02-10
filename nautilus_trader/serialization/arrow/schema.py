@@ -49,10 +49,18 @@ from nautilus_trader.model.events import OrderUpdated
 NAUTILUS_ARROW_SCHEMA = {
     OrderBookDelta: pa.schema(
         [
-            pa.field(k, pa.type_for_alias(v), False)
-            for k, v in nautilus_pyo3.OrderBookDelta.get_fields().items()
+            pa.field("action", pa.uint8(), False),
+            pa.field("side", pa.uint8(), False),
+            pa.field("price", pa.binary(16), False),  # Change from int64 to binary(16)
+            pa.field("size", pa.binary(16), False),   # Change from uint64 to binary(16)
+            pa.field("order_id", pa.uint64(), False),
+            pa.field("flags", pa.uint8(), False),
+            pa.field("sequence", pa.uint64(), False),
+            pa.field("ts_event", pa.uint64(), False),
+            pa.field("ts_init", pa.uint64(), False),
         ],
     ),
+
     OrderBookDepth10: pa.schema(
         [
             pa.field(k, pa.type_for_alias(v), False)
@@ -67,10 +75,15 @@ NAUTILUS_ARROW_SCHEMA = {
     ),
     TradeTick: pa.schema(
         [
-            pa.field(k, pa.type_for_alias(v), False)
-            for k, v in nautilus_pyo3.TradeTick.get_fields().items()
+            pa.field("price", pa.binary(16), False), # Change from int64 to binary(16)
+            pa.field("size", pa.binary(16), False),  # Change from int64 to binary(16)
+            pa.field("aggressor_side", pa.uint8(), False), 
+            pa.field("trade_id", pa.utf8(), False),
+            pa.field("ts_event", pa.uint64(), False),
+            pa.field("ts_init", pa.uint64(), False),
         ],
     ),
+
     Bar: pa.schema(
         [
             pa.field(k, pa.type_for_alias(v), False)

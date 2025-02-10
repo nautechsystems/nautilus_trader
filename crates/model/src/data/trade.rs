@@ -137,8 +137,8 @@ impl TradeTick {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("price".to_string(), "Int64".to_string());
-        metadata.insert("size".to_string(), "UInt64".to_string());
+        metadata.insert("price".to_string(), "Int64".to_string()); // Issue Int64 should be fixedsizebinary(16)
+        metadata.insert("size".to_string(), "UInt64".to_string());// Issue UInt64 should be fixedsizebinary(16)
         metadata.insert("aggressor_side".to_string(), "UInt8".to_string());
         metadata.insert("trade_id".to_string(), "Utf8".to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
