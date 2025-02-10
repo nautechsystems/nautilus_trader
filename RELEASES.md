@@ -7,6 +7,9 @@ None
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
+- Renamed `InterestRateData` to `YieldCurveData`
+- Renamed `Cache.add_interest_rate_curve` to `add_yield_curve`
+- Renamed `Cache.interest_rate_curve` to `yield_curve`
 
 ### Internal Improvements
 - Improved error logging for live engines to now include stacktrace for easier debugging
@@ -14,7 +17,9 @@ None
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
+- Refined yield curve data (#2300), thanks @faysou
 - Ported StreamingFeatherWriter to Rust (#2292), thanks @twitu
+- Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filip
 - Upgraded `arrow` and `parquet` crates to v54.1.0
 - Upgraded `datafusion` crate to v45.0.0
 
