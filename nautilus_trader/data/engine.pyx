@@ -924,7 +924,6 @@ cdef class DataEngine(Component):
         self._subscribed_synthetic_quotes.append(instrument_id)
 
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, SubscribeTradeTicks command):
-        Condition.not_none(command.instrument_id, "instrument_id")
         if command.instrument_id.is_synthetic():
             self._handle_subscribe_synthetic_trade_ticks(command.instrument_id)
             return
@@ -970,7 +969,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.bar_type, "bar_type")
 
         if command.bar_type.is_internally_aggregated():
             # Internal aggregation
@@ -998,7 +996,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_subscribe_data(self, DataClient client, SubscribeData command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.data_type, "data_type")
 
         try:
             if command.data_type not in client.subscribed_custom_data():
@@ -1016,7 +1013,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, SubscribeInstrumentStatus command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
 
         if command.instrument_id.is_synthetic():
             self._log.error(
@@ -1029,7 +1025,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, SubscribeInstrumentClose command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
 
         if command.instrument_id.is_synthetic():
             self._log.error("Cannot subscribe for synthetic instrument `InstrumentClose` data")
@@ -1062,7 +1057,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, UnsubscribeOrderBook command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
         Condition.not_none(command.params, "params")
 
         if command.instrument_id.is_synthetic():
@@ -1090,7 +1084,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, UnsubscribeOrderBook command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
         Condition.not_none(command.params, "params")
 
         if command.instrument_id.is_synthetic():
@@ -1132,7 +1125,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
 
         if not self._msgbus.has_subscribers(
             f"data.quotes"
@@ -1144,7 +1136,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, UnsubscribeTradeTicks command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
 
         if not self._msgbus.has_subscribers(
             f"data.trades"
@@ -1156,7 +1147,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.bar_type, "bar_type")
 
         if self._msgbus.has_subscribers(f"data.bars.{command.bar_type.standard()}"):
             return
@@ -1186,7 +1176,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_instrument_status(self, MarketDataClient client, UnsubscribeInstrumentStatus command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
 
         if command.instrument_id.is_synthetic():
             self._log.error(
@@ -1199,7 +1188,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_instrument_close(self, MarketDataClient client, UnsubscribeInstrumentClose command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
 
         if command.instrument_id.is_synthetic():
             self._log.error("Cannot unsubscribe for synthetic instrument `InstrumentClose` data")
