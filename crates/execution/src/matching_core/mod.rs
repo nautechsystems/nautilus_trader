@@ -238,9 +238,11 @@ impl OrderMatchingCore {
     }
 
     pub fn match_limit_order(&mut self, order: &LimitOrderAny) {
-        if self.is_limit_matched(order) {
+        if self.is_limit_matched(order, None) {
             if let Some(handler) = &mut self.fill_limit_order {
-                handler.0.fill_limit_order(&OrderAny::from(order.clone()));
+                handler
+                    .0
+                    .fill_limit_order(&mut OrderAny::from(order.clone()));
             }
         }
     }
@@ -248,16 +250,19 @@ impl OrderMatchingCore {
     pub fn match_stop_order(&mut self, order: &StopOrderAny) {
         if self.is_stop_matched(order) {
             if let Some(handler) = &mut self.trigger_stop_order {
-                handler.0.trigger_stop_order(&OrderAny::from(order.clone()));
+                handler
+                    .0
+                    .trigger_stop_order(&mut OrderAny::from(order.clone()));
             }
         }
     }
 
     #[must_use]
-    pub fn is_limit_matched(&self, order: &LimitOrderAny) -> bool {
+    pub fn is_limit_matched(&self, order: &LimitOrderAny, price: Option<Price>) -> bool {
+        let target_price = price.unwrap_or(order.limit_px());
         match order.order_side_specified() {
-            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= order.limit_px()),
-            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= order.limit_px()),
+            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= target_price),
+            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= target_price),
         }
     }
 
@@ -465,7 +470,7 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        let result = matching_core.is_limit_matched(&order.into());
+        let result = matching_core.is_limit_matched(&order.into(), None);
         assert_eq!(result, expected);
     }
 

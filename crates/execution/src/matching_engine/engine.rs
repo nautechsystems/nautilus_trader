@@ -704,7 +704,7 @@ impl OrderMatchingEngine {
     pub fn process_modify(&mut self, command: &ModifyOrder, account_id: AccountId) {
         if let Some(order) = self.core.get_order(command.client_order_id) {
             self.update_order(
-                &order.to_any(),
+                &mut order.to_any(),
                 command.quantity,
                 command.price,
                 command.trigger_price,
@@ -714,11 +714,11 @@ impl OrderMatchingEngine {
             self.generate_order_modify_rejected(
                 command.trader_id,
                 command.strategy_id,
-                account_id,
                 command.instrument_id,
                 command.client_order_id,
-                command.venue_order_id,
                 Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+                Some(command.venue_order_id),
+                Some(account_id),
             );
         }
     }
@@ -804,7 +804,7 @@ impl OrderMatchingEngine {
         if order.is_post_only()
             && self
                 .core
-                .is_limit_matched(&LimitOrderAny::from(order.to_owned()))
+                .is_limit_matched(&LimitOrderAny::from(order.to_owned()), None)
         {
             self.generate_order_rejected(
                 order,
@@ -831,7 +831,7 @@ impl OrderMatchingEngine {
         // Check for immediate fill
         if self
             .core
-            .is_limit_matched(&LimitOrderAny::from(order.to_owned()))
+            .is_limit_matched(&LimitOrderAny::from(order.to_owned()), None)
         {
             // Filling as liquidity taker
             if order.liquidity_side().is_some()
@@ -910,7 +910,7 @@ impl OrderMatchingEngine {
             // Check for immediate fill
             if self
                 .core
-                .is_limit_matched(&LimitOrderAny::from(order.to_owned()))
+                .is_limit_matched(&LimitOrderAny::from(order.to_owned()), None)
             {
                 order.set_liquidity_side(LiquiditySide::Taker);
                 self.fill_limit_order(order);
@@ -1163,7 +1163,7 @@ impl OrderMatchingEngine {
         self.apply_fills(order, fills, LiquiditySide::Taker, None, position);
     }
 
-    pub fn fill_limit_order(&mut self, order: &OrderAny) {
+    pub fn fill_limit_order(&mut self, order: &mut OrderAny) {
         match order.price() {
             Some(order_price) => {
                 let cached_filled_qty = self.cached_filled_qty.get(&order.client_order_id());
@@ -1231,7 +1231,7 @@ impl OrderMatchingEngine {
 
     fn apply_fills(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         fills: Vec<(Price, Quantity)>,
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
@@ -1428,8 +1428,37 @@ impl OrderMatchingEngine {
         todo!("Check for contingent orders")
     }
 
-    fn update_limit_order(&mut self, order: &OrderAny, quantity: Quantity, price: Price) {
-        todo!("update_limit_order")
+    fn update_limit_order(&mut self, order: &mut OrderAny, quantity: Quantity, price: Price) {
+        if self
+            .core
+            .is_limit_matched(&LimitOrderAny::from(order.clone()), Some(price))
+        {
+            if order.is_post_only() {
+                self.generate_order_modify_rejected(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    Ustr::from(format!(
+                        "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        price,
+                        self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).as_str()),
+                    order.venue_order_id(),
+                    order.account_id(),
+                );
+                return;
+            }
+
+            self.generate_order_updated(order, quantity, Some(price), None);
+            order.set_liquidity_side(LiquiditySide::Taker);
+            self.fill_limit_order(order);
+            return;
+        }
+        self.generate_order_updated(order, quantity, Some(price), None);
     }
 
     fn update_stop_market_order(
@@ -1549,7 +1578,7 @@ impl OrderMatchingEngine {
 
     fn update_order(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         quantity: Option<Quantity>,
         price: Option<Price>,
         trigger_price: Option<Price>,
@@ -1681,6 +1710,7 @@ impl OrderMatchingEngine {
         let msgbus = self.msgbus.as_ref().borrow();
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
 
+        // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
     }
 
@@ -1689,11 +1719,11 @@ impl OrderMatchingEngine {
         &self,
         trader_id: TraderId,
         strategy_id: StrategyId,
-        account_id: AccountId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
         reason: Ustr,
+        venue_order_id: Option<VenueOrderId>,
+        account_id: Option<AccountId>,
     ) {
         let ts_now = self.clock.get_time_ns();
         let event = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
@@ -1706,8 +1736,8 @@ impl OrderMatchingEngine {
             ts_now,
             ts_now,
             false,
-            Some(venue_order_id),
-            Some(account_id),
+            venue_order_id,
+            account_id,
         ));
         let msgbus = self.msgbus.as_ref().borrow();
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
@@ -1744,7 +1774,7 @@ impl OrderMatchingEngine {
 
     fn generate_order_updated(
         &self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         quantity: Quantity,
         price: Option<Price>,
         trigger_price: Option<Price>,
@@ -1767,6 +1797,9 @@ impl OrderMatchingEngine {
         ));
         let msgbus = self.msgbus.as_ref().borrow();
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+
+        // TODO remove this when execution engine msgbus handlers are correctly set
+        order.apply(event).expect("Failed to apply order event");
     }
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
