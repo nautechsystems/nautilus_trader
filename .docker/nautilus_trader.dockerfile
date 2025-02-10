@@ -35,8 +35,8 @@ COPY poetry.lock pyproject.toml build.py ./
 RUN poetry install --no-root --only main
 
 # Build nautilus_trader
-COPY nautilus_core ./nautilus_core
-RUN (cd nautilus_core && cargo build --release --all-features)
+COPY crates ./crates
+RUN cargo build --release --all-features
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
