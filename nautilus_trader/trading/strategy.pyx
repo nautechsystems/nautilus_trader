@@ -445,7 +445,7 @@ cdef class Strategy(Actor):
 
     cpdef void on_order_emulated(self, OrderEmulated event):
         """
-        Actions to be performed when running and receives an order initialized event.
+        Actions to be performed when running and receives an order emulated event.
 
         Parameters
         ----------
@@ -829,7 +829,7 @@ cdef class Strategy(Actor):
         Submit the given order list with optional position ID, execution algorithm
         and routing instructions.
 
-        A `SubmitOrderList` command with be created and sent to **either** the
+        A `SubmitOrderList` command will be created and sent to **either** the
         `OrderEmulator`, or the `RiskEngine` (depending whether an order is emulated).
 
         If the order list ID is duplicate, or any client order ID is duplicate,
