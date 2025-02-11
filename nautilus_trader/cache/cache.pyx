@@ -214,39 +214,39 @@ cdef class Cache(CacheFacade):
             if order.contingency_type == ContingencyType.OTO and order.position_id is not None:
                 self._assign_position_id_to_contingencies(order)
 
-        cdef int count = len(self._currencies)
+        cdef int currencies_count = len(self._currencies)
         self._log.info(
-            f"Cached {count} currenc{'y' if count == 1 else 'ies'} from database",
+            f"Cached {currencies_count} currenc{'y' if currencies_count == 1 else 'ies'} from database",
             color=LogColor.BLUE if self._currencies else LogColor.NORMAL,
         )
 
-        cdef int count = len(self._instruments)
+        cdef int instruments_count = len(self._instruments)
         self._log.info(
-            f"Cached {count} instrument{'' if count == 1 else 's'} from database",
+            f"Cached {instruments_count} instrument{'' if instruments_count == 1 else 's'} from database",
             color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
         )
 
-        cdef int count = len(self._synthetics)
+        cdef int synthetics_count = len(self._synthetics)
         self._log.info(
-            f"Cached {count} synthetic instrument{'' if count == 1 else 's'} from database",
+            f"Cached {synthetics_count} synthetic instrument{'' if synthetics_count == 1 else 's'} from database",
             color=LogColor.BLUE if self._synthetics else LogColor.NORMAL,
         )
 
-        cdef int count = len(self._accounts)
+        cdef int accounts_count = len(self._accounts)
         self._log.info(
-            f"Cached {count} account{'' if count == 1 else 's'} from database",
+            f"Cached {accounts_count} account{'' if accounts_count == 1 else 's'} from database",
             color=LogColor.BLUE if self._accounts else LogColor.NORMAL,
         )
 
-        cdef int count = len(self._orders)
+        cdef int orders_count = len(self._orders)
         self._log.info(
-            f"Cached {count} order{'' if count == 1 else 's'} from database",
+            f"Cached {orders_count} order{'' if orders_count == 1 else 's'} from database",
             color=LogColor.BLUE if self._orders else LogColor.NORMAL,
         )
 
-        cdef int count = len(self._positions)
+        cdef int positions_count = len(self._positions)
         self._log.info(
-            f"Cached {count} position{'' if count == 1 else 's'} from database",
+            f"Cached {positions_count} position{'' if positions_count == 1 else 's'} from database",
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
         )
 
