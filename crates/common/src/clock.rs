@@ -298,19 +298,25 @@ impl Clock for TestClock {
         callback: Option<TimeEventCallback>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
+        let name_ustr = Ustr::from(name);
+
         check_predicate_true(
-            callback.is_some() | self.default_callback.is_some(),
+            callback.is_some()
+                | self.callbacks.contains_key(&name_ustr)
+                | self.default_callback.is_some(),
             "No callbacks provided",
         )?;
 
-        let name_ustr = Ustr::from(name);
         match callback {
             Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
             None => None,
         };
 
-        let ts_now = self.time.get_time_ns();
+        // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts.
+        self.cancel_timer(name);
+
         // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
+        let ts_now = self.time.get_time_ns();
         let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
         let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns));
         self.timers.insert(name_ustr, timer);
@@ -488,29 +494,45 @@ impl Clock for LiveClock {
         callback: Option<TimeEventCallback>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
+        let name_ustr = Ustr::from(name);
+
         check_predicate_true(
-            callback.is_some() | self.default_callback.is_some(),
+            callback.is_some()
+                | self.callbacks.contains_key(&name_ustr)
+                | self.default_callback.is_some(),
             "No callbacks provided",
         )?;
 
-        let callback = match callback {
-            Some(callback) => callback,
-            None => self.default_callback.clone().unwrap(),
-        };
-
         #[cfg(feature = "clock_v2")]
         {
-            let name = Ustr::from(name);
-            self.callbacks.insert(name, callback.clone());
+            match callback.clone() {
+                Some(callback) => self.callbacks.insert(name_ustr, callback.clone()),
+                None => None,
+            };
         }
 
+        let callback = match callback {
+            Some(callback) => callback,
+            None => {
+                if self.callbacks.contains_key(&name_ustr) {
+                    self.callbacks.get(&name_ustr).unwrap().clone()
+                } else {
+                    self.default_callback.clone().unwrap()
+                }
+            }
+        };
+
+        // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts.
+        self.cancel_timer(name);
+
+        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
-        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
         let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
+
         #[cfg(feature = "clock_v2")]
         let mut timer = LiveTimer::new(
             name,
@@ -566,6 +588,7 @@ impl Clock for LiveClock {
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
+
         #[cfg(feature = "clock_v2")]
         let mut timer = LiveTimer::new(
             name,

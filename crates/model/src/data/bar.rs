@@ -23,11 +23,12 @@ use std::{
     str::FromStr,
 };
 
-use chrono::{DateTime, Datelike, Duration, TimeDelta, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, SubsecRound, TimeDelta, Timelike, Utc};
 use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
     correctness::{check_predicate_true, FAILED},
+    datetime::{add_n_months, subtract_n_months},
     serialization::Serializable,
     UnixNanos,
 };
@@ -55,6 +56,8 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
         BarAggregation::Minute => TimeDelta::minutes(spec.step.get() as i64),
         BarAggregation::Hour => TimeDelta::hours(spec.step.get() as i64),
         BarAggregation::Day => TimeDelta::days(spec.step.get() as i64),
+        BarAggregation::Week => TimeDelta::days(7 * spec.step.get() as i64),
+        BarAggregation::Month => TimeDelta::days(0),
         _ => panic!("Aggregation not time based"),
     }
 }
@@ -73,37 +76,131 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
 }
 
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
-pub fn get_time_bar_start(now: DateTime<Utc>, bar_type: &BarType) -> DateTime<Utc> {
+/// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
+pub fn get_time_bar_start(
+    now: DateTime<Utc>,
+    bar_type: &BarType,
+    time_bars_origin: Option<TimeDelta>,
+) -> DateTime<Utc> {
     let spec = bar_type.spec();
-    let step = spec.step.get();
+    let step = spec.step.get() as i64;
+    let origin_offset: TimeDelta = time_bars_origin.unwrap_or_else(TimeDelta::zero);
 
     match spec.aggregation {
         BarAggregation::Millisecond => {
-            let diff_milliseconds = now.timestamp_subsec_millis() as usize % step;
-            now - TimeDelta::milliseconds(diff_milliseconds as i64)
+            let mut start_time = now.trunc_subsecs(0);
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time -= Duration::seconds(1);
+            }
+
+            while start_time <= now {
+                start_time += Duration::milliseconds(step);
+            }
+
+            start_time -= Duration::milliseconds(step);
+            start_time
         }
         BarAggregation::Second => {
-            let diff_seconds = now.timestamp() % step as i64;
-            now - TimeDelta::seconds(diff_seconds)
+            let mut start_time = now.trunc_subsecs(0) - Duration::seconds(now.second() as i64);
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time -= Duration::minutes(1);
+            }
+
+            while start_time <= now {
+                start_time += Duration::seconds(step);
+            }
+
+            start_time -= Duration::seconds(step);
+            start_time
         }
         BarAggregation::Minute => {
-            let diff_minutes = now.time().minute() as usize % step;
-            now - TimeDelta::minutes(diff_minutes as i64)
-                - TimeDelta::seconds(now.time().second() as i64)
+            let mut start_time = now.trunc_subsecs(0)
+                - Duration::seconds(now.second() as i64)
+                - Duration::minutes(now.minute() as i64);
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time -= Duration::hours(1);
+            }
+
+            while start_time <= now {
+                start_time += Duration::minutes(step);
+            }
+
+            start_time -= Duration::minutes(step);
+            start_time
         }
         BarAggregation::Hour => {
-            let diff_hours = now.time().hour() as usize % step;
-            let diff_days = if diff_hours == 0 { 0 } else { (step / 24) - 1 };
-            now - TimeDelta::days(diff_days as i64)
-                - TimeDelta::hours(diff_hours as i64)
-                - TimeDelta::minutes(now.minute() as i64)
-                - TimeDelta::seconds(now.second() as i64)
+            let mut start_time = now.trunc_subsecs(0)
+                - Duration::seconds(now.second() as i64)
+                - Duration::minutes(now.minute() as i64)
+                - Duration::hours(now.hour() as i64);
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time -= Duration::days(1);
+            }
+
+            while start_time <= now {
+                start_time += Duration::hours(step);
+            }
+
+            start_time -= Duration::hours(step);
+            start_time
         }
         BarAggregation::Day => {
-            now - TimeDelta::days(now.day() as i64 % step as i64)
-                - TimeDelta::hours(now.hour() as i64)
-                - TimeDelta::minutes(now.minute() as i64)
-                - TimeDelta::seconds(now.second() as i64)
+            let mut start_time = now.trunc_subsecs(0)
+                - Duration::seconds(now.second() as i64)
+                - Duration::minutes(now.minute() as i64)
+                - Duration::hours(now.hour() as i64);
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time -= Duration::days(1);
+            }
+
+            start_time
+        }
+        BarAggregation::Week => {
+            let mut start_time = now.trunc_subsecs(0)
+                - Duration::seconds(now.second() as i64)
+                - Duration::minutes(now.minute() as i64)
+                - Duration::hours(now.hour() as i64)
+                - TimeDelta::days(now.weekday().num_days_from_monday() as i64);
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time -= Duration::weeks(1);
+            }
+
+            start_time
+        }
+        BarAggregation::Month => {
+            // Set to the first day of the year
+            let mut start_time = DateTime::<Utc>::from_utc(
+                chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)
+                    .expect("valid date")
+                    .and_hms_opt(0, 0, 0)
+                    .expect("valid time"),
+                Utc,
+            );
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time = subtract_n_months(start_time, 12);
+            }
+
+            let months_step = step as u32;
+            while start_time <= now {
+                start_time = add_n_months(start_time, months_step);
+            }
+
+            start_time = subtract_n_months(start_time, months_step);
+            start_time
         }
         _ => panic!(
             "Aggregation type {} not supported for time bars",
@@ -865,7 +962,7 @@ mod tests {
             aggregation_source: AggregationSource::Internal,
         };
 
-        let start_time = get_time_bar_start(now, &bar_type);
+        let start_time = get_time_bar_start(now, &bar_type, None);
         assert_eq!(start_time, expected);
     }
 

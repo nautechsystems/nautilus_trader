@@ -15,26 +15,23 @@
 
 //! Bar aggregation machinery.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_assignments)]
-
 use std::{cell::RefCell, ops::Add, rc::Rc};
 
-use chrono::{DateTime, TimeDelta, TimeZone, Utc};
+use chrono::TimeDelta;
 use nautilus_common::{
     clock::Clock,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     correctness::{self, FAILED},
-    datetime::{add_n_months, subtract_n_months},
+    datetime::{
+        add_n_months_nanos, date_to_unix_nanos, subtract_n_months_nanos, unix_nanos_to_date,
+    },
     UnixNanos,
 };
 use nautilus_model::{
     data::{
-        bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
+        bar::{get_bar_interval_ns, get_time_bar_start, Bar, BarType},
         QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BarAggregation, BarIntervalType},
@@ -48,27 +45,35 @@ pub trait BarAggregator {
     fn is_running(&self) -> bool;
     fn set_await_partial(&mut self, value: bool);
     fn set_is_running(&mut self, value: bool);
-    /// Updates theaggregator  with the given price and size.
+    /// Updates the aggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
     /// Updates the aggregator with the given quote.
     fn handle_quote(&mut self, quote: QuoteTick) {
         let spec = self.bar_type().spec();
-        self.update(
-            quote.extract_price(spec.price_type),
-            quote.extract_size(spec.price_type),
-            quote.ts_event,
-        );
+        if !self.await_partial() {
+            self.update(
+                quote.extract_price(spec.price_type),
+                quote.extract_size(spec.price_type),
+                quote.ts_event,
+            );
+        }
     }
     /// Updates the aggregator with the given trade.
     fn handle_trade(&mut self, trade: TradeTick) {
-        self.update(trade.price, trade.size, trade.ts_event);
+        if !self.await_partial() {
+            self.update(trade.price, trade.size, trade.ts_event);
+        }
     }
     fn handle_bar(&mut self, bar: Bar) {
-        self.update_bar(bar, bar.volume, bar.ts_init);
+        if !self.await_partial() {
+            self.update_bar(bar, bar.volume, bar.ts_init);
+        }
     }
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
-    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>);
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, time_ns: UnixNanos);
     fn stop_batch_update(&mut self);
+    fn await_partial(&self) -> bool;
+    fn set_partial(&mut self, partial_bar: Bar);
 }
 
 /// Provides a generic bar builder for aggregation.
@@ -292,12 +297,16 @@ where
         }
     }
 
-    pub const fn set_await_partial(&mut self, value: bool) {
+    pub fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
     }
 
-    pub const fn set_is_running(&mut self, value: bool) {
+    pub fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
+    }
+
+    pub fn await_partial(&self) -> bool {
+        self.await_partial
     }
 
     /// Set the initial values for a partially completed bar.
@@ -316,6 +325,7 @@ where
 
     fn build_and_send(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) {
         let bar = self.builder.build(ts_event, ts_init);
+
         if self.batch_mode {
             if let Some(handler) = &mut self.batch_handler {
                 handler(bar);
@@ -332,6 +342,7 @@ where
 
     pub fn stop_batch_update(&mut self) {
         self.batch_mode = false;
+
         if let Some(handler) = self.handler_backup.take() {
             self.handler = handler;
         }
@@ -394,11 +405,15 @@ where
     }
 
     fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+        self.core.set_await_partial(value);
     }
 
     fn set_is_running(&mut self, value: bool) {
-        self.core.is_running = value;
+        self.core.set_is_running(value);
+    }
+
+    fn await_partial(&self) -> bool {
+        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
@@ -443,12 +458,16 @@ where
         }
     }
 
-    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, _: UnixNanos) {
         self.core.start_batch_update(handler);
     }
 
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
+    }
+
+    fn set_partial(&mut self, partial_bar: Bar) {
+        self.core.set_partial(partial_bar)
     }
 }
 
@@ -480,7 +499,7 @@ where
     ) -> Self {
         Self {
             core: BarAggregatorCore::new(
-                bar_type,
+                bar_type.standard(),
                 price_precision,
                 size_precision,
                 handler,
@@ -503,20 +522,22 @@ where
     }
 
     fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+        self.core.set_await_partial(value);
     }
 
     fn set_is_running(&mut self, value: bool) {
-        self.core.is_running = value;
+        self.core.set_is_running(value);
+    }
+
+    fn await_partial(&self) -> bool {
+        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
-    #[allow(unused_assignments)] // Temp for development
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
         let spec = self.core.bar_type.spec();
         let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
-        let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
             if self.core.builder.volume.raw + raw_size_update < raw_step {
@@ -528,7 +549,7 @@ where
                 break;
             }
 
-            raw_size_diff = raw_step - self.core.builder.volume.raw;
+            let raw_size_diff = raw_step - self.core.builder.volume.raw;
             self.core.apply_update(
                 price,
                 Quantity::from_raw(raw_size_diff, size.precision),
@@ -544,7 +565,6 @@ where
         let mut raw_volume_update = volume.raw;
         let spec = self.core.bar_type.spec();
         let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
-        let mut _raw_volume_diff = 0;
 
         while raw_volume_update > 0 {
             if self.core.builder.volume.raw + raw_volume_update < raw_step {
@@ -556,24 +576,28 @@ where
                 break;
             }
 
-            _raw_volume_diff = raw_step - self.core.builder.volume.raw;
+            let raw_volume_diff = raw_step - self.core.builder.volume.raw;
             self.core.builder.update_bar(
                 bar,
-                Quantity::from_raw(_raw_volume_diff, volume.precision),
+                Quantity::from_raw(raw_volume_diff, volume.precision),
                 ts_init,
             );
 
             self.core.build_now_and_send();
-            raw_volume_update -= _raw_volume_diff;
+            raw_volume_update -= raw_volume_diff;
         }
     }
 
-    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, _: UnixNanos) {
         self.core.start_batch_update(handler);
     }
 
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
+    }
+
+    fn set_partial(&mut self, partial_bar: Bar) {
+        self.core.set_partial(partial_bar)
     }
 }
 
@@ -609,7 +633,7 @@ where
     ) -> Self {
         Self {
             core: BarAggregatorCore::new(
-                bar_type,
+                bar_type.standard(),
                 price_precision,
                 size_precision,
                 handler,
@@ -639,11 +663,15 @@ where
     }
 
     fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+        self.core.set_await_partial(value);
     }
 
     fn set_is_running(&mut self, value: bool) {
-        self.core.is_running = value;
+        self.core.set_is_running(value);
+    }
+
+    fn await_partial(&self) -> bool {
+        self.core.await_partial()
     }
 
     /// Apply the given update to the aggregator.
@@ -703,12 +731,16 @@ where
         }
     }
 
-    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, _: UnixNanos) {
         self.core.start_batch_update(handler);
     }
 
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
+    }
+
+    fn set_partial(&mut self, partial_bar: Bar) {
+        self.core.set_partial(partial_bar)
     }
 }
 
@@ -727,16 +759,15 @@ where
     build_on_next_tick: bool,
     stored_open_ns: UnixNanos,
     stored_close_ns: UnixNanos,
-    cached_update: Option<(Price, Quantity, u64)>,
     timer_name: String,
-    interval: TimeDelta,
     interval_ns: UnixNanos,
     next_close_ns: UnixNanos,
-    composite_bar_build_delay: i32,
+    composite_bar_build_delay: i64,
     add_delay: bool,
     batch_open_ns: UnixNanos,
     batch_next_close_ns: UnixNanos,
-    time_bars_origin: Option<DateTime<Utc>>,
+    time_bars_origin: Option<TimeDelta>,
+    skip_first_non_full_bar: bool,
 }
 
 #[derive(Clone)]
@@ -745,7 +776,7 @@ pub struct NewBarCallback<H: FnMut(Bar)> {
 }
 
 impl<H: FnMut(Bar)> NewBarCallback<H> {
-    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
+    pub fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
         Self { aggregator }
     }
 }
@@ -780,26 +811,20 @@ where
         build_with_no_updates: bool,
         timestamp_on_close: bool,
         interval_type: BarIntervalType,
-        time_bars_origin: Option<DateTime<Utc>>,
-        composite_bar_build_delay: i32,
+        time_bars_origin: Option<TimeDelta>,
+        composite_bar_build_delay: i64,
+        skip_first_non_full_bar: bool,
     ) -> Self {
-        let _is_left_open = match interval_type {
+        let is_left_open = match interval_type {
             BarIntervalType::LeftOpen => true,
             BarIntervalType::RightOpen => false,
         };
 
-        // Change how we check for composite internally aggregated bars
-        let add_delay = if bar_type.is_composite() {
-            matches!(
-                bar_type.composite().aggregation_source(),
-                AggregationSource::Internal
-            )
-        } else {
-            false
-        };
+        let add_delay = bar_type.is_composite()
+            && bar_type.composite().aggregation_source() == AggregationSource::Internal;
 
         let core = BarAggregatorCore::new(
-            bar_type,
+            bar_type.standard(),
             price_precision,
             size_precision,
             handler,
@@ -811,13 +836,11 @@ where
             clock,
             build_with_no_updates,
             timestamp_on_close,
-            is_left_open: false,
+            is_left_open,
             build_on_next_tick: false,
             stored_open_ns: UnixNanos::default(),
             stored_close_ns: UnixNanos::default(),
-            cached_update: None,
             timer_name: bar_type.to_string(),
-            interval: get_bar_interval(&bar_type),
             interval_ns: get_bar_interval_ns(&bar_type),
             next_close_ns: UnixNanos::default(),
             composite_bar_build_delay,
@@ -825,25 +848,46 @@ where
             batch_open_ns: UnixNanos::default(),
             batch_next_close_ns: UnixNanos::default(),
             time_bars_origin,
+            skip_first_non_full_bar,
         }
     }
 
     /// Starts the time bar aggregator.
     pub fn start(&mut self, callback: NewBarCallback<H>) -> anyhow::Result<()> {
         let now = self.clock.borrow().utc_now();
-        let start_time = get_time_bar_start(now, &self.bar_type());
-        let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
+        let mut start_time = get_time_bar_start(now, &self.bar_type(), self.time_bars_origin);
 
-        self.clock
-            .borrow_mut()
-            .set_timer_ns(
-                &self.timer_name,
-                self.interval_ns.as_u64(),
-                start_time_ns,
-                None,
-                Some(callback.into()),
-            )
-            .expect(FAILED);
+        if start_time == now {
+            self.skip_first_non_full_bar = false;
+        }
+
+        if self.add_delay {
+            start_time += TimeDelta::microseconds(self.composite_bar_build_delay);
+        }
+
+        let spec = &self.bar_type().spec();
+        let start_time_ns = date_to_unix_nanos(start_time);
+
+        if spec.aggregation != BarAggregation::Month {
+            self.clock
+                .borrow_mut()
+                .set_timer_ns(
+                    &self.timer_name,
+                    self.interval_ns.as_u64(),
+                    start_time_ns,
+                    None,
+                    Some(callback.into()),
+                )
+                .expect(FAILED);
+        } else {
+            let step = spec.step.get() as u32;
+            let alert_time_ns = add_n_months_nanos(start_time_ns, step);
+
+            self.clock
+                .borrow_mut()
+                .set_time_alert_ns(&self.timer_name, alert_time_ns, Some(callback.into()))
+                .expect(FAILED);
+        }
 
         log::debug!("Started timer {}", self.timer_name);
         Ok(())
@@ -854,26 +898,63 @@ where
         self.clock.borrow_mut().cancel_timer(&self.timer_name);
     }
 
-    fn batch_pre_update(&mut self, time_ns: UnixNanos) {
-        if time_ns > self.batch_next_close_ns && self.core.builder.initialized {
-            let ts_init = self.batch_next_close_ns;
+    pub fn start_batch_time(&mut self, time_ns: UnixNanos) {
+        let spec = self.bar_type().spec();
+        self.core.batch_mode = true;
 
-            // Adjust timestamp based on interval type
-            let ts_event = if self.is_left_open {
-                if self.timestamp_on_close {
-                    self.batch_next_close_ns
-                } else {
-                    self.batch_open_ns
-                }
+        let time = unix_nanos_to_date(time_ns);
+        let start_time = get_time_bar_start(time, &self.bar_type(), self.time_bars_origin);
+        self.batch_open_ns = date_to_unix_nanos(start_time);
+
+        if spec.aggregation != BarAggregation::Month {
+            if self.batch_open_ns == time_ns {
+                self.batch_open_ns -= self.interval_ns;
+            }
+
+            self.batch_next_close_ns = self.batch_open_ns + self.interval_ns;
+        } else {
+            let step = spec.step.get() as u32;
+
+            if self.batch_open_ns == time_ns {
+                self.batch_open_ns = subtract_n_months_nanos(self.batch_open_ns, step);
+            }
+
+            self.batch_next_close_ns = add_n_months_nanos(self.batch_open_ns, step);
+        }
+    }
+
+    fn bar_ts_event(&self, open_ns: UnixNanos, close_ns: UnixNanos) -> UnixNanos {
+        if self.is_left_open {
+            if self.timestamp_on_close {
+                close_ns
             } else {
-                self.batch_open_ns
-            };
+                open_ns
+            }
+        } else {
+            open_ns
+        }
+    }
 
+    fn build_and_send(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) {
+        if self.skip_first_non_full_bar {
+            self.core.builder.reset();
+            self.skip_first_non_full_bar = false;
+        } else {
             self.core.build_and_send(ts_event, ts_init);
         }
     }
 
+    fn batch_pre_update(&mut self, time_ns: UnixNanos) {
+        if time_ns > self.batch_next_close_ns && self.core.builder.initialized {
+            let ts_init = self.batch_next_close_ns;
+            let ts_event = self.bar_ts_event(self.batch_open_ns, ts_init);
+            self.build_and_send(ts_event, ts_init);
+        }
+    }
+
     fn batch_post_update(&mut self, time_ns: UnixNanos) {
+        let step = self.bar_type().spec().step.get() as u32;
+
         // If not in batch mode and time matches next close, reset batch close
         if !self.core.batch_mode
             && time_ns == self.batch_next_close_ns
@@ -885,87 +966,36 @@ where
 
         if time_ns > self.batch_next_close_ns {
             // Ensure batch times are coherent with last builder update
-            if self.bar_type().spec().aggregation == BarAggregation::Month {
-                // TODO: Handle monthly bars which need special date arithmetic
-                // This will need chrono/datetime handling
-            } else {
+            if self.bar_type().spec().aggregation != BarAggregation::Month {
                 while self.batch_next_close_ns < time_ns {
                     self.batch_next_close_ns += self.interval_ns;
                 }
+
                 self.batch_open_ns = self.batch_next_close_ns - self.interval_ns;
+            } else {
+                while self.batch_next_close_ns < time_ns {
+                    self.batch_next_close_ns = add_n_months_nanos(self.batch_next_close_ns, step);
+                }
+
+                self.batch_open_ns = subtract_n_months_nanos(self.batch_next_close_ns, step);
             }
         }
 
         if time_ns == self.batch_next_close_ns {
-            // Adjust timestamp based on interval type
-            let ts_event = if self.is_left_open {
-                if self.timestamp_on_close {
-                    self.batch_next_close_ns
-                } else {
-                    self.batch_open_ns
-                }
-            } else {
-                self.batch_open_ns
-            };
-
-            self.core.build_and_send(ts_event, time_ns);
+            let ts_event = self.bar_ts_event(self.batch_open_ns, self.batch_next_close_ns);
+            self.build_and_send(ts_event, time_ns);
             self.batch_open_ns = self.batch_next_close_ns;
 
-            if self.bar_type().spec().aggregation == BarAggregation::Month {
-                // TODO: Handle monthly bars increment
-            } else {
+            if self.bar_type().spec().aggregation != BarAggregation::Month {
                 self.batch_next_close_ns += self.interval_ns;
+            } else {
+                self.batch_next_close_ns = add_n_months_nanos(self.batch_next_close_ns, step);
             }
         }
 
-        // Delay resetting batch_next_close_ns to allow creating a last historical bar
-        // when transitioning to regular bars
+        // Delay resetting batch_next_close_ns to allow creating a last historical bar when transitioning to regular bars
         if !self.core.batch_mode {
             self.batch_next_close_ns = UnixNanos::default();
-        }
-    }
-
-    pub fn start_batch_time(&mut self, time_ns: UnixNanos) {
-        self.core.batch_mode = true;
-
-        let dt = Utc.timestamp_nanos(time_ns.as_u64() as i64);
-        let mut start_dt = get_time_bar_start(dt, &self.bar_type());
-        self.batch_open_ns = UnixNanos::from(
-            start_dt
-                .timestamp_nanos_opt()
-                .expect("Timestamp out of range") as u64,
-        );
-
-        let spec = self.bar_type().spec();
-        let step = spec.step.get() as isize;
-
-        if spec.aggregation == BarAggregation::Month {
-            if self.batch_open_ns == time_ns {
-                start_dt = subtract_n_months(start_dt, step).expect("Failed subtracting months");
-                self.batch_open_ns = UnixNanos::from(
-                    start_dt
-                        .timestamp_nanos_opt()
-                        .expect("Bad month subtraction") as u64,
-                );
-            }
-
-            let next_dt = add_n_months(start_dt, step).expect("Failed adding months");
-            self.batch_next_close_ns =
-                UnixNanos::from(next_dt.timestamp_nanos_opt().expect("Bad month addition") as u64);
-        } else {
-            if self.batch_open_ns == time_ns {
-                self.batch_open_ns = UnixNanos::from(
-                    self.batch_open_ns
-                        .as_u64()
-                        .saturating_sub(self.interval_ns.as_u64()),
-                );
-            }
-
-            self.batch_next_close_ns = UnixNanos::from(
-                self.batch_open_ns
-                    .as_u64()
-                    .saturating_add(self.interval_ns.as_u64()),
-            );
         }
     }
 
@@ -981,19 +1011,24 @@ where
         }
 
         let ts_init = event.ts_event;
-        let ts_event = if self.is_left_open {
-            if self.timestamp_on_close {
-                event.ts_event
-            } else {
-                self.stored_open_ns
-            }
-        } else {
-            self.stored_open_ns
-        };
+        let ts_event = self.bar_ts_event(self.stored_open_ns, ts_init);
+        self.build_and_send(ts_event, ts_init);
 
-        self.core.build_and_send(ts_event, ts_init);
-        self.stored_open_ns = event.ts_event;
-        self.next_close_ns = self.clock.borrow().next_time_ns(&self.timer_name);
+        self.stored_open_ns = ts_init;
+
+        if self.bar_type().spec().aggregation != BarAggregation::Month {
+            self.next_close_ns = self.clock.borrow().next_time_ns(&self.timer_name);
+        } else {
+            let step = self.bar_type().spec().step.get() as u32;
+            let next_alert_ns = add_n_months_nanos(ts_init, step);
+
+            self.clock
+                .borrow_mut()
+                .set_time_alert_ns(&self.timer_name, next_alert_ns, None)
+                .expect(FAILED);
+
+            self.next_close_ns = next_alert_ns;
+        }
     }
 }
 
@@ -1010,36 +1045,42 @@ where
     }
 
     fn set_await_partial(&mut self, value: bool) {
-        self.core.await_partial = value;
+        self.core.set_await_partial(value);
     }
 
     fn set_is_running(&mut self, value: bool) {
-        self.core.is_running = value;
+        self.core.set_is_running(value);
+    }
+
+    fn await_partial(&self) -> bool {
+        self.core.await_partial()
     }
 
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+        if self.batch_next_close_ns != UnixNanos::default() {
+            self.batch_pre_update(ts_event);
+        }
+
         self.core.apply_update(price, size, ts_event);
+
         if self.build_on_next_tick {
-            let ts_init = ts_event;
+            if ts_event <= self.stored_close_ns {
+                let ts_init = ts_event;
+                let ts_event = self.bar_ts_event(self.stored_open_ns, self.stored_close_ns);
+                self.build_and_send(ts_event, ts_init);
+            }
 
-            let ts_event = if self.is_left_open {
-                if self.timestamp_on_close {
-                    self.stored_close_ns
-                } else {
-                    self.stored_open_ns
-                }
-            } else {
-                self.stored_open_ns
-            };
-
-            self.core.build_and_send(ts_event, ts_init);
             self.build_on_next_tick = false;
             self.stored_close_ns = UnixNanos::default();
+        }
+
+        if self.batch_next_close_ns != UnixNanos::default() {
+            self.batch_post_update(ts_event);
         }
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
-        if self.batch_next_close_ns != 0 {
+        if self.batch_next_close_ns != UnixNanos::default() {
             self.batch_pre_update(ts_init);
         }
 
@@ -1047,17 +1088,8 @@ where
 
         if self.build_on_next_tick {
             if ts_init <= self.stored_close_ns {
-                let ts_event = if self.is_left_open {
-                    if self.timestamp_on_close {
-                        self.stored_close_ns
-                    } else {
-                        self.stored_open_ns
-                    }
-                } else {
-                    self.stored_open_ns
-                };
-
-                self.core.build_and_send(ts_event, ts_init);
+                let ts_event = self.bar_ts_event(self.stored_open_ns, self.stored_close_ns);
+                self.build_and_send(ts_event, ts_init);
             }
 
             // Reset flag and clear stored close
@@ -1065,17 +1097,22 @@ where
             self.stored_close_ns = UnixNanos::default();
         }
 
-        if self.batch_next_close_ns != 0 {
+        if self.batch_next_close_ns != UnixNanos::default() {
             self.batch_post_update(ts_init);
         }
     }
 
-    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, time_ns: UnixNanos) {
         self.core.start_batch_update(handler);
+        self.start_batch_time(time_ns)
     }
 
     fn stop_batch_update(&mut self) {
         self.core.stop_batch_update();
+    }
+
+    fn set_partial(&mut self, partial_bar: Bar) {
+        self.core.set_partial(partial_bar)
     }
 }
 
@@ -1764,12 +1801,13 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
+            false, // await_partial
             true,  // build_with_no_updates
             false, // timestamp_on_close
             BarIntervalType::LeftOpen,
-            None, // time_bars_origin
-            15,   // composite_bar_build_delay
+            None,  // time_bars_origin
+            15,    // composite_bar_build_delay
+            false, // skip_first_non_full_bar
         );
 
         aggregator.update(
@@ -1814,12 +1852,13 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
-            true, // build_with_no_updates
-            true, // timestamp_on_close - changed to true to verify left-open behavior
+            false, // await_partial
+            true,  // build_with_no_updates
+            true,  // timestamp_on_close - changed to true to verify left-open behavior
             BarIntervalType::LeftOpen,
             None,
             15,
+            false, // skip_first_non_full_bar
         );
 
         // Update in first interval
@@ -1848,11 +1887,11 @@ mod tests {
         assert_eq!(handler_guard.len(), 2);
 
         let bar1 = &handler_guard[0];
-        assert_eq!(bar1.ts_event, UnixNanos::default()); // For left-open with timestamp_on_close=true
+        assert_eq!(bar1.ts_event, ts1); // For left-open with timestamp_on_close=true
         assert_eq!(bar1.ts_init, ts1);
         assert_eq!(bar1.close, Price::from("100.00"));
         let bar2 = &handler_guard[1];
-        assert_eq!(bar2.ts_event, ts1);
+        assert_eq!(bar2.ts_event, ts2);
         assert_eq!(bar2.ts_init, ts2);
         assert_eq!(bar2.close, Price::from("101.00"));
     }
@@ -1874,12 +1913,13 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
-            true, // build_with_no_updates
-            true, // timestamp_on_close
+            false, // await_partial
+            true,  // build_with_no_updates
+            true,  // timestamp_on_close
             BarIntervalType::RightOpen,
             None,
             15,
+            false, // skip_first_non_full_bar
         );
 
         // Update in first interval
@@ -1937,12 +1977,13 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
+            false, // await_partial
             false, // build_with_no_updates disabled
             true,  // timestamp_on_close
             BarIntervalType::LeftOpen,
             None,
             15,
+            false, // skip_first_non_full_bar
         );
 
         // No updates, just interval close
@@ -1973,6 +2014,7 @@ mod tests {
             BarIntervalType::LeftOpen,
             None,
             15,
+            false, // skip_first_non_full_bar
         );
 
         aggregator.update(
@@ -2019,12 +2061,13 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
-            true,
-            true,
+            false, // await_partial
+            true,  // build_with_no_updates
+            true,  // timestamp_on_close
             BarIntervalType::RightOpen,
             None,
             15,
+            false, // skip_first_non_full_bar
         );
 
         let ts1 = UnixNanos::from(1_000_000_000);
@@ -2061,13 +2104,17 @@ mod tests {
                 let mut handler_guard = handler_clone.lock().unwrap();
                 handler_guard.push(bar);
             },
-            false,
-            true,
-            true,
+            false, // await_partial
+            true,  // build_with_no_updates
+            true,  // timestamp_on_close
             BarIntervalType::LeftOpen,
             None,
             15,
+            false, // skip_first_non_full_bar
         );
+
+        let ts1 = UnixNanos::from(1_000_000_000);
+        clock.borrow_mut().set_time(ts1);
 
         let initial_time = clock.borrow().utc_now();
         aggregator.start_batch_time(UnixNanos::from(
