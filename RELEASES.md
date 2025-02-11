@@ -13,13 +13,14 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Improved error logging for live engines to now include stacktrace for easier debugging
-- Improved Redis queries, error handling and connections (#2295), thanks @Pushkarm029
+- Improved Redis queries, error handling and connections (#2295, #2308), thanks @Pushkarm029
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Refined yield curve data (#2300), thanks @faysou
 - Ported StreamingFeatherWriter to Rust (#2292), thanks @twitu
-- Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filip
+- Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
+- Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek
 - Upgraded `arrow` and `parquet` crates to v54.1.0
 - Upgraded `datafusion` crate to v45.0.0
 
