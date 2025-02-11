@@ -111,6 +111,7 @@ cdef class Cache(CacheFacade):
     """The caches bar capacity.\n\n:returns: `int`"""
 
     cpdef void cache_general(self)
+    cpdef void cache_all(self)
     cpdef void cache_currencies(self)
     cpdef void cache_instruments(self)
     cpdef void cache_synthetics(self)
