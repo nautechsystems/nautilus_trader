@@ -95,8 +95,8 @@ pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
-    let date = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
-    date.to_rfc3339_opts(SecondsFormat::Nanos, true)
+    let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    datetime.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
@@ -104,8 +104,8 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601_millis(unix_nanos: UnixNanos) -> String {
-    let date = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
-    date.to_rfc3339_opts(SecondsFormat::Millis, true)
+    let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    datetime.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 /// Floor the given UNIX nanoseconds to the nearest microsecond.
@@ -122,8 +122,8 @@ pub fn unix_nanos_to_date(unix_nanos: UnixNanos) -> DateTime<Utc> {
 
 /// Converts a a chrono `DateTime<Utc>`to a UNIX nanoseconds timestamp.
 #[must_use]
-pub fn date_to_unix_nanos(date: DateTime<Utc>) -> UnixNanos {
-    UnixNanos::from(date.timestamp_nanos() as u64)
+pub fn datetime_to_unix_nanos(datetime: DateTime<Utc>) -> UnixNanos {
+    UnixNanos::from(datetime.timestamp_nanos() as u64)
 }
 
 /// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
@@ -176,23 +176,25 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
 
 /// Subtract `n` months from a chrono `DateTime<Utc>`.
 #[must_use]
-pub fn subtract_n_months(date: DateTime<Utc>, n: u32) -> DateTime<Utc> {
-    date.checked_sub_months(chrono::Months::new(n))
-        .expect("Failed to subtract months.")
+pub fn subtract_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
+    datetime
+        .checked_sub_months(chrono::Months::new(n))
+        .expect("Failed to subtract months")
 }
 
 /// Add `n` months to a chrono `DateTime<Utc>`.
 #[must_use]
-pub fn add_n_months(date: DateTime<Utc>, n: u32) -> DateTime<Utc> {
-    date.checked_add_months(chrono::Months::new(n))
-        .expect("Failed to add months.")
+pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
+    datetime
+        .checked_add_months(chrono::Months::new(n))
+        .expect("Failed to add months")
 }
 
 /// Subtract `n` months from a given UNIX nanoseconds timestamp.
 #[must_use]
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
-    let date = Utc.timestamp_nanos(unix_nanos.as_i64());
-    (subtract_n_months(date, n).timestamp_nanos() as u64).into()
+    let datetime = Utc.timestamp_nanos(unix_nanos.as_i64());
+    (subtract_n_months(datetime, n).timestamp_nanos() as u64).into()
 }
 
 /// Add `n` months to a given UNIX nanoseconds timestamp.

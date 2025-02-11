@@ -25,7 +25,7 @@ use nautilus_common::{
 use nautilus_core::{
     correctness::{self, FAILED},
     datetime::{
-        add_n_months_nanos, date_to_unix_nanos, subtract_n_months_nanos, unix_nanos_to_date,
+        add_n_months_nanos, datetime_to_unix_nanos, subtract_n_months_nanos, unix_nanos_to_date,
     },
     UnixNanos,
 };
@@ -305,7 +305,7 @@ where
         self.is_running = value;
     }
 
-    pub fn await_partial(&self) -> bool {
+    pub const fn await_partial(&self) -> bool {
         self.await_partial
     }
 
@@ -467,7 +467,7 @@ where
     }
 
     fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar)
+        self.core.set_partial(partial_bar);
     }
 }
 
@@ -597,7 +597,7 @@ where
     }
 
     fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar)
+        self.core.set_partial(partial_bar);
     }
 }
 
@@ -740,7 +740,7 @@ where
     }
 
     fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar)
+        self.core.set_partial(partial_bar);
     }
 }
 
@@ -776,7 +776,7 @@ pub struct NewBarCallback<H: FnMut(Bar)> {
 }
 
 impl<H: FnMut(Bar)> NewBarCallback<H> {
-    pub fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
+    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
         Self { aggregator }
     }
 }
@@ -866,7 +866,7 @@ where
         }
 
         let spec = &self.bar_type().spec();
-        let start_time_ns = date_to_unix_nanos(start_time);
+        let start_time_ns = datetime_to_unix_nanos(start_time);
 
         if spec.aggregation != BarAggregation::Month {
             self.clock
@@ -904,7 +904,7 @@ where
 
         let time = unix_nanos_to_date(time_ns);
         let start_time = get_time_bar_start(time, &self.bar_type(), self.time_bars_origin);
-        self.batch_open_ns = date_to_unix_nanos(start_time);
+        self.batch_open_ns = datetime_to_unix_nanos(start_time);
 
         if spec.aggregation != BarAggregation::Month {
             if self.batch_open_ns == time_ns {
@@ -923,7 +923,7 @@ where
         }
     }
 
-    fn bar_ts_event(&self, open_ns: UnixNanos, close_ns: UnixNanos) -> UnixNanos {
+    const fn bar_ts_event(&self, open_ns: UnixNanos, close_ns: UnixNanos) -> UnixNanos {
         if self.is_left_open {
             if self.timestamp_on_close {
                 close_ns
@@ -1104,7 +1104,7 @@ where
 
     fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, time_ns: UnixNanos) {
         self.core.start_batch_update(handler);
-        self.start_batch_time(time_ns)
+        self.start_batch_time(time_ns);
     }
 
     fn stop_batch_update(&mut self) {
@@ -1112,7 +1112,7 @@ where
     }
 
     fn set_partial(&mut self, partial_bar: Bar) {
-        self.core.set_partial(partial_bar)
+        self.core.set_partial(partial_bar);
     }
 }
 
