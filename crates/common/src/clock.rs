@@ -506,7 +506,7 @@ impl Clock for LiveClock {
         #[cfg(feature = "clock_v2")]
         {
             match callback.clone() {
-                Some(callback) => self.callbacks.insert(name_ustr, callback.clone()),
+                Some(callback) => self.callbacks.insert(name_ustr, callback),
                 None => None,
             };
         }
