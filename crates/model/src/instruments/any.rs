@@ -393,6 +393,36 @@ impl InstrumentAny {
         }
     }
 
+    pub fn ts_event(&self) -> UnixNanos {
+        match self {
+            Self::Betting(inst) => inst.ts_event,
+            Self::BinaryOption(inst) => inst.ts_event,
+            Self::CryptoFuture(inst) => inst.ts_event,
+            Self::CryptoPerpetual(inst) => inst.ts_event,
+            Self::CurrencyPair(inst) => inst.ts_event,
+            Self::Equity(inst) => inst.ts_event,
+            Self::FuturesContract(inst) => inst.ts_event,
+            Self::FuturesSpread(inst) => inst.ts_event,
+            Self::OptionContract(inst) => inst.ts_event,
+            Self::OptionSpread(inst) => inst.ts_event,
+        }
+    }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Betting(inst) => inst.ts_init,
+            Self::BinaryOption(inst) => inst.ts_init,
+            Self::CryptoFuture(inst) => inst.ts_init,
+            Self::CryptoPerpetual(inst) => inst.ts_init,
+            Self::CurrencyPair(inst) => inst.ts_init,
+            Self::Equity(inst) => inst.ts_init,
+            Self::FuturesContract(inst) => inst.ts_init,
+            Self::FuturesSpread(inst) => inst.ts_init,
+            Self::OptionContract(inst) => inst.ts_init,
+            Self::OptionSpread(inst) => inst.ts_init,
+        }
+    }
+
     pub fn make_price(&self, value: f64) -> Price {
         match self {
             Self::Betting(inst) => inst.make_price(value),

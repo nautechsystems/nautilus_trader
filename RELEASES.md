@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `UnixNanos::to_datetime_utc()` in Rust
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
@@ -24,7 +24,7 @@ None
 - Upgraded `datafusion` crate to v45.0.0
 
 ### Fixes
-None
+- Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
 
 ### Documentation Updates
 None

@@ -84,7 +84,7 @@ async fn gather_instruments_info(
         tracing::info!("Requesting instruments for {exchange}");
 
         async move {
-            match client.instruments_info(exchange.clone(), None).await {
+            match client.instruments_info(exchange.clone(), None, None).await {
                 Ok(instruments) => Some((exchange, instruments)),
                 Err(e) => {
                     tracing::error!("Error fetching instruments for {exchange}: {e}");

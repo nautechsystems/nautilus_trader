@@ -39,29 +39,27 @@ use crate::{
 #[must_use]
 pub fn parse_instrument_any(
     info: InstrumentInfo,
-    start: Option<u64>,
-    end: Option<u64>,
+    effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
 ) -> Vec<InstrumentAny> {
     match info.instrument_type {
-        InstrumentType::Spot => parse_spot_instrument(info, start, end, ts_init, normalize_symbols),
+        InstrumentType::Spot => parse_spot_instrument(info, effective, ts_init, normalize_symbols),
         InstrumentType::Perpetual => {
-            parse_perp_instrument(info, start, end, ts_init, normalize_symbols)
+            parse_perp_instrument(info, effective, ts_init, normalize_symbols)
         }
         InstrumentType::Future | InstrumentType::Combo => {
-            parse_future_instrument(info, start, end, ts_init, normalize_symbols)
+            parse_future_instrument(info, effective, ts_init, normalize_symbols)
         }
         InstrumentType::Option => {
-            parse_option_instrument(info, start, end, ts_init, normalize_symbols)
+            parse_option_instrument(info, effective, ts_init, normalize_symbols)
         }
     }
 }
 
 fn parse_spot_instrument(
     info: InstrumentInfo,
-    start: Option<u64>,
-    end: Option<u64>,
+    effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
 ) -> Vec<InstrumentAny> {
@@ -80,19 +78,11 @@ fn parse_spot_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    // Filters
-    let start = start.unwrap_or(0);
-    let end = end.unwrap_or(u64::MAX);
-
     let mut instruments: Vec<InstrumentAny> = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
-            if until_ns < start || until_ns > end {
-                continue;
-            }
-
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let size_increment =
@@ -130,13 +120,21 @@ fn parse_spot_instrument(
         ts_init,
     ));
 
+    if let Some(effective) = effective {
+        // Filter for versions up to effective time and keep only most recent,
+        // if no versions exist before effective time, keep the earliest version.
+        if instruments.iter().any(|i| i.ts_event() <= effective) {
+            instruments.retain(|i| i.ts_event() <= effective);
+        }
+        instruments.truncate(1);
+    }
+
     instruments
 }
 
 fn parse_perp_instrument(
     info: InstrumentInfo,
-    start: Option<u64>,
-    end: Option<u64>,
+    effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
 ) -> Vec<InstrumentAny> {
@@ -156,18 +154,11 @@ fn parse_perp_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    // Filters
-    let start = start.unwrap_or(0);
-    let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
-            if until_ns < start || until_ns > end {
-                continue;
-            }
-
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let size_increment =
@@ -208,13 +199,21 @@ fn parse_perp_instrument(
         ts_init,
     ));
 
+    if let Some(effective) = effective {
+        // Filter for versions up to effective time and keep only most recent,
+        // if no versions exist before effective time, keep the earliest version.
+        if instruments.iter().any(|i| i.ts_event() <= effective) {
+            instruments.retain(|i| i.ts_event() <= effective);
+        }
+        instruments.truncate(1);
+    }
+
     instruments
 }
 
 fn parse_future_instrument(
     info: InstrumentInfo,
-    start: Option<u64>,
-    end: Option<u64>,
+    effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
 ) -> Vec<InstrumentAny> {
@@ -236,18 +235,11 @@ fn parse_future_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    // Filters
-    let start = start.unwrap_or(0);
-    let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
-            if until_ns < start || until_ns > end {
-                continue;
-            }
-
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let size_increment =
@@ -292,13 +284,21 @@ fn parse_future_instrument(
         ts_init,
     ));
 
+    if let Some(effective) = effective {
+        // Filter for versions up to effective time and keep only most recent,
+        // if no versions exist before effective time, keep the earliest version.
+        if instruments.iter().any(|i| i.ts_event() <= effective) {
+            instruments.retain(|i| i.ts_event() <= effective);
+        }
+        instruments.truncate(1);
+    }
+
     instruments
 }
 
 fn parse_option_instrument(
     info: InstrumentInfo,
-    start: Option<u64>,
-    end: Option<u64>,
+    effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
 ) -> Vec<InstrumentAny> {
@@ -319,18 +319,11 @@ fn parse_option_instrument(
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
-    // Filters
-    let start = start.unwrap_or(0);
-    let end = end.unwrap_or(u64::MAX);
     let mut instruments = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
             let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
-            if until_ns < start || until_ns > end {
-                continue;
-            }
-
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let multiplier = get_multiplier(info.contract_multiplier);
@@ -370,6 +363,15 @@ fn parse_option_instrument(
         ts_init,
         ts_init,
     ));
+
+    if let Some(effective) = effective {
+        // Filter for versions up to effective time and keep only most recent,
+        // if no versions exist before effective time, keep the earliest version.
+        if instruments.iter().any(|i| i.ts_event() <= effective) {
+            instruments.retain(|i| i.ts_event() <= effective);
+        }
+        instruments.truncate(1);
+    }
 
     instruments
 }
@@ -412,7 +414,7 @@ mod tests {
         let json_data = load_test_json("instrument_spot.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();
@@ -444,7 +446,7 @@ mod tests {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();
@@ -476,7 +478,7 @@ mod tests {
         let json_data = load_test_json("instrument_future.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();
@@ -514,7 +516,7 @@ mod tests {
         let json_data = load_test_json("instrument_combo.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();
@@ -555,7 +557,7 @@ mod tests {
         let json_data = load_test_json("instrument_option.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();

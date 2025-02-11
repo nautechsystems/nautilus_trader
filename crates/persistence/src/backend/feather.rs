@@ -41,7 +41,7 @@ pub struct FileWriterPath {
 ///
 /// It flushes the internal byte buffer according to rotation policy.
 pub struct FeatherBuffer {
-    /// Arrow `StreamWriter` that writes to an in-memory Vec<u8>.
+    /// Arrow `StreamWriter` that writes to an in-memory `Vec<u8>`.
     writer: StreamWriter<Vec<u8>>,
     /// Current size in bytes.
     size: u64,
