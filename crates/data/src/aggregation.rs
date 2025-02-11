@@ -24,9 +24,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     correctness::{self, FAILED},
-    datetime::{
-        add_n_months_nanos, datetime_to_unix_nanos, subtract_n_months_nanos, unix_nanos_to_date,
-    },
+    datetime::{add_n_months_nanos, subtract_n_months_nanos},
     UnixNanos,
 };
 use nautilus_model::{
@@ -866,7 +864,7 @@ where
         }
 
         let spec = &self.bar_type().spec();
-        let start_time_ns = datetime_to_unix_nanos(start_time);
+        let start_time_ns = UnixNanos::from(start_time);
 
         if spec.aggregation != BarAggregation::Month {
             self.clock
@@ -902,9 +900,9 @@ where
         let spec = self.bar_type().spec();
         self.core.batch_mode = true;
 
-        let time = unix_nanos_to_date(time_ns);
+        let time = time_ns.to_datetime_utc();
         let start_time = get_time_bar_start(time, &self.bar_type(), self.time_bars_origin);
-        self.batch_open_ns = datetime_to_unix_nanos(start_time);
+        self.batch_open_ns = UnixNanos::from(start_time);
 
         if spec.aggregation != BarAggregation::Month {
             if self.batch_open_ns == time_ns {

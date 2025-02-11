@@ -114,18 +114,6 @@ pub const fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
     (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
 }
 
-/// Converts a UNIX nanoseconds timestamp to o a chrono `DateTime<Utc>`.
-#[must_use]
-pub fn unix_nanos_to_date(unix_nanos: UnixNanos) -> DateTime<Utc> {
-    Utc.timestamp_nanos(unix_nanos.as_u64() as i64)
-}
-
-/// Converts a a chrono `DateTime<Utc>`to a UNIX nanoseconds timestamp.
-#[must_use]
-pub fn datetime_to_unix_nanos(datetime: DateTime<Utc>) -> UnixNanos {
-    UnixNanos::from(datetime.timestamp_nanos() as u64)
-}
-
 /// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
 ///
 /// # Errors
