@@ -47,8 +47,8 @@ use nautilus_model::{
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
     orderbook::OrderBook,
     orders::{
-        Order, OrderAny, PassiveOrderAny, StopLimitOrder, StopMarketOrder,
-        StopOrderAny, TrailingStopLimitOrder, TrailingStopMarketOrder,
+        Order, OrderAny, PassiveOrderAny, StopLimitOrder, StopMarketOrder, StopOrderAny,
+        TrailingStopLimitOrder, TrailingStopMarketOrder,
     },
     position::Position,
     types::{fixed::FIXED_PRECISION, Currency, Money, Price, Quantity},
@@ -851,9 +851,12 @@ impl OrderMatchingEngine {
     }
 
     fn process_stop_market_order(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
         if self
             .core
-            .is_stop_matched(&StopOrderAny::from(order.to_owned()))
+            .is_stop_matched(order.order_side_specified(), stop_px)
         {
             if self.config.reject_stop_orders {
                 self.generate_order_rejected(
@@ -882,9 +885,12 @@ impl OrderMatchingEngine {
     }
 
     fn process_stop_limit_order(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
         if self
             .core
-            .is_stop_matched(&StopOrderAny::from(order.to_owned()))
+            .is_stop_matched(order.order_side_specified(), stop_px)
         {
             if self.config.reject_stop_orders {
                 self.generate_order_rejected(

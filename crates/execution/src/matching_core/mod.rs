@@ -248,7 +248,7 @@ impl OrderMatchingCore {
     }
 
     pub fn match_stop_order(&mut self, order: &StopOrderAny) {
-        if self.is_stop_matched(order) {
+        if self.is_stop_matched(order.order_side_specified(), order.stop_px()) {
             if let Some(handler) = &mut self.trigger_stop_order {
                 handler
                     .0
@@ -266,10 +266,10 @@ impl OrderMatchingCore {
     }
 
     #[must_use]
-    pub fn is_stop_matched(&self, order: &StopOrderAny) -> bool {
-        match order.order_side_specified() {
-            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a >= order.stop_px()),
-            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b <= order.stop_px()),
+    pub fn is_stop_matched(&self, side: OrderSideSpecified, price: Price) -> bool {
+        match side {
+            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a >= price),
+            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b <= price),
         }
     }
 }
@@ -469,7 +469,8 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        let result = matching_core.is_limit_matched(order.order_side_specified(), order.price().unwrap());
+        let result =
+            matching_core.is_limit_matched(order.order_side_specified(), order.price().unwrap());
         assert_eq!(result, expected);
     }
 
@@ -537,7 +538,8 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        let result = matching_core.is_stop_matched(&order.into());
+        let result = matching_core
+            .is_stop_matched(order.order_side_specified(), order.trigger_price().unwrap());
         assert_eq!(result, expected);
     }
 }
