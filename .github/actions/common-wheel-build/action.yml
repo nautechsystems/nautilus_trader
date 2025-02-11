@@ -21,7 +21,6 @@ runs:
     - name: Build Python wheel
       shell: bash
       run: |
-        uv run build.py
         uv build --wheel
         ls -lh dist/
 

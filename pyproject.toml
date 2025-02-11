@@ -40,6 +40,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 requires = [
+    "packaging",
     "setuptools>=75",
     "numpy>=1.26.4",
     "cython==3.1.0a1",
@@ -48,6 +49,7 @@ build-backend = "backend"
 backend-path = ["."]
 
 [tool.setuptools]
+packages = ["nautilus_trader"]
 include-package-data = true
 
 [tool.setuptools.package-data]
@@ -60,20 +62,6 @@ nautilus_trader = [
 
 [tool.setuptools.package-dir]
 nautilus_trader = "nautilus_trader"
-
-[tool.setuptools.packages.find]
-include = [
-    "nautilus_trader*",
-    "crates*",
-    "backend.py",
-]
-exclude = [
-    ".gitignore",
-    "temp*",
-    "target*",
-    "schema*",
-    "catalog*"
-]
 
 [project.optional-dependencies]
 betfair = [
