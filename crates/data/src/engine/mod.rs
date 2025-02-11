@@ -916,12 +916,13 @@ impl DataEngine {
                 size_precision,
                 clock,
                 handler,
-                false,
+                false, // await_partial
                 config.time_bars_build_with_no_updates,
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
-                None, // TODO: Implement
-                20,   // TODO: TBD, composite bar build delay
+                None,  // TODO: Implement
+                20,    // TODO: TBD, composite bar build delay
+                false, // TODO: skip_first_non_full_bar, make it config dependent
             ))
         } else {
             match bar_type.spec().aggregation {
