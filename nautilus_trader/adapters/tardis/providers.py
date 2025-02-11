@@ -60,13 +60,14 @@ class TardisInstrumentProvider(InstrumentProvider):
         venues = filters["venues"]
 
         filters = filters or {}
-        start = filters.get("start")
-        end = filters.get("end")
         base_currency = filters.get("base_currency")
         quote_currency = filters.get("quote_currency")
         instrument_type = filters.get("instrument_type")
         contract_type = filters.get("contract_type")
         active = filters.get("active")
+        start = filters.get("start")
+        end = filters.get("end")
+        effective = filters.get("effective")
         ts_init = time.time_ns()
 
         for venue in venues:
@@ -74,13 +75,14 @@ class TardisInstrumentProvider(InstrumentProvider):
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
                 pyo3_instruments = await self._client.instruments(
                     exchange=exchange.lower(),
-                    start=start,
-                    end=end,
                     base_currency=list(base_currency) if base_currency else None,
                     quote_currency=list(quote_currency) if quote_currency else None,
                     instrument_type=list(instrument_type) if instrument_type else None,
                     contract_type=list(contract_type) if contract_type else None,
                     active=active,
+                    start=start,
+                    end=end,
+                    effective=effective,
                     ts_init=ts_init,
                 )
                 instruments = instruments_from_pyo3(pyo3_instruments)
@@ -108,25 +110,27 @@ class TardisInstrumentProvider(InstrumentProvider):
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
                 venue_instruments[exchange].add(instrument_id.symbol.value)
 
-        start = filters.get("start")
-        end = filters.get("end")
         base_currency = filters.get("base_currency")
         quote_currency = filters.get("quote_currency")
         instrument_type = filters.get("instrument_type")
         contract_type = filters.get("contract_type")
         active = filters.get("active")
+        start = filters.get("start")
+        end = filters.get("end")
+        effective = filters.get("effective")
         ts_init = time.time_ns()
 
         for exchange, symbols in venue_instruments.items():
             pyo3_instruments = await self._client.instruments(
                 exchange=exchange.lower(),
-                start=start,
-                end=end,
                 base_currency=list(base_currency) if base_currency else None,
                 quote_currency=list(quote_currency) if quote_currency else None,
                 instrument_type=list(instrument_type) if instrument_type else None,
                 contract_type=list(contract_type) if contract_type else None,
                 active=active,
+                start=start,
+                end=end,
+                effective=effective,
                 ts_init=ts_init,
             )
             instruments = instruments_from_pyo3(pyo3_instruments)

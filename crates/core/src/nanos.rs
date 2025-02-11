@@ -50,6 +50,12 @@ impl UnixNanos {
     pub const fn as_f64(&self) -> f64 {
         self.0 as f64
     }
+
+    /// Converts the underlying value to a datetime (UTC).
+    #[must_use]
+    pub const fn to_datetime_utc(&self) -> DateTime<Utc> {
+        DateTime::from_timestamp_nanos(self.0 as i64)
+    }
 }
 
 impl Deref for UnixNanos {
@@ -231,6 +237,18 @@ mod tests {
         let nanos: UnixNanos = 456.into();
         let value: u64 = nanos.into();
         assert_eq!(value, 456);
+    }
+
+    #[rstest]
+    #[case(0, "1970-01-01T00:00:00+00:00")]
+    #[case(1_000_000_000, "1970-01-01T00:00:01+00:00")]
+    #[case(1_000_000_000_000_000_000, "2001-09-09T01:46:40+00:00")]
+    #[case(1_500_000_000_000_000_000, "2017-07-14T02:40:00+00:00")]
+    #[case(1_707_577_123_456_789_000, "2024-02-10T14:58:43.456789+00:00")]
+    fn test_as_datetime_utc(#[case] nanos: u64, #[case] expected: &str) {
+        let nanos = UnixNanos::from(nanos);
+        let datetime = nanos.to_datetime_utc();
+        assert_eq!(datetime.to_rfc3339(), expected);
     }
 
     #[rstest]

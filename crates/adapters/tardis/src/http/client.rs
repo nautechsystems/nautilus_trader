@@ -102,9 +102,13 @@ impl TardisHttpClient {
     pub async fn instruments_info(
         &self,
         exchange: Exchange,
+        symbol: Option<&str>,
         filter: Option<&InstrumentFilter>,
     ) -> Result<Vec<InstrumentInfo>> {
         let mut url = format!("{}/instruments/{exchange}", &self.base_url);
+        if let Some(symbol) = symbol {
+            url.push_str(&format!("/{symbol}"));
+        }
         if let Some(filter) = filter {
             if let Ok(filter_json) = serde_json::to_string(filter) {
                 url.push_str(&format!("?filter={}", urlencoding::encode(&filter_json)));
@@ -127,94 +131,36 @@ impl TardisHttpClient {
         let body = resp.text().await?;
         tracing::trace!("{body}");
 
+        if let Ok(instrument) = serde_json::from_str::<InstrumentInfo>(&body) {
+            return Ok(vec![instrument]);
+        }
+
         match serde_json::from_str(&body) {
             Ok(parsed) => Ok(parsed),
             Err(e) => {
-                tracing::error!("Failed to parse response: {}", e);
-                tracing::debug!("Response body was: {}", body);
+                tracing::error!("Failed to parse response: {e}");
+                tracing::debug!("Response body was: {body}");
                 Err(Error::ResponseParse(e.to_string()))
             }
         }
     }
 
-    /// Returns the Tardis instrument definition for a given `exchange` and `symbol`.
-    ///
-    /// See <https://docs.tardis.dev/api/instruments-metadata-api#single-instrument-info-endpoint>.
-    pub async fn instrument_info(
-        &self,
-        exchange: Exchange,
-        symbol: &str,
-    ) -> Result<InstrumentInfo> {
-        let url = format!("{}/instruments/{exchange}/{symbol}", &self.base_url);
-        tracing::debug!("Requesting {url}");
-
-        let resp = self
-            .client
-            .get(url)
-            .bearer_auth(&self.api_key)
-            .send()
-            .await?;
-        tracing::debug!("Response status: {}", resp.status());
-
-        if !resp.status().is_success() {
-            return Self::handle_error_response(resp).await;
-        }
-
-        let body = resp.text().await?;
-        tracing::trace!("{body}");
-
-        match serde_json::from_str(&body) {
-            Ok(parsed) => Ok(parsed),
-            Err(e) => {
-                tracing::error!("Failed to parse response: {}", e);
-                tracing::debug!("Response body was: {}", body);
-                Err(Error::ResponseParse(e.to_string()))
-            }
-        }
-    }
-
-    /// Returns all Nautilus instrument definitions for the given `exchange`.
+    /// Returns all Nautilus instrument definitions for the given `exchange`, and filter params.
     ///
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
     pub async fn instruments(
         &self,
         exchange: Exchange,
-        start: Option<u64>,
-        end: Option<u64>,
-        ts_init: Option<u64>,
+        symbol: Option<&str>,
         filter: Option<&InstrumentFilter>,
+        effective: Option<UnixNanos>,
+        ts_init: Option<UnixNanos>,
     ) -> Result<Vec<InstrumentAny>> {
-        let response = self.instruments_info(exchange, filter).await?;
-        let ts_init = ts_init.map(UnixNanos::from);
+        let response = self.instruments_info(exchange, symbol, filter).await?;
 
         Ok(response
             .into_iter()
-            .flat_map(|info| {
-                parse_instrument_any(info, start, end, ts_init, self.normalize_symbols)
-            })
+            .flat_map(|info| parse_instrument_any(info, effective, ts_init, self.normalize_symbols))
             .collect())
-    }
-
-    /// Returns a Nautilus instrument definition for the given `exchange` and `symbol`.
-    ///
-    /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
-    pub async fn instrument(
-        &self,
-        exchange: Exchange,
-        symbol: &str,
-        start: Option<u64>,
-        end: Option<u64>,
-        ts_init: Option<u64>,
-    ) -> Result<Vec<InstrumentAny>> {
-        let response = self.instrument_info(exchange, symbol).await?;
-        let ts_init = ts_init.map(UnixNanos::from);
-
-        Ok(parse_instrument_any(
-            response,
-            start,
-            end,
-            ts_init,
-            self.normalize_symbols,
-        ))
     }
 }

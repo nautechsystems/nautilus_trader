@@ -13,8 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::Serialize;
+
+mod datetime_format {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Serializer};
+
+    pub fn serialize<S>(date: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match date {
+            Some(dt) => {
+                serializer.serialize_str(&dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+}
 
 /// Provides an instrument metadata API filter object.
 ///
@@ -33,4 +51,10 @@ pub struct InstrumentFilter {
     pub contract_type: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(with = "datetime_format")]
+    pub available_since: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(with = "datetime_format")]
+    pub available_to: Option<DateTime<Utc>>,
 }
