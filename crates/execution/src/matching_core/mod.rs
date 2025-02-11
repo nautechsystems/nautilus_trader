@@ -288,7 +288,7 @@ mod tests {
 
     use super::*;
 
-    fn create_matching_core(
+    const fn create_matching_core(
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
