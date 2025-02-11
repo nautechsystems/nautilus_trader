@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Refined yield curve data (#2300), thanks @faysou
+- Refined bar aggregators in Rust (#2311), thanks @faysou
 - Ported StreamingFeatherWriter to Rust (#2292), thanks @twitu
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
 - Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek

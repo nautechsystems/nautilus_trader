@@ -2086,7 +2086,7 @@ fn test_update_stop_market_order_valid(
     };
     assert_eq!(order_accepted.client_order_id, client_order_id);
     let order_event_second = saved_messages.get(1).unwrap();
-    println!("{:?}", order_event_second);
+    println!("{order_event_second:?}");
     let order_updated = match order_event_second {
         OrderEventAny::Updated(order_updated) => order_updated,
         _ => panic!("Expected OrderUpdated event in second message"),
