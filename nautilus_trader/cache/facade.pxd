@@ -59,6 +59,7 @@ cdef class CacheDatabaseFacade:
     cpdef void flush(self)
     cpdef list[str] keys(self, str pattern=*)
     cpdef dict load(self)
+    cpdef dict load_all(self)
     cpdef dict load_currencies(self)
     cpdef dict load_instruments(self)
     cpdef dict load_synthetics(self)
