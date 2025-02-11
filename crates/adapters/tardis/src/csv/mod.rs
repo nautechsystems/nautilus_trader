@@ -602,4 +602,29 @@ mod tests {
         assert_eq!(trades[0].ts_event, 1583020803145000000);
         assert_eq!(trades[0].ts_init, 1583020803307160000);
     }
+
+    #[rstest]
+    pub fn test_load_deltas_memory_usage() {
+        use procfs::page_size;
+        use procfs::process::Process;
+        use nautilus_model::data::Data;
+
+        let page_size = page_size();
+        let me = Process::myself().unwrap();
+        let setup_mem = me.stat().unwrap().rss * page_size / 1024;
+
+        let before = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
+
+        let filepath = "/home/twitu/Code/nautilus_trader/tests/test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz";
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let deltas = load_deltas(filepath, 1, 0, Some(instrument_id), Some(1_000_000)).unwrap();
+
+        // TODO: Wrapping as enum explodes the memory
+        // let deltas: Vec<Data> = deltas.into_iter().map(Data::Delta).collect();
+
+        assert_eq!(deltas.len(), 1_000_000);
+
+        let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
+        println!("Memory allocated: {} KB", after - before);
+    }
 }
