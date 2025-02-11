@@ -47,8 +47,8 @@ use nautilus_model::{
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
     orderbook::OrderBook,
     orders::{
-        LimitOrderAny, Order, OrderAny, PassiveOrderAny, StopLimitOrder, StopMarketOrder,
-        StopOrderAny, TrailingStopLimitOrder, TrailingStopMarketOrder,
+        Order, OrderAny, PassiveOrderAny, StopLimitOrder, StopMarketOrder, StopOrderAny,
+        TrailingStopLimitOrder, TrailingStopMarketOrder,
     },
     position::Position,
     types::{fixed::FIXED_PRECISION, Currency, Money, Price, Quantity},
@@ -801,10 +801,11 @@ impl OrderMatchingEngine {
     }
 
     fn process_limit_order(&mut self, order: &mut OrderAny) {
+        let limit_px = order.price().expect("Limit order must have a price");
         if order.is_post_only()
             && self
                 .core
-                .is_limit_matched(&LimitOrderAny::from(order.to_owned()), None)
+                .is_limit_matched(order.order_side_specified(), limit_px)
         {
             self.generate_order_rejected(
                 order,
@@ -831,7 +832,7 @@ impl OrderMatchingEngine {
         // Check for immediate fill
         if self
             .core
-            .is_limit_matched(&LimitOrderAny::from(order.to_owned()), None)
+            .is_limit_matched(order.order_side_specified(), limit_px)
         {
             // Filling as liquidity taker
             if order.liquidity_side().is_some()
@@ -850,9 +851,12 @@ impl OrderMatchingEngine {
     }
 
     fn process_stop_market_order(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
         if self
             .core
-            .is_stop_matched(&StopOrderAny::from(order.to_owned()))
+            .is_stop_matched(order.order_side_specified(), stop_px)
         {
             if self.config.reject_stop_orders {
                 self.generate_order_rejected(
@@ -881,9 +885,12 @@ impl OrderMatchingEngine {
     }
 
     fn process_stop_limit_order(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
         if self
             .core
-            .is_stop_matched(&StopOrderAny::from(order.to_owned()))
+            .is_stop_matched(order.order_side_specified(), stop_px)
         {
             if self.config.reject_stop_orders {
                 self.generate_order_rejected(
@@ -908,9 +915,10 @@ impl OrderMatchingEngine {
             self.generate_order_triggered(order);
 
             // Check for immediate fill
+            let limit_px = order.price().expect("Stop limit order must have a price");
             if self
                 .core
-                .is_limit_matched(&LimitOrderAny::from(order.to_owned()), None)
+                .is_limit_matched(order.order_side_specified(), limit_px)
             {
                 order.set_liquidity_side(LiquiditySide::Taker);
                 self.fill_limit_order(order);
@@ -1431,7 +1439,7 @@ impl OrderMatchingEngine {
     fn update_limit_order(&mut self, order: &mut OrderAny, quantity: Quantity, price: Price) {
         if self
             .core
-            .is_limit_matched(&LimitOrderAny::from(order.clone()), Some(price))
+            .is_limit_matched(order.order_side_specified(), price)
         {
             if order.is_post_only() {
                 self.generate_order_modify_rejected(
