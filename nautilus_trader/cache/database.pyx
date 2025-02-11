@@ -230,18 +230,26 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef dict raw_data = self._backing.load_all()
         cdef dict result = {}
 
-        currencies_dict = raw_data.get("currencies")
-        instruments_dict = raw_data.get("instruments")
-        synthetics_dict = raw_data.get("synthetics")
-        accounts_dict = raw_data.get("accounts")
-        orders_dict = raw_data.get("orders")
-        positions_dict = raw_data.get("positions")
+        cdef dict currencies_dict = raw_data.get("currencies", {})
+        cdef dict instruments_dict = raw_data.get("instruments", {})
+        cdef dict synthetics_dict = raw_data.get("synthetics", {})
+        cdef dict accounts_dict = raw_data.get("accounts", {})
+        cdef dict orders_dict = raw_data.get("orders", {})
+        cdef dict positions_dict = raw_data.get("positions", {})
 
-        result["currencies"] = {key: transform_currency_from_pyo3(value) for key, value in currencies_dict.items()}
-        result["instruments"] = {key: transform_instrument_from_pyo3(value) for key, value in instruments_dict.items()}
+        result["currencies"] = {
+            key: transform_currency_from_pyo3(value) for key, value in currencies_dict.items()
+        }
+        result["instruments"] = {
+            key: transform_instrument_from_pyo3(value) for key, value in instruments_dict.items()
+        }
         result["synthetics"] = synthetics_dict
-        result["accounts"] = {key: transform_account_from_pyo3(value) for key, value in accounts_dict.items()}
-        result["orders"] = {key: transform_order_from_pyo3(value) for key, value in orders_dict.items()}
+        result["accounts"] = {
+            key: transform_account_from_pyo3(value) for key, value in accounts_dict.items()
+        }
+        result["orders"] = {
+            key: transform_order_from_pyo3(value) for key, value in orders_dict.items()
+        }
         result["positions"] = positions_dict
 
         return result
