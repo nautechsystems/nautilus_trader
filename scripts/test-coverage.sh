@@ -29,7 +29,6 @@ uv lock --no-upgrade
 
 export PROFILE_MODE=true
 uv sync --all-groups --all-extras
-uv run build.py
 uv run pytest \
     --cov-report=term \
     --cov-report=xml \

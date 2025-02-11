@@ -36,6 +36,7 @@ classifiers = [
 [project.urls]
 homepage = "https://nautilustrader.io"
 repository = "https://github.com/nautechsystems/nautilus_trader"
+docs = "https://nautilustrader.io/docs"
 
 [build-system]
 requires = [
@@ -43,10 +44,19 @@ requires = [
     "numpy>=1.26.4",
     "cython==3.1.0a1",
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "backend"
+backend-path = ["."]
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+nautilus_trader = [
+    "**/*.so",
+    "**/*.pyd",
+    "**/*.pyi",
+    "py.typed",
+]
 
 [tool.setuptools.package-dir]
 nautilus_trader = "nautilus_trader"
@@ -54,9 +64,11 @@ nautilus_trader = "nautilus_trader"
 [tool.setuptools.packages.find]
 include = [
     "nautilus_trader*",
-    "crates*"
+    "crates*",
+    "backend.py",
 ]
 exclude = [
+    ".gitignore",
     "temp*",
     "target*",
     "schema*",

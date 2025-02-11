@@ -192,8 +192,8 @@ jobs:
       - name: Run tests
         run: uv run pytest --ignore=tests/performance_tests
 
-      - name: Upload wheel artifact
-        uses: ./.github/actions/upload-artifact-wheel
+      # - name: Upload wheel artifact
+      #   uses: ./.github/actions/upload-artifact-wheel
 
   build-macos:
     strategy:
@@ -241,8 +241,8 @@ jobs:
       - name: Run tests
         run: uv run pytest --ignore=tests/performance_tests
 
-      - name: Upload wheel artifact
-        uses: ./.github/actions/upload-artifact-wheel
+      # - name: Upload wheel artifact
+      #   uses: ./.github/actions/upload-artifact-wheel
 
   build-windows:
     strategy:
@@ -290,8 +290,8 @@ jobs:
       - name: Run tests
         run: uv run pytest --ignore=tests/performance_tests
 
-      - name: Upload wheel artifact
-        uses: ./.github/actions/upload-artifact-wheel
+      # - name: Upload wheel artifact
+      #   uses: ./.github/actions/upload-artifact-wheel
 
   publish-wheels-develop:
     name: publish-wheels-develop

@@ -6,11 +6,11 @@ IMAGE_FULL?=${IMAGE}:${GIT_TAG}
 
 .PHONY: install
 install:
-	BUILD_MODE=release uv run build.py && uv build && uv pip install .
+	BUILD_MODE=release uv run pip install .
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug uv run build.py && uv build && uv pip install .
+	BUILD_MODE=debug uv run pip install .
 
 .PHONY: build
 build:
@@ -22,11 +22,11 @@ build-debug:
 
 .PHONY: build-wheel
 build-wheel:
-	BUILD_MODE=release uv run build.py && uv build --wheel
+	BUILD_MODE=release uv build --wheel
 
 .PHONY: build-wheel-debug
 build-wheel-debug:
-	BUILD_MODE=debug uv run build.py && uv build --wheel
+	BUILD_MODE=debug uv build --wheel
 
 .PHONY: clean
 clean:
