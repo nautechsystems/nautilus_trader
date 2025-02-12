@@ -19,7 +19,7 @@ async fn main() {
 
     client
         .subscribe(
-            &Subscription::builder()
+            Subscription::builder()
                 .schema(Schema::Mbo)
                 .stype_in(SType::RawSymbol)
                 .symbols("ESM4")

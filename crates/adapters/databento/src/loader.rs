@@ -101,12 +101,7 @@ impl DatabentoDataLoader {
 
         loader
             .load_publishers(publishers_filepath.clone())
-            .unwrap_or_else(|_| {
-                panic!(
-                    "No such file or directory '{}'",
-                    publishers_filepath.display()
-                )
-            });
+            .unwrap_or_else(|e| panic!("Error loading publishers.json: {e}",));
 
         Ok(loader)
     }
@@ -181,7 +176,12 @@ impl DatabentoDataLoader {
         use_exchange_as_venue: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
         let mut decoder = Decoder::from_zstd_file(filepath)?;
-        decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2);
+
+        // Setting the policy to decode v1 data in its original format,
+        // rather than upgrading to v2 for now (decoding tests fail on `UpgradeToV2`).
+        let upgrade_policy = dbn::VersionUpgradePolicy::AsIs;
+        decoder.set_upgrade_policy(upgrade_policy);
+
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 
         Ok(std::iter::from_fn(move || {

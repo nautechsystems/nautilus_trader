@@ -283,57 +283,57 @@
   },
   {
     "publisher_id": 48,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "XCHI",
-    "description": "DBEQ Plus - NYSE Chicago"
+    "description": "Databento US Equities Plus - NYSE Chicago"
   },
   {
     "publisher_id": 49,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "XCIS",
-    "description": "DBEQ Plus - NYSE National"
+    "description": "Databento US Equities Plus - NYSE National"
   },
   {
     "publisher_id": 50,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "IEXG",
-    "description": "DBEQ Plus - IEX"
+    "description": "Databento US Equities Plus - IEX"
   },
   {
     "publisher_id": 51,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "EPRL",
-    "description": "DBEQ Plus - MIAX Pearl"
+    "description": "Databento US Equities Plus - MIAX Pearl"
   },
   {
     "publisher_id": 52,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "XNAS",
-    "description": "DBEQ Plus - Nasdaq"
+    "description": "Databento US Equities Plus - Nasdaq"
   },
   {
     "publisher_id": 53,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "XNYS",
-    "description": "DBEQ Plus - NYSE"
+    "description": "Databento US Equities Plus - NYSE"
   },
   {
     "publisher_id": 54,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "FINN",
-    "description": "DBEQ Plus - FINRA/Nasdaq TRF Carteret"
+    "description": "Databento US Equities Plus - FINRA/Nasdaq TRF Carteret"
   },
   {
     "publisher_id": 55,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "FINY",
-    "description": "DBEQ Plus - FINRA/NYSE TRF"
+    "description": "Databento US Equities Plus - FINRA/NYSE TRF"
   },
   {
     "publisher_id": 56,
-    "dataset": "DBEQ.PLUS",
+    "dataset": "EQUS.PLUS",
     "venue": "FINC",
-    "description": "DBEQ Plus - FINRA/Nasdaq TRF Chicago"
+    "description": "Databento US Equities Plus - FINRA/Nasdaq TRF Chicago"
   },
   {
     "publisher_id": 57,
@@ -351,13 +351,13 @@
     "publisher_id": 59,
     "dataset": "DBEQ.BASIC",
     "venue": "DBEQ",
-    "description": "DBEQ Basic - Consolidated"
+    "description": "Databento US Equities Basic - Consolidated"
   },
   {
     "publisher_id": 60,
-    "dataset": "DBEQ.PLUS",
-    "venue": "DBEQ",
-    "description": "DBEQ Plus - Consolidated"
+    "dataset": "EQUS.PLUS",
+    "venue": "EQUS",
+    "description": "EQUS Plus - Consolidated"
   },
   {
     "publisher_id": 61,
@@ -367,117 +367,117 @@
   },
   {
     "publisher_id": 62,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XCHI",
-    "description": "DBEQ Max - NYSE Chicago"
+    "description": "Databento US Equities (All Feeds) - NYSE Chicago"
   },
   {
     "publisher_id": 63,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XCIS",
-    "description": "DBEQ Max - NYSE National"
+    "description": "Databento US Equities (All Feeds) - NYSE National"
   },
   {
     "publisher_id": 64,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "IEXG",
-    "description": "DBEQ Max - IEX"
+    "description": "Databento US Equities (All Feeds) - IEX"
   },
   {
     "publisher_id": 65,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "EPRL",
-    "description": "DBEQ Max - MIAX Pearl"
+    "description": "Databento US Equities (All Feeds) - MIAX Pearl"
   },
   {
     "publisher_id": 66,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XNAS",
-    "description": "DBEQ Max - Nasdaq"
+    "description": "Databento US Equities (All Feeds) - Nasdaq"
   },
   {
     "publisher_id": 67,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XNYS",
-    "description": "DBEQ Max - NYSE"
+    "description": "Databento US Equities (All Feeds) - NYSE"
   },
   {
     "publisher_id": 68,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "FINN",
-    "description": "DBEQ Max - FINRA/Nasdaq TRF Carteret"
+    "description": "Databento US Equities (All Feeds) - FINRA/Nasdaq TRF Carteret"
   },
   {
     "publisher_id": 69,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "FINY",
-    "description": "DBEQ Max - FINRA/NYSE TRF"
+    "description": "Databento US Equities (All Feeds) - FINRA/NYSE TRF"
   },
   {
     "publisher_id": 70,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "FINC",
-    "description": "DBEQ Max - FINRA/Nasdaq TRF Chicago"
+    "description": "Databento US Equities (All Feeds) - FINRA/Nasdaq TRF Chicago"
   },
   {
     "publisher_id": 71,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "BATS",
-    "description": "DBEQ Max - CBOE BZX"
+    "description": "Databento US Equities (All Feeds) - CBOE BZX"
   },
   {
     "publisher_id": 72,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "BATY",
-    "description": "DBEQ Max - CBOE BYX"
+    "description": "Databento US Equities (All Feeds) - CBOE BYX"
   },
   {
     "publisher_id": 73,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "EDGA",
-    "description": "DBEQ Max - CBOE EDGA"
+    "description": "Databento US Equities (All Feeds) - CBOE EDGA"
   },
   {
     "publisher_id": 74,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "EDGX",
-    "description": "DBEQ Max - CBOE EDGX"
+    "description": "Databento US Equities (All Feeds) - CBOE EDGX"
   },
   {
     "publisher_id": 75,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XBOS",
-    "description": "DBEQ Max - Nasdaq BX"
+    "description": "Databento US Equities (All Feeds) - Nasdaq BX"
   },
   {
     "publisher_id": 76,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XPSX",
-    "description": "DBEQ Max - Nasdaq PSX"
+    "description": "Databento US Equities (All Feeds) - Nasdaq PSX"
   },
   {
     "publisher_id": 77,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "MEMX",
-    "description": "DBEQ Max - MEMX"
+    "description": "Databento US Equities (All Feeds) - MEMX"
   },
   {
     "publisher_id": 78,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "XASE",
-    "description": "DBEQ Max - NYSE American"
+    "description": "Databento US Equities (All Feeds) - NYSE American"
   },
   {
     "publisher_id": 79,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "ARCX",
-    "description": "DBEQ Max - NYSE Arca"
+    "description": "Databento US Equities (All Feeds) - NYSE Arca"
   },
   {
     "publisher_id": 80,
-    "dataset": "DBEQ.MAX",
+    "dataset": "EQUS.ALL",
     "venue": "LTSE",
-    "description": "DBEQ Max - Long-Term Stock Exchange"
+    "description": "Databento US Equities (All Feeds) - Long-Term Stock Exchange"
   },
   {
     "publisher_id": 81,
@@ -535,32 +535,44 @@
   },
   {
     "publisher_id": 90,
-    "dataset": "DBEQ.SUMMARY",
-    "venue": "DBEQ",
+    "dataset": "EQUS.SUMMARY",
+    "venue": "EQUS",
     "description": "Databento Equities Summary"
   },
   {
     "publisher_id": 91,
-    "dataset": "XCIS.BBOTRADES",
+    "dataset": "XCIS.TRADESBBO",
     "venue": "XCIS",
-    "description": "NYSE National BBO and Trades"
+    "description": "NYSE National Trades and BBO"
   },
   {
     "publisher_id": 92,
-    "dataset": "XNYS.BBOTRADES",
+    "dataset": "XNYS.TRADESBBO",
     "venue": "XNYS",
-    "description": "NYSE BBO and Trades"
+    "description": "NYSE Trades and BBO"
   },
   {
     "publisher_id": 93,
     "dataset": "XNAS.BASIC",
-    "venue": "DBEQ",
+    "venue": "EQUS",
     "description": "Nasdaq Basic - Consolidated"
   },
   {
     "publisher_id": 94,
-    "dataset": "DBEQ.MAX",
-    "venue": "DBEQ",
-    "description": "DBEQ Max - Consolidated"
+    "dataset": "EQUS.ALL",
+    "venue": "EQUS",
+    "description": "Databento US Equities (All Feeds) - Consolidated"
+  },
+  {
+    "publisher_id": 95,
+    "dataset": "EQUS.MINI",
+    "venue": "EQUS",
+    "description": "Databento US Equities Mini"
+  },
+  {
+    "publisher_id": 96,
+    "dataset": "XNYS.TRADES",
+    "venue": "EQUS",
+    "description": "NYSE Trades - Consolidated"
   }
 ]

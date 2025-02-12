@@ -149,7 +149,7 @@ impl DatabentoFeedHandler {
                             if !self.replay & sub.start.is_some() {
                                 self.replay = true;
                             }
-                            client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
+                            client.subscribe(sub).await.map_err(to_pyruntime_err)?;
                         }
                         LiveCommand::Start => {
                             buffering_start = if self.replay {

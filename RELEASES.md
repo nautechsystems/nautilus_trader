@@ -24,8 +24,10 @@ Released on TBD (UTC).
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
 - Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek
 - Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
-- Upgraded `arrow` and `parquet` crates to v54.1.0
+- Updated Databento `publishers.json` mappings file(s)
 - Upgraded `datafusion` crate to v45.0.0
+- Upgraded `arrow` and `parquet` crates to v54.1.0
+- Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
 
 ### Fixes
 - Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
