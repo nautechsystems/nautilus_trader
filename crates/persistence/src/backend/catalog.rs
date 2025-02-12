@@ -225,7 +225,7 @@ impl ParquetDataCatalog {
                     delta.push(d);
                 }
                 Data::Depth10(d) => {
-                    depth10.push(d);
+                    depth10.push(*d);
                 }
                 Data::Quote(d) => {
                     quote.push(d);

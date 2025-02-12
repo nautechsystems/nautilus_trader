@@ -841,7 +841,7 @@ pub fn decode_record(
     } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
-        (Some(Data::Depth10(depth)), None)
+        (Some(Data::from(depth)), None)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.hd.ts_event.into());
         let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;

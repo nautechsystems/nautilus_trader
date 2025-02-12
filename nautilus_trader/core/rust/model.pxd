@@ -728,7 +728,7 @@ cdef extern from "../includes/model.h":
         Data_t_Tag tag;
         OrderBookDelta_t delta;
         OrderBookDeltas_API deltas;
-        OrderBookDepth10_t depth10;
+        OrderBookDepth10_t *depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;

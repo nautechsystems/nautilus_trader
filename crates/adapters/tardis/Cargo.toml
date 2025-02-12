@@ -58,6 +58,7 @@ nautilus-test-kit = { path = "../../test_kit" }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
+procfs = "0.17.0"
 
 [features]
 default = ["python", "nautilus-core/ffi"]

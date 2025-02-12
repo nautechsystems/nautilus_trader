@@ -1307,7 +1307,7 @@ typedef struct Data_t {
             struct OrderBookDeltas_API deltas;
         };
         struct {
-            struct OrderBookDepth10_t depth10;
+            struct OrderBookDepth10_t *depth10;
         };
         struct {
             struct QuoteTick_t quote;

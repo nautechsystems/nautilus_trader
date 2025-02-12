@@ -605,9 +605,9 @@ mod tests {
 
     #[rstest]
     pub fn test_load_deltas_memory_usage() {
+        use nautilus_model::data::Data;
         use procfs::page_size;
         use procfs::process::Process;
-        use nautilus_model::data::Data;
 
         let page_size = page_size();
         let me = Process::myself().unwrap();
@@ -620,7 +620,7 @@ mod tests {
         let deltas = load_deltas(filepath, 1, 0, Some(instrument_id), Some(1_000_000)).unwrap();
 
         // TODO: Wrapping as enum explodes the memory
-        // let deltas: Vec<Data> = deltas.into_iter().map(Data::Delta).collect();
+        let deltas: Vec<Data> = deltas.into_iter().map(Data::Delta).collect();
 
         assert_eq!(deltas.len(), 1_000_000);
 

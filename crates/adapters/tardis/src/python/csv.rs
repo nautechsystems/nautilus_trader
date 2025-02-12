@@ -108,7 +108,7 @@ pub fn py_load_tardis_depth10_from_snapshot5_as_pycapsule(
         limit,
     )
     .map_err(to_pyvalue_err)?;
-    let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
+    let depths: Vec<Data> = depths.into_iter().map(Data::from).collect();
 
     let cvec: CVec = depths.into();
     let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
@@ -152,7 +152,7 @@ pub fn py_load_tardis_depth10_from_snapshot25_as_pycapsule(
         limit,
     )
     .map_err(to_pyvalue_err)?;
-    let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
+    let depths: Vec<Data> = depths.into_iter().map(Data::from).collect();
 
     let cvec: CVec = depths.into();
     let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;

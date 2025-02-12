@@ -742,7 +742,7 @@ fn test_process_order_book_depth10(
     }
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Depth10(depth));
+    data_engine.process_data(Data::from(depth));
     let _cache = &data_engine.get_cache();
     let messages = get_saved_messages::<OrderBookDepth10>(handler);
 
