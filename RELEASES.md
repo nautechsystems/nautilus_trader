@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
 - Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek
+- Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
 - Upgraded `arrow` and `parquet` crates to v54.1.0
 - Upgraded `datafusion` crate to v45.0.0
 
@@ -32,7 +33,8 @@ Released on TBD (UTC).
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
 
 ### Documentation Updates
-None
+- Improved `emulation_trigger` parameter description in docstrings (#2313)
+- Improved docs for emulated orders (#2316)
 
 ### Deprecations
 None
