@@ -28,6 +28,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
+- Fixed built-in data type Arrow schemas for `StreamingFeatherWriter`, thanks for reporting @netomenoci
 
 ### Documentation Updates
 None
@@ -41,11 +42,14 @@ None
 
 Released on 9th February 2025 (UTC).
 
-This release introduces [high-precision mode](https://nautilustrader.io/docs/nightly/concepts/overview#value-types), where value types such as `Price`, `Quantity` and `Money` are now
-backed by 128-bit integers (instead of 64-bit), thereby increasing maximum precision to 16, and vastly expanding the allowable value ranges.
+This release introduces [high-precision mode](https://nautilustrader.io/docs/nightly/concepts/overview#value-types),
+where value types such as `Price`, `Quantity` and `Money` are now backed by 128-bit integers (instead of 64-bit),
+thereby increasing maximum precision to 16, and vastly expanding the allowable value ranges.
 
 This will address precision and value range issues experienced by some crypto users, alleviate higher timeframe bar volume limitations, as well as future proofing the platform.
-See the [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) for more details. For an explanation on compiling with or without high-precision mode, see the [precision-mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode) section of the installation guide.
+
+See the [RFC](https://github.com/nautechsystems/nautilus_trader/issues/2084) for more details.
+For an explanation on compiling with or without high-precision mode, see the [precision-mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode) section of the installation guide.
 
 **For migrating data catalogs due to the breaking changes, see the [data migrations guide](https://nautilustrader.io/docs/nightly/concepts/data#data-migrations)**.
 

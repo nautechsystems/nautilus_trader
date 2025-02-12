@@ -30,7 +30,7 @@ use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{quantity::check_positive_quantity, Price, Quantity},
+    types::{fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity, Price, Quantity},
 };
 
 /// Represents a single trade tick in a market.
@@ -137,8 +137,8 @@ impl TradeTick {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("price".to_string(), "Int64".to_string());
-        metadata.insert("size".to_string(), "UInt64".to_string());
+        metadata.insert("price".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("size".to_string(), FIXED_SIZE_BINARY.to_string());
         metadata.insert("aggressor_side".to_string(), "UInt8".to_string());
         metadata.insert("trade_id".to_string(), "Utf8".to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());

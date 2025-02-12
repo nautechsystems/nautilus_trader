@@ -39,6 +39,13 @@ pub static PRECISION_BYTES: i32 = 16;
 pub static PRECISION_BYTES: i32 = 8;
 
 #[cfg(feature = "high-precision")]
+/// The data type name for fixed size binary.
+pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(16)";
+#[cfg(not(feature = "high-precision"))]
+/// The data type name for fixed size binary.
+pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(8)";
+
+#[cfg(feature = "high-precision")]
 /// The scalar value corresponding to the maximum precision (10^16).
 pub const FIXED_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_PRECISION
 #[cfg(not(feature = "high-precision"))]
