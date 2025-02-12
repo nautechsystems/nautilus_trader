@@ -91,11 +91,10 @@ cdef class LimitOrder(Order):
     display_qty : Quantity, optional
         The quantity of the order to display on the public book (iceberg).
     emulation_trigger : TriggerType, default ``NO_TRIGGER``
-        The type of market price to guide local order emulation.
-        ``NO_TRIGGER`` disables local emulation.
-        ``DEFAULT`` (which is the same as ``BID_ASK``) enables emulation guided by bid/ask prices.
-        Additional trigger types are available for different market price sources.
-        Search for "emulated orders" in documentation for detailed explanation.
+        The type of market price trigger to use for local order emulation.
+        - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+        - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+        Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
     trigger_instrument_id : InstrumentId, optional
         The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
