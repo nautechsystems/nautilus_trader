@@ -84,8 +84,12 @@ cdef class MarketIfTouchedOrder(Order):
         If the order carries the 'reduce-only' execution instruction.
     quote_quantity : bool, default False
         If the order quantity is denominated in the quote currency.
-    emulation_trigger : EmulationTrigger, default ``NO_TRIGGER``
-        The emulation trigger for the order.
+    emulation_trigger : TriggerType, default ``NO_TRIGGER``
+        The type of market price to guide local order emulation.
+        ``NO_TRIGGER`` disables local emulation.
+        ``DEFAULT`` (which is the same as ``BID_ASK``) enables emulation guided by bid/ask prices.
+        Additional trigger types are available for different market price sources.
+        Search for "emulated orders" in documentation for detailed explanation.
     trigger_instrument_id : InstrumentId, optional
         The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
