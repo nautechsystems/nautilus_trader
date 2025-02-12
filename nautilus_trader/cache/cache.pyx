@@ -180,6 +180,77 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._general else LogColor.NORMAL,
         )
 
+    cpdef void cache_all(self):
+        """
+        Clears and loads the currencies, instruments, synthetics, accounts, orders, and positions.
+        from the cache database.
+        """
+        self._log.debug(f"Loading currencies, instruments, synthetics, accounts, orders, and positions cache from database")
+
+        if self._database is not None:
+            dictionary = self._database.load_all()
+            self._currencies = dictionary.get("currencies")
+            self._instruments = dictionary.get("instruments")
+            self._synthetics = dictionary.get("synthetics")
+            self._accounts = dictionary.get("accounts")
+            self._orders = dictionary.get("orders")
+            self._positions = dictionary.get("positions")
+        else:
+            self._currencies = {}
+            self._instruments = {}
+            self._synthetics = {}
+            self._accounts = {}
+            self._orders = {}
+            self._positions = {}
+
+        # Register currencies with internal `CURRENCY_MAP`
+        cdef Currency currency
+        for currency in self._currencies.values():
+            Currency.register_c(currency, overwrite=False)
+
+        # Assign position IDs to contingent orders
+        cdef Order order
+        for order in self._orders.values():
+            if order.contingency_type == ContingencyType.OTO and order.position_id is not None:
+                self._assign_position_id_to_contingencies(order)
+
+        cdef int currencies_count = len(self._currencies)
+        self._log.info(
+            f"Cached {currencies_count} currenc{'y' if currencies_count == 1 else 'ies'} from database",
+            color=LogColor.BLUE if self._currencies else LogColor.NORMAL,
+        )
+
+        cdef int instruments_count = len(self._instruments)
+        self._log.info(
+            f"Cached {instruments_count} instrument{'' if instruments_count == 1 else 's'} from database",
+            color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
+        )
+
+        cdef int synthetics_count = len(self._synthetics)
+        self._log.info(
+            f"Cached {synthetics_count} synthetic instrument{'' if synthetics_count == 1 else 's'} from database",
+            color=LogColor.BLUE if self._synthetics else LogColor.NORMAL,
+        )
+
+        cdef int accounts_count = len(self._accounts)
+        self._log.info(
+            f"Cached {accounts_count} account{'' if accounts_count == 1 else 's'} from database",
+            color=LogColor.BLUE if self._accounts else LogColor.NORMAL,
+        )
+
+        cdef int orders_count = len(self._orders)
+        self._log.info(
+            f"Cached {orders_count} order{'' if orders_count == 1 else 's'} from database",
+            color=LogColor.BLUE if self._orders else LogColor.NORMAL,
+        )
+
+        cdef int positions_count = len(self._positions)
+        self._log.info(
+            f"Cached {positions_count} position{'' if positions_count == 1 else 's'} from database",
+            color=LogColor.BLUE if self._positions else LogColor.NORMAL
+        )
+
+
     cpdef void cache_currencies(self):
         """
         Clear the current currencies cache and load currencies from the cache

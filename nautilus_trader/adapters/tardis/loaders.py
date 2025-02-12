@@ -17,12 +17,10 @@ from os import PathLike
 from pathlib import Path
 
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import drop_cvec_pycapsule
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -91,26 +89,18 @@ class TardisCSVDataLoader:
         if isinstance(filepath, Path):
             filepath = str(filepath.resolve())
 
-        if as_legacy_cython:
-            capsule = nautilus_pyo3.load_tardis_deltas_as_pycapsule(
-                filepath=str(filepath),
-                price_precision=self._price_precision,
-                size_precision=self._size_precision,
-                instrument_id=self._instrument_id,
-                limit=limit,
-            )
-            data = capsule_to_list(capsule)
-            # Drop encapsulated `CVec` as data is now transferred
-            drop_cvec_pycapsule(capsule)
-            return data
-
-        return nautilus_pyo3.load_tardis_deltas(
+        pyo3_deltas = nautilus_pyo3.load_tardis_deltas(
             filepath=str(filepath),
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
             limit=limit,
         )
+
+        if as_legacy_cython:
+            return OrderBookDelta.from_pyo3_list(pyo3_deltas)
+
+        return pyo3_deltas
 
     def load_depth10(
         self,
@@ -160,47 +150,31 @@ class TardisCSVDataLoader:
 
         match levels:
             case 5:
-                if as_legacy_cython:
-                    capsule = nautilus_pyo3.load_tardis_depth10_from_snapshot5_as_pycapsule(
-                        filepath=str(filepath),
-                        price_precision=self._price_precision,
-                        size_precision=self._size_precision,
-                        instrument_id=self._instrument_id,
-                        limit=limit,
-                    )
-                    data = capsule_to_list(capsule)
-                    # Drop encapsulated `CVec` as data is now transferred
-                    drop_cvec_pycapsule(capsule)
-                    return data
-
-                return nautilus_pyo3.load_tardis_depth10_from_snapshot5(
+                pyo3_depths = nautilus_pyo3.load_tardis_depth10_from_snapshot5(
                     filepath=str(filepath),
                     price_precision=self._price_precision,
                     size_precision=self._size_precision,
                     instrument_id=self._instrument_id,
                     limit=limit,
                 )
+
+                if as_legacy_cython:
+                    return OrderBookDepth10.from_pyo3_list(pyo3_depths)
+
+                return pyo3_depths
             case 25:
-                if as_legacy_cython:
-                    capsule = nautilus_pyo3.load_tardis_depth10_from_snapshot25_as_pycapsule(
-                        filepath=str(filepath),
-                        price_precision=self._price_precision,
-                        size_precision=self._size_precision,
-                        instrument_id=self._instrument_id,
-                        limit=limit,
-                    )
-                    data = capsule_to_list(capsule)
-                    # Drop encapsulated `CVec` as data is now transferred
-                    drop_cvec_pycapsule(capsule)
-                    return data
-
-                return nautilus_pyo3.load_tardis_depth10_from_snapshot25(
+                pyo3_depths = nautilus_pyo3.load_tardis_depth10_from_snapshot25(
                     filepath=str(filepath),
                     price_precision=self._price_precision,
                     size_precision=self._size_precision,
                     instrument_id=self._instrument_id,
                     limit=limit,
                 )
+
+                if as_legacy_cython:
+                    return OrderBookDepth10.from_pyo3_list(pyo3_depths)
+
+                return pyo3_depths
             case _:
                 raise ValueError(
                     "invalid `levels`, use either 5 or 25 corresponding to number of levels in the CSV data",
@@ -240,26 +214,18 @@ class TardisCSVDataLoader:
         if isinstance(filepath, Path):
             filepath = str(filepath.resolve())
 
-        if as_legacy_cython:
-            capsule = nautilus_pyo3.load_tardis_quotes_as_pycapsule(
-                filepath=str(filepath),
-                price_precision=self._price_precision,
-                size_precision=self._size_precision,
-                instrument_id=self._instrument_id,
-                limit=limit,
-            )
-            data = capsule_to_list(capsule)
-            # Drop encapsulated `CVec` as data is now transferred
-            drop_cvec_pycapsule(capsule)
-            return data
-
-        return nautilus_pyo3.load_tardis_quotes(
+        pyo3_quotes = nautilus_pyo3.load_tardis_quotes(
             filepath=str(filepath),
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
             limit=limit,
         )
+
+        if as_legacy_cython:
+            return QuoteTick.from_pyo3_list(pyo3_quotes)
+
+        return pyo3_quotes
 
     def load_trades(
         self,
@@ -295,23 +261,15 @@ class TardisCSVDataLoader:
         if isinstance(filepath, Path):
             filepath = str(filepath.resolve())
 
-        if as_legacy_cython:
-            capsule = nautilus_pyo3.load_tardis_trades_as_pycapsule(
-                filepath=str(filepath),
-                price_precision=self._price_precision,
-                size_precision=self._size_precision,
-                instrument_id=self._instrument_id,
-                limit=limit,
-            )
-            data = capsule_to_list(capsule)
-            # Drop encapsulated `CVec` as data is now transferred
-            drop_cvec_pycapsule(capsule)
-            return data
-
-        return nautilus_pyo3.load_tardis_trades(
+        pyo3_trades = nautilus_pyo3.load_tardis_trades(
             filepath=str(filepath),
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
             limit=limit,
         )
+
+        if as_legacy_cython:
+            return TradeTick.from_pyo3_list(pyo3_trades)
+
+        return pyo3_trades

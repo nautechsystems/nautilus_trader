@@ -16,8 +16,6 @@
 import copy
 from collections import Counter
 
-import pytest
-
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.signal import generate_signal_class
@@ -39,7 +37,6 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.mark.skip(reason="Repair test data once high-precision merged")
 class TestPersistenceStreaming:
     def setup(self) -> None:
         self.catalog: ParquetDataCatalog | None = None
@@ -81,17 +78,16 @@ class TestPersistenceStreaming:
 
         # TODO: Backtest needs to be reconfigured to use either deltas or trades
         expected = {
-            "AccountState": 380,
+            "AccountState": 386,
             "BettingInstrument": 1,
             "ComponentStateChanged": 27,
-            "OrderAccepted": 189,
+            "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 100,
-            "OrderDenied": 3,
-            "OrderFilled": 91,
+            "OrderFilled": 94,
             "OrderInitialized": 193,
-            "OrderSubmitted": 190,
-            "PositionChanged": 87,
+            "OrderSubmitted": 193,
+            "PositionChanged": 90,
             "PositionClosed": 3,
             "PositionOpened": 3,
             "TradeTick": 179,
@@ -436,17 +432,16 @@ class TestPersistenceStreaming:
 
         # Assert
         expected = {
-            "AccountState": 380,
+            "AccountState": 386,
             "BettingInstrument": 1,
             "ComponentStateChanged": 27,
-            "OrderAccepted": 189,
+            "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 100,
-            "OrderDenied": 3,
-            "OrderFilled": 91,
+            "OrderFilled": 94,
             "OrderInitialized": 193,
-            "OrderSubmitted": 190,
-            "PositionChanged": 87,
+            "OrderSubmitted": 193,
+            "PositionChanged": 90,
             "PositionClosed": 3,
             "PositionOpened": 3,
             "TradeTick": 179,

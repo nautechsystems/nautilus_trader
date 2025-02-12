@@ -18,6 +18,11 @@ import warnings
 import msgspec
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.cache.postgres.transformers import transform_account_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_currency_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport datetime
@@ -26,7 +31,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.facade cimport CacheDatabaseFacade
-from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -212,6 +216,43 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.valid_string(pattern, "pattern")
 
         return self._backing.keys(pattern)
+
+    cpdef dict load_all(self):
+        """
+        Load all cache data from the database.
+
+        Returns
+        -------
+        dict[str, dict]
+            A dictionary containing all cache data organized by category.
+
+        """
+        cdef dict raw_data = self._backing.load_all()
+        cdef dict result = {}
+
+        cdef dict currencies_dict = raw_data.get("currencies", {})
+        cdef dict instruments_dict = raw_data.get("instruments", {})
+        cdef dict synthetics_dict = raw_data.get("synthetics", {})
+        cdef dict accounts_dict = raw_data.get("accounts", {})
+        cdef dict orders_dict = raw_data.get("orders", {})
+        cdef dict positions_dict = raw_data.get("positions", {})
+
+        result["currencies"] = {
+            key: transform_currency_from_pyo3(value) for key, value in currencies_dict.items()
+        }
+        result["instruments"] = {
+            key: transform_instrument_from_pyo3(value) for key, value in instruments_dict.items()
+        }
+        result["synthetics"] = synthetics_dict
+        result["accounts"] = {
+            key: transform_account_from_pyo3(value) for key, value in accounts_dict.items()
+        }
+        result["orders"] = {
+            key: transform_order_from_pyo3(value) for key, value in orders_dict.items()
+        }
+        result["positions"] = positions_dict
+
+        return result
 
     cpdef dict load(self):
         """

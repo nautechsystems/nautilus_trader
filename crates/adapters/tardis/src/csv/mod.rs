@@ -24,9 +24,9 @@ use nautilus_model::{
     data::{
         BookOrder, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN, NULL_ORDER,
     },
-    enums::{OrderSide, RecordFlag},
+    enums::{BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
-    types::{Price, Quantity},
+    types::Quantity,
 };
 
 use super::{
@@ -99,6 +99,11 @@ pub fn load_deltas<P: AsRef<Path>>(
             }
         }
 
+        // TODO: Temporary logging to debug data parsing issues
+        if action != BookAction::Delete && size.is_zero() {
+            panic!("invalid delta: action {action} when size zero. size_precision={size_precision}, {record:?},");
+        }
+
         last_ts_event = ts_event;
 
         let delta = OrderBookDelta::new(
@@ -139,7 +144,7 @@ fn create_book_order(
         Some(price) => (
             BookOrder::new(
                 side,
-                Price::new(price, price_precision),
+                parse_price(price, price_precision),
                 Quantity::new(amount.unwrap_or(0.0), size_precision),
                 0,
             ),
@@ -399,9 +404,9 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
             Some(id) => *id,
             None => parse_instrument_id(&record.exchange, record.symbol),
         };
-        let bid_price = Price::new(record.bid_price.unwrap_or(0.0), price_precision);
+        let bid_price = parse_price(record.bid_price.unwrap_or(0.0), price_precision);
         let bid_size = Quantity::new(record.bid_amount.unwrap_or(0.0), size_precision);
-        let ask_price = Price::new(record.ask_price.unwrap_or(0.0), price_precision);
+        let ask_price = parse_price(record.ask_price.unwrap_or(0.0), price_precision);
         let ask_size = Quantity::new(record.ask_amount.unwrap_or(0.0), size_precision);
         let ts_event = parse_timestamp(record.timestamp);
         let ts_init = parse_timestamp(record.local_timestamp);
@@ -447,7 +452,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
             Some(id) => *id,
             None => parse_instrument_id(&record.exchange, record.symbol),
         };
-        let price = Price::new(record.price, price_precision);
+        let price = parse_price(record.price, price_precision);
         let size = Quantity::new(record.amount, size_precision);
         let aggressor_side = parse_aggressor_side(&record.side);
         let trade_id = TradeId::new(&record.id);
@@ -484,6 +489,7 @@ mod tests {
     use nautilus_model::{
         enums::{AggressorSide, BookAction},
         identifiers::InstrumentId,
+        types::Price,
     };
     use nautilus_test_kit::common::{
         ensure_data_exists_tardis_binance_snapshot25, ensure_data_exists_tardis_binance_snapshot5,

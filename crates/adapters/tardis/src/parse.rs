@@ -22,6 +22,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
+use uuid::Uuid;
 
 use super::enums::{Exchange, InstrumentType, OptionType};
 
@@ -30,6 +31,19 @@ where
     D: Deserializer<'de>,
 {
     String::deserialize(deserializer).map(|s| Ustr::from(&s.to_uppercase()))
+}
+
+pub fn deserialize_trade_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+
+    if s.is_empty() {
+        return Ok(Uuid::new_v4().to_string());
+    }
+
+    Ok(s)
 }
 
 #[must_use]

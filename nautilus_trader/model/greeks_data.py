@@ -37,6 +37,7 @@ class GreeksData(Data):
 
     underlying_price: float = 0.0
     interest_rate: float = 0.0
+    cost_of_carry: float = 0.0
 
     vol: float = 0.0
     price: float = 0.0
@@ -44,6 +45,7 @@ class GreeksData(Data):
     gamma: float = 0.0
     vega: float = 0.0
     theta: float = 0.0
+
     # in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
     itm_prob: float = 0.0
 
@@ -80,6 +82,7 @@ class GreeksData(Data):
             self.quantity,
             self.underlying_price,
             self.interest_rate,
+            self.cost_of_carry,
             self.vol,
             quantity * self.price,
             quantity * self.delta,
