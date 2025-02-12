@@ -64,7 +64,6 @@ use crate::{
 /// larger (10x) than the smallest.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 pub enum Data {
     Delta(OrderBookDelta),
     Deltas(OrderBookDeltas_API),
