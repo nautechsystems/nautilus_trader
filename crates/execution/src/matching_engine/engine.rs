@@ -47,7 +47,7 @@ use nautilus_model::{
     instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
     orderbook::OrderBook,
     orders::{
-        Order, OrderAny, PassiveOrderAny, StopLimitOrder, StopOrderAny, TrailingStopLimitOrder,
+        Order, OrderAny, PassiveOrderAny, StopOrderAny, TrailingStopLimitOrder,
         TrailingStopMarketOrder,
     },
     position::Position,
@@ -1510,12 +1510,76 @@ impl OrderMatchingEngine {
 
     fn update_stop_limit_order(
         &mut self,
-        order: &StopLimitOrder,
+        order: &mut OrderAny,
         quantity: Quantity,
         price: Price,
         trigger_price: Price,
     ) {
-        todo!("update_stop_limit_order")
+        if !order.is_triggered().is_some_and(|t| t) {
+            // Update stop price
+            if self
+                .core
+                .is_stop_matched(order.order_side_specified(), trigger_price)
+            {
+                self.generate_order_modify_rejected(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    Ustr::from(
+                        format!(
+                            "{} {} order new stop px of {} was in the market: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            trigger_price,
+                            self.core
+                                .bid
+                                .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core
+                                .ask
+                                .map_or_else(|| "None".to_string(), |p| p.to_string())
+                        )
+                        .as_str(),
+                    ),
+                    order.venue_order_id(),
+                    order.account_id(),
+                );
+                return;
+            }
+        } else {
+            // Update limit price
+            if self
+                .core
+                .is_limit_matched(order.order_side_specified(), price)
+            {
+                if order.is_post_only() {
+                    self.generate_order_modify_rejected(
+                        order.trader_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        Ustr::from(format!(
+                            "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            price,
+                            self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                        ).as_str()),
+                        order.venue_order_id(),
+                        order.account_id(),
+                    );
+                    return;
+                } else {
+                    self.generate_order_updated(order, quantity, Some(price), None);
+                    order.set_liquidity_side(LiquiditySide::Taker);
+                    self.fill_limit_order(order);
+                    return; // Filled
+                }
+            }
+        }
+
+        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price));
     }
 
     fn update_market_if_touched_order(
@@ -1634,11 +1698,10 @@ impl OrderMatchingEngine {
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
                 self.update_stop_market_order(order, quantity, trigger_price);
             }
-            OrderAny::StopLimit(stop_limit_order) => {
-                let price = price.unwrap_or(stop_limit_order.price().unwrap());
-                let trigger_price =
-                    trigger_price.unwrap_or(stop_limit_order.trigger_price().unwrap());
-                self.update_stop_limit_order(stop_limit_order, quantity, price, trigger_price);
+            OrderAny::StopLimit(_) => {
+                let price = price.unwrap_or(order.price().unwrap());
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_stop_limit_order(order, quantity, price, trigger_price);
             }
             OrderAny::MarketIfTouched(_) => {
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());

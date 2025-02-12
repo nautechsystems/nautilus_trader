@@ -734,6 +734,7 @@ impl OrderAny {
         }
     }
 
+    #[must_use]
     pub fn is_pending_cancel(&self) -> bool {
         match self {
             Self::Limit(order) => order.is_pending_cancel(),
@@ -763,6 +764,7 @@ impl OrderAny {
         }
     }
 
+    #[must_use]
     pub fn is_passive(&self) -> bool {
         match self {
             OrderAny::Limit(order) => order.is_passive(),
@@ -774,6 +776,21 @@ impl OrderAny {
             OrderAny::StopMarket(order) => order.is_passive(),
             OrderAny::TrailingStopLimit(order) => order.is_passive(),
             OrderAny::TrailingStopMarket(order) => order.is_passive(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_triggered(&self) -> Option<bool> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(order) => Some(order.is_triggered),
+            Self::Market(_) => None,
+            Self::MarketIfTouched(order) => Some(order.is_triggered),
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(order) => Some(order.is_triggered),
+            Self::StopMarket(order) => Some(order.is_triggered),
+            Self::TrailingStopLimit(order) => Some(order.is_triggered),
+            Self::TrailingStopMarket(order) => Some(order.is_triggered),
         }
     }
 
