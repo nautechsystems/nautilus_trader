@@ -19,7 +19,8 @@ Released on TBD (UTC).
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
-- Ported StreamingFeatherWriter to Rust (#2292), thanks @twitu
+- Refined greeks computation (#2312), thanks @faysou
+- Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
 - Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek
 - Upgraded `arrow` and `parquet` crates to v54.1.0
