@@ -16,7 +16,10 @@
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::{enums::Exchange, parse::deserialize_uppercase};
+use crate::{
+    enums::Exchange,
+    parse::{deserialize_trade_id, deserialize_uppercase},
+};
 
 /// Represents a Tardis format order book update record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,7 +270,8 @@ pub struct TardisTradeRecord {
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
     pub local_timestamp: u64,
-    /// The trade ID provided by the exchange.
+    /// The trade ID provided by the exchange. If empty, a new UUIDv4 string is generated.
+    #[serde(deserialize_with = "deserialize_trade_id")]
     pub id: String,
     /// The liquidity taker (aggressor) side provided by the exchange.
     pub side: String,
