@@ -3406,7 +3406,6 @@ dependencies = [
  "nautilus-model",
  "nautilus-serialization",
  "nautilus-test-kit",
- "procfs",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",
