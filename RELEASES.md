@@ -29,6 +29,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
 - Fixed built-in data type Arrow schemas for `StreamingFeatherWriter`, thanks for reporting @netomenoci
+- Fixed memory allocation performance issue for `TardisCSVDataLoader`
 
 ### Documentation Updates
 None

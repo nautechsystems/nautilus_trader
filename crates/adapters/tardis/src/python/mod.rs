@@ -46,34 +46,15 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(machine::py_run_tardis_machine_replay, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_deltas, m)?)?;
     m.add_function(wrap_pyfunction!(
-        csv::py_load_tardis_deltas_as_pycapsule,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
         csv::py_load_tardis_depth10_from_snapshot5,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        csv::py_load_tardis_depth10_from_snapshot5_as_pycapsule,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
         csv::py_load_tardis_depth10_from_snapshot25,
         m
     )?)?;
-    m.add_function(wrap_pyfunction!(
-        csv::py_load_tardis_depth10_from_snapshot25_as_pycapsule,
-        m
-    )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_quotes, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        csv::py_load_tardis_quotes_as_pycapsule,
-        m
-    )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_trades, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        csv::py_load_tardis_trades_as_pycapsule,
-        m
-    )?)?;
+
     Ok(())
 }
