@@ -35,7 +35,10 @@ use super::GetTsInit;
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
-    types::{fixed::FIXED_PRECISION, Price, Quantity},
+    types::{
+        fixed::{FIXED_PRECISION, FIXED_SIZE_BINARY},
+        Price, Quantity,
+    },
 };
 
 /// Represents a single quote tick in a market.
@@ -153,10 +156,10 @@ impl QuoteTick {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("bid_price".to_string(), "Int64".to_string());
-        metadata.insert("ask_price".to_string(), "Int64".to_string());
-        metadata.insert("bid_size".to_string(), "UInt64".to_string());
-        metadata.insert("ask_size".to_string(), "UInt64".to_string());
+        metadata.insert("bid_price".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("ask_price".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("bid_size".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("ask_size".to_string(), FIXED_SIZE_BINARY.to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata

@@ -41,6 +41,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("HIGH_PRECISION", crate::types::fixed::HIGH_PRECISION_MODE)?;
     m.add("FIXED_SCALAR", crate::types::fixed::FIXED_SCALAR)?;
     m.add("FIXED_PRECISION", crate::types::fixed::FIXED_PRECISION)?;
+    m.add("PRECISION_BYTES", crate::types::fixed::PRECISION_BYTES)?;
     m.add_class::<crate::types::currency::Currency>()?;
     m.add_class::<crate::types::money::Money>()?;
     m.add_class::<crate::types::price::Price>()?;

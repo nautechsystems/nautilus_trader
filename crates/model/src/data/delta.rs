@@ -32,7 +32,7 @@ use super::{
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::InstrumentId,
-    types::quantity::check_positive_quantity,
+    types::{fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
 };
 
 /// Represents a single change/delta in an order book.
@@ -162,8 +162,8 @@ impl OrderBookDelta {
         let mut metadata = IndexMap::new();
         metadata.insert("action".to_string(), "UInt8".to_string());
         metadata.insert("side".to_string(), "UInt8".to_string());
-        metadata.insert("price".to_string(), "Int64".to_string());
-        metadata.insert("size".to_string(), "UInt64".to_string());
+        metadata.insert("price".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("size".to_string(), FIXED_SIZE_BINARY.to_string());
         metadata.insert("order_id".to_string(), "UInt64".to_string());
         metadata.insert("flags".to_string(), "UInt8".to_string());
         metadata.insert("sequence".to_string(), "UInt64".to_string());

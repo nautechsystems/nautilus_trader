@@ -38,7 +38,7 @@ use super::GetTsInit;
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{Price, Quantity},
+    types::{fixed::FIXED_SIZE_BINARY, Price, Quantity},
 };
 
 /// Returns the bar interval as a `TimeDelta`.
@@ -765,11 +765,11 @@ impl Bar {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("open".to_string(), "Int64".to_string());
-        metadata.insert("high".to_string(), "Int64".to_string());
-        metadata.insert("low".to_string(), "Int64".to_string());
-        metadata.insert("close".to_string(), "Int64".to_string());
-        metadata.insert("volume".to_string(), "UInt64".to_string());
+        metadata.insert("open".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("high".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("low".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("close".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("volume".to_string(), FIXED_SIZE_BINARY.to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata
