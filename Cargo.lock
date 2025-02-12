@@ -1274,9 +1274,9 @@ checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
 
 [[package]]
 name = "databento"
-version = "0.17.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e97bfcbcdd210697ec11899a5e79898c4bd6e12706005d975b9c92e4e03e99c"
+checksum = "ca98d5c5f0d42c88885a001501d75a0ff9bede57b0e39e168941b9575833a016"
 dependencies = [
  "dbn",
  "futures",
@@ -1704,9 +1704,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.25.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a0d47473bf3d0064cc16e7c454cc8f2802b688c7ad073b9ef9fee07deb77073"
+checksum = "af2b0ece1c40210e2b4c129ada0a04add1ef20a1be4ce55d4c1809d212fefb14"
 dependencies = [
  "async-compression",
  "csv",
@@ -1724,9 +1724,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.25.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7dc21ecca9d911faf9536cf4b735210fa22d0d1f6e7b7b581a02f84761d6d9"
+checksum = "e1205f7678008e06b2a699c4d0b0d275a8b4aafd586cb34500cf148584545992"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

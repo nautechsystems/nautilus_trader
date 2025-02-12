@@ -29,7 +29,7 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-databento = "0.17.0"
+databento = "0.20.0"
 fallible-streaming-iterator = "0.1.9"
 time = "0.3.37"
 
