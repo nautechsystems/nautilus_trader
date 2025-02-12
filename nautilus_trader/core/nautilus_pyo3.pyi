@@ -4846,6 +4846,7 @@ class GreeksData(Data):
     quantity: float
     underlying_price: float
     interest_rate: float
+    cost_of_carry: float
     vol: float
     price: float
     delta: float
@@ -4867,6 +4868,7 @@ class GreeksData(Data):
         quantity: float = 0.0,
         underlying_price: float = 0.0,
         interest_rate: float = 0.0,
+        cost_of_carry: float = 0.0,
         vol: float = 0.0,
         price: float = 0.0,
         delta: float = 0.0,

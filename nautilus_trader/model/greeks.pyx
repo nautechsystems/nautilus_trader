@@ -66,6 +66,8 @@ cdef class GreeksCalculator:
     Vega is expressed in terms of absolute percent changes ((dV / dVol) / 100).
     Theta is expressed in terms of daily changes ((dV / d(T-t)) / 365.25, where T is the expiry of an option and t is the current time).
 
+    Also note that for ease of implementation we consider that american options (for stock options for example) are european for the computation of greeks.
+
     """
 
     def __init__(
@@ -83,7 +85,8 @@ cdef class GreeksCalculator:
     def instrument_greeks(
         self,
         instrument_id: InstrumentId,
-        flat_interest_rate: float = 0.05,
+        flat_interest_rate: float = 0.0425,
+        flat_dividend_yield: float | None = None,
         spot_shock: float = 0.,
         vol_shock: float = 0.,
         expiry_in_years_shock: float = 0.,
@@ -104,8 +107,12 @@ cdef class GreeksCalculator:
             The ID of the instrument to calculate greeks for.
         flat_interest_rate : float, default 0.05
             The interest rate to use for calculations.
-            The function also searches if an interest rate curve for the currency of the option is stored in cache;
+            The function first searches if an interest rate curve for the currency of the option is stored in cache;
             if not, flat_interest_rate is used.
+        flat_dividend_yield : float, optional
+            The dividend yield to use for calculations.
+            The function first searches if a dividend yield curve is stored in cache using the instrument id of the underlying as key;
+            if not, flat_dividend_yield is used if it's not None.
         spot_shock : float, default 0.0
             Shock to apply to spot price.
         vol_shock : float, default 0.0
@@ -131,12 +138,14 @@ cdef class GreeksCalculator:
 
         """
         instrument_definition = self._cache.instrument(instrument_id)
-        if instrument_definition.instrument_class is not InstrumentClass.OPTION:
-            if instrument_definition.instrument_class is not InstrumentClass.FUTURE:
-                self._log.error(f"instrument_greeks only works with futures for now.")
-                return
 
-            greeks_data = GreeksData.from_multiplier(instrument_id, float(instrument_definition.multiplier), ts_event)
+        if instrument_definition.instrument_class is not InstrumentClass.OPTION:
+            if instrument_definition.instrument_class is InstrumentClass.FUTURE:
+                multiplier = float(instrument_definition.multiplier)
+            else:
+                multiplier = 1.
+
+            greeks_data = GreeksData.from_multiplier(instrument_id, multiplier, ts_event)
 
             if position is not None:
                 # we set as price the pnl of a unit position so we can see how the price of a portfolio evolves with shocks
@@ -158,23 +167,31 @@ cdef class GreeksCalculator:
             expiry_in_years = min((expiry_utc - utc_now).days, 1) / 365.25
 
             currency = instrument_definition.quote_currency.code
+
             if (yield_curve := self._cache.yield_curve(currency)) is not None:
                 interest_rate = yield_curve(expiry_in_years)
             else:
                 interest_rate = flat_interest_rate
+
+            cost_of_carry = 0.
+            underlying_instrument_id = InstrumentId.from_str(f"{instrument_definition.underlying}.{instrument_id.venue}")
+
+            if (dividend_curve := self._cache.yield_curve(str(underlying_instrument_id))) is not None:
+                dividend_yield = dividend_curve(expiry_in_years)
+                cost_of_carry = interest_rate - dividend_yield
+            elif flat_dividend_yield is not None:
+                cost_of_carry = interest_rate - flat_dividend_yield
 
             multiplier = float(instrument_definition.multiplier)
             is_call = instrument_definition.option_kind is OptionKind.CALL
             strike = float(instrument_definition.strike_price)
 
             option_mid_price = float(self._cache.price(instrument_id, PriceType.MID))
-
-            underlying_instrument_id = InstrumentId.from_str(f"{instrument_definition.underlying}.{instrument_id.venue}")
             underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
 
-            greeks = imply_vol_and_greeks(underlying_price, interest_rate, 0.0, is_call, strike, expiry_in_years, option_mid_price, multiplier)
+            greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike, expiry_in_years, option_mid_price, multiplier)
             greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_years, multiplier, 1.0,
-                                     underlying_price, interest_rate, greeks.vol, greeks.price, greeks.delta, greeks.gamma, greeks.vega, greeks.theta,
+                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, greeks.price, greeks.delta, greeks.gamma, greeks.vega, greeks.theta,
                                      abs(greeks.delta / multiplier))
 
             # adding greeks to cache
@@ -187,14 +204,14 @@ cdef class GreeksCalculator:
                 self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=greeks_data)
 
         if spot_shock != 0. or vol_shock != 0. or expiry_in_years_shock != 0.:
-            greeks = black_scholes_greeks(greeks_data.underlying_price + spot_shock, greeks_data.interest_rate, 0.0, greeks_data.vol + vol_shock,
-                                          greeks_data.is_call, greeks_data.strike, greeks_data.expiry_in_years - expiry_in_years_shock,
-                                          greeks_data.multiplier)
+            greeks = black_scholes_greeks(greeks_data.underlying_price + spot_shock, greeks_data.interest_rate, greeks_data.cost_of_carry,
+                                          greeks_data.vol + vol_shock, greeks_data.is_call, greeks_data.strike,
+                                          greeks_data.expiry_in_years - expiry_in_years_shock, greeks_data.multiplier)
             greeks_data = GreeksData(greeks_data.ts_event, greeks_data.ts_event,
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
                                      greeks_data.expiry_in_years - expiry_in_years_shock,
                                      greeks_data.multiplier, greeks_data.quantity, greeks_data.underlying_price + spot_shock,
-                                     greeks_data.interest_rate,
+                                     greeks_data.interest_rate, greeks_data.cost_of_carry,
                                      greeks_data.vol + vol_shock, greeks.price, greeks.delta, greeks.gamma, greeks.vega, greeks.theta,
                                      abs(greeks.delta / greeks_data.multiplier))
 
@@ -206,7 +223,8 @@ cdef class GreeksCalculator:
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         PositionSide side = PositionSide.NO_POSITION_SIDE,
-        flat_interest_rate: float = 0.05,
+        flat_interest_rate: float = 0.0425,
+        flat_dividend_yield: float | None = None,
         spot_shock: float = 0.0,
         vol_shock: float = 0.0,
         expiry_in_years_shock: float = 0.0,
@@ -238,7 +256,9 @@ cdef class GreeksCalculator:
             The position side to filter.
             Only positions with this side will be included.
         flat_interest_rate : float, default 0.05
-            The flat/constant interest rate to use for calculations when no curve is available.
+            The interest rate to use for calculations when no curve is available.
+        flat_dividend_yield : float, optional
+            The dividend yield to use for calculations when no dividend curve is available.
         spot_shock : float, default 0.0
             The shock to apply to the underlying price.
         vol_shock : float, default 0.0
@@ -279,6 +299,7 @@ cdef class GreeksCalculator:
             instrument_greeks = self.instrument_greeks(
                 position_instrument_id,
                 flat_interest_rate,
+                flat_dividend_yield,
                 spot_shock,
                 vol_shock,
                 expiry_in_years_shock,
