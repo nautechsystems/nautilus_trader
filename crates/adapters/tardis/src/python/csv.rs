@@ -15,12 +15,12 @@
 
 use std::path::PathBuf;
 
-use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::{Data, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::InstrumentId,
 };
-use pyo3::{prelude::*, types::PyCapsule};
+use pyo3::prelude::*;
 
 use crate::csv::{
     load_deltas, load_depth10_from_snapshot25, load_depth10_from_snapshot5, load_quote_ticks,
@@ -46,31 +46,6 @@ pub fn py_load_tardis_deltas(
     .map_err(to_pyvalue_err)
 }
 
-#[pyfunction(name = "load_tardis_deltas_as_pycapsule")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
-pub fn py_load_tardis_deltas_as_pycapsule(
-    py: Python,
-    filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> PyResult<PyObject> {
-    let deltas = load_deltas(
-        filepath,
-        price_precision,
-        size_precision,
-        instrument_id,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-    let deltas: Vec<Data> = deltas.into_iter().map(Data::Delta).collect();
-
-    let cvec: CVec = deltas.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
-    Ok(capsule.into_py(py))
-}
-
 #[pyfunction(name = "load_tardis_depth10_from_snapshot5")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot5(
@@ -88,31 +63,6 @@ pub fn py_load_tardis_depth10_from_snapshot5(
         limit,
     )
     .map_err(to_pyvalue_err)
-}
-
-#[pyfunction(name = "load_tardis_depth10_from_snapshot5_as_pycapsule")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
-pub fn py_load_tardis_depth10_from_snapshot5_as_pycapsule(
-    py: Python,
-    filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> PyResult<PyObject> {
-    let depths = load_depth10_from_snapshot5(
-        filepath,
-        price_precision,
-        size_precision,
-        instrument_id,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-    let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
-
-    let cvec: CVec = depths.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
-    Ok(capsule.into_py(py))
 }
 
 #[pyfunction(name = "load_tardis_depth10_from_snapshot25")]
@@ -134,31 +84,6 @@ pub fn py_load_tardis_depth10_from_snapshot25(
     .map_err(to_pyvalue_err)
 }
 
-#[pyfunction(name = "load_tardis_depth10_from_snapshot25_as_pycapsule")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
-pub fn py_load_tardis_depth10_from_snapshot25_as_pycapsule(
-    py: Python,
-    filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> PyResult<PyObject> {
-    let depths = load_depth10_from_snapshot25(
-        filepath,
-        price_precision,
-        size_precision,
-        instrument_id,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-    let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
-
-    let cvec: CVec = depths.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
-    Ok(capsule.into_py(py))
-}
-
 #[pyfunction(name = "load_tardis_quotes")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_quotes(
@@ -178,31 +103,6 @@ pub fn py_load_tardis_quotes(
     .map_err(to_pyvalue_err)
 }
 
-#[pyfunction(name = "load_tardis_quotes_as_pycapsule")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
-pub fn py_load_tardis_quotes_as_pycapsule(
-    py: Python,
-    filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> PyResult<PyObject> {
-    let quotes = load_quote_ticks(
-        filepath,
-        price_precision,
-        size_precision,
-        instrument_id,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-    let quotes: Vec<Data> = quotes.into_iter().map(Data::Quote).collect();
-
-    let cvec: CVec = quotes.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
-    Ok(capsule.into_py(py))
-}
-
 #[pyfunction(name = "load_tardis_trades")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_trades(
@@ -220,29 +120,4 @@ pub fn py_load_tardis_trades(
         limit,
     )
     .map_err(to_pyvalue_err)
-}
-
-#[pyfunction(name = "load_tardis_trades_as_pycapsule")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
-pub fn py_load_tardis_trades_as_pycapsule(
-    py: Python,
-    filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> PyResult<PyObject> {
-    let trades = load_trade_ticks(
-        filepath,
-        price_precision,
-        size_precision,
-        instrument_id,
-        limit,
-    )
-    .map_err(to_pyvalue_err)?;
-    let trades: Vec<Data> = trades.into_iter().map(Data::Trade).collect();
-
-    let cvec: CVec = trades.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
-    Ok(capsule.into_py(py))
 }
