@@ -28,11 +28,11 @@ use crate::csv::{
 };
 
 #[pyfunction(name = "load_tardis_deltas")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
+#[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_deltas(
     filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<OrderBookDelta>> {
@@ -47,11 +47,11 @@ pub fn py_load_tardis_deltas(
 }
 
 #[pyfunction(name = "load_tardis_depth10_from_snapshot5")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
+#[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot5(
     filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<OrderBookDepth10>> {
@@ -66,11 +66,11 @@ pub fn py_load_tardis_depth10_from_snapshot5(
 }
 
 #[pyfunction(name = "load_tardis_depth10_from_snapshot25")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
+#[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot25(
     filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<OrderBookDepth10>> {
@@ -85,11 +85,11 @@ pub fn py_load_tardis_depth10_from_snapshot25(
 }
 
 #[pyfunction(name = "load_tardis_quotes")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
+#[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_quotes(
     filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<QuoteTick>> {
@@ -104,11 +104,11 @@ pub fn py_load_tardis_quotes(
 }
 
 #[pyfunction(name = "load_tardis_trades")]
-#[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
+#[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_trades(
     filepath: PathBuf,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<TradeTick>> {

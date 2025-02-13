@@ -15,7 +15,12 @@
 
 mod record;
 
-use std::{error::Error, fs::File, io::BufReader, path::Path};
+use std::{
+    error::Error,
+    fs::File,
+    io::{BufReader, Read, Seek, SeekFrom},
+    path::Path,
+};
 
 use csv::{Reader, ReaderBuilder, StringRecord};
 use flate2::read::GzDecoder;
@@ -41,20 +46,34 @@ use super::{
 };
 use crate::parse::parse_price;
 
+fn infer_precision(value: f64) -> u8 {
+    let str_value = value.to_string(); // Single allocation
+    match str_value.find('.') {
+        Some(decimal_idx) => (str_value.len() - decimal_idx - 1) as u8,
+        None => 0,
+    }
+}
+
 /// Creates a new CSV reader which can handle gzip compression.
 pub fn create_csv_reader<P: AsRef<Path>>(
     filepath: P,
 ) -> anyhow::Result<Reader<Box<dyn std::io::Read>>> {
-    let file = File::open(filepath.as_ref())?;
+    let mut file = File::open(filepath.as_ref())?;
+
+    // Read first two bytes to check for gzip magic numbers
+    let mut magic = [0u8; 2];
+    let peek_result = file.read_exact(&mut magic);
+
+    // Seek back to start of file
+    file.seek(SeekFrom::Start(0))?;
     let buf_reader = BufReader::new(file);
 
-    // Determine if the file is gzipped by its extension
-    let reader: Box<dyn std::io::Read> =
-        if filepath.as_ref().extension().unwrap_or_default() == "gz" {
-            Box::new(GzDecoder::new(buf_reader)) // Decompress the gzipped file
-        } else {
-            Box::new(buf_reader) // Regular file reader
-        };
+    // Check if it's gzipped - magic numbers are 1f 8b
+    let reader: Box<dyn std::io::Read> = if peek_result.is_ok() && magic == [0x1f, 0x8b] {
+        Box::new(GzDecoder::new(buf_reader))
+    } else {
+        Box::new(buf_reader)
+    };
 
     Ok(ReaderBuilder::new().has_headers(true).from_reader(reader))
 }
@@ -62,18 +81,58 @@ pub fn create_csv_reader<P: AsRef<Path>>(
 /// Load [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`.
 pub fn load_deltas<P: AsRef<Path>>(
     filepath: P,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDelta>, Box<dyn Error>> {
-    let mut csv_reader = create_csv_reader(filepath)?;
+    // Infer precisions if not provided
+    let (price_precision, size_precision) = match (price_precision, size_precision) {
+        (Some(p), Some(s)) => (p, s),
+        (price_precision, size_precision) => {
+            let mut reader = create_csv_reader(&filepath)?;
+            let mut record = StringRecord::new();
+
+            let mut max_price_precision = 0u8;
+            let mut max_size_precision = 0u8;
+            let mut count = 0;
+
+            while reader.read_record(&mut record)? {
+                let parsed: TardisBookUpdateRecord = record.deserialize(None)?;
+
+                if price_precision.is_none() {
+                    max_price_precision = infer_precision(parsed.price).max(max_price_precision);
+                }
+
+                if size_precision.is_none() {
+                    max_size_precision = infer_precision(parsed.amount).max(max_size_precision);
+                }
+
+                if let Some(limit) = limit {
+                    if count >= limit {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+
+            drop(reader);
+
+            (
+                price_precision.unwrap_or(max_price_precision),
+                size_precision.unwrap_or(max_size_precision),
+            )
+        }
+    };
+
     let mut deltas: Vec<OrderBookDelta> = Vec::new();
     let mut last_ts_event = UnixNanos::default();
 
-    let mut raw_record = StringRecord::new();
-    while csv_reader.read_record(&mut raw_record)? {
-        let record: TardisBookUpdateRecord = raw_record.deserialize(None)?;
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+
+    while reader.read_record(&mut record)? {
+        let record: TardisBookUpdateRecord = record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -99,9 +158,8 @@ pub fn load_deltas<P: AsRef<Path>>(
             }
         }
 
-        // TODO: Temporary logging to debug data parsing issues
         if action != BookAction::Delete && size.is_zero() {
-            panic!("invalid delta: action {action} when size zero. size_precision={size_precision}, {record:?},");
+            panic!("Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}");
         }
 
         last_ts_event = ts_event;
@@ -157,17 +215,59 @@ fn create_book_order(
 /// Load [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`.
 pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
-    let mut csv_reader = create_csv_reader(filepath)?;
+    let (price_precision, size_precision) = match (price_precision, size_precision) {
+        (Some(p), Some(s)) => (p, s),
+        (price_precision, size_precision) => {
+            let mut reader = create_csv_reader(&filepath)?;
+            let mut record = StringRecord::new();
+
+            let mut max_price_precision = 0u8;
+            let mut max_size_precision = 0u8;
+            let mut count = 0;
+
+            while reader.read_record(&mut record)? {
+                let parsed: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
+
+                if price_precision.is_none() {
+                    if let Some(bid_price) = parsed.bids_0_price {
+                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
+                    }
+                }
+
+                if size_precision.is_none() {
+                    if let Some(bid_amount) = parsed.bids_0_amount {
+                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
+                    }
+                }
+
+                if let Some(limit) = limit {
+                    if count >= limit {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+
+            drop(reader);
+
+            (
+                price_precision.unwrap_or(max_price_precision),
+                size_precision.unwrap_or(max_size_precision),
+            )
+        }
+    };
+
     let mut depths: Vec<OrderBookDepth10> = Vec::new();
 
-    let mut raw_record = StringRecord::new();
-    while csv_reader.read_record(&mut raw_record)? {
-        let record: TardisOrderBookSnapshot5Record = raw_record.deserialize(None)?;
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+    while reader.read_record(&mut record)? {
+        let record: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
         let instrument_id = match &instrument_id {
             Some(id) => *id,
             None => parse_instrument_id(&record.exchange, record.symbol),
@@ -261,17 +361,59 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
 
 pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
-    let mut csv_reader = create_csv_reader(filepath)?;
-    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+    let (price_precision, size_precision) = match (price_precision, size_precision) {
+        (Some(p), Some(s)) => (p, s),
+        (price_precision, size_precision) => {
+            let mut reader = create_csv_reader(&filepath)?;
+            let mut record = StringRecord::new();
 
-    let mut raw_record = StringRecord::new();
-    while csv_reader.read_record(&mut raw_record)? {
-        let record: TardisOrderBookSnapshot25Record = raw_record.deserialize(None)?;
+            let mut max_price_precision = 0u8;
+            let mut max_size_precision = 0u8;
+            let mut count = 0;
+
+            while reader.read_record(&mut record)? {
+                let parsed: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
+
+                if price_precision.is_none() {
+                    if let Some(bid_price) = parsed.bids_0_price {
+                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
+                    }
+                }
+
+                if size_precision.is_none() {
+                    if let Some(bid_amount) = parsed.bids_0_amount {
+                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
+                    }
+                }
+
+                if let Some(limit) = limit {
+                    if count >= limit {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+
+            drop(reader);
+
+            (
+                price_precision.unwrap_or(max_price_precision),
+                size_precision.unwrap_or(max_size_precision),
+            )
+        }
+    };
+
+    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+
+    while reader.read_record(&mut record)? {
+        let record: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -388,17 +530,59 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 /// Load [`QuoteTick`]s from a Tardis format CSV at the given `filepath`.
 pub fn load_quote_ticks<P: AsRef<Path>>(
     filepath: P,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<QuoteTick>, Box<dyn Error>> {
-    let mut csv_reader = create_csv_reader(filepath)?;
-    let mut quotes = Vec::new();
+    let (price_precision, size_precision) = match (price_precision, size_precision) {
+        (Some(p), Some(s)) => (p, s),
+        (price_precision, size_precision) => {
+            let mut reader = create_csv_reader(&filepath)?;
+            let mut record = StringRecord::new();
 
-    let mut raw_record = StringRecord::new();
-    while csv_reader.read_record(&mut raw_record)? {
-        let record: TardisQuoteRecord = raw_record.deserialize(None)?;
+            let mut max_price_precision = 0u8;
+            let mut max_size_precision = 0u8;
+            let mut count = 0;
+
+            while reader.read_record(&mut record)? {
+                let parsed: TardisQuoteRecord = record.deserialize(None)?;
+
+                if price_precision.is_none() {
+                    if let Some(bid_price) = parsed.bid_price {
+                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
+                    }
+                }
+
+                if size_precision.is_none() {
+                    if let Some(bid_amount) = parsed.bid_amount {
+                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
+                    }
+                }
+
+                if let Some(limit) = limit {
+                    if count >= limit {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+
+            drop(reader);
+
+            (
+                price_precision.unwrap_or(max_price_precision),
+                size_precision.unwrap_or(max_size_precision),
+            )
+        }
+    };
+
+    let mut quotes = Vec::new();
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+
+    while reader.read_record(&mut record)? {
+        let record: TardisQuoteRecord = record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -436,17 +620,55 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
 /// Load [`TradeTick`]s from a Tardis format CSV at the given `filepath`.
 pub fn load_trade_ticks<P: AsRef<Path>>(
     filepath: P,
-    price_precision: u8,
-    size_precision: u8,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<TradeTick>, Box<dyn Error>> {
-    let mut csv_reader = create_csv_reader(filepath)?;
-    let mut trades = Vec::new();
+    let (price_precision, size_precision) = match (price_precision, size_precision) {
+        (Some(p), Some(s)) => (p, s),
+        (price_precision, size_precision) => {
+            let mut reader = create_csv_reader(&filepath)?;
+            let mut record = StringRecord::new();
 
-    let mut raw_record = StringRecord::new();
-    while csv_reader.read_record(&mut raw_record)? {
-        let record: TardisTradeRecord = raw_record.deserialize(None)?;
+            let mut max_price_precision = 0u8;
+            let mut max_size_precision = 0u8;
+            let mut count = 0;
+
+            while reader.read_record(&mut record)? {
+                let parsed: TardisTradeRecord = record.deserialize(None)?;
+
+                if price_precision.is_none() {
+                    max_price_precision = infer_precision(parsed.price).max(max_price_precision);
+                }
+
+                if size_precision.is_none() {
+                    max_size_precision = infer_precision(parsed.amount).max(max_size_precision);
+                }
+
+                if let Some(limit) = limit {
+                    if count >= limit {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+
+            drop(reader);
+
+            (
+                price_precision.unwrap_or(max_price_precision),
+                size_precision.unwrap_or(max_size_precision),
+            )
+        }
+    };
+
+    let mut trades = Vec::new();
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+
+    while reader.read_record(&mut record)? {
+        let record: TardisTradeRecord = record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -501,11 +723,23 @@ mod tests {
     use super::*;
 
     #[rstest]
-    pub fn test_read_deltas() {
+    #[case(Some(1), Some(0))] // Explicit precisions
+    #[case(None, None)] // Inferred precisions
+    pub fn test_read_deltas(
+        #[case] price_precision: Option<u8>,
+        #[case] size_precision: Option<u8>,
+    ) {
         let filepath = ensure_data_exists_tardis_deribit_book_l2();
-        let deltas = load_deltas(filepath, 1, 0, None, Some(1_000)).unwrap();
+        let deltas = load_deltas(
+            filepath,
+            price_precision,
+            size_precision,
+            None,
+            Some(10_000),
+        )
+        .unwrap();
 
-        assert_eq!(deltas.len(), 1_000);
+        assert_eq!(deltas.len(), 10_000);
         assert_eq!(
             deltas[0].instrument_id,
             InstrumentId::from("BTC-PERPETUAL.DERIBIT")
@@ -521,23 +755,35 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_read_depth10s_from_snapshot5() {
+    #[case(Some(2), Some(3))] // Explicit precisions
+    #[case(None, None)] // Inferred precisions
+    pub fn test_read_depth10s_from_snapshot5(
+        #[case] price_precision: Option<u8>,
+        #[case] size_precision: Option<u8>,
+    ) {
         let filepath = ensure_data_exists_tardis_binance_snapshot5();
-        let depths = load_depth10_from_snapshot5(filepath, 1, 0, None, Some(100_000)).unwrap();
+        let depths = load_depth10_from_snapshot5(
+            filepath,
+            price_precision,
+            size_precision,
+            None,
+            Some(10_000),
+        )
+        .unwrap();
 
-        assert_eq!(depths.len(), 100_000);
+        assert_eq!(depths.len(), 10_000);
         assert_eq!(
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
         );
         assert_eq!(depths[0].bids.len(), 10);
-        assert_eq!(depths[0].bids[0].price, Price::from("11657.1"));
-        assert_eq!(depths[0].bids[0].size, Quantity::from("11"));
+        assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
+        assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
         assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
         assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
-        assert_eq!(depths[0].asks[0].price, Price::from("11657.1"));
-        assert_eq!(depths[0].asks[0].size, Quantity::from("2"));
+        assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
+        assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
         assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
@@ -549,23 +795,35 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_read_depth10s_from_snapshot25() {
+    #[case(Some(2), Some(3))] // Explicit precisions
+    #[case(None, None)] // Inferred precisions
+    pub fn test_read_depth10s_from_snapshot25(
+        #[case] price_precision: Option<u8>,
+        #[case] size_precision: Option<u8>,
+    ) {
         let filepath = ensure_data_exists_tardis_binance_snapshot25();
-        let depths = load_depth10_from_snapshot25(filepath, 1, 0, None, Some(100_000)).unwrap();
+        let depths = load_depth10_from_snapshot25(
+            filepath,
+            price_precision,
+            size_precision,
+            None,
+            Some(10_000),
+        )
+        .unwrap();
 
-        assert_eq!(depths.len(), 100_000);
+        assert_eq!(depths.len(), 10_000);
         assert_eq!(
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
         );
         assert_eq!(depths[0].bids.len(), 10);
-        assert_eq!(depths[0].bids[0].price, Price::from("11657.1"));
-        assert_eq!(depths[0].bids[0].size, Quantity::from("11"));
+        assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
+        assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
         assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
         assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
-        assert_eq!(depths[0].asks[0].price, Price::from("11657.1"));
-        assert_eq!(depths[0].asks[0].size, Quantity::from("2"));
+        assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
+        assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
         assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
@@ -577,11 +835,23 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_read_quotes() {
+    #[case(Some(1), Some(0))] // Explicit precisions
+    #[case(None, None)] // Inferred precisions
+    pub fn test_read_quotes(
+        #[case] price_precision: Option<u8>,
+        #[case] size_precision: Option<u8>,
+    ) {
         let filepath = ensure_data_exists_tardis_huobi_quotes();
-        let quotes = load_quote_ticks(filepath, 1, 0, None, Some(100_000)).unwrap();
+        let quotes = load_quote_ticks(
+            filepath,
+            price_precision,
+            size_precision,
+            None,
+            Some(10_000),
+        )
+        .unwrap();
 
-        assert_eq!(quotes.len(), 100_000);
+        assert_eq!(quotes.len(), 10_000);
         assert_eq!(quotes[0].instrument_id, InstrumentId::from("BTC-USD.HUOBI"));
         assert_eq!(quotes[0].bid_price, Price::from("8629.2"));
         assert_eq!(quotes[0].bid_size, Quantity::from("806"));
@@ -592,11 +862,23 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_read_trades() {
+    #[case(Some(1), Some(0))] // Explicit precisions
+    #[case(None, None)] // Inferred precisions
+    pub fn test_read_trades(
+        #[case] price_precision: Option<u8>,
+        #[case] size_precision: Option<u8>,
+    ) {
         let filepath = ensure_data_exists_tardis_bitmex_trades();
-        let trades = load_trade_ticks(filepath, 1, 0, None, Some(100_000)).unwrap();
+        let trades = load_trade_ticks(
+            filepath,
+            price_precision,
+            size_precision,
+            None,
+            Some(10_000),
+        )
+        .unwrap();
 
-        assert_eq!(trades.len(), 100_000);
+        assert_eq!(trades.len(), 10_000);
         assert_eq!(trades[0].instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
         assert_eq!(trades[0].price, Price::from("8531.5"));
         assert_eq!(trades[0].size, Quantity::from("2152"));

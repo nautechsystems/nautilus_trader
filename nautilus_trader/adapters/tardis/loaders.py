@@ -30,12 +30,12 @@ class TardisCSVDataLoader:
 
     Parameters
     ----------
-    price_precision : int
+    price_precision : int, optional
         The price precision for parsing.
-        Necessary as implicit precision in the text data may not be consistent.
-    size_precision : int
+        If not provided then will be inferred from the data.
+    size_precision : int, optional
         The size precision for parsing.
-        Necessary as implicit precision in the text data may not be consistent.
+        If not provided then will be inferred from the data.
     instrument_id : InstrumentId, optional
         The instrument ID to override in the data.
         This can be more efficient if the instrument is definitely know (file does not contain
@@ -45,8 +45,8 @@ class TardisCSVDataLoader:
 
     def __init__(
         self,
-        price_precision: int,
-        size_precision: int,
+        price_precision: int | None = None,
+        size_precision: int | None = None,
         instrument_id: InstrumentId | None = None,
     ) -> None:
         self._price_precision = price_precision
