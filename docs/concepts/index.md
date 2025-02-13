@@ -51,6 +51,12 @@ The Cache is a central in-memory database, that automatically stores and manages
 The core communication system enabling decoupled messaging patterns between components, including
 point-to-point, publish/subscribe, and request/response.
 
+## [Portfolio](portfolio.md)
+
+The Portfolio serves as the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
+It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
+Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
+
 ## [Logging](logging.md)
 
 The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
