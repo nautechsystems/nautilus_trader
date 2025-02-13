@@ -76,6 +76,12 @@ pub unsafe extern "C" fn orderbook_depth10_new(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_depth10_clone(depth: &OrderBookDepth10) -> OrderBookDepth10 {
+    *depth
+}
+
+#[no_mangle]
 pub extern "C" fn orderbook_depth10_eq(lhs: &OrderBookDepth10, rhs: &OrderBookDepth10) -> u8 {
     u8::from(lhs == rhs)
 }

@@ -315,7 +315,7 @@ impl DatabentoDataLoader {
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Depth10(depth) = item1 {
-                        Some(Ok(depth))
+                        Some(Ok(*depth))
                     } else {
                         None
                     }

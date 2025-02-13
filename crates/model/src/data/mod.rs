@@ -64,11 +64,10 @@ use crate::{
 /// larger (10x) than the smallest.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 pub enum Data {
     Delta(OrderBookDelta),
     Deltas(OrderBookDeltas_API),
-    Depth10(OrderBookDepth10), // This variant is significantly larger
+    Depth10(Box<OrderBookDepth10>), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -89,10 +88,20 @@ macro_rules! impl_try_from_data {
     };
 }
 
+impl TryFrom<Data> for OrderBookDepth10 {
+    type Error = ();
+
+    fn try_from(value: Data) -> Result<Self, Self::Error> {
+        match value {
+            Data::Depth10(x) => Ok(*x),
+            _ => Err(()),
+        }
+    }
+}
+
+impl_try_from_data!(Quote, QuoteTick);
 impl_try_from_data!(Delta, OrderBookDelta);
 impl_try_from_data!(Deltas, OrderBookDeltas_API);
-impl_try_from_data!(Depth10, OrderBookDepth10);
-impl_try_from_data!(Quote, QuoteTick);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
 
@@ -157,7 +166,7 @@ impl From<OrderBookDeltas_API> for Data {
 
 impl From<OrderBookDepth10> for Data {
     fn from(value: OrderBookDepth10) -> Self {
-        Self::Depth10(value)
+        Self::Depth10(Box::new(value))
     }
 }
 

@@ -182,7 +182,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                 handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path);
             }
             Data::Depth10(msg) => {
-                handle_depth10_msg(msg, &mut depths_map, &mut depths_cursors, &path);
+                handle_depth10_msg(*msg, &mut depths_map, &mut depths_cursors, &path);
             }
             Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path),
             Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),

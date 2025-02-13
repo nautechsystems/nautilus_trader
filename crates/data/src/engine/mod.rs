@@ -396,7 +396,7 @@ impl DataEngine {
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
             Data::Deltas(deltas) => self.handle_deltas(deltas.into_inner()),
-            Data::Depth10(depth) => self.handle_depth10(depth),
+            Data::Depth10(depth) => self.handle_depth10(*depth),
             Data::Quote(quote) => self.handle_quote(quote),
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),

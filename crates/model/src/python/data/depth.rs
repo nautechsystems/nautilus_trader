@@ -276,7 +276,7 @@ impl OrderBookDepth10 {
     /// `Data::Depth10` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
     fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
-        data_to_pycapsule(py, Data::Depth10(*self))
+        data_to_pycapsule(py, Data::from(*self))
     }
 
     /// Return a dictionary representation of the object.
