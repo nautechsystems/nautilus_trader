@@ -36,14 +36,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cached test data
-        id: cached-testdata-large
-        uses: actions/cache@v4.2.0
-        with:
-          path: tests/test_data/large
-          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-          restore-keys: ${{ runner.os }}-large-files-
-
       - name: Install Nautilus CLI and run init postgres
         run: |
           make install-cli
@@ -54,6 +46,9 @@ jobs:
           POSTGRES_USERNAME: postgres
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
 
       - name: Run tests with coverage
         run: make pytest-coverage

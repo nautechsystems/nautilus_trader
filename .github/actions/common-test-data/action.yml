@@ -1,0 +1,13 @@
+name: common-test-data
+description: Common test data caching
+
+runs:
+  using: "composite"
+  steps:
+      - name: Cached test data
+        id: cached-testdata-large
+        uses: actions/cache@v4
+        with:
+          path: tests/test_data/large
+          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+          restore-keys: ${{ runner.os }}-large-files-
