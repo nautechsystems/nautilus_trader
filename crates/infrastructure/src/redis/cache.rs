@@ -694,6 +694,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        tracing::debug!("Loading all data");
+
         let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
             self.load_currencies(),
             self.load_instruments(),
