@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
 - Added `UnixNanos::to_datetime_utc()` in Rust
 
@@ -31,6 +32,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
 
 ### Fixes
+- Fixed large difference between `Data` enum variants #2315, thanks @twitu
 - Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
 - Fixed built-in data type Arrow schemas for `StreamingFeatherWriter`, thanks for reporting @netomenoci
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
