@@ -220,6 +220,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
+    // Infer precisions if not provided
     let (price_precision, size_precision) = match (price_precision, size_precision) {
         (Some(p), Some(s)) => (p, s),
         (price_precision, size_precision) => {
@@ -366,6 +367,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
+    // Infer precisions if not provided
     let (price_precision, size_precision) = match (price_precision, size_precision) {
         (Some(p), Some(s)) => (p, s),
         (price_precision, size_precision) => {
@@ -535,6 +537,7 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<QuoteTick>, Box<dyn Error>> {
+    // Infer precisions if not provided
     let (price_precision, size_precision) = match (price_precision, size_precision) {
         (Some(p), Some(s)) => (p, s),
         (price_precision, size_precision) => {
@@ -625,6 +628,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<TradeTick>, Box<dyn Error>> {
+    // Infer precisions if not provided
     let (price_precision, size_precision) = match (price_precision, size_precision) {
         (Some(p), Some(s)) => (p, s),
         (price_precision, size_precision) => {
