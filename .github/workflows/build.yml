@@ -104,6 +104,9 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
       - name: Run Rust tests (with standard-precision)
         run: make cargo-test-standard-precision
 
@@ -176,6 +179,9 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
       - name: Run Rust tests
         run: make cargo-test
 
@@ -222,6 +228,9 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
         run: make cargo-test
@@ -277,6 +286,9 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
 
       - name: Run tests
         run: |

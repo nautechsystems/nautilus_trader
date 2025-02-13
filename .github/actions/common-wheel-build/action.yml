@@ -31,12 +31,3 @@ runs:
         poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
         python -m pip install -r requirements-test.txt
         pip install "$(ls dist/*.whl)"
-
-    # TODO: Temporarily locate this here for now
-    - name: Cached test data
-      id: cached-testdata-large
-      uses: actions/cache@v4
-      with:
-        path: tests/test_data/large
-        key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-        restore-keys: ${{ runner.os }}-large-files-

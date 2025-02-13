@@ -54,6 +54,9 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
       - name: Run nautilus_core tests
         run: make cargo-test
 
