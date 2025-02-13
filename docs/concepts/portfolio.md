@@ -1,4 +1,14 @@
-# Portfolio Statistics
+# Portfolio
+
+:::info
+We are currently working on this concept guide.
+:::
+
+The Portfolio serves as the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
+It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
+Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
+
+## Portfolio Statistics
 
 There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/analysis/statistics)
 which are used to analyse a trading portfolios performance for both backtests and live trading.

@@ -1,7 +1,7 @@
 # Actors
 
 :::info
-We are currently working on this guide.
+We are currently working on this concept guide.
 :::
 
 The `Actor` serves as the foundational component for interacting with the trading system.

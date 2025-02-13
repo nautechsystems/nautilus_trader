@@ -1,7 +1,7 @@
 # Backtesting
 
 :::info
-We are currently working on this guide.
+We are currently working on this concept guide.
 :::
 
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
