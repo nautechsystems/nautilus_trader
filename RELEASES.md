@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
 - Added `UnixNanos::to_datetime_utc()` in Rust
 
 ### Breaking Changes

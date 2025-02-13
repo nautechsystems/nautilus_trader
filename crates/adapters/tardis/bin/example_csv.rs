@@ -19,10 +19,12 @@ use nautilus_model::identifiers::InstrumentId;
 
 #[tokio::main]
 async fn main() {
-    // You must specify precisions and the CSV filepath
-    let price_precision = 1;
-    let size_precision = 0;
+    // Specify the CSV filepath
     let filepath = Path::new("YOUR_CSV_DATA_PATH");
+
+    // Optionally specify one or both precisions
+    let price_precision = Some(1);
+    let size_precision = Some(0);
 
     // Optionally specify an instrument ID and/or limit
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
