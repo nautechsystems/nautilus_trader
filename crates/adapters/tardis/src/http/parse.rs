@@ -77,17 +77,16 @@ fn parse_spot_instrument(
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments: Vec<InstrumentAny> = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
-            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let size_increment =
                 get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
-            let ts_event = UnixNanos::from(until_ns);
 
             instruments.push(create_currency_pair(
                 &info,
@@ -102,10 +101,12 @@ fn parse_spot_instrument(
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             ));
+
+            // Increment to next "until" timestamp
+            ts_event = UnixNanos::from(change.until);
         }
     }
 
-    let ts_init = ts_init.unwrap_or_default();
     instruments.push(create_currency_pair(
         &info,
         instrument_id,
@@ -116,16 +117,19 @@ fn parse_spot_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        ts_init,
-        ts_init,
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
 
     if let Some(effective) = effective {
-        // Filter for versions up to effective time and keep only most recent,
-        // if no versions exist before effective time, keep the earliest version.
-        if instruments.iter().any(|i| i.ts_event() <= effective) {
-            instruments.retain(|i| i.ts_event() <= effective);
+        // Retain instruments up to effective time
+        instruments.retain(|i| i.ts_event() < effective);
+        if instruments.is_empty() {
+            return Vec::new();
         }
+        // Sort descending by ts_event to keep most recent
+        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
+        // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
@@ -153,18 +157,17 @@ fn parse_perp_instrument(
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
-            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let size_increment =
                 get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
             let multiplier = get_multiplier(info.contract_multiplier);
-            let ts_event = UnixNanos::from(until_ns);
 
             instruments.push(create_crypto_perpetual(
                 &info,
@@ -180,10 +183,12 @@ fn parse_perp_instrument(
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             ));
+
+            // Increment to next "until" timestamp
+            ts_event = UnixNanos::from(change.until);
         }
     }
 
-    let ts_init = ts_init.unwrap_or_default();
     instruments.push(create_crypto_perpetual(
         &info,
         instrument_id,
@@ -195,16 +200,19 @@ fn parse_perp_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        ts_init,
-        ts_init,
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
 
     if let Some(effective) = effective {
-        // Filter for versions up to effective time and keep only most recent,
-        // if no versions exist before effective time, keep the earliest version.
-        if instruments.iter().any(|i| i.ts_event() <= effective) {
-            instruments.retain(|i| i.ts_event() <= effective);
+        // Retain instruments up to effective time
+        instruments.retain(|i| i.ts_event() < effective);
+        if instruments.is_empty() {
+            return Vec::new();
         }
+        // Sort descending by ts_event to keep most recent
+        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
+        // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
@@ -234,18 +242,17 @@ fn parse_future_instrument(
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
-            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let size_increment =
                 get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
             let multiplier = get_multiplier(info.contract_multiplier);
-            let ts_event = UnixNanos::from(until_ns);
 
             instruments.push(create_crypto_future(
                 &info,
@@ -263,10 +270,12 @@ fn parse_future_instrument(
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             ));
+
+            // Increment to next "until" timestamp
+            ts_event = UnixNanos::from(change.until);
         }
     }
 
-    let ts_init = ts_init.unwrap_or_default();
     instruments.push(create_crypto_future(
         &info,
         instrument_id,
@@ -280,16 +289,19 @@ fn parse_future_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        ts_init,
-        ts_init,
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
 
     if let Some(effective) = effective {
-        // Filter for versions up to effective time and keep only most recent,
-        // if no versions exist before effective time, keep the earliest version.
-        if instruments.iter().any(|i| i.ts_event() <= effective) {
-            instruments.retain(|i| i.ts_event() <= effective);
+        // Retain instruments up to effective time
+        instruments.retain(|i| i.ts_event() < effective);
+        if instruments.is_empty() {
+            return Vec::new();
         }
+        // Sort descending by ts_event to keep most recent
+        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
+        // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
@@ -318,17 +330,15 @@ fn parse_option_instrument(
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+    let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
 
     if let Some(changes) = &info.changes {
         for change in changes {
-            let until_ns = change.until.timestamp_nanos_opt().unwrap() as u64;
             let price_increment =
                 get_price_increment(change.price_increment.unwrap_or(info.price_increment));
             let multiplier = get_multiplier(info.contract_multiplier);
-            let ts_event = UnixNanos::from(until_ns);
-
             instruments.push(create_option_contract(
                 &info,
                 instrument_id,
@@ -344,10 +354,12 @@ fn parse_option_instrument(
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             ));
+
+            // Increment to next "until" timestamp
+            ts_event = UnixNanos::from(change.until);
         }
     }
 
-    let ts_init = ts_init.unwrap_or_default();
     instruments.push(create_option_contract(
         &info,
         instrument_id,
@@ -360,16 +372,19 @@ fn parse_option_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        ts_init,
-        ts_init,
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
 
     if let Some(effective) = effective {
-        // Filter for versions up to effective time and keep only most recent,
-        // if no versions exist before effective time, keep the earliest version.
-        if instruments.iter().any(|i| i.ts_event() <= effective) {
-            instruments.retain(|i| i.ts_event() <= effective);
+        // Retain instruments up to effective time
+        instruments.retain(|i| i.ts_event() < effective);
+        if instruments.is_empty() {
+            return Vec::new();
         }
+        // Sort descending by ts_event to keep most recent
+        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
+        // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 

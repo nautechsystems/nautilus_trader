@@ -34,6 +34,7 @@ Released on TBD (UTC).
 - Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
 - Fixed built-in data type Arrow schemas for `StreamingFeatherWriter`, thanks for reporting @netomenoci
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
+- Fixed `effective` timestamp filtering for `TardisHttpClient` to now only retain latest version at or before `effective`
 
 ### Documentation Updates
 - Improved `emulation_trigger` parameter description in docstrings (#2313)
