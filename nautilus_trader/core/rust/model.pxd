@@ -728,7 +728,7 @@ cdef extern from "../includes/model.h":
         Data_t_Tag tag;
         OrderBookDelta_t delta;
         OrderBookDeltas_API deltas;
-        OrderBookDepth10_t depth10;
+        OrderBookDepth10_t *depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
@@ -1142,6 +1142,8 @@ cdef extern from "../includes/model.h":
                                              uint64_t sequence,
                                              uint64_t ts_event,
                                              uint64_t ts_init);
+
+    OrderBookDepth10_t orderbook_depth10_clone(const OrderBookDepth10_t *depth);
 
     uint8_t orderbook_depth10_eq(const OrderBookDepth10_t *lhs, const OrderBookDepth10_t *rhs);
 
