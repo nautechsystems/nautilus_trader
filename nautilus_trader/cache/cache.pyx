@@ -162,24 +162,6 @@ cdef class Cache(CacheFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void cache_general(self):
-        """
-        Clear the current general cache and load the general objects from the
-        cache database.
-        """
-        self._log.debug(f"Loading general cache from database")
-
-        if self._database is not None:
-            self._general = self._database.load()
-        else:
-            self._general = {}
-
-        cdef int count = len(self._general)
-        self._log.info(
-            f"Cached {count} general object{'' if count == 1 else 's'} from database",
-            color=LogColor.BLUE if self._general else LogColor.NORMAL,
-        )
-
     cpdef void cache_all(self):
         """
         Clears and loads the currencies, instruments, synthetics, accounts, orders, and positions.
@@ -188,13 +170,13 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Loading currencies, instruments, synthetics, accounts, orders, and positions cache from database")
 
         if self._database is not None:
-            dictionary = self._database.load_all()
-            self._currencies = dictionary.get("currencies")
-            self._instruments = dictionary.get("instruments")
-            self._synthetics = dictionary.get("synthetics")
-            self._accounts = dictionary.get("accounts")
-            self._orders = dictionary.get("orders")
-            self._positions = dictionary.get("positions")
+            result = self._database.load_all()
+            self._currencies = result.get("currencies", {})
+            self._instruments = result.get("instruments", {})
+            self._synthetics = result.get("synthetics", {})
+            self._accounts = result.get("accounts", {})
+            self._orders = result.get("orders", {})
+            self._positions = result.get("positions", {})
         else:
             self._currencies = {}
             self._instruments = {}
@@ -250,6 +232,23 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
         )
 
+    cpdef void cache_general(self):
+        """
+        Clear the current general cache and load the general objects from the
+        cache database.
+        """
+        self._log.debug(f"Loading general cache from database")
+
+        if self._database is not None:
+            self._general = self._database.load()
+        else:
+            self._general = {}
+
+        cdef int count = len(self._general)
+        self._log.info(
+            f"Cached {count} general object{'' if count == 1 else 's'} from database",
+            color=LogColor.BLUE if self._general else LogColor.NORMAL,
+        )
 
     cpdef void cache_currencies(self):
         """
