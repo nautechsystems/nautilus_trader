@@ -1947,6 +1947,8 @@ struct OrderBookDepth10_t orderbook_depth10_new(struct InstrumentId_t instrument
                                                 uint64_t ts_event,
                                                 uint64_t ts_init);
 
+struct OrderBookDepth10_t orderbook_depth10_clone(const struct OrderBookDepth10_t *depth);
+
 uint8_t orderbook_depth10_eq(const struct OrderBookDepth10_t *lhs,
                              const struct OrderBookDepth10_t *rhs);
 

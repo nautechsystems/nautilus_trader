@@ -1143,6 +1143,8 @@ cdef extern from "../includes/model.h":
                                              uint64_t ts_event,
                                              uint64_t ts_init);
 
+    OrderBookDepth10_t orderbook_depth10_clone(const OrderBookDepth10_t *depth);
+
     uint8_t orderbook_depth10_eq(const OrderBookDepth10_t *lhs, const OrderBookDepth10_t *rhs);
 
     uint64_t orderbook_depth10_hash(const OrderBookDepth10_t *delta);
