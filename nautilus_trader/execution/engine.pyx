@@ -643,9 +643,19 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
+        # Manually measuring timestamps in case the engine is using a test clock
         cdef uint64_t ts = int(time.time() * 1000)
 
-        self._cache.cache_all()
+        self._cache.cache_general()
+        self._cache.cache_currencies()
+        self._cache.cache_instruments()
+        self._cache.cache_accounts()
+        self._cache.cache_orders()
+        self._cache.cache_order_lists()
+        self._cache.cache_positions()
+
+        # TODO: Uncomment and replace above individual caching methods once implemented
+        # self._cache.cache_all()
         self._cache.build_index()
         self._cache.check_integrity()
         self._set_position_id_counts()
