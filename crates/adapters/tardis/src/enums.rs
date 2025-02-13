@@ -184,7 +184,7 @@ impl Exchange {
             "SERUM" => vec![Self::Serum],
             "STARATLAS" => vec![Self::StarAtlas],
             "UPBIT" => vec![Self::Upbit],
-            "WOOX" => vec![Self::WooX],
+            "WOO_X" => vec![Self::WooX],
             _ => Vec::new(),
         }
     }
@@ -242,7 +242,7 @@ impl Exchange {
             Self::Serum => "SERUM",
             Self::StarAtlas => "STARATLAS",
             Self::Upbit => "UPBIT",
-            Self::WooX => "WOOX",
+            Self::WooX => "WOO_X",
         }
     }
 

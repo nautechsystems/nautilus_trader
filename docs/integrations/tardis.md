@@ -140,7 +140,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `SERUM`                 | `serum` (*historical research*)                       |
 | `STARATLAS`             | `staratlas`                                           |
 | `UPBIT`                 | `upbit`                                               |
-| `WOOX`                  | `woo-x`                                               |
+| `WOO_X`                 | `woo-x`                                               |
 
 ## Environment variables
 
