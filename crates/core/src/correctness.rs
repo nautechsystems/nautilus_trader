@@ -43,6 +43,7 @@ pub const FAILED: &str = "Condition failed";
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
     if !predicate {
         anyhow::bail!("{fail_msg}")
@@ -55,6 +56,7 @@ pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> anyhow::Result<(
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
     if predicate {
         anyhow::bail!("{fail_msg}")
@@ -70,6 +72,7 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 /// # Errors
 ///
 /// This function returns an error if `s` is empty.
+#[inline(always)]
 pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     if s.as_ref().is_empty() {
         anyhow::bail!("invalid string for '{param}', was empty");
@@ -85,6 +88,7 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
+#[inline(always)]
 pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
 
@@ -118,6 +122,7 @@ pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
+#[inline(always)]
 pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
     if let Some(s) = s {
@@ -131,6 +136,7 @@ pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> 
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
     if !s.contains(pat) {
@@ -144,6 +150,7 @@ pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> any
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_equal<T: PartialEq + Debug + Display>(
     lhs: T,
     rhs: T,
@@ -161,6 +168,7 @@ pub fn check_equal<T: PartialEq + Debug + Display>(
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
     if lhs != rhs {
         anyhow::bail!("'{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}")
@@ -173,6 +181,7 @@ pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> any
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_equal_usize(
     lhs: usize,
     rhs: usize,
@@ -190,6 +199,7 @@ pub fn check_equal_usize(
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
     if value == 0 {
         anyhow::bail!("invalid u64 for '{param}' not positive, was {value}")
@@ -202,6 +212,7 @@ pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_positive_u128(value: u128, param: &str) -> anyhow::Result<()> {
     if value == 0 {
         anyhow::bail!("invalid u128 for '{param}' not positive, was {value}")
@@ -214,6 +225,7 @@ pub fn check_positive_u128(value: u128, param: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     if value <= 0 {
         anyhow::bail!("invalid i64 for '{param}' not positive, was {value}")
@@ -226,6 +238,7 @@ pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_positive_i128(value: i128, param: &str) -> anyhow::Result<()> {
     if value <= 0 {
         anyhow::bail!("invalid i64 for '{param}' not positive, was {value}")
@@ -238,6 +251,7 @@ pub fn check_positive_i128(value: i128, param: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("invalid f64 for '{param}', was {value}")
@@ -253,6 +267,7 @@ pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("invalid u8 for '{param}' not in range [{l}, {r}], was {value}")
@@ -265,6 +280,7 @@ pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyh
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("invalid u64 for '{param}' not in range [{l}, {r}], was {value}")
@@ -277,6 +293,7 @@ pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> 
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("invalid i64 for '{param}' not in range [{l}, {r}], was {value}")
@@ -289,6 +306,7 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
     const EPSILON: f64 = 1e-15; // Epsilon to account for floating-point precision issues
 
@@ -306,6 +324,7 @@ pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> 
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_in_range_inclusive_usize(
     value: usize,
     l: usize,
@@ -323,6 +342,7 @@ pub fn check_in_range_inclusive_usize(
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
     if !slice.is_empty() {
         anyhow::bail!(
@@ -338,6 +358,7 @@ pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
     if slice.is_empty() {
         anyhow::bail!(
@@ -353,6 +374,7 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> 
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
     if !map.is_empty() {
         anyhow::bail!(
@@ -369,6 +391,7 @@ pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
     if map.is_empty() {
         anyhow::bail!(
@@ -385,6 +408,7 @@ pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Re
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_key_not_in_map<K, V>(
     key: &K,
     map: &HashMap<K, V>,
@@ -410,6 +434,7 @@ where
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_key_in_map<K, V>(
     key: &K,
     map: &HashMap<K, V>,
@@ -435,6 +460,7 @@ where
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_key_not_in_index_map<K, V>(
     key: &K,
     map: &IndexMap<K, V>,
@@ -460,6 +486,7 @@ where
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_key_in_index_map<K, V>(
     key: &K,
     map: &IndexMap<K, V>,
@@ -485,6 +512,7 @@ where
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_member_not_in_set<V>(
     member: &V,
     set: &HashSet<V>,
@@ -508,6 +536,7 @@ where
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
+#[inline(always)]
 pub fn check_member_in_set<V>(
     member: &V,
     set: &HashSet<V>,

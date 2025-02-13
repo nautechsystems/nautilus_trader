@@ -18,6 +18,8 @@
 //! This module provides constants and functions that enforce a fixed-point precision strategy,
 //! ensuring consistent precision and scaling across various types and calculations.
 
+use nautilus_core::correctness::FAILED;
+
 /// Indicates if high_precision mode is enabled.
 #[no_mangle]
 pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
@@ -63,17 +65,11 @@ pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10.0**(16-9)
 /// - If `precision` exceeds [`FIXED_PRECISION`].
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     if precision > FIXED_PRECISION {
-        anyhow::bail!("Condition failed: `precision` exceeded maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}")
+        anyhow::bail!(
+            "`precision` exceeded maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}"
+        )
     }
     Ok(())
-}
-
-#[inline(always)]
-fn assert_precision(precision: u8) {
-    assert!(
-        precision <= FIXED_PRECISION,
-        "exceeded maximum precision ({FIXED_PRECISION})"
-    );
 }
 
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
@@ -84,7 +80,7 @@ fn assert_precision(precision: u8) {
 /// - If `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
-    assert_precision(precision);
+    check_fixed_precision(precision).expect(FAILED);
     let pow1 = 10_i64.pow(u32::from(precision));
     let pow2 = 10_i64.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as i64;
@@ -98,7 +94,7 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
 /// This function panics:
 /// - If `precision` exceeds [`FIXED_PRECISION`].
 pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
-    assert_precision(precision);
+    check_fixed_precision(precision).expect(FAILED);
     let pow1 = 10_i128.pow(u32::from(precision));
     let pow2 = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as i128;
@@ -113,7 +109,7 @@ pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
 /// - If `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
-    assert_precision(precision);
+    check_fixed_precision(precision).expect(FAILED);
     let pow1 = 10_u64.pow(u32::from(precision));
     let pow2 = 10_u64.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as u64;
@@ -128,7 +124,7 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 /// - If `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_u128(value: f64, precision: u8) -> u128 {
-    assert_precision(precision);
+    check_fixed_precision(precision).expect(FAILED);
     let pow1 = 10_u128.pow(u32::from(precision));
     let pow2 = 10_u128.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as u128;
