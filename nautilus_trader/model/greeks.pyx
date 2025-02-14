@@ -89,12 +89,15 @@ cdef class GreeksCalculator:
         flat_dividend_yield: float | None = None,
         spot_shock: float = 0.,
         vol_shock: float = 0.,
-        expiry_in_years_shock: float = 0.,
+        time_to_expiry_shock: float = 0.,
         use_cached_greeks: bool = False,
         cache_greeks: bool = False,
         publish_greeks: bool = False,
         ts_event: int = 0,
-        position: Position | None = None
+        position: Position | None = None,
+        percent_greeks: bool = False,
+        index_instrument_id: InstrumentId | None = None,
+        beta_weights: dict[InstrumentId, float] | None = None,
     ) -> GreeksData:
         """
         Calculate option greeks for a given instrument.
@@ -116,9 +119,9 @@ cdef class GreeksCalculator:
         spot_shock : float, default 0.0
             Shock to apply to spot price.
         vol_shock : float, default 0.0
-            Shock to apply to volatility.
-        expiry_in_years_shock : float, default 0.0
-            Shock to apply to time to expiry.
+            Shock to apply to implied volatility.
+        time_to_expiry_shock : float, default 0.0
+            Shock in years to apply to time to expiry.
         use_cached_greeks : bool, default False
             Whether to use cached greeks values if available.
         cache_greeks : bool, default False
@@ -129,6 +132,12 @@ cdef class GreeksCalculator:
             Timestamp of the event triggering the calculation, by default 0.
         position : Position, optional
             Optional position used to calculate the pnl of a Future when necessary.
+        percent_greeks : bool, optional
+            Whether to compute greeks as percentage of the underlying price, by default False.
+        index_instrument_id : InstrumentId, optional
+            The reference instrument id beta is computed with respect to.
+        beta_weights : dict[InstrumentId, float], optional
+            Dictionary of beta weights used to compute portfolio delta and gamma.
 
         Returns
         -------
@@ -145,16 +154,21 @@ cdef class GreeksCalculator:
             else:
                 multiplier = 1.
 
-            greeks_data = GreeksData.from_multiplier(instrument_id, multiplier, ts_event)
+            underlying_instrument_id = instrument_definition.id
+            underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
+
+            delta = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
+                                       percent_greeks, index_instrument_id, beta_weights)[0]
+            greeks_data = GreeksData.from_delta(instrument_id, delta, ts_event)
 
             if position is not None:
                 # we set as price the pnl of a unit position so we can see how the price of a portfolio evolves with shocks
-                underlying_price = float(self._cache.price(instrument_definition.id, PriceType.LAST))
                 greeks_data.price = float(position.unrealized_pnl(Price.from_str(str(underlying_price + spot_shock)))) / float(position.signed_qty)
 
             return greeks_data
 
         greeks_data = None
+        underlying_instrument_id = InstrumentId.from_str(f"{instrument_definition.underlying}.{instrument_id.venue}")
 
         if use_cached_greeks and (greeks_data := self._cache.greeks(instrument_id)) is not None:
             pass
@@ -173,13 +187,14 @@ cdef class GreeksCalculator:
             else:
                 interest_rate = flat_interest_rate
 
+            # cost of carry is 0 for futures
             cost_of_carry = 0.
-            underlying_instrument_id = InstrumentId.from_str(f"{instrument_definition.underlying}.{instrument_id.venue}")
 
             if (dividend_curve := self._cache.yield_curve(str(underlying_instrument_id))) is not None:
                 dividend_yield = dividend_curve(expiry_in_years)
                 cost_of_carry = interest_rate - dividend_yield
             elif flat_dividend_yield is not None:
+                # Use a dividend rate of 0. to have a cost of carry of interest rate for options on stocks
                 cost_of_carry = interest_rate - flat_dividend_yield
 
             multiplier = float(instrument_definition.multiplier)
@@ -190,8 +205,11 @@ cdef class GreeksCalculator:
             underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
 
             greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike, expiry_in_years, option_mid_price, multiplier)
+            delta, gamma =  self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price, underlying_price,
+                                               percent_greeks, index_instrument_id, beta_weights)
+
             greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_years, multiplier, 1.0,
-                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, greeks.price, greeks.delta, greeks.gamma, greeks.vega, greeks.theta,
+                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, greeks.price, delta, gamma, greeks.vega, greeks.theta,
                                      abs(greeks.delta / multiplier))
 
             # adding greeks to cache
@@ -203,19 +221,111 @@ cdef class GreeksCalculator:
                 data_type = DataType(GreeksData, metadata={"instrument_id": instrument_id.value})
                 self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=greeks_data)
 
-        if spot_shock != 0. or vol_shock != 0. or expiry_in_years_shock != 0.:
-            greeks = black_scholes_greeks(greeks_data.underlying_price + spot_shock, greeks_data.interest_rate, greeks_data.cost_of_carry,
-                                          greeks_data.vol + vol_shock, greeks_data.is_call, greeks_data.strike,
-                                          greeks_data.expiry_in_years - expiry_in_years_shock, greeks_data.multiplier)
+        if spot_shock != 0. or vol_shock != 0. or time_to_expiry_shock != 0.:
+            underlying_price = greeks_data.underlying_price
+            shocked_underlying_price = underlying_price + spot_shock
+            shocked_vol = greeks_data.vol + vol_shock
+            shocked_time_to_expiry = greeks_data.expiry_in_years - time_to_expiry_shock
+
+            greeks = black_scholes_greeks(shocked_underlying_price, greeks_data.interest_rate, greeks_data.cost_of_carry,
+                                          shocked_vol, greeks_data.is_call, greeks_data.strike, shocked_time_to_expiry, greeks_data.multiplier)
+            delta, gamma = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, shocked_underlying_price, underlying_price,
+                                              percent_greeks, index_instrument_id, beta_weights)
+
             greeks_data = GreeksData(greeks_data.ts_event, greeks_data.ts_event,
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
-                                     greeks_data.expiry_in_years - expiry_in_years_shock,
-                                     greeks_data.multiplier, greeks_data.quantity, greeks_data.underlying_price + spot_shock,
-                                     greeks_data.interest_rate, greeks_data.cost_of_carry,
-                                     greeks_data.vol + vol_shock, greeks.price, greeks.delta, greeks.gamma, greeks.vega, greeks.theta,
-                                     abs(greeks.delta / greeks_data.multiplier))
+                                     shocked_time_to_expiry, greeks_data.multiplier, greeks_data.quantity, shocked_underlying_price,
+                                     greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, greeks.price, delta, gamma, greeks.vega,
+                                     greeks.theta, abs(greeks.delta / greeks_data.multiplier))
 
         return greeks_data
+
+    def modify_greeks(
+        self,
+        delta_input: float,
+        gamma_input: float,
+        underlying_instrument_id: InstrumentId,
+        underlying_price: float,
+        unshocked_underlying_price: float,
+        percent_greeks: bool,
+        index_instrument_id: InstrumentId | None,
+        beta_weights: dict[InstrumentId, float] | None,
+    ) -> tuple[float, float]:
+        """
+        Modify option Greeks based on beta weighting and percentage calculations.
+
+        Parameters
+        ----------
+        delta_input : float
+            The input delta value.
+        gamma_input : float
+            The input gamma value.
+        underlying_instrument_id : InstrumentId
+            The ID of the underlying instrument.
+        underlying_price : float
+            The current price of the underlying asset.
+        unshocked_underlying_price : float
+            The base (non-shocked) price of the underlying asset.
+        percent_greeks : bool, optional
+            Whether to compute greeks as percentage of the underlying price, by default False.
+        index_instrument_id : InstrumentId, optional
+            The reference instrument id beta is computed with respect to.
+        beta_weights : dict[InstrumentId, float], optional
+            Dictionary of beta weights used to compute portfolio delta and gamma.
+
+        Returns
+        -------
+        tuple[float, float]
+            Modified delta and gamma values.
+
+        Notes
+        -----
+        The beta weighting of delta and gamma follows this equation linking the returns of a stock x to the ones of an index I:
+        (x - x0) / x0 = alpha + beta (I - I0) / I0 + epsilon
+
+        beta can be obtained by linear regression of stock_return = alpha + beta index_return, it's equal to:
+        beta = Covariance(stock_returns, index_returns) / Variance(index_returns)
+
+        Considering alpha == 0:
+        x = x0 + beta x0 / I0 (I-I0)
+        I = I0 + 1 / beta I0 / x0 (x - x0)
+
+        These two last equations explain the beta weighting below, considering the price of an option is V(x) and delta and gamma
+        are the first and second derivatives respectively of V.
+
+        Also percent greeks assume a change of variable to percent returns by writing:
+        V(x = x0 * (1 + stock_percent_return / 100))
+        or V(I = I0 * (1 + index_percent_return / 100))
+        """
+        delta = delta_input
+        gamma = gamma_input
+
+        index_price = None
+        delta_multiplier = 1.0
+
+        if index_instrument_id is not None:
+            index_price = float(self._cache.price(index_instrument_id, PriceType.LAST))
+
+            beta = 1.
+            if beta_weights is not None:
+                beta = beta_weights.get(underlying_instrument_id, 1.0)
+
+            if underlying_price != unshocked_underlying_price:
+                index_price += 1. / beta * (index_price / unshocked_underlying_price) * (underlying_price - unshocked_underlying_price)
+
+            delta_multiplier = beta * underlying_price / index_price
+            delta *= delta_multiplier
+            gamma *= delta_multiplier ** 2
+
+        if percent_greeks:
+            if index_price is None:
+                delta *= underlying_price / 100.
+                gamma *= (underlying_price / 100.) ** 2
+            else:
+                delta *= index_price / 100.
+                gamma *= (index_price / 100.) ** 2
+
+        return delta, gamma
 
     def portfolio_greeks(
         self, str underlying = "",
@@ -227,10 +337,13 @@ cdef class GreeksCalculator:
         flat_dividend_yield: float | None = None,
         spot_shock: float = 0.0,
         vol_shock: float = 0.0,
-        expiry_in_years_shock: float = 0.0,
+        time_to_expiry_shock: float = 0.0,
         use_cached_greeks: bool = False,
         cache_greeks: bool = False,
         publish_greeks: bool = False,
+        percent_greeks: bool = False,
+        index_instrument_id: InstrumentId | None = None,
+        beta_weights: dict[InstrumentId, float] | None = None,
     ) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
@@ -260,17 +373,23 @@ cdef class GreeksCalculator:
         flat_dividend_yield : float, optional
             The dividend yield to use for calculations when no dividend curve is available.
         spot_shock : float, default 0.0
-            The shock to apply to the underlying price.
+            Shock to apply to the underlying price.
         vol_shock : float, default 0.0
-            The shock to apply to the implied volatility.
-        expiry_in_years_shock : float, default 0.0
-            The shock to apply to the time to expiry.
+            Shock to apply to implied volatility.
+        time_to_expiry_shock : float, default 0.0
+            Shock in years to apply to time to expiry.
         use_cached_greeks : bool, default False
             Whether to use cached Greeks calculations if available.
         cache_greeks : bool, default False
             Whether to cache the calculated Greeks.
         publish_greeks : bool, default False
             Whether to publish the Greeks data to the message bus.
+        percent_greeks : bool, optional
+            Whether to compute greeks as percentage of the underlying price, by default False.
+        index_instrument_id : InstrumentId, optional
+            The reference instrument id beta is computed with respect to.
+        beta_weights : dict[InstrumentId, float], optional
+            Dictionary of beta weights used to compute portfolio delta and gamma.
 
         Returns
         -------
@@ -302,12 +421,15 @@ cdef class GreeksCalculator:
                 flat_dividend_yield,
                 spot_shock,
                 vol_shock,
-                expiry_in_years_shock,
+                time_to_expiry_shock,
                 use_cached_greeks,
                 cache_greeks,
                 publish_greeks,
                 ts_event,
                 position,
+                percent_greeks,
+                index_instrument_id,
+                beta_weights,
             )
 
             position_greeks = quantity * instrument_greeks

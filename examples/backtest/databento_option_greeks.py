@@ -155,6 +155,9 @@ class OptionStrategy(Strategy):
             use_cached_greeks=self.config.load_greeks,
             publish_greeks=(not self.config.load_greeks),
             vol_shock=0.0,
+            # percent_greeks=True,
+            # index_instrument_id=self.config.future_id,
+            # beta_weights={self.config.future_id: 2.}
         )
         self.user_log(f"{portfolio_greeks=}")
 

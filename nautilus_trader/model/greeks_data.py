@@ -59,13 +59,12 @@ class GreeksData(Data):
         )
 
     @classmethod
-    def from_multiplier(cls, instrument_id: InstrumentId, multiplier: float, ts_event: int = 0):
+    def from_delta(cls, instrument_id: InstrumentId, delta: float, ts_event: int = 0):
         return GreeksData(
             ts_event,
             ts_event,
             instrument_id=instrument_id,
-            multiplier=multiplier,
-            delta=multiplier,
+            delta=delta,
             quantity=1.0,
         )
 
