@@ -69,43 +69,18 @@ fn parse_spot_instrument(
         parse_instrument_id(&info.exchange, info.id)
     };
     let raw_symbol = Symbol::new(info.id);
-    let price_increment = get_price_increment(info.price_increment);
-    let size_increment = get_size_increment(info.amount_increment);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
     let maker_fee =
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+
+    let mut price_increment = get_price_increment(info.price_increment);
+    let mut size_increment = get_size_increment(info.amount_increment);
     let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments: Vec<InstrumentAny> = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        for change in changes {
-            let price_increment =
-                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
-            let size_increment =
-                get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
-
-            instruments.push(create_currency_pair(
-                &info,
-                instrument_id,
-                raw_symbol,
-                price_increment,
-                size_increment,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                ts_event,
-                ts_init.unwrap_or(ts_event),
-            ));
-
-            // Increment to next "until" timestamp
-            ts_event = UnixNanos::from(change.until);
-        }
-    }
 
     instruments.push(create_currency_pair(
         &info,
@@ -121,9 +96,37 @@ fn parse_spot_instrument(
         ts_init.unwrap_or(ts_event),
     ));
 
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            price_increment = match change.price_increment {
+                Some(value) => get_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => get_size_increment(value),
+                None => size_increment,
+            };
+            ts_event = UnixNanos::from(change.until);
+
+            instruments.push(create_currency_pair(
+                &info,
+                instrument_id,
+                raw_symbol,
+                price_increment,
+                size_increment,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+
     if let Some(effective) = effective {
-        // Retain instruments up to effective time
-        instruments.retain(|i| i.ts_event() < effective);
+        // Retain instruments up to and including the effective time
+        instruments.retain(|i| i.ts_event() <= effective);
         if instruments.is_empty() {
             return Vec::new();
         }
@@ -148,46 +151,19 @@ fn parse_perp_instrument(
         parse_instrument_id(&info.exchange, info.id)
     };
     let raw_symbol = Symbol::new(info.id);
-    let price_increment = get_price_increment(info.price_increment);
-    let size_increment = get_size_increment(info.amount_increment);
-    let multiplier = get_multiplier(info.contract_multiplier);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
     let maker_fee =
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+
+    let mut price_increment = get_price_increment(info.price_increment);
+    let mut size_increment = get_size_increment(info.amount_increment);
+    let mut multiplier = get_multiplier(info.contract_multiplier);
     let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        for change in changes {
-            let price_increment =
-                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
-            let size_increment =
-                get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
-            let multiplier = get_multiplier(info.contract_multiplier);
-
-            instruments.push(create_crypto_perpetual(
-                &info,
-                instrument_id,
-                raw_symbol,
-                price_increment,
-                size_increment,
-                multiplier,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                ts_event,
-                ts_init.unwrap_or(ts_event),
-            ));
-
-            // Increment to next "until" timestamp
-            ts_event = UnixNanos::from(change.until);
-        }
-    }
 
     instruments.push(create_crypto_perpetual(
         &info,
@@ -204,9 +180,42 @@ fn parse_perp_instrument(
         ts_init.unwrap_or(ts_event),
     ));
 
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            price_increment = match change.price_increment {
+                Some(value) => get_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => get_size_increment(value),
+                None => size_increment,
+            };
+            multiplier = match change.contract_multiplier {
+                Some(value) => Some(Quantity::from(value.to_string())),
+                None => multiplier,
+            };
+            ts_event = UnixNanos::from(change.until);
+
+            instruments.push(create_crypto_perpetual(
+                &info,
+                instrument_id,
+                raw_symbol,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+
     if let Some(effective) = effective {
-        // Retain instruments up to effective time
-        instruments.retain(|i| i.ts_event() < effective);
+        // Retain instruments up to and including the effective time
+        instruments.retain(|i| i.ts_event() <= effective);
         if instruments.is_empty() {
             return Vec::new();
         }
@@ -231,9 +240,6 @@ fn parse_future_instrument(
         parse_instrument_id(&info.exchange, info.id)
     };
     let raw_symbol = Symbol::new(info.id);
-    let price_increment = get_price_increment(info.price_increment);
-    let size_increment = get_size_increment(info.amount_increment);
-    let multiplier = get_multiplier(info.contract_multiplier);
     let activation = parse_datetime_to_unix_nanos(Some(info.available_since));
     let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let margin_init = dec!(0); // TBD
@@ -242,39 +248,13 @@ fn parse_future_instrument(
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+
+    let mut price_increment = get_price_increment(info.price_increment);
+    let mut size_increment = get_size_increment(info.amount_increment);
+    let mut multiplier = get_multiplier(info.contract_multiplier);
     let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        for change in changes {
-            let price_increment =
-                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
-            let size_increment =
-                get_size_increment(change.amount_increment.unwrap_or(info.amount_increment));
-            let multiplier = get_multiplier(info.contract_multiplier);
-
-            instruments.push(create_crypto_future(
-                &info,
-                instrument_id,
-                raw_symbol,
-                activation,
-                expiration,
-                price_increment,
-                size_increment,
-                multiplier,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                ts_event,
-                ts_init.unwrap_or(ts_event),
-            ));
-
-            // Increment to next "until" timestamp
-            ts_event = UnixNanos::from(change.until);
-        }
-    }
 
     instruments.push(create_crypto_future(
         &info,
@@ -293,9 +273,44 @@ fn parse_future_instrument(
         ts_init.unwrap_or(ts_event),
     ));
 
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            price_increment = match change.price_increment {
+                Some(value) => get_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => get_size_increment(value),
+                None => size_increment,
+            };
+            multiplier = match change.contract_multiplier {
+                Some(value) => Some(Quantity::from(value.to_string())),
+                None => multiplier,
+            };
+            ts_event = UnixNanos::from(change.until);
+
+            instruments.push(create_crypto_future(
+                &info,
+                instrument_id,
+                raw_symbol,
+                activation,
+                expiration,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+
     if let Some(effective) = effective {
-        // Retain instruments up to effective time
-        instruments.retain(|i| i.ts_event() < effective);
+        // Retain instruments up to and including the effective time
+        instruments.retain(|i| i.ts_event() <= effective);
         if instruments.is_empty() {
             return Vec::new();
         }
@@ -322,43 +337,18 @@ fn parse_option_instrument(
     let raw_symbol = Symbol::new(info.id);
     let activation = parse_datetime_to_unix_nanos(Some(info.available_since));
     let expiration = parse_datetime_to_unix_nanos(info.expiry);
-    let price_increment = get_price_increment(info.price_increment);
-    let multiplier = get_multiplier(info.contract_multiplier);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
     let maker_fee =
         Decimal::from_str(info.maker_fee.to_string().as_str()).expect("Invalid decimal value");
     let taker_fee =
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
+
+    let mut price_increment = get_price_increment(info.price_increment);
+    let mut multiplier = get_multiplier(info.contract_multiplier);
     let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        for change in changes {
-            let price_increment =
-                get_price_increment(change.price_increment.unwrap_or(info.price_increment));
-            let multiplier = get_multiplier(info.contract_multiplier);
-            instruments.push(create_option_contract(
-                &info,
-                instrument_id,
-                raw_symbol,
-                activation,
-                expiration,
-                price_increment,
-                multiplier,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                ts_event,
-                ts_init.unwrap_or(ts_event),
-            ));
-
-            // Increment to next "until" timestamp
-            ts_event = UnixNanos::from(change.until);
-        }
-    }
 
     instruments.push(create_option_contract(
         &info,
@@ -376,9 +366,40 @@ fn parse_option_instrument(
         ts_init.unwrap_or(ts_event),
     ));
 
+    if let Some(changes) = &info.changes {
+        for change in changes {
+            price_increment = match change.price_increment {
+                Some(value) => get_price_increment(value),
+                None => price_increment,
+            };
+
+            multiplier = match change.contract_multiplier {
+                Some(value) => Some(Quantity::from(value.to_string())),
+                None => multiplier,
+            };
+            ts_event = UnixNanos::from(change.until);
+
+            instruments.push(create_option_contract(
+                &info,
+                instrument_id,
+                raw_symbol,
+                activation,
+                expiration,
+                price_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
+
     if let Some(effective) = effective {
-        // Retain instruments up to effective time
-        instruments.retain(|i| i.ts_event() < effective);
+        // Retain instruments up to and including the effective time
+        instruments.retain(|i| i.ts_event() <= effective);
         if instruments.is_empty() {
             return Vec::new();
         }
@@ -441,9 +462,9 @@ mod tests {
         assert_eq!(instrument.quote_currency(), Currency::USDC());
         assert_eq!(instrument.settlement_currency(), Currency::USDC());
         assert!(!instrument.is_inverse());
-        assert_eq!(instrument.price_precision(), 2);
+        assert_eq!(instrument.price_precision(), 0);
         assert_eq!(instrument.size_precision(), 4);
-        assert_eq!(instrument.price_increment(), Price::from("0.01"));
+        assert_eq!(instrument.price_increment(), Price::from("1"));
         assert_eq!(instrument.size_increment(), Quantity::from("0.0001"));
         assert_eq!(instrument.multiplier(), Quantity::from(1));
         assert_eq!(instrument.activation_ns(), None);
@@ -522,8 +543,8 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        // assert_eq!(instrument.maker_fee(), dec!(0.0001));  // TODO: Implement fees
-        // assert_eq!(instrument.taker_fee(), dec!(0.0005));  // TODO: Implement fees
+        assert_eq!(instrument.maker_fee(), dec!(0));
+        assert_eq!(instrument.taker_fee(), dec!(0));
     }
 
     #[rstest]
@@ -607,7 +628,7 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        // assert_eq!(instrument.maker_fee(), dec!(0.0003));  // TODO: Implement fees
-        // assert_eq!(instrument.taker_fee(), dec!(0.0003));  // TODO: Implement fees
+        assert_eq!(instrument.maker_fee(), dec!(0));
+        assert_eq!(instrument.taker_fee(), dec!(0));
     }
 }
