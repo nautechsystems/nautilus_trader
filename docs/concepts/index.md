@@ -77,11 +77,6 @@ key differences between backtesting and live trading.
 The NautilusTrader design allows for integrating data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage.
 
-## [Advanced](advanced/index.md)
-
-Here you will find more detailed documentation and examples covering the more advanced
-features and functionality of the platform.
-
 :::note
 The [API Reference](../api_reference/index.md) documentation should be considered the source of truth
 for the platform. If there are any discrepancies between concepts described here and the API Reference,
