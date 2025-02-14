@@ -38,6 +38,7 @@ homepage = "https://nautilustrader.io"
 repository = "https://github.com/nautechsystems/nautilus_trader"
 docs = "https://nautilustrader.io/docs"
 
+# For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
     "setuptools>=75",
@@ -45,27 +46,26 @@ requires = [
     "numpy>=1.26.4",
     "cython==3.1.0a1",
 ]
-# For now we use the poetry build backend until uv supports custom build scripts
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+include = [
+    # Rust source must be included in the source distributions
+    { path = "crates/*", format = "sdist" },
+    # Compiled extensions must be included in the wheel distributions
+    { path = "nautilus_trader/**/*.so", format = "wheel" },
+    { path = "nautilus_trader/**/*.pyd", format = "wheel" },
+    # Include the py.typed file for type checking support
+    { path = "nautilus_trader/py.typed", format = "sdist" },
+    { path = "nautilus_trader/py.typed", format = "wheel" },
+    # Include Python interface files for type checking support
+    { path = "nautilus_trader/**/*.pyi", format = "sdist" },
+    { path = "nautilus_trader/**/*.pyi", format = "wheel" },
+]
 
 [tool.poetry.build]
 script = "build.py"
 generate-setup-file = false
-
-[tool.setuptools]
-packages = ["nautilus_trader"]
-include-package-data = true
-
-[tool.setuptools.package-data]
-nautilus_trader = [
-    "**/*.so",
-    "**/*.pyd",
-    "**/*.pyi",
-    "py.typed",
-]
-
-[tool.setuptools.package-dir]
-nautilus_trader = "nautilus_trader"
 
 [project.optional-dependencies]
 betfair = [
