@@ -26,16 +26,18 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class TardisCSVDataLoader:
     """
-    Provides a means of loading data from CSV files in Tardis format.
+    Loads CSV data in the Tardis format with optional GZip decompression.
+
+    This loader automatically decompresses CSV files with a ".gz" extension before parsing the data.
 
     Parameters
     ----------
     price_precision : int, optional
         The price precision for parsing.
-        If not provided then will be inferred from the data.
+        If not provided, the precision will be inferred from the data.
     size_precision : int, optional
         The size precision for parsing.
-        If not provided then will be inferred from the data.
+        If not provided, the precision will be inferred from the data.
     instrument_id : InstrumentId, optional
         The instrument ID to override in the data.
         This can be more efficient if the instrument is definitely know (file does not contain

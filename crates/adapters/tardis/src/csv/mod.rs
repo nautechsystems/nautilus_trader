@@ -15,12 +15,7 @@
 
 mod record;
 
-use std::{
-    error::Error,
-    fs::File,
-    io::{BufReader, Read, Seek, SeekFrom},
-    path::Path,
-};
+use std::{error::Error, ffi::OsStr, fs::File, io::BufReader, path::Path};
 
 use csv::{Reader, ReaderBuilder, StringRecord};
 use flate2::read::GzDecoder;
@@ -54,31 +49,32 @@ fn infer_precision(value: f64) -> u8 {
     }
 }
 
-/// Creates a new CSV reader which can handle gzip compression.
-pub fn create_csv_reader<P: AsRef<Path>>(
+fn create_csv_reader<P: AsRef<Path>>(
     filepath: P,
 ) -> anyhow::Result<Reader<Box<dyn std::io::Read>>> {
-    let mut file = File::open(filepath.as_ref())?;
-
-    // Read first two bytes to check for gzip magic numbers
-    let mut magic = [0u8; 2];
-    let peek_result = file.read_exact(&mut magic);
-
-    // Seek back to start of file
-    file.seek(SeekFrom::Start(0))?;
+    let file = File::open(filepath.as_ref())?;
     let buf_reader = BufReader::new(file);
 
-    // Check if it's gzipped - magic numbers are 1f 8b
-    let reader: Box<dyn std::io::Read> = if peek_result.is_ok() && magic == [0x1f, 0x8b] {
+    let is_gzipped = filepath
+        .as_ref()
+        .extension()
+        .and_then(OsStr::to_str)
+        .map(|ext| ext.eq_ignore_ascii_case("gz"))
+        .unwrap_or(false);
+
+    let reader: Box<dyn std::io::Read> = if is_gzipped {
+        // Decompress gzipped file
         Box::new(GzDecoder::new(buf_reader))
     } else {
+        // Regular file reader
         Box::new(buf_reader)
     };
 
     Ok(ReaderBuilder::new().has_headers(true).from_reader(reader))
 }
 
-/// Load [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`.
+/// Loads [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`,
+/// automatically applying GZip decompression for files ending in ".gz".
 pub fn load_deltas<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -212,7 +208,8 @@ fn create_book_order(
     }
 }
 
-/// Load [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`.
+/// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
+/// automatically applying GZip decompression for files ending in ".gz".
 pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -360,6 +357,8 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     Ok(depths)
 }
 
+/// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
+/// automatically applying GZip decompression for files ending in ".gz".
 pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -529,7 +528,8 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     Ok(depths)
 }
 
-/// Load [`QuoteTick`]s from a Tardis format CSV at the given `filepath`.
+/// Loads [`QuoteTick`]s from a Tardis format CSV at the given `filepath`,
+/// automatically applying GZip decompression for files ending in ".gz".
 pub fn load_quote_ticks<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -620,7 +620,8 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
     Ok(quotes)
 }
 
-/// Load [`TradeTick`]s from a Tardis format CSV at the given `filepath`.
+/// Loads [`TradeTick`]s from a Tardis format CSV at the given `filepath`,
+/// automatically applying GZip decompression for files ending in ".gz".
 pub fn load_trade_ticks<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
