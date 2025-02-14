@@ -15,7 +15,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Improved error logging for live engines to now include stacktrace for easier debugging
-- Improved Redis queries, error handling and connections (#2295, #2308), thanks @Pushkarm029
+- Improved Redis queries, error handling and connections (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
