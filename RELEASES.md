@@ -16,6 +16,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Improved error logging for live engines to now include stacktrace for easier debugging
 - Improved Redis queries, error handling and connections (#2295, #2308), thanks @Pushkarm029
+- Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
@@ -32,7 +33,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
 
 ### Fixes
-- Fixed large difference between `Data` enum variants #2315, thanks @twitu
+- Fixed large difference between `Data` enum variants (#2315), thanks @twitu
 - Fixed `start` and `end` range filtering for `TardisHttpClient` to use API query params
 - Fixed built-in data type Arrow schemas for `StreamingFeatherWriter`, thanks for reporting @netomenoci
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
