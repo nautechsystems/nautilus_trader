@@ -19,7 +19,7 @@ use derive_builder::Builder;
 use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::OrderAny,
+    orders::any::SharedOrder,
 };
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +76,7 @@ impl Display for CancelOrder {
 }
 
 pub trait CancelOrderHandler {
-    fn handle_cancel_order(&self, order: &OrderAny);
+    fn handle_cancel_order(&self, order: SharedOrder);
 }
 
 pub enum CancelOrderHandlerAny {
@@ -84,7 +84,7 @@ pub enum CancelOrderHandlerAny {
 }
 
 impl CancelOrderHandler for CancelOrderHandlerAny {
-    fn handle_cancel_order(&self, order: &OrderAny) {
+    fn handle_cancel_order(&self, order: SharedOrder) {
         match self {
             Self::OrderEmulator(order_emulator) => {
                 order_emulator.borrow_mut().cancel_order(order);

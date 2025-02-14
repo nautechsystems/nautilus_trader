@@ -23,7 +23,7 @@ mod tests {
         data::{Bar, QuoteTick, TradeTick},
         enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
         events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-        identifiers::{AccountId, ClientOrderId, PositionId, Venue},
+        identifiers::{stubs::client_order_id, AccountId, ClientOrderId, PositionId, Venue},
         instruments::{stubs::*, CurrencyPair, InstrumentAny, SyntheticInstrument},
         orderbook::OrderBook,
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -222,21 +222,28 @@ mod tests {
             .price(Price::from("1.00000"))
             .quantity(Quantity::from(100_000))
             .build();
+        let client_order_id = order.borrow().client_order_id();
 
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = OrderSubmitted::default();
-        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-        cache.update_order(&order).unwrap();
+        order
+            .borrow_mut()
+            .apply(OrderEventAny::Submitted(submitted))
+            .unwrap();
+        cache.update_order(order.clone()).unwrap();
 
         let accepted = OrderAccepted::default();
-        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-        cache.update_order(&order).unwrap();
+        order
+            .borrow_mut()
+            .apply(OrderEventAny::Accepted(accepted))
+            .unwrap();
+        cache.update_order(order.clone()).unwrap();
 
-        let result = cache.order(&order.client_order_id()).unwrap();
+        let result = cache.order(&client_order_id).unwrap();
 
-        assert!(order.is_open());
-        assert_eq!(result, &order);
+        assert!(order.borrow().is_open());
+        assert_eq!(result.borrow().client_order_id(), client_order_id);
         assert_eq!(cache.orders(None, None, None, None), vec![&order]);
         assert_eq!(cache.orders_open(None, None, None, None), vec![&order]);
         assert!(cache.orders_closed(None, None, None, None).is_empty());

@@ -33,7 +33,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{any::SharedOrder, OrderAny},
     position::Position,
     types::Currency,
 };
@@ -47,7 +47,7 @@ pub struct CacheMap {
     pub instruments: HashMap<InstrumentId, InstrumentAny>,
     pub synthetics: HashMap<InstrumentId, SyntheticInstrument>,
     pub accounts: HashMap<AccountId, AccountAny>,
-    pub orders: HashMap<ClientOrderId, OrderAny>,
+    pub orders: HashMap<ClientOrderId, SharedOrder>,
     pub positions: HashMap<PositionId, Position>,
 }
 
@@ -176,7 +176,7 @@ pub trait CacheDatabaseAdapter {
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()>;
 
-    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()>;
+    fn snapshot_order_state(&self, order: SharedOrder) -> anyhow::Result<()>;
 
     fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()>;
 

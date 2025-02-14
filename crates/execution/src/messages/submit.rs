@@ -21,7 +21,7 @@ use nautilus_model::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
         VenueOrderId,
     },
-    orders::OrderAny,
+    orders::{any::SharedOrder, OrderAny},
 };
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +38,7 @@ pub struct SubmitOrder {
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
-    pub order: OrderAny,
+    pub order: SharedOrder,
     pub exec_algorith_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub command_id: UUID4,
@@ -55,7 +55,7 @@ impl SubmitOrder {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
-        order: OrderAny,
+        order: SharedOrder,
         exec_algorith_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         command_id: UUID4,

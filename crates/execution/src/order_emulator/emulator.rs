@@ -32,7 +32,7 @@ use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
     events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
-    orders::{LimitOrder, MarketOrder, Order, OrderAny, PassiveOrderAny},
+    orders::{any::SharedOrder, LimitOrder, MarketOrder, Order, OrderAny, PassiveOrderAny},
     types::{Price, Quantity},
 };
 
@@ -135,13 +135,7 @@ impl OrderEmulator {
     }
 
     pub fn on_start(&mut self) -> Result<()> {
-        let emulated_orders: Vec<OrderAny> = self
-            .cache
-            .borrow()
-            .orders_emulated(None, None, None, None)
-            .into_iter()
-            .cloned()
-            .collect();
+        let emulated_orders = self.cache.borrow().orders_emulated(None, None, None, None);
 
         if emulated_orders.is_empty() {
             log::error!("No emulated orders to reactivate");
@@ -150,13 +144,13 @@ impl OrderEmulator {
 
         for order in emulated_orders {
             if !matches!(
-                order.status(),
+                order.borrow().status(),
                 OrderStatus::Initialized | OrderStatus::Emulated
             ) {
                 continue; // No longer emulated
             }
 
-            if let Some(parent_order_id) = &order.parent_order_id() {
+            if let Some(parent_order_id) = &order.borrow().parent_order_id() {
                 let parent_order = if let Some(order) = self.cache.borrow().order(parent_order_id) {
                     order.clone()
                 } else {
@@ -165,16 +159,17 @@ impl OrderEmulator {
                 };
 
                 let is_position_closed = parent_order
+                    .borrow()
                     .position_id()
                     .is_some_and(|id| self.cache.borrow().is_position_closed(&id));
-                if parent_order.is_closed() && is_position_closed {
-                    self.manager.cancel_order(&order);
+                if parent_order.borrow().is_closed() && is_position_closed {
+                    self.manager.cancel_order(order);
                     continue; // Parent already closed
                 }
 
-                if parent_order.contingency_type() == Some(ContingencyType::Oto)
-                    && (parent_order.is_active_local()
-                        || parent_order.filled_qty() == Quantity::zero(0))
+                if parent_order.borrow().contingency_type() == Some(ContingencyType::Oto)
+                    && (parent_order.borrow().is_active_local()
+                        || parent_order.borrow().filled_qty() == Quantity::zero(0))
                 {
                     continue; // Process contingency order later once parent triggered
                 }
@@ -183,23 +178,23 @@ impl OrderEmulator {
             let position_id = self
                 .cache
                 .borrow()
-                .position_id(&order.client_order_id())
+                .position_id(&order.borrow().client_order_id())
                 .copied();
             let client_id = self
                 .cache
                 .borrow()
-                .client_id(&order.client_order_id())
+                .client_id(&order.borrow().client_order_id())
                 .copied();
 
             let command = SubmitOrder::new(
-                order.trader_id(),
+                order.borrow().trader_id(),
                 client_id.unwrap(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                order.venue_order_id().unwrap(),
+                order.borrow().strategy_id(),
+                order.borrow().instrument_id(),
+                order.borrow().client_order_id(),
+                order.borrow().venue_order_id().unwrap(),
                 order.clone(),
-                order.exec_algorithm_id(),
+                order.borrow().exec_algorithm_id(),
                 position_id,
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
@@ -217,10 +212,12 @@ impl OrderEmulator {
         self.manager.handle_event(event.clone());
 
         if let Some(order) = self.cache.borrow().order(&event.client_order_id()) {
-            if order.is_closed() {
-                if let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id()) {
+            if order.borrow().is_closed() {
+                if let Some(matching_core) =
+                    self.matching_cores.get_mut(&order.borrow().instrument_id())
+                {
                     if let Err(e) =
-                        matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+                        matching_core.delete_order(&PassiveOrderAny::from(order.borrow()))
                     {
                         log::error!("Error deleting order: {}", e);
                     }
@@ -267,7 +264,8 @@ impl OrderEmulator {
 
     pub fn handle_submit_order(&mut self, command: SubmitOrder) {
         let mut order = command.order.clone();
-        let emulation_trigger = order.emulation_trigger();
+        let order_borrow = order.borrow();
+        let emulation_trigger = order_borrow.emulation_trigger();
 
         assert_ne!(
             emulation_trigger,
@@ -277,7 +275,7 @@ impl OrderEmulator {
         assert!(
             self.manager
                 .get_submit_order_commands()
-                .contains_key(&order.client_order_id()),
+                .contains_key(&order_borrow.client_order_id()),
             "command.order.client_order_id must be in submit_order_commands"
         );
 
@@ -289,16 +287,16 @@ impl OrderEmulator {
                 "Cannot emulate order: `TriggerType` {:?} not supported",
                 emulation_trigger
             );
-            self.manager.cancel_order(&order);
+            self.manager.cancel_order(order);
             return;
         }
 
         self.check_monitoring(command.strategy_id, command.position_id);
 
         // Get or create matching core
-        let trigger_instrument_id = order
+        let trigger_instrument_id = order_borrow
             .trigger_instrument_id()
-            .unwrap_or_else(|| order.instrument_id());
+            .unwrap_or_else(|| order_borrow.instrument_id());
 
         let matching_core = self.matching_cores.get(&trigger_instrument_id).cloned();
 
@@ -319,7 +317,7 @@ impl OrderEmulator {
                         "Cannot emulate order: no synthetic instrument {} for trigger",
                         trigger_instrument_id
                     );
-                    self.manager.cancel_order(&order);
+                    self.manager.cancel_order(order);
                     return;
                 }
             } else {
@@ -335,7 +333,7 @@ impl OrderEmulator {
                         "Cannot emulate order: no instrument {} for trigger",
                         trigger_instrument_id
                     );
-                    self.manager.cancel_order(&order);
+                    self.manager.cancel_order(order.clone());
                     return;
                 }
             };
@@ -345,16 +343,16 @@ impl OrderEmulator {
 
         // Update trailing stop
         if matches!(
-            order.order_type(),
+            order_borrow.order_type(),
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
         ) {
-            self.update_trailing_stop_order(&mut order);
-            if order.trigger_price().is_none() {
+            self.update_trailing_stop_order(order.clone());
+            if order_borrow.trigger_price().is_none() {
                 log::error!(
                     "Cannot handle trailing stop order with no trigger_price and no market updates"
                 );
 
-                self.manager.cancel_order(&order);
+                self.manager.cancel_order(order);
                 return;
             }
         }
@@ -395,7 +393,7 @@ impl OrderEmulator {
         if !self
             .manager
             .get_submit_order_commands()
-            .contains_key(&order.client_order_id())
+            .contains_key(&order_borrow.client_order_id())
         {
             return; // Already released
         }
@@ -407,23 +405,23 @@ impl OrderEmulator {
         }
 
         // Generate emulated event if needed
-        if order.status() == OrderStatus::Initialized {
+        if order_borrow.status() == OrderStatus::Initialized {
             let event = OrderEmulated::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
+                order_borrow.trader_id(),
+                order_borrow.strategy_id(),
+                order_borrow.instrument_id(),
+                order_borrow.client_order_id(),
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
                 self.clock.borrow().timestamp_ns(),
             );
 
-            if let Err(e) = order.apply(OrderEventAny::Emulated(event)) {
+            if let Err(e) = order.borrow_mut().apply(OrderEventAny::Emulated(event)) {
                 log::error!("Cannot apply order event: {:?}", e);
                 return;
             }
 
-            if let Err(e) = self.cache.borrow_mut().update_order(&order) {
+            if let Err(e) = self.cache.borrow_mut().update_order(order) {
                 log::error!("Cannot update order: {:?}", e);
                 return;
             }
@@ -431,7 +429,7 @@ impl OrderEmulator {
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
             self.msgbus.borrow().publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                &format!("events.order.{}", order_borrow.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
         }
@@ -439,8 +437,6 @@ impl OrderEmulator {
         // Since we are cloning the matching core, we need to insert it back into the original hashmap
         self.matching_cores
             .insert(trigger_instrument_id, matching_core);
-
-        log::info!("Emulating {}", order);
     }
 
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
@@ -456,10 +452,11 @@ impl OrderEmulator {
                     continue;
                 };
 
-                if parent_order.contingency_type() == Some(ContingencyType::Oto) {
+                if parent_order.borrow().contingency_type() == Some(ContingencyType::Oto) {
                     continue; // Process contingency order later once parent triggered
                 }
             }
+            let order = Rc::new(RefCell::new(order.clone()));
 
             if let Err(e) = self.manager.create_new_submit_order(
                 order,
@@ -475,28 +472,28 @@ impl OrderEmulator {
         if let Some(order) = self.cache.borrow().order(&command.client_order_id) {
             let price = match command.price {
                 Some(price) => Some(price),
-                None => order.price(),
+                None => order.borrow().price(),
             };
 
             let trigger_price = match command.trigger_price {
                 Some(trigger_price) => Some(trigger_price),
-                None => order.trigger_price(),
+                None => order.borrow().trigger_price(),
             };
 
             // Generate event
             let ts_now = self.clock.borrow().timestamp_ns();
             let event = OrderUpdated::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                command.quantity.unwrap_or(order.quantity()),
+                order.borrow().trader_id(),
+                order.borrow().strategy_id(),
+                order.borrow().instrument_id(),
+                order.borrow().client_order_id(),
+                command.quantity.unwrap_or(order.borrow().quantity()),
                 UUID4::new(),
                 ts_now,
                 ts_now,
                 false,
-                order.venue_order_id(),
-                order.account_id(),
+                order.borrow().venue_order_id(),
+                order.borrow().account_id(),
                 price,
                 trigger_price,
             );
@@ -504,8 +501,9 @@ impl OrderEmulator {
             self.manager.send_exec_event(OrderEventAny::Updated(event));
 
             let trigger_instrument_id = order
+                .borrow()
                 .trigger_instrument_id()
-                .unwrap_or_else(|| order.instrument_id());
+                .unwrap_or_else(|| order.borrow().instrument_id());
 
             if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
                 matching_core.match_order(&PassiveOrderAny::from(order.clone()), false);
@@ -521,33 +519,37 @@ impl OrderEmulator {
     }
 
     pub fn handle_cancel_order(&mut self, command: CancelOrder) {
-        let order = if let Some(order) = self.cache.borrow().order(&command.client_order_id) {
-            order.clone()
-        } else {
-            log::error!("Cannot cancel order: {} not found", command.client_order_id);
-            return;
+        let order_result = self.cache.borrow().order(&command.client_order_id);
+        let order = match order_result {
+            Some(order) => order,
+            None => {
+                log::error!("Cannot cancel order: {} not found", command.client_order_id);
+                return;
+            }
         };
 
         let trigger_instrument_id = order
+            .borrow()
             .trigger_instrument_id()
-            .unwrap_or_else(|| order.instrument_id());
+            .unwrap_or_else(|| order.borrow().instrument_id());
 
-        let matching_core = if let Some(core) = self.matching_cores.get(&trigger_instrument_id) {
-            core
-        } else {
-            self.manager.cancel_order(&order);
-            return;
+        let matching_core = match self.matching_cores.get(&trigger_instrument_id) {
+            Some(core) => core,
+            None => {
+                self.manager.cancel_order(order);
+                return;
+            }
         };
 
-        if !matching_core.order_exists(order.client_order_id())
-            && order.is_open()
-            && !order.is_pending_cancel()
+        if !matching_core.order_exists(order.borrow().client_order_id())
+            && order.borrow().is_open()
+            && !order.borrow().is_pending_cancel()
         {
             // Order not held in the emulator
             self.manager
                 .send_exec_command(TradingCommand::CancelOrder(command));
         } else {
-            self.manager.cancel_order(&order);
+            self.manager.cancel_order(order);
         }
     }
 
@@ -577,32 +579,32 @@ impl OrderEmulator {
 
     // --------------------------------------------------------------------------------------------
 
-    pub fn update_order(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
+    pub fn update_order(&mut self, order: SharedOrder, new_quantity: Quantity) {
         log::info!(
             "Updating order {} quantity to {}",
-            order.client_order_id(),
+            order.borrow().client_order_id(),
             new_quantity
         );
 
         // Generate event
         let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderUpdated::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
+            order.borrow().trader_id(),
+            order.borrow().strategy_id(),
+            order.borrow().instrument_id(),
+            order.borrow().client_order_id(),
             new_quantity,
             UUID4::new(),
             ts_now,
             ts_now,
             false,
             None,
-            order.account_id(),
+            order.borrow().account_id(),
             None,
             None,
         );
 
-        if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
+        if let Err(e) = order.borrow_mut().apply(OrderEventAny::Updated(event)) {
             log::error!("Cannot apply order event: {:?}", e);
             return;
         }
@@ -708,20 +710,23 @@ impl OrderEmulator {
                 order.order_type(),
                 OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
             ) {
-                self.update_trailing_stop_order(&mut order);
+                self.update_trailing_stop_order(order);
             }
         }
     }
 
-    pub fn cancel_order(&mut self, order: &OrderAny) {
-        log::info!("Canceling order {}", order.client_order_id());
+    pub fn cancel_order(&mut self, order: SharedOrder) {
+        log::info!("Canceling order {}", order.borrow().client_order_id());
 
         let mut order = order.clone();
-        order.set_emulation_trigger(Some(TriggerType::NoTrigger));
+        order
+            .borrow_mut()
+            .set_emulation_trigger(Some(TriggerType::NoTrigger));
 
         let trigger_instrument_id = order
+            .borrow()
             .trigger_instrument_id()
-            .unwrap_or(order.instrument_id());
+            .unwrap_or(order.borrow().instrument_id());
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
@@ -731,21 +736,21 @@ impl OrderEmulator {
 
         self.cache
             .borrow_mut()
-            .update_order_pending_cancel_local(&order);
+            .update_order_pending_cancel_local(order.clone());
 
         // Generate event
         let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderCanceled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
+            order.borrow().trader_id(),
+            order.borrow().strategy_id(),
+            order.borrow().instrument_id(),
+            order.borrow().client_order_id(),
             UUID4::new(),
             ts_now,
             ts_now,
             false,
-            order.venue_order_id(),
-            order.account_id(),
+            order.borrow().venue_order_id(),
+            order.borrow().account_id(),
         );
 
         self.manager.send_exec_event(OrderEventAny::Canceled(event));
@@ -875,7 +880,8 @@ impl OrderEmulator {
             }
 
             // Replace commands order with transformed order
-            command.order = OrderAny::Limit(transformed.clone());
+            let shared_order = Rc::new(RefCell::new(OrderAny::Limit(transformed.clone())));
+            command.order = shared_order;
 
             self.msgbus.borrow().publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
@@ -1060,8 +1066,9 @@ impl OrderEmulator {
         }
     }
 
-    fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
-        if let Some(matching_core) = self.matching_cores.get(&order.instrument_id()) {
+    fn update_trailing_stop_order(&mut self, order: SharedOrder) {
+        let order_borrow = order.borrow();
+        if let Some(matching_core) = self.matching_cores.get(&order_borrow.instrument_id()) {
             let mut bid = None;
             let mut ask = None;
             let mut last = None;
@@ -1098,8 +1105,13 @@ impl OrderEmulator {
             }
 
             let (new_trigger_price, new_price) = if let Ok((new_trigger_price, new_price)) =
-                trailing_stop_calculate(matching_core.price_increment, order, bid, ask, last)
-            {
+                trailing_stop_calculate(
+                    matching_core.price_increment,
+                    order.clone(),
+                    bid,
+                    ask,
+                    last,
+                ) {
                 (new_trigger_price, new_price)
             } else {
                 log::warn!("Cannot calculate trailing stop order");
@@ -1114,22 +1126,22 @@ impl OrderEmulator {
             // Generate event
             let ts_now = self.clock.borrow().timestamp_ns();
             let event = OrderUpdated::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                order.quantity(),
+                order_borrow.trader_id(),
+                order_borrow.strategy_id(),
+                order_borrow.instrument_id(),
+                order_borrow.client_order_id(),
+                order_borrow.quantity(),
                 UUID4::new(),
                 ts_now,
                 ts_now,
                 false,
-                order.venue_order_id(),
-                order.account_id(),
+                order_borrow.venue_order_id(),
+                order_borrow.account_id(),
                 new_price,
                 new_trigger_price,
             );
 
-            if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
+            if let Err(e) = order.borrow_mut().apply(OrderEventAny::Updated(event)) {
                 log::error!("Failed to apply order event: {}", e);
             }
             if let Err(e) = self.cache.borrow_mut().update_order(order) {
@@ -1140,7 +1152,7 @@ impl OrderEmulator {
         } else {
             log::error!(
                 "Cannot update trailing stop order: no matching core for instrument {}",
-                order.instrument_id()
+                order.borrow().instrument_id()
             );
         }
     }

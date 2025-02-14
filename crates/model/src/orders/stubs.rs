@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::{UnixNanos, UUID4};
 
-use super::any::OrderAny;
+use super::any::SharedOrder;
 use crate::{
     enums::LiquiditySide,
     events::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
@@ -30,7 +30,8 @@ use crate::{
 pub struct TestOrderEventStubs;
 
 impl TestOrderEventStubs {
-    pub fn order_submitted(order: &OrderAny, account_id: AccountId) -> OrderEventAny {
+    pub fn order_submitted(order: SharedOrder, account_id: AccountId) -> OrderEventAny {
+        let order = order.borrow();
         let event = OrderSubmitted::new(
             order.trader_id(),
             order.strategy_id(),
@@ -45,10 +46,11 @@ impl TestOrderEventStubs {
     }
 
     pub fn order_accepted(
-        order: &OrderAny,
+        order: SharedOrder,
         account_id: AccountId,
         venue_order_id: VenueOrderId,
     ) -> OrderEventAny {
+        let order = order.borrow();
         let event = OrderAccepted::new(
             order.trader_id(),
             order.strategy_id(),
@@ -66,7 +68,7 @@ impl TestOrderEventStubs {
 
     #[allow(clippy::too_many_arguments)]
     pub fn order_filled(
-        order: &OrderAny,
+        order: SharedOrder,
         instrument: &InstrumentAny,
         trade_id: Option<TradeId>,
         position_id: Option<PositionId>,
@@ -77,6 +79,7 @@ impl TestOrderEventStubs {
         ts_filled_ns: Option<UnixNanos>,
         account_id: Option<AccountId>,
     ) -> OrderEventAny {
+        let order = order.borrow();
         let venue_order_id = order.venue_order_id().unwrap_or_default();
         let account_id = account_id
             .or(order.account_id())
@@ -120,28 +123,26 @@ impl TestOrderEventStubs {
 pub struct TestOrderStubs;
 
 impl TestOrderStubs {
-    pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
-        let mut new_order = order.clone();
+    pub fn make_order_accepted(order: SharedOrder) {
         let submitted_event =
-            TestOrderEventStubs::order_submitted(&new_order, AccountId::from("SIM-001"));
+            TestOrderEventStubs::order_submitted(order.clone(), AccountId::from("SIM-001"));
         let accepted_event = TestOrderEventStubs::order_accepted(
-            &new_order,
+            order.clone(),
             AccountId::from("SIM-001"),
             VenueOrderId::from("V-001"),
         );
-        new_order.apply(submitted_event).unwrap();
-        new_order.apply(accepted_event).unwrap();
-        new_order
+        order.borrow_mut().apply(submitted_event).unwrap();
+        order.borrow_mut().apply(accepted_event).unwrap();
     }
 
-    pub fn make_filled_order(
-        order: &OrderAny,
+    pub fn make_order_filled(
+        order: SharedOrder,
         instrument: &InstrumentAny,
         liquidity_side: LiquiditySide,
-    ) -> OrderAny {
-        let mut accepted_order = TestOrderStubs::make_accepted_order(order);
+    ) {
+        TestOrderStubs::make_order_accepted(order.clone());
         let fill = TestOrderEventStubs::order_filled(
-            &accepted_order,
+            order.clone(),
             instrument,
             None,
             None,
@@ -152,7 +153,6 @@ impl TestOrderStubs {
             None,
             None,
         );
-        accepted_order.apply(fill).unwrap();
-        accepted_order
+        order.borrow_mut().apply(fill).unwrap();
     }
 }

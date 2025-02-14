@@ -19,7 +19,7 @@ use derive_builder::Builder;
 use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::OrderAny,
+    orders::any::SharedOrder,
     types::{Price, Quantity},
 };
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ impl Display for ModifyOrder {
 }
 
 pub trait ModifyOrderHandler {
-    fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity);
+    fn handle_modify_order(&self, order: SharedOrder, quantity: Quantity);
 }
 
 pub enum ModifyOrderHandlerAny {
@@ -97,7 +97,7 @@ pub enum ModifyOrderHandlerAny {
 }
 
 impl ModifyOrderHandler for ModifyOrderHandlerAny {
-    fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity) {
+    fn handle_modify_order(&self, order: SharedOrder, quantity: Quantity) {
         match self {
             Self::OrderEmulator(order_emulator) => {
                 order_emulator.borrow_mut().update_order(order, quantity);

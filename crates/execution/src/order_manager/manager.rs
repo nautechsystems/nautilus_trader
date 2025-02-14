@@ -28,7 +28,7 @@ use nautilus_model::{
         OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, ExecAlgorithmId, PositionId},
-    orders::OrderAny,
+    orders::{any::SharedOrder, OrderAny},
     types::Quantity,
 };
 use ustr::Ustr;
@@ -91,8 +91,8 @@ impl OrderManager {
     }
 
     pub fn cache_submit_order_command(&mut self, command: SubmitOrder) {
-        self.submit_order_commands
-            .insert(command.order.client_order_id(), command);
+        let client_order_id = command.order.borrow().client_order_id();
+        self.submit_order_commands.insert(client_order_id, command);
     }
 
     pub fn pop_submit_order_command(
@@ -106,28 +106,29 @@ impl OrderManager {
         self.submit_order_commands.clear();
     }
 
-    pub fn cancel_order(&mut self, order: &OrderAny) {
+    pub fn cancel_order(&mut self, order: SharedOrder) {
+        let client_order_id = order.borrow().client_order_id();
         if self
             .cache
             .borrow()
-            .is_order_pending_cancel_local(&order.client_order_id())
+            .is_order_pending_cancel_local(&client_order_id)
         {
             return;
         }
 
-        if order.is_closed() {
+        if order.borrow().is_closed() {
             log::warn!("Cannot cancel order: already closed");
             return;
         }
 
-        self.submit_order_commands.remove(&order.client_order_id());
+        self.submit_order_commands.remove(&client_order_id);
 
         if let Some(handler) = &self.cancel_order_handler {
             handler.handle_cancel_order(order);
         }
     }
 
-    pub fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
+    pub fn modify_order_quantity(&mut self, order: SharedOrder, new_quantity: Quantity) {
         if let Some(handler) = &self.modify_order_handler {
             handler.handle_modify_order(order, new_quantity);
         }
@@ -135,33 +136,34 @@ impl OrderManager {
 
     pub fn create_new_submit_order(
         &mut self,
-        order: &OrderAny,
+        order: SharedOrder,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
+        let order_borrow = order.borrow();
         let client_id = client_id.ok_or_else(|| anyhow::anyhow!("Client ID is required"))?;
-        let venue_order_id = order
+        let venue_order_id = order_borrow
             .venue_order_id()
             .ok_or_else(|| anyhow::anyhow!("Venue order ID is required"))?;
 
         let submit = SubmitOrder::new(
-            order.trader_id(),
+            order_borrow.trader_id(),
             client_id,
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
+            order_borrow.strategy_id(),
+            order_borrow.instrument_id(),
+            order_borrow.client_order_id(),
             venue_order_id,
             order.clone(),
-            order.exec_algorithm_id(),
+            order_borrow.exec_algorithm_id(),
             position_id,
             UUID4::new(),
             self.clock.borrow().timestamp_ns(),
         )?;
 
-        if order.emulation_trigger() == Some(TriggerType::NoTrigger) {
+        if order_borrow.emulation_trigger() == Some(TriggerType::NoTrigger) {
             self.cache_submit_order_command(submit.clone());
 
-            match order.exec_algorithm_id() {
+            match order_borrow.exec_algorithm_id() {
                 Some(exec_algorithm_id) => {
                     self.send_algo_command(submit, exec_algorithm_id);
                 }
@@ -175,8 +177,8 @@ impl OrderManager {
     }
 
     #[must_use]
-    pub fn should_manage_order(&self, order: &OrderAny) -> bool {
-        self.active_local && order.is_active_local()
+    pub fn should_manage_order(&self, order: &SharedOrder) -> bool {
+        self.active_local && order.borrow().is_active_local()
     }
 
     // Event Handlers
@@ -192,86 +194,92 @@ impl OrderManager {
     }
 
     pub fn handle_order_rejected(&mut self, rejected: OrderRejected) {
-        let cloned_order = self
-            .cache
-            .borrow()
-            .order(&rejected.client_order_id)
-            .cloned();
-        if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies(order);
+        let order_result = self.cache.borrow().order(&rejected.client_order_id);
+        match order_result {
+            Some(order) => {
+                if order.borrow().contingency_type() != Some(ContingencyType::NoContingency) {
+                    self.handle_contingencies(order);
+                }
             }
-        } else {
-            log::error!(
-                "Cannot handle `OrderRejected`: order for client_order_id: {} not found, {}",
-                rejected.client_order_id,
-                rejected
-            );
+            None => {
+                log::error!(
+                    "Cannot handle `OrderRejected`: order for client_order_id: {} not found, {}",
+                    rejected.client_order_id,
+                    rejected
+                );
+            }
         }
     }
 
     pub fn handle_order_canceled(&mut self, canceled: OrderCanceled) {
-        let cloned_order = self
-            .cache
-            .borrow()
-            .order(&canceled.client_order_id)
-            .cloned();
-        if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies(order);
+        let order_result = self.cache.borrow().order(&canceled.client_order_id);
+        match order_result {
+            Some(order) => {
+                if order.borrow().contingency_type() != Some(ContingencyType::NoContingency) {
+                    self.handle_contingencies(order);
+                }
             }
-        } else {
-            log::error!(
-                "Cannot handle `OrderCanceled`: order for client_order_id: {} not found, {}",
-                canceled.client_order_id,
-                canceled
-            );
+            None => {
+                log::error!(
+                    "Cannot handle `OrderCanceled`: order for client_order_id: {} not found, {}",
+                    canceled.client_order_id,
+                    canceled
+                );
+            }
         }
     }
 
     pub fn handle_order_expired(&mut self, expired: OrderExpired) {
-        let cloned_order = self.cache.borrow().order(&expired.client_order_id).cloned();
-        if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies(order);
+        let order_result = self.cache.borrow().order(&expired.client_order_id);
+        match order_result {
+            Some(order) => {
+                if order.borrow().contingency_type() != Some(ContingencyType::NoContingency) {
+                    self.handle_contingencies(order);
+                }
             }
-        } else {
-            log::error!(
-                "Cannot handle `OrderExpired`: order for client_order_id: {} not found, {}",
-                expired.client_order_id,
-                expired
-            );
+            None => {
+                log::error!(
+                    "Cannot handle `OrderExpired`: order for client_order_id: {} not found, {}",
+                    expired.client_order_id,
+                    expired
+                );
+            }
         }
     }
 
     pub fn handle_order_updated(&mut self, updated: OrderUpdated) {
-        let cloned_order = self.cache.borrow().order(&updated.client_order_id).cloned();
-        if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies_update(order);
+        let order_result = self.cache.borrow().order(&updated.client_order_id);
+        match order_result {
+            Some(order) => {
+                if order.borrow().contingency_type() != Some(ContingencyType::NoContingency) {
+                    self.handle_contingencies_update(order);
+                }
             }
-        } else {
-            log::error!(
-                "Cannot handle `OrderUpdated`: order for client_order_id: {} not found, {}",
-                updated.client_order_id,
-                updated
-            );
+            None => {
+                log::error!(
+                    "Cannot handle `OrderUpdated`: order for client_order_id: {} not found, {}",
+                    updated.client_order_id,
+                    updated
+                );
+            }
         }
     }
 
     pub fn handle_order_filled(&mut self, filled: OrderFilled) {
-        let order = if let Some(order) = self.cache.borrow().order(&filled.client_order_id).cloned()
-        {
-            order
-        } else {
-            log::error!(
-                "Cannot handle `OrderFilled`: order for client_order_id: {} not found, {}",
-                filled.client_order_id,
-                filled
-            );
-            return;
+        let order_shared = match self.cache.borrow().order(&filled.client_order_id) {
+            Some(order) => order,
+            None => {
+                log::error!(
+                    "Cannot handle `OrderFilled`: order for client_order_id: {} not found, {}",
+                    filled.client_order_id,
+                    filled
+                );
+                return;
+            }
         };
 
+        let order_binding = order_shared.clone();
+        let order = order_binding.borrow();
         match order.contingency_type() {
             Some(ContingencyType::Oto) => {
                 let position_id = self
@@ -309,25 +317,20 @@ impl OrderManager {
                 };
 
                 for client_order_id in linked_orders {
-                    let mut child_order =
-                        if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
-                            order
-                        } else {
-                            panic!(
-                                "Cannot find OTO child order for client_order_id: {client_order_id}"
-                            );
-                        };
+                    let child_order = self.cache.borrow().order(&client_order_id).unwrap_or_else(|| {
+                        panic!("Cannot find OTO child order for client_order_id: {client_order_id}");
+                    });
 
                     if !self.should_manage_order(&child_order) {
                         continue;
                     }
 
-                    if child_order.position_id().is_none() {
-                        child_order.set_position_id(position_id);
+                    if child_order.borrow().position_id().is_none() {
+                        child_order.borrow_mut().set_position_id(position_id);
                     }
 
-                    if parent_filled_qty != child_order.leaves_qty() {
-                        self.modify_order_quantity(&mut child_order, parent_filled_qty);
+                    if parent_filled_qty != child_order.borrow().leaves_qty() {
+                        self.modify_order_quantity(child_order.clone(), parent_filled_qty);
                     }
 
                     if self.submit_order_handler.is_none() {
@@ -336,11 +339,13 @@ impl OrderManager {
 
                     if !self
                         .submit_order_commands
-                        .contains_key(&child_order.client_order_id())
+                        .contains_key(&child_order.borrow().client_order_id())
                     {
-                        if let Err(e) =
-                            self.create_new_submit_order(&child_order, position_id, client_id)
-                        {
+                        if let Err(e) = self.create_new_submit_order(
+                            child_order.clone(),
+                            position_id,
+                            client_id,
+                        ) {
                             log::error!("Failed to create new submit order: {e}");
                         }
                     }
@@ -355,36 +360,32 @@ impl OrderManager {
                 };
 
                 for client_order_id in linked_orders {
-                    let contingent_order = match self
-                        .cache
-                        .borrow()
-                        .order(&client_order_id)
-                        .cloned()
-                    {
-                        Some(contingent_order) => contingent_order,
-                        None => {
+                    let contingent_order = self.
+                        cache
+                        .borrow().order(&client_order_id).unwrap_or_else(|| {
                             panic!(
                                 "Cannot find OCO contingent order for client_order_id: {client_order_id}"
                             );
-                        }
-                    };
+                    });
 
                     // Not being managed || Already completed
-                    if !self.should_manage_order(&contingent_order) || contingent_order.is_closed()
+                    if !self.should_manage_order(&contingent_order)
+                        || contingent_order.borrow().is_closed()
                     {
                         continue;
                     }
-                    if contingent_order.client_order_id() != order.client_order_id() {
-                        self.cancel_order(&contingent_order);
+                    if contingent_order.borrow().client_order_id() != order.client_order_id() {
+                        self.cancel_order(contingent_order);
                     }
                 }
             }
-            Some(ContingencyType::Ouo) => self.handle_contingencies(order),
+            Some(ContingencyType::Ouo) => self.handle_contingencies(order_shared),
             _ => {}
         }
     }
 
-    pub fn handle_contingencies(&mut self, order: OrderAny) {
+    pub fn handle_contingencies(&mut self, order: SharedOrder) {
+        let order = order.borrow();
         let (filled_qty, leaves_qty, is_spawn_active) =
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
                 if let (Some(filled), Some(leaves)) = (
@@ -404,20 +405,21 @@ impl OrderManager {
                 (order.filled_qty(), order.leaves_qty(), false)
             };
 
-        let linked_orders = if let Some(orders) = order.linked_order_ids() {
-            orders
-        } else {
-            log::error!("No linked orders found");
-            return;
+        let linked_orders = match order.linked_order_ids() {
+            Some(linker_order_id) => linker_order_id,
+            None => {
+                log::error!("No linked orders found");
+                return;
+            }
         };
 
         for client_order_id in linked_orders {
-            let mut contingent_order =
-                if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
-                    order
-                } else {
-                    panic!("Cannot find contingent order for client_order_id: {client_order_id}");
-                };
+            let contingent_order = self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .expect("Cannot find contingent order");
+            let contingent_order_borrow = contingent_order.borrow();
 
             if !self.should_manage_order(&contingent_order)
                 || client_order_id == order.client_order_id()
@@ -425,7 +427,7 @@ impl OrderManager {
                 continue;
             }
 
-            if contingent_order.is_closed() {
+            if contingent_order_borrow.is_closed() {
                 self.submit_order_commands.remove(&order.client_order_id());
                 continue;
             }
@@ -436,14 +438,15 @@ impl OrderManager {
                         && filled_qty.raw == 0
                         && (order.exec_spawn_id().is_none() || !is_spawn_active)
                     {
-                        self.cancel_order(&contingent_order);
-                    } else if filled_qty.raw > 0 && filled_qty != contingent_order.quantity() {
-                        self.modify_order_quantity(&mut contingent_order, filled_qty);
+                        self.cancel_order(contingent_order.clone());
+                    } else if filled_qty.raw > 0 && filled_qty != contingent_order_borrow.quantity()
+                    {
+                        self.modify_order_quantity(contingent_order.clone(), filled_qty);
                     }
                 }
                 Some(ContingencyType::Oco) => {
                     if order.is_closed() && (order.exec_spawn_id().is_none() || !is_spawn_active) {
-                        self.cancel_order(&contingent_order);
+                        self.cancel_order(contingent_order.clone());
                     }
                 }
                 Some(ContingencyType::Ouo) => {
@@ -451,9 +454,9 @@ impl OrderManager {
                         || (order.is_closed()
                             && (order.exec_spawn_id().is_none() || !is_spawn_active))
                     {
-                        self.cancel_order(&contingent_order);
-                    } else if leaves_qty != contingent_order.leaves_qty() {
-                        self.modify_order_quantity(&mut contingent_order, leaves_qty);
+                        self.cancel_order(contingent_order.clone());
+                    } else if leaves_qty != contingent_order_borrow.leaves_qty() {
+                        self.modify_order_quantity(contingent_order.clone(), leaves_qty);
                     }
                 }
                 _ => {}
@@ -461,7 +464,8 @@ impl OrderManager {
         }
     }
 
-    pub fn handle_contingencies_update(&mut self, order: OrderAny) {
+    pub fn handle_contingencies_update(&mut self, order: SharedOrder) {
+        let order = order.borrow();
         let quantity = match order.exec_spawn_id() {
             Some(exec_spawn_id) => {
                 if let Some(qty) = self
@@ -490,7 +494,7 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let mut contingent_order = match self.cache.borrow().order(&client_order_id).cloned() {
+            let contingent_order = match self.cache.borrow().order(&client_order_id) {
                 Some(contingent_order) => contingent_order,
                 None => panic!(
                     "Cannot find OCO contingent order for client_order_id: {client_order_id}"
@@ -499,7 +503,7 @@ impl OrderManager {
 
             if !self.should_manage_order(&contingent_order)
                 || client_order_id == order.client_order_id()
-                || contingent_order.is_closed()
+                || contingent_order.borrow().is_closed()
             {
                 continue;
             }
@@ -508,9 +512,9 @@ impl OrderManager {
                 if matches!(
                     contingency_type,
                     ContingencyType::Oto | ContingencyType::Oco
-                ) && quantity != contingent_order.quantity()
+                ) && quantity != contingent_order.borrow().quantity()
                 {
-                    self.modify_order_quantity(&mut contingent_order, quantity);
+                    self.modify_order_quantity(contingent_order, quantity);
                 }
             }
         }

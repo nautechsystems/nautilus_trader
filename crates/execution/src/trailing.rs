@@ -17,18 +17,19 @@
 use anyhow;
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
-    orders::{base::OrderError, OrderAny},
+    orders::{any::SharedOrder, base::OrderError, OrderAny},
     types::Price,
 };
 use rust_decimal::{prelude::*, Decimal};
 
 pub fn trailing_stop_calculate(
     price_increment: Price,
-    order: &OrderAny,
+    order: SharedOrder,
     bid: Option<Price>,
     ask: Option<Price>,
     last: Option<Price>,
 ) -> anyhow::Result<(Option<Price>, Option<Price>)> {
+    let order = order.borrow();
     let order_side = order.order_side_specified();
     let order_type = order.order_type();
     if !matches!(
@@ -427,9 +428,9 @@ mod tests {
             .instrument_id("BTCUSDT-PERP.BINANCE".into())
             .side(OrderSide::Buy)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
-        let result = trailing_stop_calculate(Price::new(0.01, 2), &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -447,9 +448,9 @@ mod tests {
             .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
-        let result = trailing_stop_calculate(Price::new(0.01, 2), &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -467,9 +468,9 @@ mod tests {
             .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::BidAsk)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
-        let result = trailing_stop_calculate(Price::new(0.01, 2), &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -485,9 +486,9 @@ mod tests {
             .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::IndexPrice)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
-        let result = trailing_stop_calculate(Price::new(0.01, 2), &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -513,11 +514,11 @@ mod tests {
             .trailing_offset(Decimal::from_f64(offset).unwrap())
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            &order,
+            order,
             None,
             None,
             Some(Price::new(last_price, 2)),
@@ -551,11 +552,11 @@ mod tests {
             .trailing_offset(Decimal::from_f64(basis_points).unwrap())
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            &order,
+            order,
             None,
             None,
             Some(Price::new(last_price, 2)),
@@ -590,11 +591,11 @@ mod tests {
             .trailing_offset(Decimal::from_f64(offset).unwrap())
             .trigger_type(TriggerType::BidAsk)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            &order,
+            order,
             Some(Price::new(bid, 2)),
             Some(Price::new(ask, 2)),
             None, // last price not needed for BidAsk trigger type
@@ -628,11 +629,11 @@ mod tests {
             .trailing_offset(Decimal::from_u32(ticks).unwrap())
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            &order,
+            order,
             None,
             None,
             Some(Price::new(last_price, 2)),
@@ -668,11 +669,11 @@ mod tests {
             .trailing_offset(Decimal::from_f64(offset).unwrap())
             .trigger_type(TriggerType::LastOrBidAsk)
             .quantity(Quantity::from(1))
-            .build();
+            .build_shared();
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            &order,
+            order,
             Some(Price::new(bid, 2)),
             Some(Price::new(ask, 2)),
             Some(Price::new(last_price, 2)),

@@ -613,16 +613,12 @@ impl Portfolio {
             let mut instruments = HashSet::new();
 
             for order in &all_orders_open {
-                instruments.insert(order.instrument_id());
+                instruments.insert(order.borrow().instrument_id());
             }
 
             for instrument_id in instruments {
                 if let Some(instrument) = cache.instrument(&instrument_id) {
-                    let orders = cache
-                        .orders_open(None, Some(&instrument_id), None, None)
-                        .into_iter()
-                        .cloned()
-                        .collect::<Vec<OrderAny>>();
+                    let orders = cache.orders_open(None, Some(&instrument_id), None, None);
                     instruments_with_orders.push((instrument.clone(), orders));
                 } else {
                     log::error!(
@@ -636,7 +632,7 @@ impl Portfolio {
             instruments_with_orders
         };
 
-        for (instrument, orders_open) in &orders_and_instruments {
+        for (instrument, orders_open) in orders_and_instruments {
             let mut cache = self.cache.borrow_mut();
             let account = if let Some(account) = cache.account_for_venue(&instrument.id().venue) {
                 account
@@ -652,7 +648,7 @@ impl Portfolio {
             let result = self.inner.borrow_mut().accounts.update_orders(
                 account,
                 instrument.clone(),
-                orders_open.iter().collect(),
+                orders_open,
                 self.clock.borrow().timestamp_ns(),
             );
 
@@ -1133,11 +1129,7 @@ fn update_instrument_id(
         };
 
         // Clone the orders and positions to own the data
-        let orders_open: Vec<OrderAny> = borrowed_cache
-            .orders_open(None, Some(instrument_id), None, None)
-            .iter()
-            .map(|o| (*o).clone())
-            .collect();
+        let orders_open = borrowed_cache.orders_open(None, Some(instrument_id), None, None);
 
         let positions_open: Vec<Position> = borrowed_cache
             .positions_open(None, Some(instrument_id), None, None)
