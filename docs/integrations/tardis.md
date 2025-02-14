@@ -110,6 +110,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `ASCENDEX`              | `ascendex`                                            |
 | `BINANCE`               | `binance`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
 | `BINANCE_DELIVERY`      | `binance-delivery` (*COIN-margined contracts*)        |
+| `BINANCE_US`            | `binance-us`                                          |
 | `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
 | `BITFLYER`              | `bitflyer`                                            |
 | `BITMEX`                | `bitmex`                                              |
@@ -119,7 +120,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `BYBIT`                 | `bybit`, `bybit-options`, `bybit-spot`                |
 | `COINBASE`              | `coinbase`                                            |
 | `COINFLEX`              | `coinflex` (*for historical research*)                |
-| `CRYPTO_COM`            | `crypto-com`, `crypto-com-derivatives`                |
+| `CRYPTO_COM`            | `crypto-com`                                          |
 | `CRYPTOFACILITIES`      | `cryptofacilities`                                    |
 | `DELTA`                 | `delta`                                               |
 | `DERIBIT`               | `deribit`                                             |
