@@ -64,6 +64,42 @@ pub struct DatabaseQueries;
 struct InstrumentWrapper(InstrumentAny);
 
 impl DatabaseQueries {
+    // TODO: Improve serialization and deserialization, as it is currently done in Cython.
+    pub fn serialize_payload<T: Serialize>(
+        encoding: SerializationEncoding,
+        payload: &T,
+    ) -> anyhow::Result<Vec<u8>> {
+        match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::to_vec(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
+            SerializationEncoding::Json => serde_json::to_vec(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
+        }
+    }
+
+    pub fn deserialize_payload<T: DeserializeOwned>(
+        encoding: SerializationEncoding,
+        payload: &[u8],
+    ) -> anyhow::Result<T> {
+        match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}")),
+            SerializationEncoding::Json => serde_json::from_slice(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}")),
+        }
+    }
+
+    pub async fn scan_keys(
+        con: &mut ConnectionManager,
+        pattern: String,
+    ) -> anyhow::Result<Vec<String>> {
+        Ok(con
+            .scan_match::<String, String>(pattern)
+            .await?
+            .collect()
+            .await)
+    }
+
     pub async fn read(
         con: &ConnectionManager,
         trader_key: &str,
@@ -86,69 +122,6 @@ impl DatabaseQueries {
             STRATEGIES => Self::read_string(&mut con, &key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
-    }
-
-    pub fn get_collection_key(key: &str) -> anyhow::Result<&str> {
-        key.split_once(REDIS_DELIMITER)
-            .map(|(collection, _)| collection)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-            })
-    }
-
-    async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let index_key = Self::get_index_key(key)?;
-        match index_key {
-            INDEX_ORDER_IDS => Self::read_set(conn, key).await,
-            INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
-            INDEX_ORDER_CLIENT => Self::read_hset(conn, key).await,
-            INDEX_ORDERS => Self::read_set(conn, key).await,
-            INDEX_ORDERS_OPEN => Self::read_set(conn, key).await,
-            INDEX_ORDERS_CLOSED => Self::read_set(conn, key).await,
-            INDEX_ORDERS_EMULATED => Self::read_set(conn, key).await,
-            INDEX_ORDERS_INFLIGHT => Self::read_set(conn, key).await,
-            INDEX_POSITIONS => Self::read_set(conn, key).await,
-            INDEX_POSITIONS_OPEN => Self::read_set(conn, key).await,
-            INDEX_POSITIONS_CLOSED => Self::read_set(conn, key).await,
-            _ => anyhow::bail!("Index unknown '{index_key}' on read"),
-        }
-    }
-
-    pub async fn read_string(
-        conn: &mut ConnectionManager,
-        key: &str,
-    ) -> anyhow::Result<Vec<Bytes>> {
-        let result: Vec<u8> = conn.get(key).await?;
-
-        if result.is_empty() {
-            Ok(vec![])
-        } else {
-            Ok(vec![Bytes::from(result)])
-        }
-    }
-
-    pub async fn read_set(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let result: Vec<Bytes> = conn.smembers(key).await?;
-        Ok(result)
-    }
-
-    pub async fn read_hset(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let result: HashMap<String, String> = conn.hgetall(key).await?;
-        let json = serde_json::to_string(&result)?;
-        Ok(vec![Bytes::from(json.into_bytes())])
-    }
-
-    pub async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
-        Ok(result)
-    }
-
-    pub fn get_index_key(key: &str) -> anyhow::Result<&str> {
-        key.split_once(REDIS_DELIMITER)
-            .map(|(_, index_key)| index_key)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-            })
     }
 
     pub async fn load_all(
@@ -499,42 +472,6 @@ impl DatabaseQueries {
         Ok(currency)
     }
 
-    // This function can be used when we handle cache serialization in Rust
-    #[allow(dead_code)]
-    pub fn get_encoding(config: &HashMap<String, serde_json::Value>) -> String {
-        config
-            .get("encoding")
-            .and_then(|v| v.as_str())
-            .unwrap_or("msgpack")
-            .to_string()
-    }
-
-    // TODO: improve serialization and deserialization as it's currently done in cython.
-    // This function can be used when we handle cache serialization in Rust
-    pub fn deserialize_payload<T: DeserializeOwned>(
-        encoding: SerializationEncoding,
-        payload: &[u8],
-    ) -> anyhow::Result<T> {
-        match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}")),
-            SerializationEncoding::Json => serde_json::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}")),
-        }
-    }
-
-    pub fn serialize_payload<T: Serialize>(
-        encoding: SerializationEncoding,
-        payload: &T,
-    ) -> anyhow::Result<Vec<u8>> {
-        match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::to_vec(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
-            SerializationEncoding::Json => serde_json::to_vec(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
-        }
-    }
-
     pub async fn load_instrument(
         con: &ConnectionManager,
         trader_key: &str,
@@ -615,14 +552,63 @@ impl DatabaseQueries {
         Ok(Some(position))
     }
 
-    pub async fn scan_keys(
-        con: &mut ConnectionManager,
-        pattern: String,
-    ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+    fn get_collection_key(key: &str) -> anyhow::Result<&str> {
+        key.split_once(REDIS_DELIMITER)
+            .map(|(collection, _)| collection)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
+            })
+    }
+
+    async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let index_key = Self::get_index_key(key)?;
+        match index_key {
+            INDEX_ORDER_IDS => Self::read_set(conn, key).await,
+            INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
+            INDEX_ORDER_CLIENT => Self::read_hset(conn, key).await,
+            INDEX_ORDERS => Self::read_set(conn, key).await,
+            INDEX_ORDERS_OPEN => Self::read_set(conn, key).await,
+            INDEX_ORDERS_CLOSED => Self::read_set(conn, key).await,
+            INDEX_ORDERS_EMULATED => Self::read_set(conn, key).await,
+            INDEX_ORDERS_INFLIGHT => Self::read_set(conn, key).await,
+            INDEX_POSITIONS => Self::read_set(conn, key).await,
+            INDEX_POSITIONS_OPEN => Self::read_set(conn, key).await,
+            INDEX_POSITIONS_CLOSED => Self::read_set(conn, key).await,
+            _ => anyhow::bail!("Index unknown '{index_key}' on read"),
+        }
+    }
+
+    async fn read_string(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: Vec<u8> = conn.get(key).await?;
+
+        if result.is_empty() {
+            Ok(vec![])
+        } else {
+            Ok(vec![Bytes::from(result)])
+        }
+    }
+
+    async fn read_set(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: Vec<Bytes> = conn.smembers(key).await?;
+        Ok(result)
+    }
+
+    async fn read_hset(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: HashMap<String, String> = conn.hgetall(key).await?;
+        let json = serde_json::to_string(&result)?;
+        Ok(vec![Bytes::from(json.into_bytes())])
+    }
+
+    async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
+        Ok(result)
+    }
+
+    fn get_index_key(key: &str) -> anyhow::Result<&str> {
+        key.split_once(REDIS_DELIMITER)
+            .map(|(_, index_key)| index_key)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
+            })
     }
 }

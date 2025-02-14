@@ -133,11 +133,12 @@ impl DatabaseCommand {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct RedisCacheDatabase {
-    pub trader_id: TraderId,
-    pub trader_key: String,
     pub con: ConnectionManager,
-    tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
+    pub trader_id: TraderId,
+    encoding: SerializationEncoding,
     handle: tokio::task::JoinHandle<()>,
+    trader_key: String,
+    tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
 }
 
 impl RedisCacheDatabase {
@@ -159,7 +160,7 @@ impl RedisCacheDatabase {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
-
+        let encoding = config.encoding;
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
                 log::error!("Failed to spawn task '{CACHE_WRITE}': {e}");
@@ -172,7 +173,16 @@ impl RedisCacheDatabase {
             con,
             tx,
             handle,
+            encoding,
         })
+    }
+
+    pub fn get_encoding(&self) -> SerializationEncoding {
+        self.encoding
+    }
+
+    pub fn get_trader_key(&self) -> &str {
+        &self.trader_key
     }
 
     pub fn close(&mut self) {
