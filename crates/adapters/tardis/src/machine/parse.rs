@@ -32,7 +32,7 @@ use super::{
     message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg, WsMessage},
     types::InstrumentMiniInfo,
 };
-use crate::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
+use crate::parse::{normalize_amount, parse_aggressor_side, parse_bar_spec, parse_book_action};
 
 #[must_use]
 pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) -> Option<Data> {
@@ -185,9 +185,10 @@ pub fn parse_book_level(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> OrderBookDelta {
-    let action = parse_book_action(is_snapshot, level.amount);
+    let amount = normalize_amount(level.amount, size_precision);
+    let action = parse_book_action(is_snapshot, amount);
     let price = Price::new(level.price, price_precision);
-    let size = Quantity::new(level.amount, size_precision);
+    let size = Quantity::new(amount, size_precision);
     let order_id = 0; // Not applicable for L2 data
     let order = BookOrder::new(side, price, size, order_id);
     let flags = if is_snapshot {
