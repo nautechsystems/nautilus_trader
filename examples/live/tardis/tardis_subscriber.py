@@ -47,13 +47,14 @@ from nautilus_trader.trading.strategy import Strategy
 instrument_ids = [
     InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
     InstrumentId.from_str("BTCUSD_PERP.BINANCE_DELIVERY"),
+    # InstrumentId.from_str("USDTUSD.BINANCE_US"),
     # InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
     # InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
     # InstrumentId.from_str("BTCUSDT.BINANCE"),
     # InstrumentId.from_str("XBTUSDT.BITMEX"),
     # InstrumentId.from_str("ETHUSDT.BITMEX"),
-    InstrumentId.from_str("BTC_USDT.GATE_IO"),
-    InstrumentId.from_str("BTC_USDT-PERP.GATE_IO"),
+    # InstrumentId.from_str("BTC_USDT.GATE_IO"),
+    # InstrumentId.from_str("BTC_USDT-PERP.GATE_IO"),
 ]
 
 # See supported venues https://nautilustrader.io/docs/nightly/integrations/tardis#venues
