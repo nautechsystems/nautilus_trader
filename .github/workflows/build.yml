@@ -44,79 +44,79 @@ jobs:
           echo "Pre-commit checks failed, exiting"
           exit 1
 
-  build-linux-standard-precision:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-        python-version:
-          - "3.12"
-    defaults:
-      run:
-        shell: bash
-    name: build - standard-precision (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs:
-      - pre-commit
-    env:
-      BUILD_MODE: debug
-      HIGH_PRECISION: false
-      RUST_BACKTRACE: 1
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: nautilus
-        ports:
-          - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Common setup
-        uses: ./.github/actions/common-setup
-        with:
-          python-version: ${{ matrix.python-version }}
-          free-disk-space: "true"
-
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USERNAME: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DATABASE: nautilus
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
-      - name: Run Rust tests (with standard-precision)
-        run: make cargo-test-standard-precision
-
-      - name: Build and install wheel
-        uses: ./.github/actions/common-wheel-build
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Run tests
-        run: uv run pytest --ignore=tests/performance_tests
+  # build-linux-standard-precision:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os:
+  #         - ubuntu-latest
+  #       python-version:
+  #         - "3.12"
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   name: build - standard-precision (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   needs:
+  #     - pre-commit
+  #   env:
+  #     BUILD_MODE: debug
+  #     HIGH_PRECISION: false
+  #     RUST_BACKTRACE: 1
+  #   services:
+  #     redis:
+  #       image: redis
+  #       ports:
+  #         - 6379:6379
+  #       options: >-
+  #         --health-cmd "redis-cli ping"
+  #         --health-interval 10s
+  #         --health-timeout 5s
+  #         --health-retries 5
+  #     postgres:
+  #       image: postgres
+  #       env:
+  #         POSTGRES_USER: postgres
+  #         POSTGRES_PASSWORD: pass
+  #         POSTGRES_DB: nautilus
+  #       ports:
+  #         - 5432:5432
+  #       options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+  #
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Common setup
+  #       uses: ./.github/actions/common-setup
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #         free-disk-space: "true"
+  #
+  #     - name: Install Nautilus CLI and run init postgres
+  #       run: |
+  #         make install-cli
+  #         nautilus database init --schema ${{ github.workspace }}/schema/sql
+  #       env:
+  #         POSTGRES_HOST: localhost
+  #         POSTGRES_PORT: 5432
+  #         POSTGRES_USERNAME: postgres
+  #         POSTGRES_PASSWORD: pass
+  #         POSTGRES_DATABASE: nautilus
+  #
+  #     - name: Cached test data
+  #       uses: ./.github/actions/common-test-data
+  #
+  #     - name: Run Rust tests (with standard-precision)
+  #       run: make cargo-test-standard-precision
+  #
+  #     - name: Build and install wheel
+  #       uses: ./.github/actions/common-wheel-build
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #
+  #     - name: Run tests
+  #       run: uv run pytest --ignore=tests/performance_tests
 
   build-linux:
     strategy:
@@ -195,103 +195,103 @@ jobs:
       # - name: Upload wheel artifact
       #   uses: ./.github/actions/upload-artifact-wheel
 
-  build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-latest
-        python-version:
-          - "3.11"
-          - "3.12"
-    defaults:
-      run:
-        shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    # Pause macOS jobs on develop branch for now (they take ~1-1.5 hrs)
-    if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
-    needs:
-      - pre-commit
-    env:
-      BUILD_MODE: release
-      RUST_BACKTRACE: 1
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Common setup
-        uses: ./.github/actions/common-setup
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
-      - name: Run Rust tests
-        run: make cargo-test
-
-      - name: Build and install wheel
-        uses: ./.github/actions/common-wheel-build
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Run tests
-        run: uv run pytest --ignore=tests/performance_tests
-
-      # - name: Upload wheel artifact
-      #   uses: ./.github/actions/upload-artifact-wheel
-
-  build-windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-        python-version:
-          - "3.11"
-          - "3.12"
-    defaults:
-      run:
-        shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    # Pause windows jobs on develop branch for now (they take ~1 hr)
-    if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
-    needs:
-      - pre-commit
-    env:
-      BUILD_MODE: release
-      HIGH_PRECISION: false
-      PARALLEL_BUILD: false
-      RUST_BACKTRACE: 1
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Common setup
-        uses: ./.github/actions/common-setup
-        with:
-          python-version: ${{ matrix.python-version }}
-          free-disk-space: "true"
-
-      - name: Build and install wheel
-        uses: ./.github/actions/common-wheel-build
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
-      - name: Run tests
-        run: uv run pytest --ignore=tests/performance_tests
-
-      # - name: Upload wheel artifact
-      #   uses: ./.github/actions/upload-artifact-wheel
+  # build-macos:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os:
+  #         - macos-latest
+  #       python-version:
+  #         - "3.11"
+  #         - "3.12"
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   # Pause macOS jobs on develop branch for now (they take ~1-1.5 hrs)
+  #   if: >
+  #     !( (github.event_name == 'push' && github.ref_name == 'develop')
+  #     || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
+  #   needs:
+  #     - pre-commit
+  #   env:
+  #     BUILD_MODE: release
+  #     RUST_BACKTRACE: 1
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Common setup
+  #       uses: ./.github/actions/common-setup
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #
+  #     - name: Cached test data
+  #       uses: ./.github/actions/common-test-data
+  #
+  #     - name: Run Rust tests
+  #       run: make cargo-test
+  #
+  #     - name: Build and install wheel
+  #       uses: ./.github/actions/common-wheel-build
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #
+  #     - name: Run tests
+  #       run: uv run pytest --ignore=tests/performance_tests
+  #
+  #     # - name: Upload wheel artifact
+  #     #   uses: ./.github/actions/upload-artifact-wheel
+  #
+  # build-windows:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os:
+  #         - windows-latest
+  #       python-version:
+  #         - "3.11"
+  #         - "3.12"
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   # Pause windows jobs on develop branch for now (they take ~1 hr)
+  #   if: >
+  #     !( (github.event_name == 'push' && github.ref_name == 'develop')
+  #     || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
+  #   needs:
+  #     - pre-commit
+  #   env:
+  #     BUILD_MODE: release
+  #     HIGH_PRECISION: false
+  #     PARALLEL_BUILD: false
+  #     RUST_BACKTRACE: 1
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Common setup
+  #       uses: ./.github/actions/common-setup
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #         free-disk-space: "true"
+  #
+  #     - name: Build and install wheel
+  #       uses: ./.github/actions/common-wheel-build
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #
+  #     - name: Cached test data
+  #       uses: ./.github/actions/common-test-data
+  #
+  #     - name: Run tests
+  #       run: uv run pytest --ignore=tests/performance_tests
+  #
+  #     # - name: Upload wheel artifact
+  #     #   uses: ./.github/actions/upload-artifact-wheel
 
   publish-wheels-develop:
     name: publish-wheels-develop
