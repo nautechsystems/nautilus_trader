@@ -61,6 +61,8 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "bitfinex"
             else:
                 return "bitfinex-derivatives"
+        case "BLOCKCHAIN_COM":
+            return "blockchain-com"
         case "BYBIT":
             if isinstance(instrument, CurrencyPair):
                 return "bybit-spot"
