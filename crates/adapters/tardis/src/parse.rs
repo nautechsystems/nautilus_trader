@@ -117,6 +117,13 @@ pub fn normalize_instrument_id(
     parse_instrument_id(exchange, symbol)
 }
 
+/// Normalizes the given amount by truncating it to the specified decimal precision.
+#[must_use]
+pub fn normalize_amount(amount: f64, precision: u8) -> f64 {
+    let factor = 10_f64.powi(precision as i32);
+    (amount * factor).trunc() / factor
+}
+
 /// Parses a Nautilus price from the given `value`.
 ///
 /// If `value` is outside the valid range, then will return an [`ERROR_PRICE`].
@@ -298,6 +305,17 @@ mod tests {
             normalize_instrument_id(&exchange, symbol, &instrument_type, is_inverse);
         let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
         assert_eq!(instrument_id, expected_instrument_id);
+    }
+
+    #[rstest]
+    #[case(0.00001, 4, 0.0)]
+    #[case(1.2345, 3, 1.234)]
+    #[case(1.2345, 2, 1.23)]
+    #[case(-1.2345, 3, -1.234)]
+    #[case(123.456, 0, 123.0)]
+    fn test_normalize_amount(#[case] amount: f64, #[case] precision: u8, #[case] expected: f64) {
+        let result = normalize_amount(amount, precision);
+        assert_eq!(result, expected);
     }
 
     #[rstest]

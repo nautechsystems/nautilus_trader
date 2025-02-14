@@ -26,7 +26,7 @@ use nautilus_model::{
     },
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
-    types::Quantity,
+    types::{fixed::FIXED_PRECISION, Quantity},
 };
 
 use super::{
@@ -114,6 +114,9 @@ pub fn load_deltas<P: AsRef<Path>>(
 
             drop(reader);
 
+            max_price_precision = max_price_precision.min(FIXED_PRECISION);
+            max_size_precision = max_size_precision.min(FIXED_PRECISION);
+
             (
                 price_precision.unwrap_or(max_price_precision),
                 size_precision.unwrap_or(max_size_precision),
@@ -140,7 +143,7 @@ pub fn load_deltas<P: AsRef<Path>>(
         let order_id = 0; // Not applicable for L2 data
         let order = BookOrder::new(side, price, size, order_id);
 
-        let action = parse_book_action(record.is_snapshot, record.amount);
+        let action = parse_book_action(record.is_snapshot, size.as_f64());
         let flags = 0; // Flags always zero until timestamp changes
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(record.timestamp);
@@ -252,6 +255,9 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             }
 
             drop(reader);
+
+            max_price_precision = max_price_precision.min(FIXED_PRECISION);
+            max_size_precision = max_size_precision.min(FIXED_PRECISION);
 
             (
                 price_precision.unwrap_or(max_price_precision),
@@ -401,6 +407,9 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             }
 
             drop(reader);
+
+            max_price_precision = max_price_precision.min(FIXED_PRECISION);
+            max_size_precision = max_size_precision.min(FIXED_PRECISION);
 
             (
                 price_precision.unwrap_or(max_price_precision),
@@ -573,6 +582,9 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
 
             drop(reader);
 
+            max_price_precision = max_price_precision.min(FIXED_PRECISION);
+            max_size_precision = max_size_precision.min(FIXED_PRECISION);
+
             (
                 price_precision.unwrap_or(max_price_precision),
                 size_precision.unwrap_or(max_size_precision),
@@ -660,6 +672,9 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
             }
 
             drop(reader);
+
+            max_price_precision = max_price_precision.min(FIXED_PRECISION);
+            max_size_precision = max_size_precision.min(FIXED_PRECISION);
 
             (
                 price_precision.unwrap_or(max_price_precision),
