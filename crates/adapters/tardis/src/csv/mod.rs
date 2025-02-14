@@ -158,9 +158,7 @@ pub fn load_deltas<P: AsRef<Path>>(
             }
         }
 
-        if action != BookAction::Delete && size.is_zero() {
-            panic!("Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}");
-        }
+        assert!(!(action != BookAction::Delete && size.is_zero()), "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}");
 
         last_ts_event = ts_event;
 

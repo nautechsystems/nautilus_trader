@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use bytes::Bytes;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::{enums::SerializationEncoding, runtime::get_runtime};
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     UUID4,
@@ -61,7 +61,11 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "load_all")]
     fn py_load_all(&mut self) -> PyResult<PyObject> {
-        let result = get_runtime().block_on(async { DatabaseQueries::load_all(&self.con).await });
+        // TODO: Add encoding to the cache config
+        let result = get_runtime().block_on(async {
+            DatabaseQueries::load_all(&self.con, SerializationEncoding::MsgPack, &self.trader_key)
+                .await
+        });
         match result {
             Ok(cache_map) => Python::with_gil(|py| {
                 let dict = PyDict::new(py);

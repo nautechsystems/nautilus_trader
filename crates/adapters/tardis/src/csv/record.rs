@@ -270,7 +270,7 @@ pub struct TardisTradeRecord {
     pub timestamp: u64,
     // UNIX microseconds timestamp of message received.
     pub local_timestamp: u64,
-    /// The trade ID provided by the exchange. If empty, a new UUIDv4 string is generated.
+    /// The trade ID provided by the exchange. If empty, a new `UUIDv4` string is generated.
     #[serde(deserialize_with = "deserialize_trade_id")]
     pub id: String,
     /// The liquidity taker (aggressor) side provided by the exchange.

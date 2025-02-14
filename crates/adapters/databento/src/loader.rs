@@ -100,7 +100,7 @@ impl DatabentoDataLoader {
         };
 
         loader
-            .load_publishers(publishers_filepath.clone())
+            .load_publishers(publishers_filepath)
             .unwrap_or_else(|e| panic!("Error loading publishers.json: {e}",));
 
         Ok(loader)
