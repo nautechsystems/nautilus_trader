@@ -441,7 +441,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_synthetic(
         &self,
         instrument_id: &InstrumentId,
-    ) -> anyhow::Result<SyntheticInstrument> {
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
         todo!()
     }
 
@@ -492,7 +492,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
         todo!()
     }
 

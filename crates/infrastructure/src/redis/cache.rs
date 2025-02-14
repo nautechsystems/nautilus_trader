@@ -717,7 +717,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     async fn load_synthetic(
         &self,
         instrument_id: &InstrumentId,
-    ) -> anyhow::Result<SyntheticInstrument> {
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
         DatabaseQueries::load_synthetic(
             &self.database.con,
             &self.database.trader_key,
@@ -750,7 +750,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
         DatabaseQueries::load_position(
             &self.database.con,
             &self.database.trader_key,

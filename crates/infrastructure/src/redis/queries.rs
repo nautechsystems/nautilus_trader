@@ -320,7 +320,11 @@ impl DatabaseQueries {
                     };
 
                     match Self::load_synthetic(&con, trader_key, &instrument_id, encoding).await {
-                        Ok(synthetic) => Some((instrument_id, synthetic)),
+                        Ok(Some(synthetic)) => Some((instrument_id, synthetic)),
+                        Ok(None) => {
+                            log::error!("Synthetic not found: {instrument_id}");
+                            None
+                        }
                         Err(e) => {
                             log::error!("Failed to load synthetic {instrument_id}: {e}");
                             None
@@ -457,7 +461,11 @@ impl DatabaseQueries {
                     };
 
                     match Self::load_position(&con, trader_key, &position_id, encoding).await {
-                        Ok(position) => Some((position_id, position)),
+                        Ok(Some(position)) => Some((position_id, position)),
+                        Ok(None) => {
+                            log::error!("Position not found: {position_id}");
+                            None
+                        }
                         Err(e) => {
                             log::error!("Failed to load position {position_id}: {e}");
                             None
@@ -482,7 +490,11 @@ impl DatabaseQueries {
     ) -> anyhow::Result<Option<Currency>> {
         let key = format!("{CURRENCIES}{REDIS_DELIMITER}{code}");
         let result = Self::read(con, trader_key, &key).await?;
-        // test this shit: using a test, below no need of e2e test
+
+        if result.is_empty() {
+            return Ok(None);
+        }
+
         let currency = Self::deserialize_payload(encoding, &result[0])?;
         Ok(currency)
     }
@@ -531,6 +543,10 @@ impl DatabaseQueries {
     ) -> anyhow::Result<Option<InstrumentAny>> {
         let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{instrument_id}");
         let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
         let instrument: InstrumentAny = Self::deserialize_payload(encoding, &result[0])?;
         Ok(Some(instrument))
     }
@@ -540,11 +556,15 @@ impl DatabaseQueries {
         trader_key: &str,
         instrument_id: &InstrumentId,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<SyntheticInstrument> {
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
         let key = format!("{SYNTHETICS}{REDIS_DELIMITER}{instrument_id}");
         let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
         let synthetic: SyntheticInstrument = Self::deserialize_payload(encoding, &result[0])?;
-        Ok(synthetic)
+        Ok(Some(synthetic))
     }
 
     pub async fn load_account(
@@ -555,6 +575,10 @@ impl DatabaseQueries {
     ) -> anyhow::Result<Option<AccountAny>> {
         let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
         let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
         let account: AccountAny = Self::deserialize_payload(encoding, &result[0])?;
         Ok(Some(account))
     }
@@ -567,6 +591,10 @@ impl DatabaseQueries {
     ) -> anyhow::Result<Option<OrderAny>> {
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
         let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
         let order: OrderAny = Self::deserialize_payload(encoding, &result[0])?;
         Ok(Some(order))
     }
@@ -576,11 +604,15 @@ impl DatabaseQueries {
         trader_key: &str,
         position_id: &PositionId,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<Position> {
+    ) -> anyhow::Result<Option<Position>> {
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
         let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
         let position: Position = Self::deserialize_payload(encoding, &result[0])?;
-        Ok(position)
+        Ok(Some(position))
     }
 
     pub async fn scan_keys(

@@ -87,14 +87,14 @@ pub trait CacheDatabaseAdapter {
     async fn load_synthetic(
         &self,
         instrument_id: &InstrumentId,
-    ) -> anyhow::Result<SyntheticInstrument>;
+    ) -> anyhow::Result<Option<SyntheticInstrument>>;
 
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>>;
 
     async fn load_order(&self, client_order_id: &ClientOrderId)
         -> anyhow::Result<Option<OrderAny>>;
 
-    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position>;
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>>;
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
 
