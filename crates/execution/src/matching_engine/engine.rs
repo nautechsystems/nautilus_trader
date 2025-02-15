@@ -1515,7 +1515,37 @@ impl OrderMatchingEngine {
         price: Price,
         trigger_price: Price,
     ) {
-        if !order.is_triggered().is_some_and(|t| t) {
+        if order.is_triggered().is_some_and(|t| t) {
+            // Update limit price
+            if self
+                .core
+                .is_limit_matched(order.order_side_specified(), price)
+            {
+                if order.is_post_only() {
+                    self.generate_order_modify_rejected(
+                        order.trader_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        Ustr::from(format!(
+                            "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            price,
+                            self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                        ).as_str()),
+                        order.venue_order_id(),
+                        order.account_id(),
+                    );
+                    return;
+                }
+                self.generate_order_updated(order, quantity, Some(price), None);
+                order.set_liquidity_side(LiquiditySide::Taker);
+                self.fill_limit_order(order);
+                return; // Filled
+            }
+        } else {
             // Update stop price
             if self
                 .core
@@ -1545,37 +1575,6 @@ impl OrderMatchingEngine {
                     order.account_id(),
                 );
                 return;
-            }
-        } else {
-            // Update limit price
-            if self
-                .core
-                .is_limit_matched(order.order_side_specified(), price)
-            {
-                if order.is_post_only() {
-                    self.generate_order_modify_rejected(
-                        order.trader_id(),
-                        order.strategy_id(),
-                        order.instrument_id(),
-                        order.client_order_id(),
-                        Ustr::from(format!(
-                            "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
-                            order.order_type(),
-                            order.order_side(),
-                            price,
-                            self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
-                            self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
-                        ).as_str()),
-                        order.venue_order_id(),
-                        order.account_id(),
-                    );
-                    return;
-                } else {
-                    self.generate_order_updated(order, quantity, Some(price), None);
-                    order.set_liquidity_side(LiquiditySide::Taker);
-                    self.fill_limit_order(order);
-                    return; // Filled
-                }
             }
         }
 
