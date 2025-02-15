@@ -1777,6 +1777,12 @@ impl PriceType {
     fn py_last() -> Self {
         Self::Last
     }
+
+    #[classattr]
+    #[pyo3(name = "MARK")]
+    fn py_mark() -> Self {
+        Self::Mark
+    }
 }
 
 #[pymethods]

@@ -270,6 +270,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for PriceTypeModel {
             PriceType::Ask => "ASK",
             PriceType::Mid => "MID",
             PriceType::Last => "LAST",
+            PriceType::Mark => "MARK",
         };
         <&str as sqlx::Encode<sqlx::Postgres>>::encode(price_type_str, buf)
     }

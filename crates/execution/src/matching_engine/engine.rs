@@ -311,6 +311,7 @@ impl OrderMatchingEngine {
                 self.last_bar_ask = Some(bar.to_owned());
                 self.process_quote_ticks_from_bar(bar);
             }
+            PriceType::Mark => panic!("Not implemented"),
         }
     }
 

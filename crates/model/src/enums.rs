@@ -1083,14 +1083,19 @@ pub enum PositionSide {
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum PriceType {
-    /// A quoted order price where a buyer is willing to buy a quantity of an instrument.
+    /// The best quoted price at which buyers are willing to buy a quantity of an instrument.
+    /// Often considered the best bid in the order book.
     Bid = 1,
-    /// A quoted order price where a seller is willing to sell a quantity of an instrument.
+    /// The best quoted price at which sellers are willing to sell a quantity of an instrument.
+    /// Often considered the best ask in the order book.
     Ask = 2,
-    /// The midpoint between the best bid and best ask prices.
+    /// The arithmetic midpoint between the best bid and ask quotes.
     Mid = 3,
-    /// The last price at which a trade was made for an instrument.
+    /// The price at which the last trade of an instrument was executed.
     Last = 4,
+    /// A reference price reflecting an instrument's fair value, often used for portfolio
+    /// calculations and risk management.
+    Mark = 5,
 }
 
 /// A record flag bit field, indicating event end and data information.
