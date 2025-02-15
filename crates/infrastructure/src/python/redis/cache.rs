@@ -61,7 +61,9 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "load_all")]
     fn py_load_all(&mut self) -> PyResult<PyObject> {
-        let result = get_runtime().block_on(async { DatabaseQueries::load_all(&self.con).await });
+        let result = get_runtime().block_on(async {
+            DatabaseQueries::load_all(&self.con, self.get_encoding(), self.get_trader_key()).await
+        });
         match result {
             Ok(cache_map) => Python::with_gil(|py| {
                 let dict = PyDict::new(py);

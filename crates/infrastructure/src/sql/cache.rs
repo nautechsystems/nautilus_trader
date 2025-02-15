@@ -389,7 +389,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
+    async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
         let pool = self.pool.clone();
         let code = code.to_owned(); // Clone the code
         let (tx, rx) = std::sync::mpsc::channel();
@@ -412,7 +412,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_instrument(
+    async fn load_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
@@ -438,11 +438,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument> {
+    async fn load_synthetic(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
         todo!()
     }
 
-    fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+    async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         let pool = self.pool.clone();
         let account_id = account_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -465,7 +468,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
+    async fn load_order(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
         let pool = self.pool.clone();
         let client_order_id = client_order_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -486,7 +492,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
         todo!()
     }
 

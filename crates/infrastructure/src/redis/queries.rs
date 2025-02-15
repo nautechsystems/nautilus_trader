@@ -15,8 +15,10 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures::{future::join_all, StreamExt};
-use nautilus_common::cache::database::CacheMap;
+use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
@@ -26,34 +28,118 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
 
 // Collection keys
-const _INDEX: &str = "index";
-const _GENERAL: &str = "general";
+const INDEX: &str = "index";
+const GENERAL: &str = "general";
 const CURRENCIES: &str = "currencies";
 const INSTRUMENTS: &str = "instruments";
 const SYNTHETICS: &str = "synthetics";
 const ACCOUNTS: &str = "accounts";
 const ORDERS: &str = "orders";
 const POSITIONS: &str = "positions";
-const _ACTORS: &str = "actors";
-const _STRATEGIES: &str = "strategies";
-const _SNAPSHOTS: &str = "snapshots";
-const _HEALTH: &str = "health";
+const ACTORS: &str = "actors";
+const STRATEGIES: &str = "strategies";
+const REDIS_DELIMITER: char = ':';
+
+// Index keys
+const INDEX_ORDER_IDS: &str = "index:order_ids";
+const INDEX_ORDER_POSITION: &str = "index:order_position";
+const INDEX_ORDER_CLIENT: &str = "index:order_client";
+const INDEX_ORDERS: &str = "index:orders";
+const INDEX_ORDERS_OPEN: &str = "index:orders_open";
+const INDEX_ORDERS_CLOSED: &str = "index:orders_closed";
+const INDEX_ORDERS_EMULATED: &str = "index:orders_emulated";
+const INDEX_ORDERS_INFLIGHT: &str = "index:orders_inflight";
+const INDEX_POSITIONS: &str = "index:positions";
+const INDEX_POSITIONS_OPEN: &str = "index:positions_open";
+const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
 pub struct DatabaseQueries;
 
 impl DatabaseQueries {
-    pub async fn load_all(con: &ConnectionManager) -> anyhow::Result<CacheMap> {
+    pub fn serialize_payload<T: Serialize>(
+        encoding: SerializationEncoding,
+        payload: &T,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut value = serde_json::to_value(payload)?;
+        convert_timestamps(&mut value);
+        match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
+            SerializationEncoding::Json => serde_json::to_vec(&value)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
+        }
+    }
+
+    pub fn deserialize_payload<T: DeserializeOwned>(
+        encoding: SerializationEncoding,
+        payload: &[u8],
+    ) -> anyhow::Result<T> {
+        let mut value = match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
+            SerializationEncoding::Json => serde_json::from_slice(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
+        };
+
+        convert_timestamp_strings(&mut value);
+
+        serde_json::from_value(value)
+            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
+    }
+
+    pub async fn scan_keys(
+        con: &mut ConnectionManager,
+        pattern: String,
+    ) -> anyhow::Result<Vec<String>> {
+        Ok(con
+            .scan_match::<String, String>(pattern)
+            .await?
+            .collect()
+            .await)
+    }
+
+    pub async fn read(
+        con: &ConnectionManager,
+        trader_key: &str,
+        key: &str,
+    ) -> anyhow::Result<Vec<Bytes>> {
+        let collection = Self::get_collection_key(key)?;
+        let key = format!("{}{REDIS_DELIMITER}{key}", trader_key);
+        let mut con = con.clone();
+
+        match collection {
+            INDEX => Self::read_index(&mut con, &key).await,
+            GENERAL => Self::read_string(&mut con, &key).await,
+            CURRENCIES => Self::read_string(&mut con, &key).await,
+            INSTRUMENTS => Self::read_string(&mut con, &key).await,
+            SYNTHETICS => Self::read_string(&mut con, &key).await,
+            ACCOUNTS => Self::read_list(&mut con, &key).await,
+            ORDERS => Self::read_list(&mut con, &key).await,
+            POSITIONS => Self::read_list(&mut con, &key).await,
+            ACTORS => Self::read_string(&mut con, &key).await,
+            STRATEGIES => Self::read_string(&mut con, &key).await,
+            _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
+        }
+    }
+
+    pub async fn load_all(
+        con: &ConnectionManager,
+        encoding: SerializationEncoding,
+        trader_key: &str,
+    ) -> anyhow::Result<CacheMap> {
         let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
-            Self::load_currencies(con),
-            Self::load_instruments(con),
-            Self::load_synthetics(con),
-            Self::load_accounts(con),
-            Self::load_orders(con),
-            Self::load_positions(con)
+            Self::load_currencies(con, trader_key, encoding),
+            Self::load_instruments(con, trader_key, encoding),
+            Self::load_synthetics(con, trader_key, encoding),
+            Self::load_accounts(con, trader_key, encoding),
+            Self::load_orders(con, trader_key, encoding),
+            Self::load_positions(con, trader_key, encoding)
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
@@ -69,6 +155,8 @@ impl DatabaseQueries {
 
     pub async fn load_currencies(
         con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<Ustr, Currency>> {
         let mut currencies = HashMap::new();
         let pattern = format!("{CURRENCIES}*");
@@ -90,7 +178,7 @@ impl DatabaseQueries {
                         }
                     };
 
-                    match Self::load_currency(&con, &currency_code) {
+                    match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
                         Ok(Some(currency)) => Some((currency_code, currency)),
                         Ok(None) => {
                             log::error!("Currency not found: {currency_code}");
@@ -114,6 +202,8 @@ impl DatabaseQueries {
 
     pub async fn load_instruments(
         con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
         let mut instruments = HashMap::new();
         let pattern = format!("{INSTRUMENTS}*");
@@ -147,7 +237,7 @@ impl DatabaseQueries {
                         Err(_) => return None,
                     };
 
-                    match Self::load_instrument(&con, &instrument_id) {
+                    match Self::load_instrument(&con, trader_key, &instrument_id, encoding).await {
                         Ok(Some(instrument)) => Some((instrument_id, instrument)),
                         Ok(None) => {
                             log::error!("Instrument not found: {instrument_id}");
@@ -171,6 +261,8 @@ impl DatabaseQueries {
 
     pub async fn load_synthetics(
         con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
         let mut synthetics = HashMap::new();
         let pattern = format!("{SYNTHETICS}*");
@@ -204,8 +296,12 @@ impl DatabaseQueries {
                         Err(_) => return None,
                     };
 
-                    match Self::load_synthetic(&con, &instrument_id) {
-                        Ok(synthetic) => Some((instrument_id, synthetic)),
+                    match Self::load_synthetic(&con, trader_key, &instrument_id, encoding).await {
+                        Ok(Some(synthetic)) => Some((instrument_id, synthetic)),
+                        Ok(None) => {
+                            log::error!("Synthetic not found: {instrument_id}");
+                            None
+                        }
                         Err(e) => {
                             log::error!("Failed to load synthetic {instrument_id}: {e}");
                             None
@@ -224,6 +320,8 @@ impl DatabaseQueries {
 
     pub async fn load_accounts(
         con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let mut accounts = HashMap::new();
         let pattern = format!("{ACCOUNTS}*");
@@ -245,7 +343,7 @@ impl DatabaseQueries {
                         }
                     };
 
-                    match Self::load_account(&con, &account_id) {
+                    match Self::load_account(&con, trader_key, &account_id, encoding).await {
                         Ok(Some(account)) => Some((account_id, account)),
                         Ok(None) => {
                             log::error!("Account not found: {account_id}");
@@ -269,6 +367,8 @@ impl DatabaseQueries {
 
     pub async fn load_orders(
         con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         let mut orders = HashMap::new();
         let pattern = format!("{ORDERS}*");
@@ -290,7 +390,7 @@ impl DatabaseQueries {
                         }
                     };
 
-                    match Self::load_order(&con, &client_order_id) {
+                    match Self::load_order(&con, trader_key, &client_order_id, encoding).await {
                         Ok(Some(order)) => Some((client_order_id, order)),
                         Ok(None) => {
                             log::error!("Order not found: {client_order_id}");
@@ -314,6 +414,8 @@ impl DatabaseQueries {
 
     pub async fn load_positions(
         con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<PositionId, Position>> {
         let mut positions = HashMap::new();
         let pattern = format!("{POSITIONS}*");
@@ -335,8 +437,12 @@ impl DatabaseQueries {
                         }
                     };
 
-                    match Self::load_position(&con, &position_id) {
-                        Ok(position) => Some((position_id, position)),
+                    match Self::load_position(&con, trader_key, &position_id, encoding).await {
+                        Ok(Some(position)) => Some((position_id, position)),
+                        Ok(None) => {
+                            log::error!("Position not found: {position_id}");
+                            None
+                        }
                         Err(e) => {
                             log::error!("Failed to load position {position_id}: {e}");
                             None
@@ -353,56 +459,217 @@ impl DatabaseQueries {
         Ok(positions)
     }
 
-    pub fn load_currency(
-        _con: &ConnectionManager,
-        _code: &Ustr,
+    pub async fn load_currency(
+        con: &ConnectionManager,
+        trader_key: &str,
+        code: &Ustr,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<Currency>> {
-        todo!()
+        let key = format!("{CURRENCIES}{REDIS_DELIMITER}{code}");
+        let result = Self::read(con, trader_key, &key).await?;
+
+        if result.is_empty() {
+            return Ok(None);
+        }
+
+        let currency = Self::deserialize_payload(encoding, &result[0])?;
+        Ok(currency)
     }
 
-    pub fn load_instrument(
-        _con: &ConnectionManager,
-        _instrument_id: &InstrumentId,
+    pub async fn load_instrument(
+        con: &ConnectionManager,
+        trader_key: &str,
+        instrument_id: &InstrumentId,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        todo!()
+        let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{instrument_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
+        let instrument: InstrumentAny = Self::deserialize_payload(encoding, &result[0])?;
+        Ok(Some(instrument))
     }
 
-    pub fn load_synthetic(
-        _con: &ConnectionManager,
-        _instrument_id: &InstrumentId,
-    ) -> anyhow::Result<SyntheticInstrument> {
-        todo!()
+    pub async fn load_synthetic(
+        con: &ConnectionManager,
+        trader_key: &str,
+        instrument_id: &InstrumentId,
+        encoding: SerializationEncoding,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        let key = format!("{SYNTHETICS}{REDIS_DELIMITER}{instrument_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
+        let synthetic: SyntheticInstrument = Self::deserialize_payload(encoding, &result[0])?;
+        Ok(Some(synthetic))
     }
 
-    pub fn load_account(
-        _con: &ConnectionManager,
-        _account_id: &AccountId,
+    pub async fn load_account(
+        con: &ConnectionManager,
+        trader_key: &str,
+        account_id: &AccountId,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<AccountAny>> {
-        todo!()
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
+        let account: AccountAny = Self::deserialize_payload(encoding, &result[0])?;
+        Ok(Some(account))
     }
 
-    pub fn load_order(
-        _con: &ConnectionManager,
-        _client_order_id: &ClientOrderId,
+    pub async fn load_order(
+        con: &ConnectionManager,
+        trader_key: &str,
+        client_order_id: &ClientOrderId,
+        encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<OrderAny>> {
-        todo!()
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
+        let order: OrderAny = Self::deserialize_payload(encoding, &result[0])?;
+        Ok(Some(order))
     }
 
-    pub fn load_position(
-        _con: &ConnectionManager,
-        _position_id: &PositionId,
-    ) -> anyhow::Result<Position> {
-        todo!()
+    pub async fn load_position(
+        con: &ConnectionManager,
+        trader_key: &str,
+        position_id: &PositionId,
+        encoding: SerializationEncoding,
+    ) -> anyhow::Result<Option<Position>> {
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(None);
+        }
+
+        let position: Position = Self::deserialize_payload(encoding, &result[0])?;
+        Ok(Some(position))
     }
 
-    pub async fn scan_keys(
-        con: &mut ConnectionManager,
-        pattern: String,
-    ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+    fn get_collection_key(key: &str) -> anyhow::Result<&str> {
+        key.split_once(REDIS_DELIMITER)
+            .map(|(collection, _)| collection)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
+            })
+    }
+
+    async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let index_key = Self::get_index_key(key)?;
+        match index_key {
+            INDEX_ORDER_IDS => Self::read_set(conn, key).await,
+            INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
+            INDEX_ORDER_CLIENT => Self::read_hset(conn, key).await,
+            INDEX_ORDERS => Self::read_set(conn, key).await,
+            INDEX_ORDERS_OPEN => Self::read_set(conn, key).await,
+            INDEX_ORDERS_CLOSED => Self::read_set(conn, key).await,
+            INDEX_ORDERS_EMULATED => Self::read_set(conn, key).await,
+            INDEX_ORDERS_INFLIGHT => Self::read_set(conn, key).await,
+            INDEX_POSITIONS => Self::read_set(conn, key).await,
+            INDEX_POSITIONS_OPEN => Self::read_set(conn, key).await,
+            INDEX_POSITIONS_CLOSED => Self::read_set(conn, key).await,
+            _ => anyhow::bail!("Index unknown '{index_key}' on read"),
+        }
+    }
+
+    async fn read_string(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: Vec<u8> = conn.get(key).await?;
+
+        if result.is_empty() {
+            Ok(vec![])
+        } else {
+            Ok(vec![Bytes::from(result)])
+        }
+    }
+
+    async fn read_set(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: Vec<Bytes> = conn.smembers(key).await?;
+        Ok(result)
+    }
+
+    async fn read_hset(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: HashMap<String, String> = conn.hgetall(key).await?;
+        let json = serde_json::to_string(&result)?;
+        Ok(vec![Bytes::from(json.into_bytes())])
+    }
+
+    async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+        let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
+        Ok(result)
+    }
+
+    fn get_index_key(key: &str) -> anyhow::Result<&str> {
+        key.split_once(REDIS_DELIMITER)
+            .map(|(_, index_key)| index_key)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
+            })
+    }
+}
+
+fn is_timestamp_field(key: &str) -> bool {
+    let expire_match = key == "expire_time_ns";
+    let ts_match = key.starts_with("ts_");
+    expire_match || ts_match
+}
+
+fn convert_timestamps(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, v) in map {
+                if is_timestamp_field(key) {
+                    if let Value::Number(n) = v {
+                        if let Some(n) = n.as_u64() {
+                            let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
+                            *v = Value::String(
+                                dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
+                            );
+                        }
+                    }
+                }
+                convert_timestamps(v);
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                convert_timestamps(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn convert_timestamp_strings(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, v) in map {
+                if is_timestamp_field(key) {
+                    if let Value::String(s) = v {
+                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                            *v = Value::Number(
+                                (dt.with_timezone(&Utc).timestamp_nanos() as u64).into(),
+                            );
+                        }
+                    }
+                }
+                convert_timestamp_strings(v);
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                convert_timestamp_strings(item);
+            }
+        }
+        _ => {}
     }
 }

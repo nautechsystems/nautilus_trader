@@ -45,7 +45,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{aio::ConnectionManager, AsyncCommands, Pipeline};
+use redis::{aio::ConnectionManager, Pipeline};
 use tokio::try_join;
 use ustr::Ustr;
 
@@ -133,11 +133,12 @@ impl DatabaseCommand {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct RedisCacheDatabase {
-    pub trader_id: TraderId,
-    trader_key: String,
     pub con: ConnectionManager,
-    tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
+    pub trader_id: TraderId,
+    encoding: SerializationEncoding,
     handle: tokio::task::JoinHandle<()>,
+    trader_key: String,
+    tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
 }
 
 impl RedisCacheDatabase {
@@ -159,7 +160,7 @@ impl RedisCacheDatabase {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
-
+        let encoding = config.encoding;
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
                 log::error!("Failed to spawn task '{CACHE_WRITE}': {e}");
@@ -172,7 +173,16 @@ impl RedisCacheDatabase {
             con,
             tx,
             handle,
+            encoding,
         })
+    }
+
+    pub fn get_encoding(&self) -> SerializationEncoding {
+        self.encoding
+    }
+
+    pub fn get_trader_key(&self) -> &str {
+        &self.trader_key
     }
 
     pub fn close(&mut self) {
@@ -208,22 +218,7 @@ impl RedisCacheDatabase {
     }
 
     pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let collection = get_collection_key(key)?;
-        let key = format!("{}{REDIS_DELIMITER}{key}", self.trader_key);
-
-        match collection {
-            INDEX => read_index(&mut self.con, &key).await,
-            GENERAL => read_string(&mut self.con, &key).await,
-            CURRENCIES => read_string(&mut self.con, &key).await,
-            INSTRUMENTS => read_string(&mut self.con, &key).await,
-            SYNTHETICS => read_string(&mut self.con, &key).await,
-            ACCOUNTS => read_list(&mut self.con, &key).await,
-            ORDERS => read_list(&mut self.con, &key).await,
-            POSITIONS => read_list(&mut self.con, &key).await,
-            ACTORS => read_string(&mut self.con, &key).await,
-            STRATEGIES => read_string(&mut self.con, &key).await,
-            _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
-        }
+        DatabaseQueries::read(&self.con, &self.trader_key, key).await
     }
 
     pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
@@ -354,50 +349,6 @@ async fn drain_buffer(
     if let Err(e) = pipe.query_async::<()>(conn).await {
         tracing::error!("{e}");
     }
-}
-
-async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let index_key = get_index_key(key)?;
-    match index_key {
-        INDEX_ORDER_IDS => read_set(conn, key).await,
-        INDEX_ORDER_POSITION => read_hset(conn, key).await,
-        INDEX_ORDER_CLIENT => read_hset(conn, key).await,
-        INDEX_ORDERS => read_set(conn, key).await,
-        INDEX_ORDERS_OPEN => read_set(conn, key).await,
-        INDEX_ORDERS_CLOSED => read_set(conn, key).await,
-        INDEX_ORDERS_EMULATED => read_set(conn, key).await,
-        INDEX_ORDERS_INFLIGHT => read_set(conn, key).await,
-        INDEX_POSITIONS => read_set(conn, key).await,
-        INDEX_POSITIONS_OPEN => read_set(conn, key).await,
-        INDEX_POSITIONS_CLOSED => read_set(conn, key).await,
-        _ => anyhow::bail!("Index unknown '{index_key}' on read"),
-    }
-}
-
-async fn read_string(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: Vec<u8> = conn.get(key).await?;
-
-    if result.is_empty() {
-        Ok(vec![])
-    } else {
-        Ok(vec![Bytes::from(result)])
-    }
-}
-
-async fn read_set(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: Vec<Bytes> = conn.smembers(key).await?;
-    Ok(result)
-}
-
-async fn read_hset(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: HashMap<String, String> = conn.hgetall(key).await?;
-    let json = serde_json::to_string(&result)?;
-    Ok(vec![Bytes::from(json.into_bytes())])
-}
-
-async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-    let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
-    Ok(result)
 }
 
 fn insert(
@@ -648,31 +599,6 @@ fn get_index_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-// This function can be used when we handle cache serialization in Rust
-#[allow(dead_code)]
-fn get_encoding(config: &HashMap<String, serde_json::Value>) -> String {
-    config
-        .get("encoding")
-        .and_then(|v| v.as_str())
-        .unwrap_or("msgpack")
-        .to_string()
-}
-
-// This function can be used when we handle cache serialization in Rust
-#[allow(dead_code)]
-fn deserialize_payload(
-    encoding: &str,
-    payload: &[u8],
-) -> anyhow::Result<HashMap<String, serde_json::Value>> {
-    match encoding {
-        "msgpack" => rmp_serde::from_slice(payload)
-            .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}")),
-        "json" => serde_json::from_slice(payload)
-            .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}")),
-        _ => Err(anyhow::anyhow!("Unsupported encoding: {encoding}")),
-    }
-}
-
 #[allow(dead_code)] // Under development
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
@@ -722,27 +648,49 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        DatabaseQueries::load_currencies(&self.database.con).await
+        DatabaseQueries::load_currencies(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding,
+        )
+        .await
     }
 
     async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        DatabaseQueries::load_instruments(&self.database.con).await
+        DatabaseQueries::load_instruments(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding,
+        )
+        .await
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        DatabaseQueries::load_synthetics(&self.database.con).await
+        DatabaseQueries::load_synthetics(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding,
+        )
+        .await
     }
 
     async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        DatabaseQueries::load_accounts(&self.database.con).await
+        DatabaseQueries::load_accounts(&self.database.con, &self.database.trader_key, self.encoding)
+            .await
     }
 
     async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        DatabaseQueries::load_orders(&self.database.con).await
+        DatabaseQueries::load_orders(&self.database.con, &self.database.trader_key, self.encoding)
+            .await
     }
 
     async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
-        DatabaseQueries::load_positions(&self.database.con).await
+        DatabaseQueries::load_positions(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding,
+        )
+        .await
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
@@ -753,31 +701,73 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
-        DatabaseQueries::load_currency(&self.database.con, code)
+    async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
+        DatabaseQueries::load_currency(
+            &self.database.con,
+            &self.database.trader_key,
+            code,
+            self.encoding,
+        )
+        .await
     }
 
-    fn load_instrument(
+    async fn load_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        DatabaseQueries::load_instrument(&self.database.con, instrument_id)
+        DatabaseQueries::load_instrument(
+            &self.database.con,
+            &self.database.trader_key,
+            instrument_id,
+            self.encoding,
+        )
+        .await
     }
 
-    fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument> {
-        DatabaseQueries::load_synthetic(&self.database.con, instrument_id)
+    async fn load_synthetic(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        DatabaseQueries::load_synthetic(
+            &self.database.con,
+            &self.database.trader_key,
+            instrument_id,
+            self.encoding,
+        )
+        .await
     }
 
-    fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
-        DatabaseQueries::load_account(&self.database.con, account_id)
+    async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+        DatabaseQueries::load_account(
+            &self.database.con,
+            &self.database.trader_key,
+            account_id,
+            self.encoding,
+        )
+        .await
     }
 
-    fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
-        DatabaseQueries::load_order(&self.database.con, client_order_id)
+    async fn load_order(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
+        DatabaseQueries::load_order(
+            &self.database.con,
+            &self.database.trader_key,
+            client_order_id,
+            self.encoding,
+        )
+        .await
     }
 
-    fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
-        DatabaseQueries::load_position(&self.database.con, position_id)
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
+        DatabaseQueries::load_position(
+            &self.database.con,
+            &self.database.trader_key,
+            position_id,
+            self.encoding,
+        )
+        .await
     }
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
