@@ -12,21 +12,3 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-//! Provides a generic `Portfolio` for all environments.
-
-#![warn(rustc::all)]
-#![deny(unsafe_code)]
-#![deny(nonstandard_style)]
-#![deny(rustdoc::broken_intra_doc_links)]
-#![deny(clippy::missing_errors_doc)]
-
-pub mod config;
-pub mod manager;
-pub mod portfolio;
-
-mod handlers;
-mod tests;
-
-// Re-exports
-pub use portfolio::Portfolio;
