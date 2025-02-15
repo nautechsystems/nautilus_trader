@@ -25,6 +25,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -81,6 +82,20 @@ class TestCache:
     def test_order_book_for_unknown_instrument_returns_none(self):
         # Arrange, Act, Assert
         assert self.cache.order_book(AUDUSD_SIM.id) is None
+
+    @pytest.mark.parametrize(
+        ("price_type"),
+        [
+            PriceType.BID,
+            PriceType.ASK,
+            PriceType.MID,
+            PriceType.LAST,
+            PriceType.MARK,
+        ],
+    )
+    def test_price_when_no_prices_returns_none(self, price_type: PriceType):
+        # Arrange, Act, Assert
+        assert self.cache.price(AUDUSD_SIM.id, price_type) is None
 
     def test_quote_tick_when_no_ticks_returns_none(self):
         # Arrange, Act, Assert
@@ -227,6 +242,19 @@ class TestCache:
 
         # Assert
         assert result == [synthetic]
+
+    def test_add_mark_price(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        mark_price = Price(10_000, 2)
+
+        self.cache.add_mark_price(instrument_id, mark_price)
+
+        # Act
+        result = self.cache.price(instrument_id, PriceType.MARK)
+
+        # Assert
+        assert result == mark_price
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange

@@ -98,9 +98,9 @@ impl Cache {
             index: CacheIndex::default(),
             database,
             general: HashMap::new(),
+            marks: HashMap::new(),
             quotes: HashMap::new(),
             trades: HashMap::new(),
-            marks: HashMap::new(),
             books: HashMap::new(),
             bars: HashMap::new(),
             currencies: HashMap::new(),
@@ -796,9 +796,9 @@ impl Cache {
         log::debug!("Resetting cache");
 
         self.general.clear();
+        self.marks.clear();
         self.quotes.clear();
         self.trades.clear();
-        self.marks.clear();
         self.books.clear();
         self.bars.clear();
         self.currencies.clear();
@@ -858,6 +858,13 @@ impl Cache {
 
         self.books.insert(book.instrument_id, book);
         Ok(())
+    }
+
+    /// Adds the given mark `price` for the given `instrument_id` to the cache.
+    pub fn add_mark_price(&mut self, instrument_id: &InstrumentId, price: Price) {
+        log::debug!("Adding mark `Price` for {instrument_id}");
+
+        self.marks.insert(*instrument_id, price);
     }
 
     /// Adds the given `quote` tick to the cache.
