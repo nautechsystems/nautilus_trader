@@ -23,14 +23,13 @@ mod index;
 #[cfg(test)]
 mod tests;
 
-// Re-exports
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use bytes::Bytes;
-pub use config::CacheConfig;
+pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 use index::CacheIndex;
 use nautilus_core::{
