@@ -109,6 +109,8 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
+        self._log.info(f"{config.signature_type=}", LogColor.BLUE)
+        self._log.info(f"{config.funder=}", LogColor.BLUE)
         self._log.info(f"{config.ws_connection_initial_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.ws_connection_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)

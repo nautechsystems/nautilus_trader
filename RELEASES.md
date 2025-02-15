@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
 - Fixed `effective` timestamp filtering for `TardisHttpClient` to now only retain latest version at or before `effective`
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
+- Fixed hard-coded signature type for `PolymarketExecutionClient`
 
 ### Documentation Updates
 - Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
