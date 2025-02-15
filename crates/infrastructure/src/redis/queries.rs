@@ -110,7 +110,7 @@ impl DatabaseQueries {
         key: &str,
     ) -> anyhow::Result<Vec<Bytes>> {
         let collection = Self::get_collection_key(key)?;
-        let key = format!("{}{REDIS_DELIMITER}{key}", trader_key);
+        let key = format!("{trader_key}{REDIS_DELIMITER}{key}");
         let mut con = con.clone();
 
         match collection {
@@ -159,7 +159,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<Ustr, Currency>> {
         let mut currencies = HashMap::new();
-        let pattern = format!("{CURRENCIES}*");
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -206,7 +206,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
         let mut instruments = HashMap::new();
-        let pattern = format!("{INSTRUMENTS}*");
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -265,7 +265,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
         let mut synthetics = HashMap::new();
-        let pattern = format!("{SYNTHETICS}*");
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -324,7 +324,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let mut accounts = HashMap::new();
-        let pattern = format!("{ACCOUNTS}*");
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -371,7 +371,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         let mut orders = HashMap::new();
-        let pattern = format!("{ORDERS}*");
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -418,7 +418,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<HashMap<PositionId, Position>> {
         let mut positions = HashMap::new();
-        let pattern = format!("{POSITIONS}*");
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();

@@ -630,7 +630,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             self.load_orders(),
             self.load_positions()
         )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
         Ok(CacheMap {
             currencies,
