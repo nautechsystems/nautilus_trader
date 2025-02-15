@@ -474,8 +474,8 @@ impl ExecutionEngine {
         }
 
         let client_order_id = event.client_order_id();
-        let borrowed_cache = self.cache.borrow();
-        let mut order = if let Some(order) = borrowed_cache.order(&client_order_id) {
+        let cache = self.cache.borrow();
+        let mut order = if let Some(order) = cache.order(&client_order_id) {
             order.clone()
         } else {
             log::warn!(
@@ -496,8 +496,7 @@ impl ExecutionEngine {
             };
 
             // Look up client order ID from venue order ID
-            let client_order_id = if let Some(id) = borrowed_cache.client_order_id(&venue_order_id)
-            {
+            let client_order_id = if let Some(id) = cache.client_order_id(&venue_order_id) {
                 id
             } else {
                 log::error!(
@@ -508,7 +507,7 @@ impl ExecutionEngine {
             };
 
             // Get order using found client order ID
-            if let Some(order) = borrowed_cache.order(client_order_id) {
+            if let Some(order) = cache.order(client_order_id) {
                 log::info!("Order with {client_order_id} was found in the cache");
                 order.clone()
             } else {
@@ -519,7 +518,7 @@ impl ExecutionEngine {
             }
         };
 
-        drop(borrowed_cache);
+        drop(cache);
         match event {
             OrderEventAny::Filled(order_filled) => {
                 let oms_type = self.determine_oms_type(order_filled);
@@ -893,8 +892,8 @@ impl ExecutionEngine {
 
     fn set_position_id_counts(&mut self) {
         // For the internal position ID generator
-        let borrowed_cache = self.cache.borrow();
-        let positions = borrowed_cache.positions(None, None, None, None);
+        let cache = self.cache.borrow();
+        let positions = cache.positions(None, None, None, None);
 
         // Count positions per instrument_id using a HashMap
         let mut counts: HashMap<StrategyId, usize> = HashMap::new();

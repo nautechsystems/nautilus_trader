@@ -190,9 +190,9 @@ impl RiskEngine {
     }
 
     fn handle_submit_order_cache(cache: &Rc<RefCell<Cache>>, submit_order: &SubmitOrder) {
-        let mut borrowed_cache = cache.borrow_mut();
-        if !borrowed_cache.order_exists(&submit_order.client_order_id) {
-            borrowed_cache
+        let mut cache = cache.borrow_mut();
+        if !cache.order_exists(&submit_order.client_order_id) {
+            cache
                 .add_order(submit_order.order.clone(), None, None, false)
                 .map_err(|e| {
                     log::error!("Cannot add order to cache: {e}");
@@ -202,8 +202,8 @@ impl RiskEngine {
     }
 
     fn get_existing_order(cache: &Rc<RefCell<Cache>>, order: &ModifyOrder) -> Option<OrderAny> {
-        let borrowed_cache = cache.borrow();
-        if let Some(order) = borrowed_cache.order(&order.client_order_id) {
+        let cache = cache.borrow();
+        if let Some(order) = cache.order(&order.client_order_id) {
             Some(order.clone())
         } else {
             log::error!(
@@ -347,8 +347,8 @@ impl RiskEngine {
         }
 
         let instrument_exists = {
-            let borrowed_cache = self.cache.borrow();
-            borrowed_cache.instrument(&order.instrument_id()).cloned()
+            let cache = self.cache.borrow();
+            cache.instrument(&order.instrument_id()).cloned()
         };
 
         let instrument = if let Some(instrument) = instrument_exists {
@@ -382,8 +382,8 @@ impl RiskEngine {
         }
 
         let instrument_exists = {
-            let borrowed_cache = self.cache.borrow();
-            borrowed_cache.instrument(&command.instrument_id).cloned()
+            let cache = self.cache.borrow();
+            cache.instrument(&command.instrument_id).cloned()
         };
 
         let instrument = if let Some(instrument) = instrument_exists {
@@ -421,8 +421,8 @@ impl RiskEngine {
         // VALIDATE COMMAND
         ////////////////////////////////////////////////////////////////////////////////
         let order_exists = {
-            let borrowed_cache = self.cache.borrow();
-            borrowed_cache.order(&command.client_order_id).cloned()
+            let cache = self.cache.borrow();
+            cache.order(&command.client_order_id).cloned()
         };
 
         let order = if let Some(order) = order_exists {
@@ -457,8 +457,8 @@ impl RiskEngine {
 
         // Get instrument for orders
         let maybe_instrument = {
-            let borrowed_cache = self.cache.borrow();
-            borrowed_cache.instrument(&command.instrument_id).cloned()
+            let cache = self.cache.borrow();
+            cache.instrument(&command.instrument_id).cloned()
         };
 
         let instrument = if let Some(instrument) = maybe_instrument {
@@ -592,10 +592,8 @@ impl RiskEngine {
 
         // Get account for risk checks
         let account_exists = {
-            let borrowed_cache = self.cache.borrow();
-            borrowed_cache
-                .account_for_venue(&instrument.id().venue)
-                .cloned()
+            let cache = self.cache.borrow();
+            cache.account_for_venue(&instrument.id().venue).cloned()
         };
 
         let account = if let Some(account) = account_exists {
@@ -621,16 +619,16 @@ impl RiskEngine {
             last_px = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
                     if last_px.is_none() {
-                        let borrowed_cache = self.cache.borrow();
-                        if let Some(last_quote) = borrowed_cache.quote(&instrument.id()) {
+                        let cache = self.cache.borrow();
+                        if let Some(last_quote) = cache.quote(&instrument.id()) {
                             match order.order_side() {
                                 OrderSide::Buy => Some(last_quote.ask_price),
                                 OrderSide::Sell => Some(last_quote.bid_price),
                                 _ => panic!("Invalid order side"),
                             }
                         } else {
-                            let borrowed_cache = self.cache.borrow();
-                            let last_trade = borrowed_cache.trade(&instrument.id());
+                            let cache = self.cache.borrow();
+                            let last_trade = cache.trade(&instrument.id());
 
                             if let Some(last_trade) = last_trade {
                                 Some(last_trade.price)
@@ -923,9 +921,9 @@ impl RiskEngine {
             return;
         }
 
-        let mut borrowed_cache = self.cache.borrow_mut();
-        if !borrowed_cache.order_exists(&order.client_order_id()) {
-            borrowed_cache
+        let mut cache = self.cache.borrow_mut();
+        if !cache.order_exists(&order.client_order_id()) {
+            cache
                 .add_order(order.clone(), None, None, false)
                 .map_err(|e| {
                     log::error!("Cannot add order to cache: {e}");
