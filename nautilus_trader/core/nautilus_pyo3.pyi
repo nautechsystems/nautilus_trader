@@ -933,6 +933,7 @@ class PriceType(Enum):
     ASK = "ASK"
     MID = "MID"
     LAST = "LAST"
+    MARK = "MARK"
 
 class RecordFlag(Enum):
     F_LAST = "F_LAST"

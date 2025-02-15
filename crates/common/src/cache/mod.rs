@@ -66,6 +66,7 @@ pub struct Cache {
     general: HashMap<String, Bytes>,
     quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
+    marks: HashMap<InstrumentId, Price>,
     books: HashMap<InstrumentId, OrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
@@ -99,6 +100,7 @@ impl Cache {
             general: HashMap::new(),
             quotes: HashMap::new(),
             trades: HashMap::new(),
+            marks: HashMap::new(),
             books: HashMap::new(),
             bars: HashMap::new(),
             currencies: HashMap::new(),
@@ -796,6 +798,7 @@ impl Cache {
         self.general.clear();
         self.quotes.clear();
         self.trades.clear();
+        self.marks.clear();
         self.books.clear();
         self.bars.clear();
         self.currencies.clear();
@@ -2309,6 +2312,7 @@ impl Cache {
                 .trades
                 .get(instrument_id)
                 .and_then(|trades| trades.front().map(|trade| trade.price)),
+            PriceType::Mark => self.marks.get(instrument_id).copied(),
         }
     }
 
