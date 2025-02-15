@@ -43,6 +43,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
@@ -56,6 +57,7 @@ cdef class Cache(CacheFacade):
 
     cdef dict _general
     cdef dict _xrate_symbols
+    cdef dict _mark_prices
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _order_books
@@ -148,6 +150,7 @@ cdef class Cache(CacheFacade):
     cpdef void load_strategy(self, Strategy strategy)
 
     cpdef void add_order_book(self, OrderBook order_book)
+    cpdef void add_mark_price(self, InstrumentId instrument_id, Price price)
     cpdef void add_quote_tick(self, QuoteTick tick)
     cpdef void add_trade_tick(self, TradeTick tick)
     cpdef void add_bar(self, Bar bar)

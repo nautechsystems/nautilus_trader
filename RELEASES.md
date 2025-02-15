@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
 - Added `UnixNanos::to_datetime_utc()` in Rust
 - Added `Mark` variant for `PriceType` enum
+- Added mark price handling for `Cache`
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)

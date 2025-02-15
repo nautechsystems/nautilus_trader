@@ -111,6 +111,7 @@ cdef class Cache(CacheFacade):
         # Caches
         self._general: dict[str, bytes] = {}
         self._xrate_symbols: dict[InstrumentId, str] = {}
+        self._mark_prices: dict[InstrumentId, Price] = {}
         self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
         self._order_books: dict[InstrumentId, OrderBook] = {}
@@ -797,6 +798,7 @@ cdef class Cache(CacheFacade):
 
         self._general.clear()
         self._xrate_symbols.clear()
+        self._mark_prices.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._order_books.clear()
@@ -1195,6 +1197,23 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order_book, "order_book")
 
         self._order_books[order_book.instrument_id] = order_book
+
+    cpdef void add_mark_price(self, InstrumentId instrument_id, Price price):
+        """
+        Add the given mark price to the cache.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark price.
+        price : Price
+            The mark price.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(price, "price")
+
+        self._mark_prices[instrument_id] = price
 
     cpdef void add_quote_tick(self, QuoteTick tick):
         """
@@ -2203,12 +2222,14 @@ cdef class Cache(CacheFacade):
             trade_tick = self.trade_tick(instrument_id)
             if trade_tick is not None:
                 return trade_tick.price
-        else:
+        elif price_type == PriceType.BID or price_type == PriceType.ASK or price_type == PriceType.MID:
             quote_tick = self.quote_tick(instrument_id)
             if quote_tick is not None:
                 return quote_tick.extract_price(price_type)
+        elif price_type == PriceType.MARK:
+            return self._mark_prices.get(instrument_id)
 
-        # Fallback to bar pricing
+        # Fall back to bar pricing for bid, ask and last
         cdef Bar bar
         cdef list bar_types = self.bar_types(instrument_id, price_type, AggregationSource.EXTERNAL)
         if bar_types:

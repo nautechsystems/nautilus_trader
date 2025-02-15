@@ -21,7 +21,7 @@ mod tests {
     use nautilus_model::{
         accounts::AccountAny,
         data::{Bar, QuoteTick, TradeTick},
-        enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType},
+        enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
         events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
         identifiers::{AccountId, ClientOrderId, PositionId, Venue},
         instruments::{stubs::*, CurrencyPair, InstrumentAny, SyntheticInstrument},
@@ -514,6 +514,29 @@ mod tests {
         cache.add_order_book(book.clone()).unwrap();
         let result = cache.order_book_mut(&audusd_sim.id);
         assert_eq!(result, Some(&mut book));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid)]
+    #[case(PriceType::Ask)]
+    #[case(PriceType::Mid)]
+    #[case(PriceType::Last)]
+    #[case(PriceType::Mark)]
+    fn test_price_when_empty(
+        cache: Cache,
+        audusd_sim: CurrencyPair,
+        #[case] price_type: PriceType,
+    ) {
+        let result = cache.price(&audusd_sim.id, price_type);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_price_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let mark_price = Price::new(1.00000, 5);
+        cache.add_mark_price(&audusd_sim.id, mark_price);
+        let result = cache.price(&audusd_sim.id, PriceType::Mark);
+        assert_eq!(result, Some(mark_price));
     }
 
     #[rstest]
