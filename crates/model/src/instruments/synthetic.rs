@@ -21,12 +21,12 @@ use std::{
 use derive_builder::Builder;
 use evalexpr::{ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node, Value};
 use nautilus_core::{correctness::FAILED, UnixNanos};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     identifiers::{InstrumentId, Symbol, Venue},
     types::Price,
 };
-
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
 ///
@@ -54,6 +54,66 @@ pub struct SyntheticInstrument {
     context: HashMapContext,
     variables: Vec<String>,
     operator_tree: Node,
+}
+
+impl Serialize for SyntheticInstrument {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("SyntheticInstrument", 7)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("price_precision", &self.price_precision)?;
+        state.serialize_field("price_increment", &self.price_increment)?;
+        state.serialize_field("components", &self.components)?;
+        state.serialize_field("formula", &self.formula)?;
+        state.serialize_field("ts_event", &self.ts_event)?;
+        state.serialize_field("ts_init", &self.ts_init)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SyntheticInstrument {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Fields {
+            id: InstrumentId,
+            price_precision: u8,
+            price_increment: Price,
+            components: Vec<InstrumentId>,
+            formula: String,
+            ts_event: UnixNanos,
+            ts_init: UnixNanos,
+        }
+
+        let fields = Fields::deserialize(deserializer)?;
+
+        let variables = fields
+            .components
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+
+        let operator_tree =
+            evalexpr::build_operator_tree(&fields.formula).map_err(serde::de::Error::custom)?;
+
+        Ok(SyntheticInstrument {
+            id: fields.id,
+            price_precision: fields.price_precision,
+            price_increment: fields.price_increment,
+            components: fields.components,
+            formula: fields.formula,
+            ts_event: fields.ts_event,
+            ts_init: fields.ts_init,
+            context: HashMapContext::new(),
+            variables,
+            operator_tree,
+        })
+    }
 }
 
 impl SyntheticInstrument {

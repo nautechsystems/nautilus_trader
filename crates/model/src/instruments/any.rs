@@ -15,6 +15,7 @@
 
 use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::{
@@ -29,7 +30,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InstrumentAny {
     Betting(BettingInstrument),
     BinaryOption(BinaryOption),
