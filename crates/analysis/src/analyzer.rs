@@ -28,7 +28,18 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::{statistic::PortfolioStatistic, Returns};
+use crate::{
+    statistic::PortfolioStatistic,
+    statistics::{
+        expectancy::Expectancy, long_ratio::LongRatio, loser_max::MaxLoser, loser_min::MinLoser,
+        profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
+        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
+        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
+        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
+        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+    },
+    Returns,
+};
 
 pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
 
@@ -55,7 +66,24 @@ pub struct PortfolioAnalyzer {
 impl Default for PortfolioAnalyzer {
     /// Creates a new default [`PortfolioAnalyzer`] instance.
     fn default() -> Self {
-        Self::new()
+        let mut analyzer = Self::new();
+        analyzer.register_statistic(Arc::new(MaxWinner {}));
+        analyzer.register_statistic(Arc::new(AvgWinner {}));
+        analyzer.register_statistic(Arc::new(MinWinner {}));
+        analyzer.register_statistic(Arc::new(MinLoser {}));
+        analyzer.register_statistic(Arc::new(MaxLoser {}));
+        analyzer.register_statistic(Arc::new(Expectancy {}));
+        analyzer.register_statistic(Arc::new(WinRate {}));
+        analyzer.register_statistic(Arc::new(ReturnsVolatility::new(None)));
+        analyzer.register_statistic(Arc::new(ReturnsAverage {}));
+        analyzer.register_statistic(Arc::new(ReturnsAverageLoss {}));
+        analyzer.register_statistic(Arc::new(ReturnsAverageWin {}));
+        analyzer.register_statistic(Arc::new(SharpeRatio::new(None)));
+        analyzer.register_statistic(Arc::new(SortinoRatio::new(None)));
+        analyzer.register_statistic(Arc::new(ProfitFactor {}));
+        analyzer.register_statistic(Arc::new(RiskReturnRatio {}));
+        analyzer.register_statistic(Arc::new(LongRatio::new(None)));
+        analyzer
     }
 }
 
