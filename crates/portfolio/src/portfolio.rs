@@ -18,20 +18,9 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::Arc,
 };
 
-use nautilus_analysis::{
-    analyzer::PortfolioAnalyzer,
-    statistics::{
-        expectancy::Expectancy, long_ratio::LongRatio, loser_max::MaxLoser, loser_min::MinLoser,
-        profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
-        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
-        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
-    },
-};
+use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -76,27 +65,9 @@ struct PortfolioState {
 
 impl PortfolioState {
     fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
-        let mut analyzer = PortfolioAnalyzer::new();
-        analyzer.register_statistic(Arc::new(MaxWinner {}));
-        analyzer.register_statistic(Arc::new(AvgWinner {}));
-        analyzer.register_statistic(Arc::new(MinWinner {}));
-        analyzer.register_statistic(Arc::new(MinLoser {}));
-        analyzer.register_statistic(Arc::new(MaxLoser {}));
-        analyzer.register_statistic(Arc::new(Expectancy {}));
-        analyzer.register_statistic(Arc::new(WinRate {}));
-        analyzer.register_statistic(Arc::new(ReturnsVolatility::new(None)));
-        analyzer.register_statistic(Arc::new(ReturnsAverage {}));
-        analyzer.register_statistic(Arc::new(ReturnsAverageLoss {}));
-        analyzer.register_statistic(Arc::new(ReturnsAverageWin {}));
-        analyzer.register_statistic(Arc::new(SharpeRatio::new(None)));
-        analyzer.register_statistic(Arc::new(SortinoRatio::new(None)));
-        analyzer.register_statistic(Arc::new(ProfitFactor {}));
-        analyzer.register_statistic(Arc::new(RiskReturnRatio {}));
-        analyzer.register_statistic(Arc::new(LongRatio::new(None)));
-
         Self {
             accounts: AccountsManager::new(clock, cache),
-            analyzer,
+            analyzer: PortfolioAnalyzer::default(),
             unrealized_pnls: HashMap::new(),
             realized_pnls: HashMap::new(),
             net_positions: HashMap::new(),
