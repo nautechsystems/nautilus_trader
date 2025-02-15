@@ -24,7 +24,6 @@ logs/
 
 # Compressed files
 *.tar.gz*
-*.zip
 
 # Data
 *.parquet
