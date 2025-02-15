@@ -15,22 +15,24 @@
 
 //! A common in-memory `Cache` for market and execution related data.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
+pub mod config;
 pub mod database;
+
+mod index;
 
 #[cfg(test)]
 mod tests;
 
+// Re-exports
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use bytes::Bytes;
+pub use config::CacheConfig;
 use database::{CacheDatabaseAdapter, CacheMap};
+use index::CacheIndex;
 use nautilus_core::{
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
@@ -53,159 +55,9 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::{
-    enums::SerializationEncoding, msgbus::database::DatabaseConfig, xrate::get_exchange_rate,
-};
-
-/// Configuration for `Cache` instances.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CacheConfig {
-    /// The configuration for the cache backing database.
-    pub database: Option<DatabaseConfig>,
-    /// The encoding for database operations, controls the type of serializer used.
-    pub encoding: SerializationEncoding,
-    /// If timestamps should be persisted as ISO 8601 strings.
-    pub timestamps_as_iso8601: bool,
-    /// The buffer interval (milliseconds) between pipelined/batched transactions.
-    pub buffer_interval_ms: Option<usize>,
-    /// If a 'trader-' prefix is used for keys.
-    pub use_trader_prefix: bool,
-    /// If the trader's instance ID is used for keys.
-    pub use_instance_id: bool,
-    /// If the database should be flushed on start.
-    pub flush_on_start: bool,
-    /// If instrument data should be dropped from the cache's memory on reset.
-    pub drop_instruments_on_reset: bool,
-    /// The maximum length for internal tick deques.
-    pub tick_capacity: usize,
-    /// The maximum length for internal bar deques.
-    pub bar_capacity: usize,
-    /// If market data should be persisted to disk.
-    pub save_market_data: bool,
-}
-
-impl Default for CacheConfig {
-    /// Creates a new default [`CacheConfig`] instance.
-    fn default() -> Self {
-        Self {
-            database: None,
-            encoding: SerializationEncoding::MsgPack,
-            timestamps_as_iso8601: false,
-            buffer_interval_ms: None,
-            use_trader_prefix: true,
-            use_instance_id: false,
-            flush_on_start: false,
-            drop_instruments_on_reset: true,
-            tick_capacity: 10_000,
-            bar_capacity: 10_000,
-            save_market_data: false,
-        }
-    }
-}
-
-impl CacheConfig {
-    /// Creates a new [`CacheConfig`] instance.
-    #[allow(clippy::too_many_arguments)]
-    #[must_use]
-    pub const fn new(
-        database: Option<DatabaseConfig>,
-        encoding: SerializationEncoding,
-        timestamps_as_iso8601: bool,
-        buffer_interval_ms: Option<usize>,
-        use_trader_prefix: bool,
-        use_instance_id: bool,
-        flush_on_start: bool,
-        drop_instruments_on_reset: bool,
-        tick_capacity: usize,
-        bar_capacity: usize,
-        save_market_data: bool,
-    ) -> Self {
-        Self {
-            database,
-            encoding,
-            timestamps_as_iso8601,
-            buffer_interval_ms,
-            use_trader_prefix,
-            use_instance_id,
-            flush_on_start,
-            drop_instruments_on_reset,
-            tick_capacity,
-            bar_capacity,
-            save_market_data,
-        }
-    }
-}
-
-/// A key-value lookup index for a `Cache`.
-#[derive(Debug)]
-pub struct CacheIndex {
-    venue_account: HashMap<Venue, AccountId>,
-    venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,
-    venue_positions: HashMap<Venue, HashSet<PositionId>>,
-    venue_order_ids: HashMap<VenueOrderId, ClientOrderId>,
-    client_order_ids: HashMap<ClientOrderId, VenueOrderId>,
-    order_position: HashMap<ClientOrderId, PositionId>,
-    order_strategy: HashMap<ClientOrderId, StrategyId>,
-    order_client: HashMap<ClientOrderId, ClientId>,
-    position_strategy: HashMap<PositionId, StrategyId>,
-    position_orders: HashMap<PositionId, HashSet<ClientOrderId>>,
-    instrument_orders: HashMap<InstrumentId, HashSet<ClientOrderId>>,
-    instrument_positions: HashMap<InstrumentId, HashSet<PositionId>>,
-    strategy_orders: HashMap<StrategyId, HashSet<ClientOrderId>>,
-    strategy_positions: HashMap<StrategyId, HashSet<PositionId>>,
-    exec_algorithm_orders: HashMap<ExecAlgorithmId, HashSet<ClientOrderId>>,
-    exec_spawn_orders: HashMap<ClientOrderId, HashSet<ClientOrderId>>,
-    orders: HashSet<ClientOrderId>,
-    orders_open: HashSet<ClientOrderId>,
-    orders_closed: HashSet<ClientOrderId>,
-    orders_emulated: HashSet<ClientOrderId>,
-    orders_inflight: HashSet<ClientOrderId>,
-    orders_pending_cancel: HashSet<ClientOrderId>,
-    positions: HashSet<PositionId>,
-    positions_open: HashSet<PositionId>,
-    positions_closed: HashSet<PositionId>,
-    actors: HashSet<ComponentId>,
-    strategies: HashSet<StrategyId>,
-    exec_algorithms: HashSet<ExecAlgorithmId>,
-}
-
-impl CacheIndex {
-    /// Clears the index which will clear/reset all internal state.
-    pub fn clear(&mut self) {
-        self.venue_account.clear();
-        self.venue_orders.clear();
-        self.venue_positions.clear();
-        self.venue_order_ids.clear();
-        self.client_order_ids.clear();
-        self.order_position.clear();
-        self.order_strategy.clear();
-        self.order_client.clear();
-        self.position_strategy.clear();
-        self.position_orders.clear();
-        self.instrument_orders.clear();
-        self.instrument_positions.clear();
-        self.strategy_orders.clear();
-        self.strategy_positions.clear();
-        self.exec_algorithm_orders.clear();
-        self.exec_spawn_orders.clear();
-        self.orders.clear();
-        self.orders_open.clear();
-        self.orders_closed.clear();
-        self.orders_emulated.clear();
-        self.orders_inflight.clear();
-        self.orders_pending_cancel.clear();
-        self.positions.clear();
-        self.positions_open.clear();
-        self.positions_closed.clear();
-        self.actors.clear();
-        self.strategies.clear();
-        self.exec_algorithms.clear();
-    }
-}
+use crate::xrate::get_exchange_rate;
 
 /// A common in-memory `Cache` for market and execution related data.
 pub struct Cache {
@@ -227,10 +79,6 @@ pub struct Cache {
     position_snapshots: HashMap<PositionId, Bytes>,
 }
 
-// SAFETY: Cache is not meant to be passed between threads
-unsafe impl Send for Cache {}
-unsafe impl Sync for Cache {}
-
 impl Default for Cache {
     /// Creates a new default [`Cache`] instance.
     fn default() -> Self {
@@ -245,40 +93,9 @@ impl Cache {
         config: Option<CacheConfig>,
         database: Option<Box<dyn CacheDatabaseAdapter>>,
     ) -> Self {
-        let index = CacheIndex {
-            venue_account: HashMap::new(),
-            venue_orders: HashMap::new(),
-            venue_positions: HashMap::new(),
-            venue_order_ids: HashMap::new(),
-            client_order_ids: HashMap::new(),
-            order_position: HashMap::new(),
-            order_strategy: HashMap::new(),
-            order_client: HashMap::new(),
-            position_strategy: HashMap::new(),
-            position_orders: HashMap::new(),
-            instrument_orders: HashMap::new(),
-            instrument_positions: HashMap::new(),
-            strategy_orders: HashMap::new(),
-            strategy_positions: HashMap::new(),
-            exec_algorithm_orders: HashMap::new(),
-            exec_spawn_orders: HashMap::new(),
-            orders: HashSet::new(),
-            orders_open: HashSet::new(),
-            orders_closed: HashSet::new(),
-            orders_emulated: HashSet::new(),
-            orders_inflight: HashSet::new(),
-            orders_pending_cancel: HashSet::new(),
-            positions: HashSet::new(),
-            positions_open: HashSet::new(),
-            positions_closed: HashSet::new(),
-            actors: HashSet::new(),
-            strategies: HashSet::new(),
-            exec_algorithms: HashSet::new(),
-        };
-
         Self {
             config: config.unwrap_or_default(),
-            index,
+            index: CacheIndex::default(),
             database,
             general: HashMap::new(),
             quotes: HashMap::new(),
@@ -1401,7 +1218,7 @@ impl Cache {
     pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
-        venue: &Venue,
+        _venue: &Venue,
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
@@ -1437,7 +1254,7 @@ impl Cache {
     }
 
     /// Adds the given `position` to the cache.
-    pub fn add_position(&mut self, position: Position, oms_type: OmsType) -> anyhow::Result<()> {
+    pub fn add_position(&mut self, position: Position, _oms_type: OmsType) -> anyhow::Result<()> {
         self.positions.insert(position.id, position.clone());
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
@@ -2230,7 +2047,7 @@ impl Cache {
 
         if let Some(query) = query {
             if let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids {
-                let exec_algorithm_order_ids = exec_algorithm_order_ids.intersection(&query);
+                let _exec_algorithm_order_ids = exec_algorithm_order_ids.intersection(&query);
             }
         }
 

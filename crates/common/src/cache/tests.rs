@@ -481,8 +481,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_synthetic_when_some(cache: Cache) {
-        let mut cache = Cache::default();
+    fn test_synthetic_when_some(mut cache: Cache) {
         let synth = SyntheticInstrument::default();
         cache.add_synthetic(synth.clone()).unwrap();
         let result = cache.synthetic(&synth.id);
