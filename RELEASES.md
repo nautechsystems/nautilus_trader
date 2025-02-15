@@ -17,7 +17,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Improved error logging for live engines to now include stacktrace for easier debugging
-- Improved Redis queries, error handling and connections (#2295, #2308, #2318), thanks @Pushkarm029
+- Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
@@ -43,8 +43,9 @@ Released on TBD (UTC).
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
 
 ### Documentation Updates
-- Improved `emulation_trigger` parameter description in docstrings (#2313)
-- Improved docs for emulated orders (#2316)
+- Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
+- Improved docs for emulated orders (#2316), thanks @stefansimik
+- Refined option greeks docstrings (#2320), thanks @faysou
 
 ### Deprecations
 None
