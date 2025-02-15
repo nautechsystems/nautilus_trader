@@ -16,6 +16,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures::{future::join_all, StreamExt};
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
@@ -28,6 +29,7 @@ use nautilus_model::{
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
 
@@ -42,7 +44,6 @@ const ORDERS: &str = "orders";
 const POSITIONS: &str = "positions";
 const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
-use serde::Deserialize;
 const REDIS_DELIMITER: char = ':';
 
 // Index keys
@@ -60,19 +61,17 @@ const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
 pub struct DatabaseQueries;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct InstrumentWrapper(InstrumentAny);
-
 impl DatabaseQueries {
-    // TODO: Improve serialization and deserialization, as it is currently done in Cython.
     pub fn serialize_payload<T: Serialize>(
         encoding: SerializationEncoding,
         payload: &T,
     ) -> anyhow::Result<Vec<u8>> {
+        let mut value = serde_json::to_value(payload)?;
+        convert_timestamps(&mut value);
         match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::to_vec(payload)
+            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value)
                 .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
-            SerializationEncoding::Json => serde_json::to_vec(payload)
+            SerializationEncoding::Json => serde_json::to_vec(&value)
                 .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
         }
     }
@@ -81,12 +80,17 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         payload: &[u8],
     ) -> anyhow::Result<T> {
-        match encoding {
+        let mut value = match encoding {
             SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}")),
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
             SerializationEncoding::Json => serde_json::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}")),
-        }
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
+        };
+
+        convert_timestamp_strings(&mut value);
+
+        serde_json::from_value(value)
+            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
     }
 
     pub async fn scan_keys(
@@ -610,5 +614,62 @@ impl DatabaseQueries {
             .ok_or_else(|| {
                 anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
             })
+    }
+}
+
+fn is_timestamp_field(key: &str) -> bool {
+    let expire_match = key == "expire_time_ns";
+    let ts_match = key.starts_with("ts_");
+    expire_match || ts_match
+}
+
+fn convert_timestamps(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, v) in map {
+                if is_timestamp_field(key) {
+                    if let Value::Number(n) = v {
+                        if let Some(n) = n.as_u64() {
+                            let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
+                            *v = Value::String(
+                                dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
+                            );
+                        }
+                    }
+                }
+                convert_timestamps(v);
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                convert_timestamps(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn convert_timestamp_strings(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, v) in map {
+                if is_timestamp_field(key) {
+                    if let Value::String(s) = v {
+                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                            *v = Value::Number(
+                                (dt.with_timezone(&Utc).timestamp_nanos() as u64).into(),
+                            );
+                        }
+                    }
+                }
+                convert_timestamp_strings(v);
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                convert_timestamp_strings(item);
+            }
+        }
+        _ => {}
     }
 }
