@@ -120,7 +120,7 @@ pub fn normalize_instrument_id(
 /// Normalizes the given amount by truncating it to the specified decimal precision.
 #[must_use]
 pub fn normalize_amount(amount: f64, precision: u8) -> f64 {
-    let factor = 10_f64.powi(precision as i32);
+    let factor = 10_f64.powi(i32::from(precision));
     (amount * factor).trunc() / factor
 }
 
