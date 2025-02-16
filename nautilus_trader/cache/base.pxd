@@ -68,7 +68,7 @@ cdef class CacheFacade:
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id)
     cpdef bint has_bars(self, BarType bar_type)
 
-    cpdef double get_xrate(
+    cpdef get_xrate(
         self,
         Venue venue,
         Currency from_currency,
