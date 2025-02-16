@@ -36,7 +36,7 @@ Released on TBD (UTC).
 - Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded `datafusion` crate to v45.0.0
-- Upgraded `arrow` and `parquet` crates to v54.1.0
+- Upgraded `arrow` and `parquet` crates to v54.2.0
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
 
 ### Fixes
@@ -49,8 +49,10 @@ Released on TBD (UTC).
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
 
 ### Documentation Updates
+- Added documentation for debugging with Rust (#2325), thanks @faysou
 - Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
 - Improved docs for emulated orders (#2316), thanks @stefansimik
+- Improved getting started doc for backtesting API levels (#2324), thanks @faysou
 - Refined option greeks docstrings (#2320), thanks @faysou
 
 ### Deprecations
