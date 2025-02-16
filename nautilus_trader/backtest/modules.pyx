@@ -189,7 +189,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
                     from_currency=instrument.quote_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,
-                )
+                ) or 0.0  # Retain original behavior of returning zero for now
                 rollover *= xrate
             else:
                 currency = instrument.quote_currency

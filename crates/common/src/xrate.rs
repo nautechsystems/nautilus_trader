@@ -40,9 +40,14 @@ pub fn get_exchange_rate(
     from_currency: Ustr,
     to_currency: Ustr,
     price_type: PriceType,
-    quotes_bid: HashMap<Ustr, f64>,
-    quotes_ask: HashMap<Ustr, f64>,
+    quotes_bid: HashMap<String, f64>,
+    quotes_ask: HashMap<String, f64>,
 ) -> anyhow::Result<Option<f64>> {
+    // If converting the same currency, return 1.0 immediately
+    if from_currency == to_currency {
+        return Ok(Some(1.0));
+    }
+
     if quotes_bid.is_empty() || quotes_ask.is_empty() {
         return Err(anyhow::anyhow!("Quote maps must not be empty"));
     }
@@ -50,13 +55,8 @@ pub fn get_exchange_rate(
         return Err(anyhow::anyhow!("Quote maps must have equal lengths"));
     }
 
-    // If converting the same currency, return 1.0 immediately
-    if from_currency == to_currency {
-        return Ok(Some(1.0));
-    }
-
     // Build effective quotes based on the requested price type
-    let effective_quotes: HashMap<Ustr, f64> = match price_type {
+    let effective_quotes: HashMap<String, f64> = match price_type {
         PriceType::Bid => quotes_bid.clone(),
         PriceType::Ask => quotes_ask.clone(),
         PriceType::Mid => {
@@ -65,7 +65,7 @@ pub fn get_exchange_rate(
                 let ask = quotes_ask
                     .get(pair)
                     .ok_or_else(|| anyhow::anyhow!("Missing ask quote for pair {pair}"))?;
-                mid_quotes.insert(*pair, (bid + ask) / 2.0);
+                mid_quotes.insert(pair.clone(), (bid + ask) / 2.0);
             }
             mid_quotes
         }
@@ -121,22 +121,22 @@ mod tests {
 
     use super::*;
 
-    fn setup_test_quotes() -> (HashMap<Ustr, f64>, HashMap<Ustr, f64>) {
+    fn setup_test_quotes() -> (HashMap<String, f64>, HashMap<String, f64>) {
         let mut quotes_bid = HashMap::new();
         let mut quotes_ask = HashMap::new();
 
         // Direct pairs
-        quotes_bid.insert(Ustr::from("EUR/USD"), 1.1000);
-        quotes_ask.insert(Ustr::from("EUR/USD"), 1.1002);
+        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
+        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
 
-        quotes_bid.insert(Ustr::from("GBP/USD"), 1.3000);
-        quotes_ask.insert(Ustr::from("GBP/USD"), 1.3002);
+        quotes_bid.insert("GBP/USD".to_string(), 1.3000);
+        quotes_ask.insert("GBP/USD".to_string(), 1.3002);
 
-        quotes_bid.insert(Ustr::from("USD/JPY"), 110.00);
-        quotes_ask.insert(Ustr::from("USD/JPY"), 110.02);
+        quotes_bid.insert("USD/JPY".to_string(), 110.00);
+        quotes_ask.insert("USD/JPY".to_string(), 110.02);
 
-        quotes_bid.insert(Ustr::from("AUD/USD"), 0.7500);
-        quotes_ask.insert(Ustr::from("AUD/USD"), 0.7502);
+        quotes_bid.insert("AUD/USD".to_string(), 0.7500);
+        quotes_ask.insert("AUD/USD".to_string(), 0.7502);
 
         (quotes_bid, quotes_ask)
     }
@@ -146,11 +146,11 @@ mod tests {
         let mut quotes_bid = HashMap::new();
         let mut quotes_ask = HashMap::new();
         // Invalid pair string (missing '/')
-        quotes_bid.insert(Ustr::from("EURUSD"), 1.1000);
-        quotes_ask.insert(Ustr::from("EURUSD"), 1.1002);
+        quotes_bid.insert("EURUSD".to_string(), 1.1000);
+        quotes_ask.insert("EURUSD".to_string(), 1.1002);
         // Valid pair string
-        quotes_bid.insert(Ustr::from("EUR/USD"), 1.1000);
-        quotes_ask.insert(Ustr::from("EUR/USD"), 1.1002);
+        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
+        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
 
         let rate = get_exchange_rate(
             Ustr::from("EUR"),
@@ -197,7 +197,7 @@ mod tests {
         )
         .unwrap();
 
-        let rate = rate.expect(&format!("Expected a conversion rate for {:?}", price_type));
+        let rate = rate.expect(&format!("Expected a conversion rate for {price_type}"));
         assert!((rate - expected).abs() < 0.0001);
     }
 
@@ -256,8 +256,8 @@ mod tests {
         let mut quotes_ask = HashMap::new();
 
         // Only one pair provided
-        quotes_bid.insert(Ustr::from("EUR/USD"), 1.1000);
-        quotes_ask.insert(Ustr::from("EUR/USD"), 1.1002);
+        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
+        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
 
         // Attempt conversion from EUR to JPY should yield None
         let rate = get_exchange_rate(
@@ -273,8 +273,8 @@ mod tests {
 
     #[rstest]
     fn test_empty_quotes() {
-        let quotes_bid: HashMap<Ustr, f64> = HashMap::new();
-        let quotes_ask: HashMap<Ustr, f64> = HashMap::new();
+        let quotes_bid: HashMap<String, f64> = HashMap::new();
+        let quotes_ask: HashMap<String, f64> = HashMap::new();
         let result = get_exchange_rate(
             Ustr::from("EUR"),
             Ustr::from("USD"),
@@ -290,9 +290,9 @@ mod tests {
         let mut quotes_bid = HashMap::new();
         let mut quotes_ask = HashMap::new();
 
-        quotes_bid.insert(Ustr::from("EUR/USD"), 1.1000);
-        quotes_bid.insert(Ustr::from("GBP/USD"), 1.3000);
-        quotes_ask.insert(Ustr::from("EUR/USD"), 1.1002);
+        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
+        quotes_bid.insert("GBP/USD".to_string(), 1.3000);
+        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
         // Missing GBP/USD in ask quotes.
 
         let result = get_exchange_rate(
@@ -324,10 +324,10 @@ mod tests {
         let mut quotes_bid = HashMap::new();
         let mut quotes_ask = HashMap::new();
         // Create a cycle by including both EUR/USD and USD/EUR quotes
-        quotes_bid.insert(Ustr::from("EUR/USD"), 1.1);
-        quotes_ask.insert(Ustr::from("EUR/USD"), 1.1002);
-        quotes_bid.insert(Ustr::from("USD/EUR"), 0.909);
-        quotes_ask.insert(Ustr::from("USD/EUR"), 0.9091);
+        quotes_bid.insert("EUR/USD".to_string(), 1.1);
+        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
+        quotes_bid.insert("USD/EUR".to_string(), 0.909);
+        quotes_ask.insert("USD/EUR".to_string(), 0.9091);
 
         let rate = get_exchange_rate(
             Ustr::from("EUR"),
@@ -348,13 +348,13 @@ mod tests {
         let mut quotes_bid = HashMap::new();
         let mut quotes_ask = HashMap::new();
         // Direct conversion
-        quotes_bid.insert(Ustr::from("EUR/USD"), 1.1000);
-        quotes_ask.insert(Ustr::from("EUR/USD"), 1.1002);
+        quotes_bid.insert("EUR/USD".to_string(), 1.1000);
+        quotes_ask.insert("EUR/USD".to_string(), 1.1002);
         // Indirect path via GBP: EUR/GBP and GBP/USD
-        quotes_bid.insert(Ustr::from("EUR/GBP"), 0.8461);
-        quotes_ask.insert(Ustr::from("EUR/GBP"), 0.8463);
-        quotes_bid.insert(Ustr::from("GBP/USD"), 1.3000);
-        quotes_ask.insert(Ustr::from("GBP/USD"), 1.3002);
+        quotes_bid.insert("EUR/GBP".to_string(), 0.8461);
+        quotes_ask.insert("EUR/GBP".to_string(), 0.8463);
+        quotes_bid.insert("GBP/USD".to_string(), 1.3000);
+        quotes_ask.insert("GBP/USD".to_string(), 1.3002);
 
         let rate = get_exchange_rate(
             Ustr::from("EUR"),

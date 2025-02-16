@@ -70,6 +70,14 @@ def convert_to_snake_case(input: str) -> str:...
 # Common
 ###################################################################################################
 
+def get_exchange_rate(
+    from_currency: str,
+    to_currency: str,
+    price_type: PriceType,
+    quotes_bid: dict[str, float],
+    quotes_ask: dict[str, float],
+) -> float | None: ...
+
 # Logging
 
 class LogGuard: ...

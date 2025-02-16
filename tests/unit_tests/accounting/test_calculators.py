@@ -14,19 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-from decimal import Decimal
 
 import pandas as pd
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
-from nautilus_trader.accounting.calculators import ExchangeRateCalculator
 from nautilus_trader.accounting.calculators import RolloverInterestCalculator
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -39,15 +37,14 @@ USDJPY_SIM = TestIdStubs.usdjpy_id()
 class TestExchangeRateCalculator:
     def test_get_rate_when_from_currency_equals_to_currency_returns_one(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"AUD/USD": 0.80000}
         ask_rates = {"AUD/USD": 0.80010}
 
         # Act
-        result = converter.get_rate(
-            USD,
-            USD,
-            PriceType.BID,
+        result = nautilus_pyo3.get_exchange_rate(
+            USD.code,
+            USD.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
@@ -57,33 +54,31 @@ class TestExchangeRateCalculator:
 
     def test_get_rate_when_no_currency_rate_returns_zero(self):
         # Arrange
-        converter = ExchangeRateCalculator()
-        bid_rates = {"AUD/USD": Decimal("0.80000")}
-        ask_rates = {"AUD/USD": Decimal("0.80010")}
+        bid_rates = {"AUD/USD": 0.80000}
+        ask_rates = {"AUD/USD": 0.80010}
 
         # Act
-        result = converter.get_rate(
-            USD,
-            JPY,
-            PriceType.BID,
+        result = nautilus_pyo3.get_exchange_rate(
+            USD.code,
+            JPY.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
 
         # Assert
-        assert result == 0
+        assert result is None
 
     def test_get_rate(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"AUD/USD": 0.80000}
         ask_rates = {"AUD/USD": 0.80010}
 
         # Act
-        result = converter.get_rate(
-            AUD,
-            USD,
-            PriceType.BID,
+        result = nautilus_pyo3.get_exchange_rate(
+            AUD.code,
+            USD.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
@@ -93,15 +88,14 @@ class TestExchangeRateCalculator:
 
     def test_get_rate_when_symbol_has_slash(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"AUD/USD": 0.80000}
         ask_rates = {"AUD/USD": 0.80010}
 
         # Act
-        result = converter.get_rate(
-            AUD,
-            USD,
-            PriceType.BID,
+        result = nautilus_pyo3.get_exchange_rate(
+            AUD.code,
+            USD.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
@@ -111,15 +105,14 @@ class TestExchangeRateCalculator:
 
     def test_get_rate_for_inverse1(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"BTC/USD": 10501.5}
         ask_rates = {"BTC/USD": 10500.0}
 
         # Act
-        result = converter.get_rate(
-            USD,
-            BTC,
-            PriceType.BID,
+        result = nautilus_pyo3.get_exchange_rate(
+            USD.code,
+            BTC.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
@@ -129,15 +122,14 @@ class TestExchangeRateCalculator:
 
     def test_get_rate_for_inverse2(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"USD/JPY": 110.100}
         ask_rates = {"USD/JPY": 110.130}
 
         # Act
-        result = converter.get_rate(
-            JPY,
-            USD,
-            PriceType.BID,
+        result = nautilus_pyo3.get_exchange_rate(
+            JPY.code,
+            USD.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
@@ -147,7 +139,6 @@ class TestExchangeRateCalculator:
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {
             "USD/JPY": 110.100,
             "AUD/USD": 0.80000,
@@ -158,37 +149,36 @@ class TestExchangeRateCalculator:
         }
 
         # Act
-        result1 = converter.get_rate(
-            JPY,
-            AUD,
-            PriceType.BID,
+        result1 = nautilus_pyo3.get_exchange_rate(
+            JPY.code,
+            AUD.code,
+            nautilus_pyo3.PriceType.BID,
             bid_rates,
             ask_rates,
         )
 
-        result2 = converter.get_rate(
-            AUD,
-            JPY,
-            PriceType.ASK,
+        result2 = nautilus_pyo3.get_exchange_rate(
+            AUD.code,
+            JPY.code,
+            nautilus_pyo3.PriceType.ASK,
             bid_rates,
             ask_rates,
         )
 
         # Assert
-        assert result1 == 0.011353315168029064
-        assert result2 == 88.11501299999999
+        assert result1 == 0.011353315168029066
+        assert result2 == 88.115013
 
     def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"USD/JPY": 110.100}
         ask_rates = {"USD/JPY": 110.130}
 
         # Act
-        result = converter.get_rate(
-            JPY,
-            USD,
-            PriceType.MID,
+        result = nautilus_pyo3.get_exchange_rate(
+            JPY.code,
+            USD.code,
+            nautilus_pyo3.PriceType.MID,
             bid_rates,
             ask_rates,
         )
@@ -198,15 +188,14 @@ class TestExchangeRateCalculator:
 
     def test_calculate_exchange_rate_for_mid_price_type2(self):
         # Arrange
-        converter = ExchangeRateCalculator()
         bid_rates = {"USD/JPY": 110.100}
         ask_rates = {"USD/JPY": 110.130}
 
         # Act
-        result = converter.get_rate(
-            USD,
-            JPY,
-            PriceType.MID,
+        result = nautilus_pyo3.get_exchange_rate(
+            USD.code,
+            JPY.code,
+            nautilus_pyo3.PriceType.MID,
             bid_rates,
             ask_rates,
         )
