@@ -117,8 +117,8 @@ impl AccountsManager {
         positions: Vec<&Position>,
         ts_event: UnixNanos,
     ) -> Option<(MarginAccount, AccountState)> {
-        let mut total_margin_maint = Decimal::ZERO;
-        let mut base_xrate = Decimal::ZERO;
+        let mut total_margin_maint = 0.0;
+        let mut base_xrate: Option<f64> = None;
         let mut currency = instrument.settlement_currency();
         let mut account = account.clone();
 
@@ -197,30 +197,30 @@ impl AccountsManager {
                 ),
             };
 
-            let mut margin_maint = margin_maint.as_decimal();
+            let mut margin_maint = margin_maint.as_f64();
 
             if let Some(base_currency) = account.base_currency {
-                if base_xrate.is_zero() {
+                if base_xrate.is_none() {
                     currency = base_currency;
                     base_xrate = self.calculate_xrate_to_base(
                         AccountAny::Margin(account.clone()),
                         instrument.clone(),
                         position.entry.as_specified(),
                     );
-
-                    if base_xrate == Decimal::ZERO {
-                        log::debug!("Cannot calculate maintenance (position) margin: insufficient data for {}/{}", instrument.settlement_currency(), base_currency);
-                        return None;
-                    }
                 }
 
-                margin_maint = (margin_maint * base_xrate).round_dp(currency.precision.into());
+                if let Some(xrate) = base_xrate {
+                    margin_maint *= xrate;
+                } else {
+                    log::debug!("Cannot calculate maintenance (position) margin: insufficient data for {}/{}", instrument.settlement_currency(), base_currency);
+                    return None;
+                }
             }
 
             total_margin_maint += margin_maint;
         }
 
-        let margin_maint_money = Money::new(total_margin_maint.to_f64()?, currency);
+        let margin_maint_money = Money::new(total_margin_maint, currency);
         account.update_maintenance_margin(instrument.id(), margin_maint_money);
 
         log::info!(
@@ -255,8 +255,8 @@ impl AccountsManager {
             ));
         }
 
-        let mut total_locked = Decimal::ZERO;
-        let mut base_xrate = Decimal::ZERO;
+        let mut total_locked = 0.0;
+        let mut base_xrate: Option<f64> = None;
 
         let mut currency = instrument.settlement_currency();
 
@@ -288,10 +288,10 @@ impl AccountsManager {
                     None,
                 )
                 .unwrap()
-                .as_decimal();
+                .as_f64();
 
             if let Some(base_curr) = account.base_currency() {
-                if base_xrate.is_zero() {
+                if base_xrate.is_none() {
                     currency = base_curr;
                     base_xrate = self.calculate_xrate_to_base(
                         AccountAny::Cash(account.clone()),
@@ -300,7 +300,12 @@ impl AccountsManager {
                     );
                 }
 
-                locked = (locked * base_xrate).round_dp(u32::from(currency.precision));
+                if let Some(xrate) = base_xrate {
+                    locked *= xrate;
+                } else {
+                    // TODO: Revisit error handling
+                    panic!("Cannot calculate base xrate");
+                }
             }
 
             total_locked += locked;
@@ -333,8 +338,8 @@ impl AccountsManager {
         orders_open: Vec<&OrderAny>,
         ts_event: UnixNanos,
     ) -> Option<(MarginAccount, AccountState)> {
-        let mut total_margin_init = Decimal::ZERO;
-        let mut base_xrate = Decimal::ZERO;
+        let mut total_margin_init = 0.0;
+        let mut base_xrate: Option<f64> = None;
         let mut currency = instrument.settlement_currency();
         let mut account = account.clone();
 
@@ -389,34 +394,34 @@ impl AccountsManager {
                 }
             };
 
-            let mut margin_init = margin_init.as_decimal();
+            let mut margin_init = margin_init.as_f64();
 
             if let Some(base_currency) = account.base_currency {
-                if base_xrate.is_zero() {
+                if base_xrate.is_none() {
                     currency = base_currency;
                     base_xrate = self.calculate_xrate_to_base(
                         AccountAny::Margin(account.clone()),
                         instrument.clone(),
                         order.order_side_specified(),
                     );
-
-                    if base_xrate == Decimal::ZERO {
-                        log::debug!(
-                            "Cannot calculate initial margin: insufficient data for {}/{}",
-                            instrument.settlement_currency(),
-                            base_currency
-                        );
-                        continue;
-                    }
                 }
 
-                margin_init = (margin_init * base_xrate).round_dp(currency.precision.into());
+                if let Some(xrate) = base_xrate {
+                    margin_init *= xrate;
+                } else {
+                    log::debug!(
+                        "Cannot calculate initial margin: insufficient data for {}/{}",
+                        instrument.settlement_currency(),
+                        base_currency
+                    );
+                    continue;
+                }
             }
 
             total_margin_init += margin_init;
         }
 
-        let money = Money::new(total_margin_init.to_f64().unwrap_or(0.0), currency);
+        let money = Money::new(total_margin_init, currency);
         let margin_init_money = {
             account.update_initial_margin(instrument.id(), money);
             money
@@ -463,7 +468,9 @@ impl AccountsManager {
                     },
                 );
 
-                if xrate.is_zero() {
+                if let Some(xrate) = xrate {
+                    *comm = Money::new(comm.as_f64() * xrate, base_currency);
+                } else {
                     log::error!(
                         "Cannot calculate account state: insufficient data for {}/{}",
                         comm.currency,
@@ -471,8 +478,6 @@ impl AccountsManager {
                     );
                     return;
                 }
-
-                *comm = Money::new((comm.as_decimal() * xrate).to_f64().unwrap(), base_currency);
             }
         }
 
@@ -488,7 +493,9 @@ impl AccountsManager {
                 },
             );
 
-            if xrate.is_zero() {
+            if let Some(xrate) = xrate {
+                pnl = Money::new(pnl.as_f64() * xrate, base_currency);
+            } else {
                 log::error!(
                     "Cannot calculate account state: insufficient data for {}/{}",
                     pnl.currency,
@@ -496,8 +503,6 @@ impl AccountsManager {
                 );
                 return;
             }
-
-            pnl = Money::new((pnl.as_decimal() * xrate).to_f64().unwrap(), base_currency);
         }
 
         if let Some(comm) = commission {
@@ -685,9 +690,9 @@ impl AccountsManager {
         account: AccountAny,
         instrument: InstrumentAny,
         side: OrderSideSpecified,
-    ) -> Decimal {
+    ) -> Option<f64> {
         match account.base_currency() {
-            None => Decimal::ONE,
+            None => Some(1.0),
             Some(base_curr) => self.cache.borrow().get_xrate(
                 instrument.id().venue,
                 instrument.settlement_currency(),
