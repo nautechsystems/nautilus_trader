@@ -442,13 +442,13 @@ cdef class AccountsManager:
         cdef list balances = []
 
         if commission.currency != account.base_currency:
-            xrate = Decimal(self._cache.get_xrate(
+            xrate = self._cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
-            ) or 0.0)  # Retain original behavior of returning zero for now
-            if xrate == 0:
+            )
+            if xrate is None:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
@@ -457,16 +457,16 @@ cdef class AccountsManager:
                 return  # Cannot calculate
 
             # Convert to account base currency
-            commission = Money(commission.as_decimal() * xrate, account.base_currency)
+            commission = Money(commission.as_f64_c() * xrate, account.base_currency)
 
         if pnl.currency != account.base_currency:
-            xrate = Decimal(self._cache.get_xrate(
+            xrate = self._cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
-            ) or 0.0)  # Retain original behavior of returning zero for now
-            if xrate == 0:
+            )
+            if xrate is None:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
@@ -475,7 +475,7 @@ cdef class AccountsManager:
                 return  # Cannot calculate
 
             # Convert to account base currency
-            pnl = Money(pnl * xrate, account.base_currency)
+            pnl = Money(pnl.as_f64_c() * xrate, account.base_currency)
 
         pnl = pnl.sub(commission)
         if pnl._mem.raw == 0:

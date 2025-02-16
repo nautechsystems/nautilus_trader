@@ -18,7 +18,6 @@ import pickle
 import time
 import uuid
 from collections import deque
-from decimal import Decimal
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
@@ -2505,7 +2504,7 @@ cdef class Cache(CacheFacade):
 
         return self.bar_count(bar_type) > 0
 
-    cpdef double get_xrate(
+    cpdef get_xrate(
         self,
         Venue venue,
         Currency from_currency,
@@ -2514,6 +2513,8 @@ cdef class Cache(CacheFacade):
     ):
         """
         Return the calculated exchange rate.
+
+        If the exchange rate cannot be calculated then returns ``None``.
 
         Parameters
         ----------
@@ -2528,7 +2529,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        double
+        float or ``None``
 
         Raises
         ------
@@ -2551,10 +2552,9 @@ cdef class Cache(CacheFacade):
                 price_type=nautilus_pyo3.PriceType.from_int(price_type),
                 quotes_bid=quotes[0],  # Bid
                 quotes_ask=quotes[1],  # Ask
-            ) or 0.0  # Retain original behavior of returning zero for now
+            )
         except ValueError as e:
-            self._log.error(repr(e))
-            return 0.0
+            self._log.error(f"Cannot calculate exchange rate: {e!r}")
 
     cdef tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}

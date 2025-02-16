@@ -69,7 +69,7 @@ pub fn get_exchange_rate(
             }
             mid_quotes
         }
-        _ => anyhow::bail!("Cannot calculate xrate with `price_type` '{price_type}'"),
+        _ => anyhow::bail!("Invalid `price_type`, was '{price_type}'"),
     };
 
     // Construct a graph: each currency maps to its neighbors and corresponding conversion rate
