@@ -20,6 +20,7 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import PortfolioConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
@@ -79,6 +80,10 @@ class TestConfigStubs:
             max_order_modify_rate="100/00:00:01",
             max_notional_per_order={"AAPL": 100_000},
         )
+
+    @staticmethod
+    def portfolio_config() -> PortfolioConfig:
+        return PortfolioConfig(debug=True)
 
     @staticmethod
     def strategies_config() -> list[ImportableStrategyConfig]:

@@ -18,6 +18,7 @@ nautilus-model = { path = "../model", features = ["stubs"] }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }

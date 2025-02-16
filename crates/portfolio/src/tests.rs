@@ -107,7 +107,7 @@ mod tests {
             Rc::new(RefCell::new(msgbus)),
             Rc::new(RefCell::new(simple_cache)),
             Rc::new(RefCell::new(clock)),
-            true,
+            None,
         )
     }
 
