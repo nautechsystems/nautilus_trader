@@ -43,8 +43,9 @@ pub fn get_exchange_rate(
     quotes_bid: HashMap<String, f64>,
     quotes_ask: HashMap<String, f64>,
 ) -> anyhow::Result<Option<f64>> {
-    // If converting the same currency, return 1.0 immediately
     if from_currency == to_currency {
+        // When the source and target currencies are identical,
+        // no conversion is needed; return an exchange rate of 1.0.
         return Ok(Some(1.0));
     }
 

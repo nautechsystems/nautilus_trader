@@ -2543,7 +2543,9 @@ cdef class Cache(CacheFacade):
         Condition.not_none(to_currency, "to_currency")
 
         if from_currency == to_currency:
-            return 1.0  # No conversion necessary
+            # When the source and target currencies are identical,
+            # no conversion is needed; return an exchange rate of 1.0.
+            return 1.0
 
         cdef tuple quotes = self._build_quote_table(venue)
 
@@ -2615,6 +2617,11 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(from_currency, "from_currency")
         Condition.not_none(to_currency, "to_currency")
+
+        if from_currency == to_currency:
+            # When the source and target currencies are identical,
+            # no conversion is needed; return an exchange rate of 1.0.
+            return 1.0
 
         cdef tuple[Currency, Currency] key = (from_currency, to_currency)
         return self._mark_xrates.get(key)
