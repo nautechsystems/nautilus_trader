@@ -2446,6 +2446,8 @@ impl Cache {
         price_type: PriceType,
     ) -> Option<f64> {
         if from_currency == to_currency {
+            // When the source and target currencies are identical,
+            // no conversion is needed; return an exchange rate of 1.0.
             return Some(1.0);
         }
 
