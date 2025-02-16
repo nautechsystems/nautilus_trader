@@ -3329,6 +3329,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "rust_decimal",
+ "serde",
  "thiserror 2.0.11",
  "ustr",
  "uuid",

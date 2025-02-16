@@ -39,6 +39,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef Logger _log
     cdef MessageBus _msgbus
     cdef Cache _cache
+    cdef object _config
     cdef AccountsManager _accounts
 
     cdef Venue _venue

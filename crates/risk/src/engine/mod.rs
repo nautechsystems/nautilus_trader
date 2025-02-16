@@ -1318,7 +1318,7 @@ mod tests {
             max_notional_per_order: HashMap::new(),
         });
         let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
-        let portfolio = Portfolio::new(msgbus.clone(), cache.clone(), clock.clone(), true);
+        let portfolio = Portfolio::new(msgbus.clone(), cache.clone(), clock.clone(), None);
         RiskEngine::new(config, portfolio, clock, cache, msgbus)
     }
 
@@ -1330,7 +1330,7 @@ mod tests {
     ) -> ExecutionEngine {
         let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
         let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
-        ExecutionEngine::new(clock, cache, msgbus, config.unwrap_or_default())
+        ExecutionEngine::new(clock, cache, msgbus, config)
     }
 
     fn order_submitted(order: &OrderAny) -> OrderSubmitted {

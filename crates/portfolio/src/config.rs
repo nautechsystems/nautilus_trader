@@ -12,3 +12,25 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use serde::{Deserialize, Serialize};
+
+/// Configuration for `Portfolio` instances.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortfolioConfig {
+    /// If external bars should be considered for updating unrealized pnls.
+    #[serde(default)]
+    pub bar_updates: bool,
+    /// If debug mode is active (will provide extra debug logging).
+    #[serde(default)]
+    pub debug: bool,
+}
+
+impl Default for PortfolioConfig {
+    fn default() -> Self {
+        Self {
+            bar_updates: true,
+            debug: false,
+        }
+    }
+}

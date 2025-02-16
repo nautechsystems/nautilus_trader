@@ -29,6 +29,7 @@ from decimal import Decimal
 from nautilus_trader.analysis import statistics
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.portfolio.config import PortfolioConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -90,6 +91,13 @@ cdef class Portfolio(PortfolioFacade):
         The read-only cache for the portfolio.
     clock : Clock
         The clock for the portfolio.
+    config : PortfolioConfig
+       The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `PortfolioConfig`.
     """
 
     def __init__(
@@ -97,12 +105,17 @@ cdef class Portfolio(PortfolioFacade):
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
-        bint portfolio_bar_updates = True,
-    ):
+        config: PortfolioConfig | None = None,
+    ) -> None:
+        if config is None:
+            config = PortfolioConfig()
+        Condition.type(config, PortfolioConfig, "config")
+
         self._clock = clock
         self._log = Logger(name=type(self).__name__)
         self._msgbus = msgbus
         self._cache = cache
+        self._config = config
         self._accounts = AccountsManager(
             cache=cache,
             clock=clock,
@@ -146,7 +159,8 @@ cdef class Portfolio(PortfolioFacade):
         self._msgbus.subscribe(topic="events.order.*", handler=self.update_order, priority=10)
         self._msgbus.subscribe(topic="events.position.*", handler=self.update_position, priority=10)
         self._msgbus.subscribe(topic="events.account.*", handler=self.update_account, priority=10)
-        if portfolio_bar_updates:
+
+        if config.bar_updates:
             self._msgbus.subscribe(topic="data.bars.*EXTERNAL", handler=self.update_bar, priority=10)
 
         self.initialized = False

@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `Mark` variant for `PriceType` enum
 - Added mark price handling for `Cache`
 - Added mark exchange rate handling for `Cache`
+- Added `PortfolioConfig` for configuration settings specific to the `Portfolio`
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
@@ -16,6 +17,7 @@ Released on TBD (UTC).
 - Renamed `InterestRateData` to `YieldCurveData`
 - Renamed `Cache.add_interest_rate_curve` to `add_yield_curve`
 - Renamed `Cache.interest_rate_curve` to `yield_curve`
+- Moved `ExecEngineConfig.portfolio_bar_updates` config option to `PortfolioConfig.bar_updates`
 
 ### Internal Improvements
 - Implemented exchange rate calculations in Rust

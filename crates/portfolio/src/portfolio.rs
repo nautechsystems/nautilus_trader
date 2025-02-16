@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// TODO: Under development
+#![allow(dead_code)] // For PortfolioConfig
+
 //! Provides a generic `Portfolio` for all environments.
 use std::{
     cell::RefCell,
@@ -42,6 +45,7 @@ use ustr::Ustr;
 use uuid::Uuid;
 
 use crate::{
+    config::PortfolioConfig,
     handlers::{
         UpdateAccountHandler, UpdateBarHandler, UpdateOrderHandler, UpdatePositionHandler,
         UpdateQuoteTickHandler,
@@ -90,6 +94,7 @@ pub struct Portfolio {
     pub(crate) cache: Rc<RefCell<Cache>>,
     pub(crate) msgbus: Rc<RefCell<MessageBus>>,
     inner: Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
 }
 
 impl Portfolio {
@@ -97,19 +102,20 @@ impl Portfolio {
         msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
-        portfolio_bar_updates: bool,
+        config: Option<PortfolioConfig>,
     ) -> Self {
         let inner = Rc::new(RefCell::new(PortfolioState::new(
             clock.clone(),
             cache.clone(),
         )));
+        let config = config.unwrap_or_default();
 
         Self::register_message_handlers(
             msgbus.clone(),
             cache.clone(),
             clock.clone(),
             inner.clone(),
-            portfolio_bar_updates,
+            config.bar_updates,
         );
 
         Self {
@@ -117,6 +123,7 @@ impl Portfolio {
             cache,
             msgbus,
             inner,
+            config,
         }
     }
 
@@ -125,7 +132,7 @@ impl Portfolio {
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         inner: Rc<RefCell<PortfolioState>>,
-        portfolio_bar_updates: bool,
+        bar_updates: bool,
     ) {
         let update_account_handler = {
             let cache = cache.clone();
@@ -217,7 +224,7 @@ impl Portfolio {
         msgbus.register("Portfolio.update_account", update_account_handler.clone());
 
         msgbus.subscribe("data.quotes.*", update_quote_handler, Some(10));
-        if portfolio_bar_updates {
+        if bar_updates {
             msgbus.subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
         }
         msgbus.subscribe("events.order.*", update_order_handler, Some(10));
@@ -1165,6 +1172,7 @@ fn update_instrument_id(
         cache,
         msgbus,
         inner: inner.clone(),
+        config: PortfolioConfig::default(), // TODO: TBD
     };
 
     let result_unrealized_pnl: Option<Money> =
@@ -1268,6 +1276,7 @@ fn update_order(
             cache: cache.clone(),
             msgbus: msgbus.clone(),
             inner: inner.clone(),
+            config: PortfolioConfig::default(), // TODO: TBD
         };
 
         match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id) {
@@ -1337,6 +1346,7 @@ fn update_position(
         cache: cache.clone(),
         msgbus,
         inner: inner.clone(),
+        config: PortfolioConfig::default(), // TODO: TBD
     };
 
     portfolio_clone.update_net_position(&instrument_id, positions_open.clone());
