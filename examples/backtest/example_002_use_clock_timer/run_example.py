@@ -46,9 +46,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(config=engine_config)
 
     # Step 2: Define exchange and add it to the engine
-    GLOBEX = Venue("GLBX")
+    XCME = Venue("XCME")
     engine.add_venue(
-        venue=GLOBEX,
+        venue=XCME,
         oms_type=OmsType.NETTING,  # Order Management System type
         account_type=AccountType.MARGIN,  # Type of trading account
         starting_balances=[Money(1_000_000, USD)],  # Initial account balance
@@ -65,9 +65,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------------------------------
 
     # Step 4a: Load bar data from CSV file -> into pandas DataFrame
-    csv_file_path = (
-        rf"{TEST_DATA_DIR}/cme/globex/futures/fx/6EH4.GLBX_1min_bars_20240101_20240131.csv.zip"
-    )
+    csv_file_path = rf"{TEST_DATA_DIR}/xcme/6EH4_1min_bars_20240101_20240131.csv.zip"
     df = pd.read_csv(
         csv_file_path,
         sep=";",
@@ -78,8 +76,8 @@ if __name__ == "__main__":
     )
 
     # Step 4b: Restructure DataFrame into required structure, that can be passed `BarDataWrangler`
-    #   - 5 columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
-    #   - 'timestamp' as index
+    #   - 5 required columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
+    #   - column 'timestamp': should be in index of the DataFrame
     df = (
         # Change order of columns
         df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])

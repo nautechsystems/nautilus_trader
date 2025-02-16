@@ -45,9 +45,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(config=engine_config)
 
     # Step 2: Define exchange and add it to the engine
-    GLOBEX = Venue("GLBX")
+    XCME = Venue("XCME")
     engine.add_venue(
-        venue=GLOBEX,
+        venue=XCME,
         oms_type=OmsType.NETTING,  # Order Management System type
         account_type=AccountType.MARGIN,  # Type of trading account
         starting_balances=[Money(1_000_000, USD)],  # Initial account balance
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------------------------------
 
     # Step 4a: Load bar data from CSV file -> into pandas DataFrame
-    csv_file_path = r"./6EH4.GLBX_1min_bars.csv"
+    csv_file_path = r"6EH4.XCME_1min_bars.csv"
     df = pd.read_csv(csv_file_path, sep=";", decimal=".", header=0, index_col=False)
 
     # Step 4b: Restructure DataFrame into required structure, that can be passed `BarDataWrangler`
