@@ -47,3 +47,21 @@ These tests are expensive to maintain (as they must be kept in line with any ref
 offer little to no benefit in return. The intention is for all abstract method
 implementations to be fully covered by tests. Therefore `pragma: no cover` should be judiciously
 removed when no longer appropriate, and its use *restricted* to the above cases.
+
+## Debugging Rust Tests
+
+If you want to debug a Rust test in an IDE, you should modify the `profile.test` section of the
+root `Cargo.toml` file, setting the `debug` field to `true` and the `strip` field to `false`.
+It should look like this after the modification:
+
+```toml
+[profile.test]
+opt-level = 0
+debug = true  # Improves compile times
+debug-assertions = true  # Fails Cython build if true
+overflow-checks = true
+strip = false  # Improves compile times
+lto = false
+incremental = true
+codegen-units = 256
+```
