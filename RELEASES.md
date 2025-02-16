@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `UnixNanos::to_datetime_utc()` in Rust
 - Added `Mark` variant for `PriceType` enum
 - Added mark price handling for `Cache`
+- Added mark exchange rate handling for `Cache`
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)

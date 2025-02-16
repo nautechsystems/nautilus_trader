@@ -109,6 +109,7 @@ cdef class Cache(CacheFacade):
         # Caches
         self._general: dict[str, bytes] = {}
         self._xrate_symbols: dict[InstrumentId, str] = {}
+        self._mark_xrates: dict[tuple[Currency, Currency], double] = {}
         self._mark_prices: dict[InstrumentId, Price] = {}
         self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
@@ -796,6 +797,7 @@ cdef class Cache(CacheFacade):
 
         self._general.clear()
         self._xrate_symbols.clear()
+        self._mark_xrates.clear()
         self._mark_prices.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
@@ -2534,7 +2536,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If `price_type` is ``LAST``.
+            If `price_type` is ``LAST`` or ``MARK``.
 
         """
         Condition.not_none(from_currency, "from_currency")
@@ -2588,6 +2590,95 @@ cdef class Cache(CacheFacade):
             ask_quotes[base_quote] = ask_price.as_f64_c()
 
         return bid_quotes, ask_quotes
+
+    cpdef get_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    ):
+        """
+        Return the exchange rate based on mark price.
+
+        Will return ``None`` if an exchange rate has not been set.
+
+        Parameters
+        ----------
+        from_currency : Currency
+            The currency to convert from.
+        to_currency : Currency
+            The currency to convert to.
+
+        Returns
+        -------
+        float or ``None``
+
+        """
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+
+        cdef tuple[Currency, Currency] key = (from_currency, to_currency)
+        return self._mark_xrates.get(key)
+
+    cpdef void set_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        double xrate,
+    ):
+        """
+        Set the exchange rate based on mark price.
+
+        Will also set the inverse xrate automatically.
+
+        Parameters
+        ----------
+        from_currency : Currency
+            The base currency for the exchange rate to set.
+        to_currency : Currency
+            The quote currency for the exchange rate to set.
+        xrate : double
+            The exchange rate based on mark price.
+
+        Raises
+        ------
+        ValueError
+            If `xrate` is zero.
+
+        """
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+        Condition.not_equal(xrate, 0.0, "xrate", "zero")
+
+        self._mark_xrates[(from_currency, to_currency)] = xrate
+        self._mark_xrates[(to_currency, from_currency)] = 1.0 / xrate
+
+    cpdef void clear_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    ):
+        """
+        Clear the exchange rate based on mark price.
+
+        Parameters
+        ----------
+        from_currency : Currency
+            The base currency for the exchange rate to clear.
+        to_currency : Currency
+            The quote currency for the exchange rate to clear.
+
+        """
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+
+        self._mark_xrates.pop((from_currency, to_currency), None)
+
+    cpdef void clear_mark_xrates(self):
+        """
+        Clear the exchange rates based on mark price.
+
+        """
+        self._mark_xrates.clear()
 
 # -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 

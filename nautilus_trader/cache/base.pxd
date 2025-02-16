@@ -75,6 +75,23 @@ cdef class CacheFacade:
         Currency to_currency,
         PriceType price_type=*,
     )
+    cpdef get_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    )
+    cpdef void set_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        double xrate,
+    )
+    cpdef void clear_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    )
+    cpdef void clear_mark_xrates(self)
 
 # -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 

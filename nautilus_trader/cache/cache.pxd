@@ -72,6 +72,7 @@ cdef class Cache(CacheFacade):
     cdef dict _position_snapshots
     cdef dict _greeks
     cdef dict _yield_curves
+    cdef dict[tuple[Currency, Currency], double] _mark_xrates
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
