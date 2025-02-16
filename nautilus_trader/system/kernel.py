@@ -477,6 +477,7 @@ class NautilusKernel:
                 cache=self._cache,
                 clock=self._clock,
             )
+            self._controller.register_endpoint()
 
         # Set up stream writer
         self._writer: StreamingFeatherWriter | None = None
