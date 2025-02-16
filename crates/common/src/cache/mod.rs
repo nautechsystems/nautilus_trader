@@ -45,7 +45,7 @@ use nautilus_model::{
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Symbol, Venue, VenueOrderId,
+        OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -53,7 +53,6 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
@@ -2442,20 +2441,29 @@ impl Cache {
         from_currency: Currency,
         to_currency: Currency,
         price_type: PriceType,
-    ) -> Decimal {
+    ) -> Option<f64> {
         if from_currency == to_currency {
-            return Decimal::ONE;
+            return Some(1.0);
         }
 
         let (bid_quote, ask_quote) = self.build_quote_table(&venue);
 
-        get_exchange_rate(from_currency, to_currency, price_type, bid_quote, ask_quote)
+        match get_exchange_rate(
+            from_currency.code,
+            to_currency.code,
+            price_type,
+            bid_quote,
+            ask_quote,
+        ) {
+            Ok(rate) => rate,
+            Err(e) => {
+                log::error!("Failed to calculate xrate: {e}");
+                None
+            }
+        }
     }
 
-    fn build_quote_table(
-        &self,
-        venue: &Venue,
-    ) -> (HashMap<Symbol, Decimal>, HashMap<Symbol, Decimal>) {
+    fn build_quote_table(&self, venue: &Venue) -> (HashMap<Ustr, f64>, HashMap<Ustr, f64>) {
         let mut bid_quotes = HashMap::new();
         let mut ask_quotes = HashMap::new();
 
@@ -2500,8 +2508,8 @@ impl Cache {
                 }
             };
 
-            bid_quotes.insert(instrument_id.symbol, bid_price.as_decimal());
-            ask_quotes.insert(instrument_id.symbol, ask_price.as_decimal());
+            bid_quotes.insert(instrument_id.symbol.inner(), bid_price.as_f64());
+            ask_quotes.insert(instrument_id.symbol.inner(), ask_price.as_f64());
         }
 
         (bid_quotes, ask_quotes)

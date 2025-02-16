@@ -37,10 +37,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price},
 };
-use rust_decimal::{
-    prelude::{FromPrimitive, ToPrimitive},
-    Decimal,
-};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use ustr::Ustr;
 use uuid::Uuid;
 
@@ -1047,7 +1044,6 @@ impl Portfolio {
                         base_currency,
                         price_type,
                     )
-                    .to_f64()
                     .unwrap_or_else(|| {
                         log::error!(
                             "Failed to get/convert xrate for instrument {} from {} to {}",
