@@ -656,6 +656,7 @@ impl SocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use std::{ffi::CString, net::TcpListener};
 
     use nautilus_common::testing::wait_until_async;
@@ -698,7 +699,10 @@ counter = Counter()
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
             let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
 
-            counter.getattr(py, "handler").unwrap().into_py_any_unwrap(py)
+            counter
+                .getattr(py, "handler")
+                .unwrap()
+                .into_py_any_unwrap(py)
         })
     }
 

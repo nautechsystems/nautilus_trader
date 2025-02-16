@@ -22,7 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     types::{Price, Quantity},
 };
-use pyo3::{conversion::IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
 use crate::reports::order::OrderStatusReport;
 

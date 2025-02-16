@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
-use pyo3::{IntoPy, PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python};
 
 use crate::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEventAny,

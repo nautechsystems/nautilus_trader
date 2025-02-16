@@ -24,6 +24,7 @@ use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
+    IntoPyObjectExt,
 };
 
 use crate::identifiers::{InstrumentId, Symbol, Venue};
@@ -55,13 +56,13 @@ impl InstrumentId {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.symbol.to_string(), self.venue.to_string()).to_object(py))
+        (self.symbol.to_string(), self.venue.to_string()).into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -124,11 +125,5 @@ impl InstrumentId {
     #[pyo3(name = "is_synthetic")]
     fn py_is_synthetic(&self) -> bool {
         self.is_synthetic()
-    }
-}
-
-impl ToPyObject for InstrumentId {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.into_py_any_unwrap(py)
     }
 }

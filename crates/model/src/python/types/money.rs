@@ -20,12 +20,13 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyFloat, PyLong, PyString, PyTuple}, IntoPyObjectExt,
+    types::{PyFloat, PyInt, PyString, PyTuple},
+    IntoPyObjectExt,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
@@ -42,7 +43,7 @@ impl Money {
         let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
         self.raw = py_tuple
             .get_item(0)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<MoneyRaw>()?;
         let currency_code: String = py_tuple
             .get_item(1)?
@@ -53,13 +54,13 @@ impl Money {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.raw, self.currency.code.to_string()).to_object(py))
+        (self.raw, self.currency.code.to_string()).into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -373,11 +374,5 @@ impl Money {
     #[pyo3(name = "to_formatted_str")]
     fn py_to_formatted_str(&self) -> String {
         self.to_formatted_string()
-    }
-}
-
-impl ToPyObject for Money {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.into_py_any_unwrap(py)
     }
 }

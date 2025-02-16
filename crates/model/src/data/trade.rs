@@ -176,7 +176,8 @@ impl GetTsInit for TradeTick {
 #[cfg(test)]
 mod tests {
     use nautilus_core::{serialization::Serializable, UnixNanos};
-    use pyo3::{IntoPy, Python};
+
+    use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{

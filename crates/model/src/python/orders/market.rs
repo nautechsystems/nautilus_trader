@@ -22,7 +22,7 @@ use pyo3::{
     basic::CompareOp,
     pymethods,
     types::{PyAnyMethods, PyDict, PyList},
-    Bound, IntoPy, Py, PyAny, PyObject, PyResult, Python,
+    Bound, Py, PyAny, PyObject, PyResult, Python,
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;

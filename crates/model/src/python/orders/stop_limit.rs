@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{python::{to_pyruntime_err, IntoPyObjectNautilusExt}, UnixNanos, UUID4};
+use nautilus_core::{
+    python::{to_pyruntime_err, IntoPyObjectNautilusExt},
+    UnixNanos, UUID4,
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 

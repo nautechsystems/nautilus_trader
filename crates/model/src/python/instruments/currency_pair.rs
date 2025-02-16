@@ -18,7 +18,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{
+    serialization::from_dict_pyo3, to_pyvalue_err, IntoPyObjectNautilusExt,
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 

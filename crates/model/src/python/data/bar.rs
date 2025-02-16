@@ -404,7 +404,8 @@ impl Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPy, Python};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::{

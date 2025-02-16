@@ -19,7 +19,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, PositionId},
     types::Quantity,
 };
-use pyo3::{conversion::IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
 use crate::reports::position::PositionStatusReport;
 

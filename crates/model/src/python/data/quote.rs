@@ -30,7 +30,8 @@ use nautilus_core::{
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
-    types::{PyDict, PyLong, PyString, PyTuple},
+    types::{PyDict, PyInt, PyString, PyTuple},
+    IntoPyObjectExt,
 };
 
 use super::data_to_pycapsule;
@@ -117,17 +118,17 @@ impl QuoteTick {
         let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
         let instrument_id_str: &str = binding.downcast::<PyString>()?.extract()?;
-        let bid_price_raw: PriceRaw = py_tuple.get_item(1)?.downcast::<PyLong>()?.extract()?;
-        let ask_price_raw: PriceRaw = py_tuple.get_item(2)?.downcast::<PyLong>()?.extract()?;
-        let bid_price_prec: u8 = py_tuple.get_item(3)?.downcast::<PyLong>()?.extract()?;
-        let ask_price_prec: u8 = py_tuple.get_item(4)?.downcast::<PyLong>()?.extract()?;
+        let bid_price_raw: PriceRaw = py_tuple.get_item(1)?.downcast::<PyInt>()?.extract()?;
+        let ask_price_raw: PriceRaw = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract()?;
+        let bid_price_prec: u8 = py_tuple.get_item(3)?.downcast::<PyInt>()?.extract()?;
+        let ask_price_prec: u8 = py_tuple.get_item(4)?.downcast::<PyInt>()?.extract()?;
 
-        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.downcast::<PyLong>()?.extract()?;
-        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.downcast::<PyLong>()?.extract()?;
-        let bid_size_prec: u8 = py_tuple.get_item(7)?.downcast::<PyLong>()?.extract()?;
-        let ask_size_prec: u8 = py_tuple.get_item(8)?.downcast::<PyLong>()?.extract()?;
-        let ts_event: u64 = py_tuple.get_item(9)?.downcast::<PyLong>()?.extract()?;
-        let ts_init: u64 = py_tuple.get_item(10)?.downcast::<PyLong>()?.extract()?;
+        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.downcast::<PyInt>()?.extract()?;
+        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.downcast::<PyInt>()?.extract()?;
+        let bid_size_prec: u8 = py_tuple.get_item(7)?.downcast::<PyInt>()?.extract()?;
+        let ask_size_prec: u8 = py_tuple.get_item(8)?.downcast::<PyInt>()?.extract()?;
+        let ts_event: u64 = py_tuple.get_item(9)?.downcast::<PyInt>()?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(10)?.downcast::<PyInt>()?.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
@@ -141,7 +142,7 @@ impl QuoteTick {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((
+        (
             self.instrument_id.to_string(),
             self.bid_price.raw,
             self.ask_price.raw,
@@ -154,13 +155,13 @@ impl QuoteTick {
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .to_object(py))
+            .into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -375,7 +376,8 @@ impl QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPy, Python};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::{

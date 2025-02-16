@@ -23,6 +23,7 @@ use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
+    IntoPyObjectExt,
 };
 
 use crate::identifiers::symbol::Symbol;
@@ -48,13 +49,13 @@ impl Symbol {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.to_string(),).to_object(py))
+        (self.to_string(),).into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -114,11 +115,5 @@ impl Symbol {
     #[pyo3(name = "topic")]
     fn py_topic(&self) -> String {
         self.topic()
-    }
-}
-
-impl ToPyObject for Symbol {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.into_py_any_unwrap(py)
     }
 }

@@ -41,7 +41,8 @@ use nautilus_model::{
 use pyo3::{
     exceptions::PyException,
     prelude::*,
-    types::{PyDict, PyList}, IntoPyObjectExt,
+    types::{PyDict, PyList},
+    IntoPyObjectExt,
 };
 use tokio::sync::Mutex;
 
@@ -116,7 +117,7 @@ impl DatabentoHistoricalClient {
                     let dict = PyDict::new(py);
                     dict.set_item("start", res.start.to_string())?;
                     dict.set_item("end", res.end.to_string())?;
-                    Ok(dict.to_object(py))
+                    dict.into_py_any(py)
                 }),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
                     "Error handling response: {e}"
@@ -211,7 +212,7 @@ impl DatabentoHistoricalClient {
                 py_results.map(|objs| {
                     PyList::new(py, &objs)
                         .expect("Invalid `ExactSizeIterator`")
-                        .to_object(py)
+                        .into_py_any_unwrap(py)
                 })
             })
         })

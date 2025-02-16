@@ -22,8 +22,8 @@ pub mod uuid;
 pub mod version;
 
 use pyo3::{
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     conversion::IntoPyObjectExt,
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
     types::PyString,
     wrap_pyfunction,
@@ -42,7 +42,8 @@ use crate::{
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
     #[inline]
     fn into_py_any_unwrap(self, py: Python<'py>) -> PyObject {
-        self.into_py_any(py).expect("Expected to convert type to PyObject")
+        self.into_py_any(py)
+            .expect("Expected to convert type to PyObject")
     }
 }
 

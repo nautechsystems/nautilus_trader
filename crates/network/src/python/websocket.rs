@@ -263,6 +263,7 @@ impl WebSocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use std::ffi::CString;
 
     use futures_util::{SinkExt, StreamExt};
@@ -404,7 +405,10 @@ counter = Counter()
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
 
             let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
-            let handler = counter.getattr(py, "handler").unwrap().into_py_any_unwrap(py);
+            let handler = counter
+                .getattr(py, "handler")
+                .unwrap()
+                .into_py_any_unwrap(py);
 
             (counter, handler)
         })

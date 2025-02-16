@@ -16,7 +16,7 @@
 //! Instrument definitions the trading domain model.
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPy, IntoPyObjectExt, PyObject, PyResult, Python};
+use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python};
 
 use crate::instruments::{
     BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,

@@ -54,12 +54,14 @@ impl RedisMessageBusDatabase {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
-                Python::with_gil(|py| call_python(
+                Python::with_gil(|py| {
+                    call_python(
                         py,
                         &callback,
-                        msg.into_py_any(py).expect("Message should be convertible to PyObject"),
+                        msg.into_py_any(py)
+                            .expect("Message should be convertible to PyObject"),
                     )
-                );
+                });
             }
             Ok(())
         })

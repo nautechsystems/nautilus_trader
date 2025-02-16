@@ -239,7 +239,8 @@ impl InstrumentStatus {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPy, Python};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::data::{status::InstrumentStatus, stubs::stub_instrument_status};

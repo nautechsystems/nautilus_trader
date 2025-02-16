@@ -23,6 +23,7 @@ use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyTuple},
+    IntoPyObjectExt,
 };
 
 use super::{to_pyvalue_err, IntoPyObjectNautilusExt};
@@ -56,14 +57,14 @@ impl UUID4 {
 
     /// Gets the state of the `UUID4` instance for pickling.
     fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &self.value).to_object(py))
+        PyBytes::new(py, &self.value).into_py_any(py)
     }
 
     /// Reduces the `UUID4` instance for pickling.
     fn __reduce__(&self, py: Python<'_>) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.

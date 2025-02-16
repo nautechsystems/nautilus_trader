@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict, IntoPyObjectExt};
 
 use crate::{
     accounts::MarginAccount,
@@ -79,9 +79,11 @@ impl MarginAccount {
     fn py_leverages(&self, py: Python) -> PyResult<PyObject> {
         let leverages = PyDict::new(py);
         for (key, &value) in &self.leverages {
-            leverages.set_item(key.to_object(py), value).unwrap();
+            leverages
+                .set_item(key.into_py_any_unwrap(py), value)
+                .unwrap();
         }
-        Ok(leverages.to_object(py))
+        leverages.into_py_any(py)
     }
 
     #[pyo3(name = "leverage")]
@@ -105,10 +107,10 @@ impl MarginAccount {
         let initial_margins = PyDict::new(py);
         for (key, &value) in &self.initial_margins() {
             initial_margins
-                .set_item(key.to_object(py), value.to_object(py))
+                .set_item(key.into_py_any_unwrap(py), value.into_py_any_unwrap(py))
                 .unwrap();
         }
-        Ok(initial_margins.to_object(py))
+        initial_margins.into_py_any(py)
     }
 
     #[pyo3(name = "maintenance_margins")]
@@ -116,10 +118,10 @@ impl MarginAccount {
         let maintenance_margins = PyDict::new(py);
         for (key, &value) in &self.maintenance_margins() {
             maintenance_margins
-                .set_item(key.to_object(py), value.to_object(py))
+                .set_item(key.into_py_any_unwrap(py), value.into_py_any_unwrap(py))
                 .unwrap();
         }
-        Ok(maintenance_margins.to_object(py))
+        maintenance_margins.into_py_any(py)
     }
 
     #[pyo3(name = "update_initial_margin")]

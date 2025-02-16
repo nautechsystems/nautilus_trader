@@ -20,12 +20,14 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{
+    get_pytype_name, to_pytype_err, to_pyvalue_err, IntoPyObjectNautilusExt,
+};
 use pyo3::{
+    conversion::IntoPyObjectExt,
     prelude::*,
     pyclass::CompareOp,
     types::{PyFloat, PyTuple},
-    conversion::IntoPyObjectExt,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
@@ -50,13 +52,13 @@ impl Price {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.raw, self.precision).to_object(py))
+        (self.raw, self.precision).into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
