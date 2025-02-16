@@ -125,6 +125,35 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `get_xrate` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef get_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `get_mark_xrate` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void set_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        double xrate,
+    ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `set_mark_xrate` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void clear_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `clear_mark_xrate` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void clear_mark_xrates(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `clear_mark_xrates` must be implemented in the subclass")  # pragma: no cover
+
 # -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):

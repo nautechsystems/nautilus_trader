@@ -19,6 +19,8 @@ import pytest
 
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import EUR
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
@@ -803,3 +805,74 @@ class TestCache:
 
         # Assert
         assert result == 0.80005
+
+    def test_get_mark_xrate_returns_none_when_not_set(self):
+        """
+        When no mark exchange rate is set for a currency pair, get_mark_xrate should
+        return None.
+        """
+        result = self.cache.get_mark_xrate(USD, EUR)
+        assert result is None
+
+    def test_set_and_get_mark_xrate(self):
+        """
+        After setting a mark exchange rate, get_mark_xrate should return the correct
+        value in both the forward and inverse directions.
+        """
+        xrate = 1.25
+        self.cache.set_mark_xrate(USD, EUR, xrate)
+
+        forward = self.cache.get_mark_xrate(USD, EUR)
+        inverse = self.cache.get_mark_xrate(EUR, USD)
+
+        assert forward == xrate
+        assert inverse == 1.0 / xrate
+
+    def test_clear_mark_xrate(self):
+        """
+        Clearing a mark exchange rate for a specific pair should remove the forward rate
+        while leaving the inverse rate intact.
+        """
+        xrate = 1.25
+        self.cache.set_mark_xrate(USD, EUR, xrate)
+        # Precondition: both forward and inverse rates are set
+        assert self.cache.get_mark_xrate(USD, EUR) is not None
+        assert self.cache.get_mark_xrate(EUR, USD) is not None
+
+        # Act: clear the forward rate
+        self.cache.clear_mark_xrate(USD, EUR)
+
+        # Assert: forward rate is removed but the inverse remains
+        assert self.cache.get_mark_xrate(USD, EUR) is None
+        assert self.cache.get_mark_xrate(EUR, USD) == 1.0 / xrate
+
+    def test_clear_mark_xrates(self):
+        """
+        Clearing all mark exchange rates should remove every rate.
+        """
+        self.cache.set_mark_xrate(USD, EUR, 1.25)
+        self.cache.set_mark_xrate(GBP, USD, 1.40)
+        # Precondition: verify that both directions exist
+        assert self.cache.get_mark_xrate(USD, EUR) is not None
+        assert self.cache.get_mark_xrate(EUR, USD) is not None
+        assert self.cache.get_mark_xrate(GBP, USD) is not None
+        assert self.cache.get_mark_xrate(USD, GBP) is not None
+
+        # Act: clear all mark exchange rates
+        self.cache.clear_mark_xrates()
+
+        # Assert: every mark exchange rate should be cleared
+        assert self.cache.get_mark_xrate(USD, EUR) is None
+        assert self.cache.get_mark_xrate(EUR, USD) is None
+        assert self.cache.get_mark_xrate(GBP, USD) is None
+        assert self.cache.get_mark_xrate(USD, GBP) is None
+
+    def test_set_mark_xrate_zero_raises(self):
+        """
+        Setting a mark exchange rate of zero should raise a ValueError to avoid
+        division-by-zero.
+        """
+        import pytest
+
+        with pytest.raises(ValueError):
+            self.cache.set_mark_xrate(USD, EUR, 0.0)

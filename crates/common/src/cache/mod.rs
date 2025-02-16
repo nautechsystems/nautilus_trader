@@ -65,7 +65,8 @@ pub struct Cache {
     general: HashMap<String, Bytes>,
     quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    marks: HashMap<InstrumentId, Price>,
+    mark_prices: HashMap<InstrumentId, Price>,
+    mark_xrates: HashMap<(Currency, Currency), f64>,
     books: HashMap<InstrumentId, OrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
@@ -97,7 +98,8 @@ impl Cache {
             index: CacheIndex::default(),
             database,
             general: HashMap::new(),
-            marks: HashMap::new(),
+            mark_prices: HashMap::new(),
+            mark_xrates: HashMap::new(),
             quotes: HashMap::new(),
             trades: HashMap::new(),
             books: HashMap::new(),
@@ -795,7 +797,8 @@ impl Cache {
         log::debug!("Resetting cache");
 
         self.general.clear();
-        self.marks.clear();
+        self.mark_prices.clear();
+        self.mark_xrates.clear();
         self.quotes.clear();
         self.trades.clear();
         self.books.clear();
@@ -863,7 +866,7 @@ impl Cache {
     pub fn add_mark_price(&mut self, instrument_id: &InstrumentId, price: Price) {
         log::debug!("Adding mark `Price` for {instrument_id}");
 
-        self.marks.insert(*instrument_id, price);
+        self.mark_prices.insert(*instrument_id, price);
     }
 
     /// Adds the given `quote` tick to the cache.
@@ -2318,7 +2321,7 @@ impl Cache {
                 .trades
                 .get(instrument_id)
                 .and_then(|trades| trades.front().map(|trade| trade.price)),
-            PriceType::Mark => self.marks.get(instrument_id).copied(),
+            PriceType::Mark => self.mark_prices.get(instrument_id).copied(),
         }
     }
 
@@ -2513,6 +2516,34 @@ impl Cache {
         }
 
         (bid_quotes, ask_quotes)
+    }
+
+    /// Returns the mark exchange rate for the given currency pair, or `None` if not set.
+    #[must_use]
+    pub fn get_mark_xrate(&self, from_currency: Currency, to_currency: Currency) -> Option<f64> {
+        self.mark_xrates.get(&(from_currency, to_currency)).copied()
+    }
+
+    /// Sets the mark exchange rate for the given currency pair and automatically sets the inverse rate.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `xrate` is not positive.
+    pub fn set_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency, xrate: f64) {
+        assert!(xrate > 0.0, "xrate was zero");
+        self.mark_xrates.insert((from_currency, to_currency), xrate);
+        self.mark_xrates
+            .insert((to_currency, from_currency), 1.0 / xrate);
+    }
+
+    /// Clears the mark exchange rate for the given currency pair.
+    pub fn clear_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency) {
+        let _ = self.mark_xrates.remove(&(from_currency, to_currency));
+    }
+
+    /// Clears all mark exchange rates.
+    pub fn clear_mark_xrates(&mut self) {
+        self.mark_xrates.clear();
     }
 
     // -- INSTRUMENT QUERIES ----------------------------------------------------------------------
