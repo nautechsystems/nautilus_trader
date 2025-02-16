@@ -20,17 +20,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Currency
 
 
-cdef class ExchangeRateCalculator:
-    cpdef double get_rate(
-        self,
-        Currency from_currency,
-        Currency to_currency,
-        PriceType price_type,
-        dict bid_quotes,
-        dict ask_quotes
-    )
-
-
 cdef class RolloverInterestCalculator:
     cdef dict _rate_data
 

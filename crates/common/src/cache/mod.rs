@@ -2463,7 +2463,7 @@ impl Cache {
         }
     }
 
-    fn build_quote_table(&self, venue: &Venue) -> (HashMap<Ustr, f64>, HashMap<Ustr, f64>) {
+    fn build_quote_table(&self, venue: &Venue) -> (HashMap<String, f64>, HashMap<String, f64>) {
         let mut bid_quotes = HashMap::new();
         let mut ask_quotes = HashMap::new();
 
@@ -2508,8 +2508,8 @@ impl Cache {
                 }
             };
 
-            bid_quotes.insert(instrument_id.symbol.inner(), bid_price.as_f64());
-            ask_quotes.insert(instrument_id.symbol.inner(), ask_price.as_f64());
+            bid_quotes.insert(instrument_id.symbol.to_string(), bid_price.as_f64());
+            ask_quotes.insert(instrument_id.symbol.to_string(), ask_price.as_f64());
         }
 
         (bid_quotes, ask_quotes)

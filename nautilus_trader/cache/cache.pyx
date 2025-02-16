@@ -21,6 +21,7 @@ from collections import deque
 from decimal import Decimal
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import PriceType as PriceType_py
 
 from cpython.datetime cimport datetime
@@ -29,7 +30,6 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
@@ -100,7 +100,6 @@ cdef class Cache(CacheFacade):
 
         self._database = database
         self._log = Logger(name=type(self).__name__)
-        self._xrate_calculator = ExchangeRateCalculator()
 
         # Configuration
         self._drop_instruments_on_reset = config.drop_instruments_on_reset
@@ -2541,17 +2540,21 @@ cdef class Cache(CacheFacade):
         Condition.not_none(to_currency, "to_currency")
 
         if from_currency == to_currency:
-            return Decimal(1)  # No conversion necessary
+            return 1.0  # No conversion necessary
 
         cdef tuple quotes = self._build_quote_table(venue)
 
-        return self._xrate_calculator.get_rate(
-            from_currency=from_currency,
-            to_currency=to_currency,
-            price_type=price_type,
-            bid_quotes=quotes[0],  # Bid
-            ask_quotes=quotes[1],  # Ask
-        )
+        try:
+            return nautilus_pyo3.get_exchange_rate(
+                from_currency=from_currency.code,
+                to_currency=to_currency.code,
+                price_type=nautilus_pyo3.PriceType.from_int(price_type),
+                quotes_bid=quotes[0],  # Bid
+                quotes_ask=quotes[1],  # Ask
+            ) or 0.0  # Retain original behavior of returning zero for now
+        except ValueError as e:
+            self._log.error(repr(e))
+            return 0.0
 
     cdef tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}
