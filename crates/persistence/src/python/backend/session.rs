@@ -101,7 +101,7 @@ impl DataQueryResult {
             Some(acc) if !acc.is_empty() => {
                 let cvec = slf.set_chunk(acc);
                 Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
-                    Ok(capsule) => Ok(Some(capsule.into_py(py))),
+                    Ok(capsule) => capsule.into_py_any_unwrap(py))
                     Err(e) => Err(to_pyruntime_err(e)),
                 })
             }

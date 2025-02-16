@@ -23,6 +23,7 @@ pub mod version;
 
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
+    conversion::IntoPyObjectExt,
     prelude::*,
     types::PyString,
     wrap_pyfunction,
@@ -36,6 +37,16 @@ use crate::{
     },
     UUID4,
 };
+
+/// Extend IntoPyObjectExt helper trait to unwrap PyObject after conversion.
+pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
+    #[inline]
+    fn into_py_any_unwrap(self, py: Python<'py>) -> PyObject {
+        self.into_py_any(py).expect("Expected to convert type to PyObject")
+    }
+}
+
+impl<'py, T> IntoPyObjectNautilusExt<'py> for T where T: IntoPyObjectExt<'py> {}
 
 /// Gets the type name for the given Python `obj`.
 ///

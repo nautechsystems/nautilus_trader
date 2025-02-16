@@ -696,9 +696,9 @@ counter = Counter()
         let module = CString::new("test".to_string()).unwrap();
         Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
-            let counter = pymod.getattr("counter").unwrap().into_py(py);
+            let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
 
-            counter.getattr(py, "handler").unwrap().into_py(py)
+            counter.getattr(py, "handler").unwrap().into_py_any_unwrap(py)
         })
     }
 
@@ -955,7 +955,7 @@ def handler(bytes_data):
         let handler = Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
             let func = pymod.getattr("handler").unwrap();
-            Arc::new(func.into_py(py))
+            Arc::new(func.into_py_any_unwrap(py))
         });
 
         let config = SocketConfig {

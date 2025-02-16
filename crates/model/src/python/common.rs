@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
+use nautilus_core::python::IntoPyObjectNautilusExt;
 use pyo3::{
+    conversion::{IntoPyObject, IntoPyObjectExt},
     exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyList, PyNone},
@@ -46,15 +48,15 @@ impl EnumIterator {
 
 impl EnumIterator {
     #[must_use]
-    pub fn new<E>(py: Python<'_>) -> Self
+    pub fn new<'py, E>(py: Python<'py>) -> Self
     where
-        E: strum::IntoEnumIterator + IntoPy<Py<PyAny>>,
+        E: strum::IntoEnumIterator + IntoPyObject<'py>,
         <E as IntoEnumIterator>::Iterator: Send,
     {
         Self {
             iter: Box::new(
                 E::iter()
-                    .map(|var| var.into_py(py))
+                    .map(|var| var.into_py_any_unwrap(py))
                     // Force eager evaluation because `py` isn't `Send`
                     .collect::<Vec<_>>()
                     .into_iter(),
@@ -77,19 +79,19 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
         _ => return Err(PyValueError::new_err("Expected JSON object")),
     }
 
-    Ok(dict.into_py(py))
+    dict.into_py_any(py)
 }
 
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
     match val {
         Value::Null => Ok(py.None()),
-        Value::Bool(b) => Ok(b.into_py(py)),
-        Value::String(s) => Ok(s.into_py(py)),
+        Value::Bool(b) => b.into_py_any(py),
+        Value::String(s) => s.into_py_any(py),
         Value::Number(n) => {
             if n.is_i64() {
-                Ok(n.as_i64().unwrap().into_py(py))
+                n.as_i64().unwrap().into_py_any(py)
             } else if n.is_f64() {
-                Ok(n.as_f64().unwrap().into_py(py))
+                n.as_f64().unwrap().into_py_any(py)
             } else {
                 Err(PyValueError::new_err("Unsupported JSON number type"))
             }
@@ -100,12 +102,9 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
             }
-            Ok(py_list.into())
+            py_list.into_py_any(py)
         }
-        Value::Object(_) => {
-            let py_dict = value_to_pydict(py, val)?;
-            Ok(py_dict)
-        }
+        Value::Object(_) => value_to_pydict(py, val),
     }
 }
 

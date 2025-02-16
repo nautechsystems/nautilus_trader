@@ -15,7 +15,7 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt},
     UnixNanos, UUID4,
 };
 use pyo3::{
@@ -107,8 +107,8 @@ impl LimitOrder {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

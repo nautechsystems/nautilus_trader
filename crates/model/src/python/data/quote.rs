@@ -22,7 +22,7 @@ use std::{
 use nautilus_core::{
     python::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
-        to_pyvalue_err,
+        to_pyvalue_err, IntoPyObjectNautilusExt,
     },
     serialization::Serializable,
     UnixNanos,
@@ -179,8 +179,8 @@ impl QuoteTick {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -359,14 +359,14 @@ impl QuoteTick {
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
+        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
+        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
 
@@ -452,7 +452,7 @@ mod tests {
         let quote = quote_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let tick_pyobject = quote.into_py(py);
+            let tick_pyobject = quote.into_py_any_unwrap(py);
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, quote);
         });

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::serialization::from_dict_pyo3;
+use nautilus_core::python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::events::OrderSnapshot;
@@ -22,8 +22,8 @@ use crate::events::OrderSnapshot;
 impl OrderSnapshot {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

@@ -25,7 +25,7 @@ use pyo3::{
     types::{PyBytes, PyTuple},
 };
 
-use super::to_pyvalue_err;
+use super::{to_pyvalue_err, IntoPyObjectNautilusExt};
 use crate::uuid::{UUID4, UUID4_LEN};
 
 #[pymethods]
@@ -75,8 +75,8 @@ impl UUID4 {
     /// Compares two `UUID4` instances for equality
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

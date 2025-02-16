@@ -13,17 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(deprecated)]
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::CString,
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
@@ -72,12 +68,12 @@ impl TradeId {
     fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {
             match op {
-                CompareOp::Eq => self.eq(&other).into_py(py),
-                CompareOp::Ne => self.ne(&other).into_py(py),
-                CompareOp::Ge => self.ge(&other).into_py(py),
-                CompareOp::Gt => self.gt(&other).into_py(py),
-                CompareOp::Le => self.le(&other).into_py(py),
-                CompareOp::Lt => self.lt(&other).into_py(py),
+                CompareOp::Eq => self.eq(&other).into_py_any_unwrap(py),
+                CompareOp::Ne => self.ne(&other).into_py_any_unwrap(py),
+                CompareOp::Ge => self.ge(&other).into_py_any_unwrap(py),
+                CompareOp::Gt => self.gt(&other).into_py_any_unwrap(py),
+                CompareOp::Le => self.le(&other).into_py_any_unwrap(py),
+                CompareOp::Lt => self.lt(&other).into_py_any_unwrap(py),
             }
         } else {
             py.NotImplemented()
@@ -112,6 +108,6 @@ impl TradeId {
 
 impl ToPyObject for TradeId {
     fn to_object(&self, py: Python) -> PyObject {
-        self.into_py(py)
+        self.into_py_any_unwrap(py)
     }
 }

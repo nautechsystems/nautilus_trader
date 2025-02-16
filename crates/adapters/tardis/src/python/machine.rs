@@ -16,7 +16,7 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::python::{to_pyruntime_err, IntoPyObjectNautilusExt};
 use nautilus_model::{
     data::{Bar, Data},
     python::data::data_to_pycapsule,
@@ -169,9 +169,10 @@ impl TardisMachineClient {
             }
 
             Python::with_gil(|py| {
-                let pylist = PyList::new(py, bars.into_iter().map(|bar| bar.into_py(py)))
-                    .expect("Invalid `ExactSizeIterator`");
-                Ok(pylist.into_py(py))
+                let pylist =
+                    PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))
+                        .expect("Invalid `ExactSizeIterator`");
+                Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }

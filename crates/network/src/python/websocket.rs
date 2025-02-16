@@ -403,8 +403,8 @@ counter = Counter()
         Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
 
-            let counter = pymod.getattr("counter").unwrap().into_py(py);
-            let handler = counter.getattr(py, "handler").unwrap().into_py(py);
+            let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
+            let handler = counter.getattr(py, "handler").unwrap().into_py_any_unwrap(py);
 
             (counter, handler)
         })

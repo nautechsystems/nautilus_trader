@@ -23,7 +23,7 @@ use std::{
 
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt};
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
@@ -82,15 +82,15 @@ impl DatabentoLiveClient {
                     call_python(py, &callback, py_obj);
                 }),
                 LiveMessage::Status(data) => Python::with_gil(|py| {
-                    let py_obj = data.into_py(py);
+                    let py_obj = data.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Imbalance(data) => Python::with_gil(|py| {
-                    let py_obj = data.into_py(py);
+                    let py_obj = data.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Statistics(data) => Python::with_gil(|py| {
-                    let py_obj = data.into_py(py);
+                    let py_obj = data.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Close => {

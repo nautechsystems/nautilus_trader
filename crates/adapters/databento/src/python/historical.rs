@@ -28,7 +28,7 @@ use databento::{
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::to_pyvalue_err,
+    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
     time::{get_atomic_clock_realtime, AtomicTime},
 };
 use nautilus_model::{
@@ -41,7 +41,7 @@ use nautilus_model::{
 use pyo3::{
     exceptions::PyException,
     prelude::*,
-    types::{PyDict, PyList},
+    types::{PyDict, PyList}, IntoPyObjectExt,
 };
 use tokio::sync::Mutex;
 
@@ -326,7 +326,7 @@ impl DatabentoHistoricalClient {
                 _ => panic!("Invalid schema {dbn_schema}"),
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -409,7 +409,7 @@ impl DatabentoHistoricalClient {
                 }
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -500,7 +500,7 @@ impl DatabentoHistoricalClient {
                 }
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -572,7 +572,7 @@ impl DatabentoHistoricalClient {
                 result.push(imbalance);
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -645,7 +645,7 @@ impl DatabentoHistoricalClient {
                 result.push(statistics);
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -715,7 +715,7 @@ impl DatabentoHistoricalClient {
                 result.push(status);
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 }

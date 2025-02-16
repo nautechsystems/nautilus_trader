@@ -15,7 +15,10 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use nautilus_core::{python::to_pyvalue_err, UnixNanos, UUID4};
+use nautilus_core::{
+    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
+    UnixNanos, UUID4,
+};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -124,8 +127,8 @@ impl TimeEvent {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -201,7 +204,10 @@ mod tests {
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            TimeEventCallback::from(callable.into_py(py))
+            let callable = callable
+                .into_py_any(py)
+                .expect("Python function should be convertible to PyObject");
+            TimeEventCallback::from(callable)
         });
 
         // Create a new LiveTimer with no stop time
@@ -237,7 +243,10 @@ mod tests {
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            TimeEventCallback::from(callable.into_py(py))
+            let callable = callable
+                .into_py_any(py)
+                .expect("Python function should be convertible to PyObject");
+            TimeEventCallback::from(callable)
         });
 
         // Create a new LiveTimer with a stop time
@@ -287,7 +296,10 @@ mod tests {
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            TimeEventCallback::from(callable.into_py(py))
+            let callable = callable
+                .into_py_any(py)
+                .expect("Python function should be convertible to PyObject");
+            TimeEventCallback::from(callable)
         });
 
         // Create a new LiveTimer with a stop time

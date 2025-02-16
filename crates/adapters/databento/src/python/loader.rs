@@ -16,7 +16,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use databento::dbn;
-use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
+use nautilus_core::{
+    ffi::cvec::CVec,
+    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
+};
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Venue},
@@ -397,5 +400,7 @@ fn exhaust_data_iter_to_pycapsule(
     let cvec: CVec = data.into();
     let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
 
-    Ok(capsule.into_py(py))
+    // TODO: Improve error domain. Replace anyhow errors with nautilus
+    // errors to unify pyo3 and anyhow errors.
+    Ok(capsule.into_py_any_unwrap(py))
 }
