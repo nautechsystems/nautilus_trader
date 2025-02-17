@@ -3448,6 +3448,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-trading"
+version = "0.42.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "criterion",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-execution",
+ "nautilus-model",
+ "nautilus-portfolio",
+ "pyo3",
+ "rstest",
+ "strum",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4095,6 +4114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57fe09249128b3173d092de9523eaa75136bf7ba85e0d69eca241c7939c933cc"
 dependencies = [
  "cfg-if",
+ "chrono",
  "indexmap",
  "indoc",
  "libc",
