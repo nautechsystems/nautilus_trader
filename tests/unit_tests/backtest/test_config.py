@@ -303,7 +303,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.portfolio_config,
                 (),
                 {},
-                ("b75af12920877d48f010ca76087946bb744154a49a285e64bf98755a9e618c88",),
+                ("94542dca80472b551f829c2e4b614666e9fbb84aefaa54aa296c8e6b62eb4e3c",),
             ),
             (
                 TestConfigStubs.streaming_config,

@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added mark price handling for `Cache`
 - Added mark exchange rate handling for `Cache`
 - Added `PortfolioConfig` for configuration settings specific to the `Portfolio`
+- Added mark price calculations and xrate handling for `Portfolio`
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)

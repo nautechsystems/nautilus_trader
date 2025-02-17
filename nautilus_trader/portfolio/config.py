@@ -24,6 +24,15 @@ class PortfolioConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
+    use_mark_prices : bool, default False
+        The type of prices used for portfolio calculations, such as unrealized PnLs.
+        If False (default), uses quote prices if available; otherwise, last trade prices
+        (or falls back to bar prices if `bar_updates` is True).
+        If True, uses mark prices.
+    use_mark_xrates : bool, default False
+        The type of exchange rates used for portfolio calculations.
+        If False (default), uses quote prices.
+        If True, uses mark prices.
     bar_updates : bool, default True
         If external bars should be considered for updating unrealized pnls.
     debug : bool, default False
@@ -31,5 +40,7 @@ class PortfolioConfig(NautilusConfig, frozen=True):
 
     """
 
+    use_mark_prices: bool = False
+    use_mark_xrates: bool = False
     bar_updates: bool = True
     debug: bool = False
