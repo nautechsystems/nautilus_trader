@@ -272,6 +272,14 @@ impl OrderMatchingCore {
             OrderSideSpecified::Sell => self.bid.is_some_and(|b| b <= price),
         }
     }
+
+    #[must_use]
+    pub fn is_touch_triggered(&self, side: OrderSideSpecified, trigger_price: Price) -> bool {
+        match side {
+            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= trigger_price),
+            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= trigger_price),
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
