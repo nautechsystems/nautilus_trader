@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Improved error logging for live engines to now include stacktrace for easier debugging
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
+- Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
