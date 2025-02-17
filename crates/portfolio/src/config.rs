@@ -18,17 +18,34 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `Portfolio` instances.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortfolioConfig {
-    /// If external bars should be considered for updating unrealized pnls.
+    // The type of prices used for portfolio calculations, such as unrealized PnLs.
+    // If False (default), uses quote prices if available; otherwise, last trade prices
+    // (or falls back to bar prices if `bar_updates` is True).
+    // If True, uses mark prices.
     #[serde(default)]
+    pub use_mark_prices: bool,
+    // The type of exchange rates used for portfolio calculations.
+    // If False (default), uses quote prices.
+    // If True, uses mark prices.
+    #[serde(default)]
+    pub use_mark_xrates: bool,
+    /// If external bars should be considered for updating unrealized pnls.
+    #[serde(default = "default_true")]
     pub bar_updates: bool,
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 impl Default for PortfolioConfig {
     fn default() -> Self {
         Self {
+            use_mark_prices: false,
+            use_mark_xrates: false,
             bar_updates: true,
             debug: false,
         }

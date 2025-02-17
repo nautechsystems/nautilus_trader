@@ -39,8 +39,12 @@ cdef class Portfolio(PortfolioFacade):
     cdef Logger _log
     cdef MessageBus _msgbus
     cdef Cache _cache
-    cdef object _config
     cdef AccountsManager _accounts
+    cdef object _config
+    cdef bint _use_mark_prices
+    cdef bint _use_mark_xrates
+    cdef str _log_price
+    cdef str _log_xrate
 
     cdef Venue _venue
     cdef dict[InstrumentId, Money] _unrealized_pnls
@@ -56,6 +60,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)
+    cpdef void update_mark_price(self, object mark_price)
     cpdef void update_bar(self, Bar bar)
     cpdef void update_account(self, AccountState event)
     cpdef void update_order(self, OrderEvent event)
@@ -69,4 +74,4 @@ cdef class Portfolio(PortfolioFacade):
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id)
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id, Price price=*)
     cdef Price _get_price(self, Position position)
-    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
+    cdef _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
