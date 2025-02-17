@@ -81,7 +81,7 @@ float-cmp = "0.10.0"
 iai = "0.1.1"
 proptest = "1.6.0"
 rstest = "0.24.0"
-tempfile = "3.17.0"
+tempfile = "3.17.1"
 tracing-test = "0.2.5"
 
 # build-dependencies
