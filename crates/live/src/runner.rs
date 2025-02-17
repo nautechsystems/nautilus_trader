@@ -31,13 +31,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::DataEngine;
 
-pub trait DataQueue {
-    fn push(&mut self, event: DataEvent);
-}
-
-pub type GlobalDataQueue = Rc<RefCell<dyn DataQueue>>;
-
-pub struct SyncDataQueue(VecDeque<DataEvent>);
 pub struct AsyncDataQueue(UnboundedSender<DataEvent>);
 
 impl DataQueue for SyncDataQueue {
@@ -111,6 +104,7 @@ thread_local! {
     static MSGBUS_CMD: MessageBusCommands = Rc::new(RefCell::new(VecDeque::new()));
 }
 
+// TODO: Determine how to deduplicate trait
 pub trait Runner {
     fn new() -> Self;
     fn run(&mut self, engine: &mut DataEngine);
@@ -121,50 +115,6 @@ pub trait SendResponse {
 }
 
 pub type DataResponseQueue = Rc<RefCell<SyncDataQueue>>;
-
-pub struct BacktestRunner {
-    dq: DataResponseQueue,
-    pub clock: Rc<RefCell<TestClock>>,
-}
-
-impl Runner for BacktestRunner {
-    fn new() -> Self {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        set_clock(clock.clone());
-
-        let dq = Rc::new(RefCell::new(SyncDataQueue(VecDeque::new())));
-        set_data_queue(dq.clone());
-        Self { dq, clock }
-    }
-
-    fn run(&mut self, engine: &mut DataEngine) {
-        let msgbus_cmd = get_msgbus_cmd();
-
-        while let Some(resp) = self.dq.as_ref().borrow_mut().0.pop_front() {
-            match resp {
-                DataEvent::Response(resp) => engine.response(resp),
-                DataEvent::Data(data) => {
-                    while let Some(sub_cmd) = msgbus_cmd.borrow_mut().pop_front() {
-                        engine.execute(sub_cmd);
-                    }
-
-                    // Advance clock time and collect all triggered events and handlers
-                    let handlers: Vec<TimeEventHandlerV2> = {
-                        let mut guard = self.clock.borrow_mut();
-                        guard.advance_to_time_on_heap(data.ts_init());
-                        guard.by_ref().collect()
-                        // drop guard
-                    };
-
-                    // Execute all handlers before processing the data
-                    handlers.into_iter().for_each(TimeEventHandlerV2::run);
-
-                    engine.process_data(data);
-                }
-            }
-        }
-    }
-}
 
 pub struct LiveRunner {
     resp_rx: UnboundedReceiver<DataEvent>,
@@ -213,14 +163,6 @@ impl Runner for LiveRunner {
     }
 }
 
-// Helper enum to represent different event types
-// TODO: Fix large enum variant problem
-#[allow(clippy::large_enum_variant)]
-enum RunnerEvent {
-    Data(DataEvent),
-    Timer(TimeEvent),
-}
-
 #[cfg(test)]
 #[cfg(feature = "clock_v2")]
 mod tests {
@@ -233,23 +175,6 @@ mod tests {
     };
 
     use super::{get_clock, set_clock};
-
-    #[test]
-    fn test_global_test_clock() {
-        let test_clock = Rc::new(RefCell::new(TestClock::new()));
-        set_clock(test_clock.clone());
-
-        // component/actor adding an alert
-        get_clock().borrow_mut().set_time_alert_ns(
-            "hola",
-            2.into(),
-            Some(TimeEventCallback::Rust(Rc::new(|event: TimeEvent| {}))),
-        );
-
-        // runner pulling advancing and pulling from event stream
-        test_clock.borrow_mut().advance_to_time_on_heap(3.into());
-        assert!(test_clock.borrow_mut().next().is_some());
-    }
 
     #[tokio::test]
     async fn test_global_live_clock() {

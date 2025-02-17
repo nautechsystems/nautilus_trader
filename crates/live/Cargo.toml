@@ -1,5 +1,5 @@
 [package]
-name = "nautilus-execution"
+name = "nautilus-live"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,33 +7,30 @@ description.workspace = true
 documentation.workspace = true
 
 [lib]
-name = "nautilus_execution"
+name = "nautilus_live"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
+nautilus-data = { path = "../data" }
+nautilus-execution = { path = "../execution" }
 nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-portfolio = { path = "../portfolio" }
+nautilus-risk = { path = "../risk" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-derive_builder = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
-rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
-ustr = { workspace = true }
-uuid = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
-nautilus-portfolio = { path = "../portfolio" }
-nautilus-data = { path = "../data" }
-nautilus-risk = { path = "../risk" }
 
 [features]
 default = ["ffi", "python"]
@@ -41,7 +38,11 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-data/extension-module",
+  "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-portfolio/extension-module",
+  "nautilus-risk/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -52,5 +53,10 @@ python = [
   "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-data/python",
+  "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-portfolio/python",
+  "nautilus-risk/python",
 ]
+clock_v2 = ["nautilus-common/clock_v2"]

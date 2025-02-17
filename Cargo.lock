@@ -3035,7 +3035,6 @@ dependencies = [
  "chrono",
  "futures",
  "indexmap",
- "itertools 0.13.0",
  "log",
  "nautilus-core",
  "nautilus-model",
@@ -3114,7 +3113,6 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "rstest",
- "tokio",
  "ustr",
 ]
 
@@ -3168,7 +3166,6 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum",
- "tokio",
  "ustr",
  "uuid",
 ]
