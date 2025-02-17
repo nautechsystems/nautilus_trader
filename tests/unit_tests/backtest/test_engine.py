@@ -71,7 +71,7 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.data import MyData
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from nautilus_trader.trading.controller_commands import RemoveStrategy
+from nautilus_trader.trading.messages import RemoveStrategy
 from nautilus_trader.trading.strategy import Strategy
 
 

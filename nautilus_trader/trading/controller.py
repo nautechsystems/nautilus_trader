@@ -23,14 +23,14 @@ from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
-from nautilus_trader.trading.controller_commands import CreateActor
-from nautilus_trader.trading.controller_commands import CreateStrategy
-from nautilus_trader.trading.controller_commands import RemoveActor
-from nautilus_trader.trading.controller_commands import RemoveStrategy
-from nautilus_trader.trading.controller_commands import StartActor
-from nautilus_trader.trading.controller_commands import StartStrategy
-from nautilus_trader.trading.controller_commands import StopActor
-from nautilus_trader.trading.controller_commands import StopStrategy
+from nautilus_trader.trading.messages import CreateActor
+from nautilus_trader.trading.messages import CreateStrategy
+from nautilus_trader.trading.messages import RemoveActor
+from nautilus_trader.trading.messages import RemoveStrategy
+from nautilus_trader.trading.messages import StartActor
+from nautilus_trader.trading.messages import StartStrategy
+from nautilus_trader.trading.messages import StopActor
+from nautilus_trader.trading.messages import StopStrategy
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
 
