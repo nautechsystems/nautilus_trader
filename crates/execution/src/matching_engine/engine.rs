@@ -930,8 +930,35 @@ impl OrderMatchingEngine {
         self.accept_order(order);
     }
 
-    fn process_market_if_touched_order(&mut self, order: &OrderAny) {
-        todo!("process_market_if_touched_order")
+    fn process_market_if_touched_order(&mut self, order: &mut OrderAny) {
+        if self
+            .core
+            .is_touch_triggered(order.order_side_specified(), order.trigger_price().unwrap())
+        {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+            self.fill_market_order(order);
+            return;
+        }
+
+        // Order is valid and accepted
+        self.accept_order(order);
     }
 
     fn process_limit_if_touched_order(&mut self, order: &OrderAny) {
@@ -1584,11 +1611,42 @@ impl OrderMatchingEngine {
 
     fn update_market_if_touched_order(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         quantity: Quantity,
-        price: Price,
+        trigger_price: Price,
     ) {
-        todo!("update_market_if_touched_order")
+        if self
+            .core
+            .is_touch_triggered(order.order_side_specified(), trigger_price)
+        {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(
+                    format!(
+                        "{} {} order new trigger px of {} was in the market: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        trigger_price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    )
+                    .as_str(),
+                ),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            // Cannot update order
+            return;
+        }
+
+        self.generate_order_updated(order, quantity, None, Some(trigger_price));
     }
 
     fn update_limit_if_touched_order(

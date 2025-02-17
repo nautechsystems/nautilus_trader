@@ -2161,3 +2161,124 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
     assert_eq!(order_updated.client_order_id, client_order_id);
     assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
 }
+
+#[rstest]
+fn test_process_market_if_touched_order_already_triggered(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // Add SELL limit orderbook delta to have ask initialized
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create MARKET IF TOUCHED order which is already activated as trigger price of 1500.00 is equal to current ask of 1500.00
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut stop_market_order = OrderTestBuilder::new(OrderType::MarketIfTouched)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+    engine_l2.process_order(&mut stop_market_order, account_id);
+
+    // Check that order was filled immediately with correct price and quantity
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let order_event = saved_messages.first().unwrap();
+    let order_filled = match order_event {
+        OrderEventAny::Filled(order_filled) => order_filled,
+        _ => panic!("Expected OrderFilled event in first message"),
+    };
+    assert_eq!(order_filled.client_order_id, client_order_id);
+    assert_eq!(order_filled.last_px, Price::from("1500.00"));
+    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_update_market_if_touched_order_valid(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // Create MARKET IF TOUCHED order which is not activated as trigger price of 1505.00 is above current ask of 1500.00
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut stop_market_order = OrderTestBuilder::new(OrderType::MarketIfTouched)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1505.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+    engine_l2.process_order(&mut stop_market_order, account_id);
+
+    // Create modify command which moves trigger price to 1501.00 which won't trigger the stop price again
+    // as ask is at 1500.00 and order will be correctly updated
+    let new_trigger_price = Price::from("1501.00");
+    let modify_order_command = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        VenueOrderId::from("V1"),
+        None,
+        None,
+        Some(new_trigger_price),
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+
+    // Check that we have received OrderAccepted and then OrderUpdated
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_updated = match order_event_second {
+        OrderEventAny::Updated(order_updated) => order_updated,
+        _ => panic!("Expected OrderUpdated event in second message"),
+    };
+    assert_eq!(order_updated.client_order_id, client_order_id);
+    assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
+}
