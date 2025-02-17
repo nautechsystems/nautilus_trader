@@ -39,6 +39,7 @@ pub mod data_client;
 pub mod engine;
 pub mod exchange;
 pub mod modules;
+pub mod runner;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;

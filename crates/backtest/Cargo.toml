@@ -55,3 +55,4 @@ python = [
   "nautilus-execution/python",
   "nautilus-model/python",
 ]
+"clock_v2" = []

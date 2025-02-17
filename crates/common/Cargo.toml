@@ -19,7 +19,6 @@ bytes = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
-itertools = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rstest = { workspace = true , optional = true }
