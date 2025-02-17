@@ -17,8 +17,9 @@
 from decimal import Decimal
 
 import pandas as pd
-from strategy import DemoStrategy
+from strategy import SimpleTimerStrategy
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -45,9 +46,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(config=engine_config)
 
     # Step 2: Define exchange and add it to the engine
-    GLOBEX = Venue("GLBX")
+    XCME = Venue("XCME")
     engine.add_venue(
-        venue=GLOBEX,
+        venue=XCME,
         oms_type=OmsType.NETTING,  # Order Management System type
         account_type=AccountType.MARGIN,  # Type of trading account
         starting_balances=[Money(1_000_000, USD)],  # Initial account balance
@@ -60,16 +61,20 @@ if __name__ == "__main__":
     engine.add_instrument(EURUSD_FUTURES_INSTRUMENT)
 
     # ==========================================================================================
-    # POINT OF FOCUS: Loading bars from CSV
+    # Loading bars from CSV
     # ------------------------------------------------------------------------------------------
 
     # Step 4a: Load bar data from CSV file -> into pandas DataFrame
-    csv_file_path = r"./6EH4.GLBX_1min_bars.csv"
-    df = pd.read_csv(csv_file_path, sep=";", decimal=".", header=0, index_col=False)
+    csv_file_path = rf"{TEST_DATA_DIR}/xcme/6EH4.XCME_1min_bars_20240101_20240131.csv.gz"
+    df = pd.read_csv(
+        csv_file_path,
+        header=0,
+        index_col=False,
+    )
 
     # Step 4b: Restructure DataFrame into required structure, that can be passed `BarDataWrangler`
-    #   - 5 columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
-    #   - 'timestamp' as index
+    #   - 5 required columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
+    #   - column 'timestamp': should be in index of the DataFrame
     df = (
         # Change order of columns
         df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])
@@ -97,11 +102,9 @@ if __name__ == "__main__":
     engine.add_data(eurusd_1min_bars_list)
 
     # ------------------------------------------------------------------------------------------
-    # END OF POINT OF FOCUS
-    # ==========================================================================================
 
     # Step 5: Create strategy and add it to the engine
-    strategy = DemoStrategy(primary_bar_type=EURUSD_FUTURES_1MIN_BARTYPE)
+    strategy = SimpleTimerStrategy(primary_bar_type=EURUSD_FUTURES_1MIN_BARTYPE)
     engine.add_strategy(strategy)
 
     # Step 6: Run engine = Run backtest
