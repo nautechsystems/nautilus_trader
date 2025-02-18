@@ -32,7 +32,7 @@ use nautilus_model::{
     },
     types::Currency,
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 
@@ -162,7 +162,7 @@ impl PostgresCacheDatabase {
                 .unwrap();
             let mut quotes = Vec::new();
             for quote in result {
-                let py_object = quote.into_py(py);
+                let py_object = quote.into_py_any(py)?;
                 quotes.push(py_object);
             }
             Ok(quotes)
@@ -177,7 +177,7 @@ impl PostgresCacheDatabase {
                 .unwrap();
             let mut trades = Vec::new();
             for trade in result {
-                let py_object = trade.into_py(py);
+                let py_object = trade.into_py_any(py)?;
                 trades.push(py_object);
             }
             Ok(trades)
@@ -192,7 +192,7 @@ impl PostgresCacheDatabase {
                 .unwrap();
             let mut bars = Vec::new();
             for bar in result {
-                let py_object = bar.into_py(py);
+                let py_object = bar.into_py_any(py)?;
                 bars.push(py_object);
             }
             Ok(bars)

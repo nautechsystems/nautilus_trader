@@ -13,21 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(deprecated)]
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::CString,
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
+    IntoPyObjectExt,
 };
 
 use crate::identifiers::trade_id::{TradeId, TRADE_ID_LEN};
@@ -55,13 +52,13 @@ impl TradeId {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.to_string(),).to_object(py))
+        (self.to_string(),).into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -72,12 +69,12 @@ impl TradeId {
     fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {
             match op {
-                CompareOp::Eq => self.eq(&other).into_py(py),
-                CompareOp::Ne => self.ne(&other).into_py(py),
-                CompareOp::Ge => self.ge(&other).into_py(py),
-                CompareOp::Gt => self.gt(&other).into_py(py),
-                CompareOp::Le => self.le(&other).into_py(py),
-                CompareOp::Lt => self.lt(&other).into_py(py),
+                CompareOp::Eq => self.eq(&other).into_py_any_unwrap(py),
+                CompareOp::Ne => self.ne(&other).into_py_any_unwrap(py),
+                CompareOp::Ge => self.ge(&other).into_py_any_unwrap(py),
+                CompareOp::Gt => self.gt(&other).into_py_any_unwrap(py),
+                CompareOp::Le => self.le(&other).into_py_any_unwrap(py),
+                CompareOp::Lt => self.lt(&other).into_py_any_unwrap(py),
             }
         } else {
             py.NotImplemented()
@@ -107,11 +104,5 @@ impl TradeId {
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
         Self::new_checked(value).map_err(to_pyvalue_err)
-    }
-}
-
-impl ToPyObject for TradeId {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.into_py(py)
     }
 }

@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt},
     UnixNanos,
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
@@ -90,7 +90,7 @@ impl TardisHttpClient {
                 for inst in instruments {
                     py_instruments.push(instrument_any_to_pyobject(py, inst)?);
                 }
-                Ok(py_instruments.into_py(py))
+                Ok(py_instruments.into_py_any_unwrap(py))
             })
         })
     }

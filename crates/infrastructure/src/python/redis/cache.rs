@@ -29,6 +29,7 @@ use nautilus_model::{
 use pyo3::{
     prelude::*,
     types::{PyBytes, PyDict},
+    IntoPyObjectExt,
 };
 
 use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
@@ -131,7 +132,7 @@ impl RedisCacheDatabase {
                 dict.set_item("positions", positions_dict)
                     .map_err(to_pyvalue_err)?;
 
-                Ok(dict.to_object(py))
+                dict.into_py_any(py)
             }),
             Err(e) => Err(to_pyruntime_err(e)),
         }

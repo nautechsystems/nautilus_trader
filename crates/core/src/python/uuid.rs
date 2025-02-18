@@ -23,9 +23,10 @@ use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyTuple},
+    IntoPyObjectExt,
 };
 
-use super::to_pyvalue_err;
+use super::{to_pyvalue_err, IntoPyObjectNautilusExt};
 use crate::uuid::{UUID4, UUID4_LEN};
 
 #[pymethods]
@@ -56,14 +57,14 @@ impl UUID4 {
 
     /// Gets the state of the `UUID4` instance for pickling.
     fn __getstate__(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &self.value).to_object(py))
+        PyBytes::new(py, &self.value).into_py_any(py)
     }
 
     /// Reduces the `UUID4` instance for pickling.
     fn __reduce__(&self, py: Python<'_>) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.
@@ -75,8 +76,8 @@ impl UUID4 {
     /// Compares two `UUID4` instances for equality
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

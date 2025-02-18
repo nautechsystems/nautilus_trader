@@ -16,7 +16,7 @@
 //! Instrument definitions the trading domain model.
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPy, PyObject, PyResult, Python};
+use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python};
 
 use crate::instruments::{
     BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
@@ -36,16 +36,16 @@ pub mod option_spread;
 
 pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
     match instrument {
-        InstrumentAny::Betting(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::BinaryOption(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::CryptoFuture(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::CryptoPerpetual(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::CurrencyPair(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::Equity(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::FuturesContract(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::FuturesSpread(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::OptionContract(inst) => Ok(inst.into_py(py)),
-        InstrumentAny::OptionSpread(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::Betting(inst) => inst.into_py_any(py),
+        InstrumentAny::BinaryOption(inst) => inst.into_py_any(py),
+        InstrumentAny::CryptoFuture(inst) => inst.into_py_any(py),
+        InstrumentAny::CryptoPerpetual(inst) => inst.into_py_any(py),
+        InstrumentAny::CurrencyPair(inst) => inst.into_py_any(py),
+        InstrumentAny::Equity(inst) => inst.into_py_any(py),
+        InstrumentAny::FuturesContract(inst) => inst.into_py_any(py),
+        InstrumentAny::FuturesSpread(inst) => inst.into_py_any(py),
+        InstrumentAny::OptionContract(inst) => inst.into_py_any(py),
+        InstrumentAny::OptionSpread(inst) => inst.into_py_any(py),
     }
 }
 

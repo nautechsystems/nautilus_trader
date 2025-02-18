@@ -22,7 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     types::{Price, Quantity},
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
 use crate::reports::order::OrderStatusReport;
 
@@ -160,8 +160,14 @@ impl OrderStatusReport {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self
+                .eq(other)
+                .into_py_any(py)
+                .expect("Boolean should be convertible to PyObject"),
+            CompareOp::Ne => self
+                .ne(other)
+                .into_py_any(py)
+                .expect("Boolean should be convertible to PyObject"),
             _ => py.NotImplemented(),
         }
     }

@@ -15,11 +15,15 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use nautilus_core::{python::to_pyvalue_err, UnixNanos, UUID4};
+use nautilus_core::{
+    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
+    UnixNanos, UUID4,
+};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
-    types::{PyLong, PyString, PyTuple},
+    types::{PyInt, PyString, PyTuple},
+    IntoPyObjectExt,
 };
 use ustr::Ustr;
 
@@ -70,11 +74,11 @@ impl TimeEvent {
 
         let ts_event = py_tuple
             .get_item(2)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<u64>()?;
         let ts_init: u64 = py_tuple
             .get_item(3)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<u64>()?;
 
         self.name = Ustr::from(
@@ -97,19 +101,19 @@ impl TimeEvent {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((
+        (
             self.name.to_string(),
             self.event_id.to_string(),
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .to_object(py))
+            .into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -124,8 +128,8 @@ impl TimeEvent {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -181,7 +185,7 @@ mod tests {
     use nautilus_core::{
         datetime::NANOSECONDS_IN_MILLISECOND, time::get_atomic_clock_realtime, UnixNanos,
     };
-    use pyo3::prelude::*;
+    use pyo3::{prelude::*, IntoPyObjectExt};
     use tokio::time::Duration;
 
     use crate::{
@@ -200,8 +204,11 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let callback = Python::with_gil(|py| {
-            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            TimeEventCallback::from(callable.into_py(py))
+            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = callable
+                .into_py_any(py)
+                .expect("Python function should be convertible to PyObject");
+            TimeEventCallback::from(callable)
         });
 
         // Create a new LiveTimer with no stop time
@@ -236,8 +243,11 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let callback = Python::with_gil(|py| {
-            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            TimeEventCallback::from(callable.into_py(py))
+            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = callable
+                .into_py_any(py)
+                .expect("Python function should be convertible to PyObject");
+            TimeEventCallback::from(callable)
         });
 
         // Create a new LiveTimer with a stop time
@@ -286,8 +296,11 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let callback = Python::with_gil(|py| {
-            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            TimeEventCallback::from(callable.into_py(py))
+            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = callable
+                .into_py_any(py)
+                .expect("Python function should be convertible to PyObject");
+            TimeEventCallback::from(callable)
         });
 
         // Create a new LiveTimer with a stop time

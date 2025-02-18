@@ -25,7 +25,8 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyFloat, PyLong, PyString, PyTuple},
+    types::{PyFloat, PyInt, PyString, PyTuple},
+    IntoPyObjectExt,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
@@ -42,7 +43,7 @@ impl Money {
         let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
         self.raw = py_tuple
             .get_item(0)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<MoneyRaw>()?;
         let currency_code: String = py_tuple
             .get_item(1)?
@@ -53,13 +54,13 @@ impl Money {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.raw, self.currency.code.to_string()).to_object(py))
+        (self.raw, self.currency.code.to_string()).into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -70,11 +71,11 @@ impl Money {
     fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract::<f64>()?;
-            Ok((self.as_f64() + other_float).into_py(py))
+            (self.as_f64() + other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((self.as_decimal() + other_qty.as_decimal()).into_py(py))
+            (self.as_decimal() + other_qty.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((self.as_decimal() + other_dec).into_py(py))
+            (self.as_decimal() + other_dec).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -86,11 +87,11 @@ impl Money {
     fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((other_float + self.as_f64()).into_py(py))
+            (other_float + self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((other_qty.as_decimal() + self.as_decimal()).into_py(py))
+            (other_qty.as_decimal() + self.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((other_dec + self.as_decimal()).into_py(py))
+            (other_dec + self.as_decimal()).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -102,11 +103,11 @@ impl Money {
     fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((self.as_f64() - other_float).into_py(py))
+            (self.as_f64() - other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((self.as_decimal() - other_qty.as_decimal()).into_py(py))
+            (self.as_decimal() - other_qty.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((self.as_decimal() - other_dec).into_py(py))
+            (self.as_decimal() - other_dec).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -118,11 +119,11 @@ impl Money {
     fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((other_float - self.as_f64()).into_py(py))
+            (other_float - self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((other_qty.as_decimal() - self.as_decimal()).into_py(py))
+            (other_qty.as_decimal() - self.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((other_dec - self.as_decimal()).into_py(py))
+            (other_dec - self.as_decimal()).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -134,11 +135,11 @@ impl Money {
     fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((self.as_f64() * other_float).into_py(py))
+            (self.as_f64() * other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((self.as_decimal() * other_qty.as_decimal()).into_py(py))
+            (self.as_decimal() * other_qty.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((self.as_decimal() * other_dec).into_py(py))
+            (self.as_decimal() * other_dec).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -150,11 +151,11 @@ impl Money {
     fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((other_float * self.as_f64()).into_py(py))
+            (other_float * self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((other_qty.as_decimal() * self.as_decimal()).into_py(py))
+            (other_qty.as_decimal() * self.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((other_dec * self.as_decimal()).into_py(py))
+            (other_dec * self.as_decimal()).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -166,11 +167,11 @@ impl Money {
     fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((self.as_f64() / other_float).into_py(py))
+            (self.as_f64() / other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((self.as_decimal() / other_qty.as_decimal()).into_py(py))
+            (self.as_decimal() / other_qty.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((self.as_decimal() / other_dec).into_py(py))
+            (self.as_decimal() / other_dec).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -182,11 +183,11 @@ impl Money {
     fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((other_float / self.as_f64()).into_py(py))
+            (other_float / self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((other_qty.as_decimal() / self.as_decimal()).into_py(py))
+            (other_qty.as_decimal() / self.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((other_dec / self.as_decimal()).into_py(py))
+            (other_dec / self.as_decimal()).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -198,13 +199,13 @@ impl Money {
     fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((self.as_f64() / other_float).floor().into_py(py))
+            (self.as_f64() / other_float).floor().into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((self.as_decimal() / other_qty.as_decimal())
+            (self.as_decimal() / other_qty.as_decimal())
                 .floor()
-                .into_py(py))
+                .into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((self.as_decimal() / other_dec).floor().into_py(py))
+            (self.as_decimal() / other_dec).floor().into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -216,13 +217,13 @@ impl Money {
     fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((other_float / self.as_f64()).floor().into_py(py))
+            (other_float / self.as_f64()).floor().into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((other_qty.as_decimal() / self.as_decimal())
+            (other_qty.as_decimal() / self.as_decimal())
                 .floor()
-                .into_py(py))
+                .into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((other_dec / self.as_decimal()).floor().into_py(py))
+            (other_dec / self.as_decimal()).floor().into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -234,11 +235,11 @@ impl Money {
     fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((self.as_f64() % other_float).into_py(py))
+            (self.as_f64() % other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((self.as_decimal() % other_qty.as_decimal()).into_py(py))
+            (self.as_decimal() % other_qty.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((self.as_decimal() % other_dec).into_py(py))
+            (self.as_decimal() % other_dec).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -250,11 +251,11 @@ impl Money {
     fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
         if other.as_ref().is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            Ok((other_float % self.as_f64()).into_py(py))
+            (other_float % self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
-            Ok((other_qty.as_decimal() % self.as_decimal()).into_py(py))
+            (other_qty.as_decimal() % self.as_decimal()).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            Ok((other_dec % self.as_decimal()).into_py(py))
+            (other_dec % self.as_decimal()).into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -307,7 +308,7 @@ impl Money {
                 CompareOp::Le => self.le(&other_money),
                 CompareOp::Lt => self.lt(&other_money),
             };
-            Ok(result.into_py(py))
+            result.into_py_any(py)
         } else {
             Ok(py.NotImplemented())
         }
@@ -373,11 +374,5 @@ impl Money {
     #[pyo3(name = "to_formatted_str")]
     fn py_to_formatted_str(&self) -> String {
         self.to_formatted_string()
-    }
-}
-
-impl ToPyObject for Money {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.into_py(py)
     }
 }

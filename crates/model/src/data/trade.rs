@@ -176,7 +176,8 @@ impl GetTsInit for TradeTick {
 #[cfg(test)]
 mod tests {
     use nautilus_core::{serialization::Serializable, UnixNanos};
-    use pyo3::{IntoPy, Python};
+
+    use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
@@ -265,7 +266,7 @@ mod tests {
         let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let tick_pyobject = trade.into_py(py);
+            let tick_pyobject = trade.into_py_any(py).unwrap();
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, trade);
         });

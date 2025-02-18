@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPy, PyObject, PyResult, Python};
+use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
+use pyo3::{PyObject, PyResult, Python};
 
 use crate::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEventAny,
@@ -42,23 +42,23 @@ pub mod updated;
 
 pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<PyObject> {
     match order_event {
-        OrderEventAny::Initialized(event) => Ok(event.into_py(py)),
-        OrderEventAny::Denied(event) => Ok(event.into_py(py)),
-        OrderEventAny::Emulated(event) => Ok(event.into_py(py)),
-        OrderEventAny::Released(event) => Ok(event.into_py(py)),
-        OrderEventAny::Submitted(event) => Ok(event.into_py(py)),
-        OrderEventAny::Accepted(event) => Ok(event.into_py(py)),
-        OrderEventAny::Rejected(event) => Ok(event.into_py(py)),
-        OrderEventAny::Canceled(event) => Ok(event.into_py(py)),
-        OrderEventAny::Expired(event) => Ok(event.into_py(py)),
-        OrderEventAny::Triggered(event) => Ok(event.into_py(py)),
-        OrderEventAny::PendingUpdate(event) => Ok(event.into_py(py)),
-        OrderEventAny::PendingCancel(event) => Ok(event.into_py(py)),
-        OrderEventAny::ModifyRejected(event) => Ok(event.into_py(py)),
-        OrderEventAny::CancelRejected(event) => Ok(event.into_py(py)),
-        OrderEventAny::Updated(event) => Ok(event.into_py(py)),
-        OrderEventAny::PartiallyFilled(event) => Ok(event.into_py(py)),
-        OrderEventAny::Filled(event) => Ok(event.into_py(py)),
+        OrderEventAny::Initialized(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Denied(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Emulated(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Released(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Submitted(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Accepted(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Rejected(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Canceled(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Expired(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Triggered(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::PendingUpdate(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::PendingCancel(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::ModifyRejected(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::CancelRejected(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Updated(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::PartiallyFilled(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Filled(event) => Ok(event.into_py_any_unwrap(py)),
     }
 }
 
