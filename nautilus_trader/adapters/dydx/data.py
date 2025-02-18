@@ -153,11 +153,6 @@ class DYDXDataClient(LiveMarketDataClient):
             loop=loop,
             max_send_retries=config.max_ws_send_retries,
             retry_delay_secs=config.max_ws_retry_delay_secs,
-            reconnect_timeout_ms=config.reconnect_timeout_ms,
-            reconnect_delay_initial_ms=config.reconnect_delay_initial_ms,
-            reconnect_delay_max_ms=config.reconnect_delay_max_ms,
-            reconnect_backoff_factor=config.reconnect_backoff_factor,
-            reconnect_jitter_ms=config.reconnect_jitter_ms,
         )
 
         # HTTP API
