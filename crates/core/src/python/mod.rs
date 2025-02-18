@@ -43,7 +43,7 @@ pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
     #[inline]
     fn into_py_any_unwrap(self, py: Python<'py>) -> PyObject {
         self.into_py_any(py)
-            .expect("Expected to convert type to PyObject")
+            .expect("Failed to convert type to PyObject")
     }
 }
 

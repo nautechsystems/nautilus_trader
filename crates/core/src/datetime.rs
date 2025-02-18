@@ -184,7 +184,7 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
     let datetime = Utc.timestamp_nanos(unix_nanos.as_i64());
     (subtract_n_months(datetime, n)
         .timestamp_nanos_opt()
-        .expect("Months should be withing 584 years") as u64)
+        .expect("Months should be within 584 years") as u64)
         .into()
 }
 

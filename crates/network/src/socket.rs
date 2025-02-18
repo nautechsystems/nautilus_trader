@@ -656,10 +656,10 @@ impl SocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
     use std::{ffi::CString, net::TcpListener};
 
     use nautilus_common::testing::wait_until_async;
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::prepare_freethreaded_python;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
