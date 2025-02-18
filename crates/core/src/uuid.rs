@@ -49,7 +49,7 @@ impl UUID4 {
     /// The UUID value is stored as a fixed-length C string byte array.
     #[must_use]
     pub fn new() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut bytes = [0u8; 16];
         rng.fill_bytes(&mut bytes);
 

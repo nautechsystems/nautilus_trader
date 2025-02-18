@@ -34,13 +34,15 @@ macro_rules! identifier_for_python {
             }
 
             fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-                Ok((self.to_string(),).to_object(py))
+                use pyo3::IntoPyObjectExt;
+                (self.to_string(),).into_py_any(py)
             }
 
             fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+                use pyo3::IntoPyObjectExt;
                 let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
                 let state = self.__getstate__(py)?;
-                Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+                (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
             }
 
             #[staticmethod]
@@ -48,14 +50,19 @@ macro_rules! identifier_for_python {
                 Ok(<$ty>::from("NULL")) // Safe default
             }
 
+            // Note: Cannot use into_py_any_unwrap from IntoPyObjectNautilusExt
+            // because type resolution for the trait happens after macros have
+            // been run.
             fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+                use nautilus_core::python::IntoPyObjectNautilusExt;
+
                 match op {
-                    CompareOp::Eq => self.eq(other).into_py(py),
-                    CompareOp::Ne => self.ne(other).into_py(py),
-                    CompareOp::Ge => self.ge(other).into_py(py),
-                    CompareOp::Gt => self.gt(other).into_py(py),
-                    CompareOp::Le => self.le(other).into_py(py),
-                    CompareOp::Lt => self.lt(other).into_py(py),
+                    CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+                    CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+                    CompareOp::Ge => self.ge(other).into_py_any_unwrap(py),
+                    CompareOp::Gt => self.gt(other).into_py_any_unwrap(py),
+                    CompareOp::Le => self.le(other).into_py_any_unwrap(py),
+                    CompareOp::Lt => self.lt(other).into_py_any_unwrap(py),
                 }
             }
 

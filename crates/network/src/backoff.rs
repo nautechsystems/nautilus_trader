@@ -80,7 +80,7 @@ impl ExponentialBackoff {
         }
 
         // Generate random jitter
-        let jitter = rand::thread_rng().gen_range(0..=self.jitter_ms);
+        let jitter = rand::rng().random_range(0..=self.jitter_ms);
         let delay_with_jitter = self.delay_current + Duration::from_millis(jitter);
 
         // Prepare the next delay

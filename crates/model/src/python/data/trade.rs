@@ -22,7 +22,7 @@ use std::{
 use nautilus_core::{
     python::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
-        to_pyvalue_err,
+        to_pyvalue_err, IntoPyObjectNautilusExt,
     },
     serialization::Serializable,
     UnixNanos,
@@ -30,7 +30,8 @@ use nautilus_core::{
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
-    types::{PyDict, PyLong, PyString, PyTuple},
+    types::{PyDict, PyInt, PyString, PyTuple},
+    IntoPyObjectExt,
 };
 
 use super::data_to_pycapsule;
@@ -116,34 +117,25 @@ impl TradeTick {
         let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
         let price_raw = py_tuple
             .get_item(1)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<PriceRaw>()?;
-        let price_prec = py_tuple
-            .get_item(2)?
-            .downcast::<PyLong>()?
-            .extract::<u8>()?;
+        let price_prec = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract::<u8>()?;
         let size_raw = py_tuple
             .get_item(3)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<QuantityRaw>()?;
-        let size_prec = py_tuple
-            .get_item(4)?
-            .downcast::<PyLong>()?
-            .extract::<u8>()?;
+        let size_prec = py_tuple.get_item(4)?.downcast::<PyInt>()?.extract::<u8>()?;
 
-        let aggressor_side_u8 = py_tuple
-            .get_item(5)?
-            .downcast::<PyLong>()?
-            .extract::<u8>()?;
+        let aggressor_side_u8 = py_tuple.get_item(5)?.downcast::<PyInt>()?.extract::<u8>()?;
         let binding = py_tuple.get_item(6)?;
         let trade_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
         let ts_event = py_tuple
             .get_item(7)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<u64>()?;
         let ts_init = py_tuple
             .get_item(8)?
-            .downcast::<PyLong>()?
+            .downcast::<PyInt>()?
             .extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
@@ -158,7 +150,7 @@ impl TradeTick {
     }
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((
+        (
             self.instrument_id.to_string(),
             self.price.raw,
             self.price.precision,
@@ -169,13 +161,13 @@ impl TradeTick {
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .to_object(py))
+            .into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]
@@ -193,8 +185,8 @@ impl TradeTick {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -335,14 +327,14 @@ impl TradeTick {
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // SAFETY: Unwrap safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
+        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // SAFETY: Unwrap safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
+        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
 
@@ -351,7 +343,8 @@ impl TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPy, Python};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::{
@@ -416,7 +409,7 @@ mod tests {
         let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let tick_pyobject = trade.into_py(py);
+            let tick_pyobject = trade.into_py_any_unwrap(py);
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, trade);
         });

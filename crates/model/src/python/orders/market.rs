@@ -15,14 +15,14 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt},
     UUID4,
 };
 use pyo3::{
     basic::CompareOp,
     pymethods,
     types::{PyAnyMethods, PyDict, PyList},
-    Bound, IntoPy, Py, PyAny, PyObject, PyResult, Python,
+    Bound, Py, PyAny, PyObject, PyResult, Python,
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -97,8 +97,8 @@ impl MarketOrder {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

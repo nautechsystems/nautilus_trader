@@ -18,7 +18,7 @@ pub mod margin;
 pub mod transformer;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPy, PyObject, PyResult, Python};
+use pyo3::{conversion::IntoPyObjectExt, PyObject, PyResult, Python};
 
 use crate::{
     accounts::{any::AccountAny, cash::CashAccount, margin::MarginAccount},
@@ -42,7 +42,7 @@ pub fn pyobject_to_account_any(py: Python, account: PyObject) -> PyResult<Accoun
 
 pub fn account_any_to_pyobject(py: Python, account: AccountAny) -> PyResult<PyObject> {
     match account {
-        AccountAny::Cash(account) => Ok(account.into_py(py)),
-        AccountAny::Margin(account) => Ok(account.into_py(py)),
+        AccountAny::Cash(account) => account.into_py_any(py),
+        AccountAny::Margin(account) => account.into_py_any(py),
     }
 }

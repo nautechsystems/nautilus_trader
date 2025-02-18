@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
@@ -32,8 +32,8 @@ impl AccountBalance {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -107,8 +107,8 @@ impl MarginBalance {
     }
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

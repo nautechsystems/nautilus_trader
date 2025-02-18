@@ -32,9 +32,6 @@
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::missing_errors_doc)]
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-#![allow(deprecated)]
 
 pub mod consts;
 pub mod correctness;

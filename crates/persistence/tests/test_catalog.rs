@@ -13,13 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-#![allow(deprecated)]
-
 use std::path::PathBuf;
 
-use nautilus_core::ffi::cvec::CVec;
+use nautilus_core::{ffi::cvec::CVec, python::IntoPyObjectNautilusExt};
 use nautilus_model::data::{
     is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
     TradeTick,
@@ -82,7 +78,7 @@ fn catalog_query_mem_leak_test() {
             let expected_length = 9500;
             let catalog = DataBackendSession::new(1_000_000);
             Python::with_gil(|py| {
-                let pycatalog: Py<PyAny> = catalog.into_py(py);
+                let pycatalog: Py<PyAny> = catalog.into_py_any_unwrap(py);
                 pycatalog
                     .call_method1(
                         py,
@@ -159,7 +155,7 @@ fn test_quote_tick_python_control_flow() {
     let expected_length = 9500;
     let catalog = DataBackendSession::new(1_000_000);
     Python::with_gil(|py| {
-        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        let pycatalog: Py<PyAny> = catalog.into_py_any_unwrap(py);
         pycatalog
             .call_method1(
                 py,
@@ -219,7 +215,7 @@ fn test_order_book_delta_query_py() {
     let file_path = get_nautilus_test_data_file_path("deltas.parquet");
     let catalog = DataBackendSession::new(2_000);
     Python::with_gil(|py| {
-        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        let pycatalog: Py<PyAny> = catalog.into_py_any_unwrap(py);
         pycatalog
             .call_method1(
                 py,
