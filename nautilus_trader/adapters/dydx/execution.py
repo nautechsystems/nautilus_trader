@@ -245,6 +245,11 @@ class DYDXExecutionClient(LiveExecutionClient):
             handler_reconnect=None,
             base_url=base_url_ws,
             loop=loop,
+            reconnect_timeout_ms=config.reconnect_timeout_ms,
+            reconnect_delay_initial_ms=config.reconnect_delay_initial_ms,
+            reconnect_delay_max_ms=config.reconnect_delay_max_ms,
+            reconnect_backoff_factor=config.reconnect_backoff_factor,
+            reconnect_jitter_ms=config.reconnect_jitter_ms,
         )
 
         # GRPC API

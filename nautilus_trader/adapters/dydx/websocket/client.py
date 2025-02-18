@@ -58,6 +58,16 @@ class DYDXWebsocketClient:
         Maximum retries when sending websocket messages.
     retry_delay_secs : float, optional
         The delay (seconds) between retry attempts when resending websocket messages.
+    reconnect_timeout_ms : int, default 10_000
+        The timeout (milliseconds) for reconnection attempts.
+    reconnect_delay_initial_ms : int, default 2_000
+        The initial reconnection delay (milliseconds) for reconnects.
+    reconnect_delay_max_ms : int, default 30_000
+        The maximum reconnect delay (milliseconds) for exponential backoff.
+    reconnect_backoff_factor : float, default = 1.5
+        The maximum jitter (milliseconds) added to reconnection delays.
+    reconnect_jitter_ms : int, default = 100
+        The maximum jitter (milliseconds) added to reconnection delays.
 
     """
 
@@ -69,9 +79,13 @@ class DYDXWebsocketClient:
         handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
         subscription_rate_limit_per_second: int = 2,
-        max_reconnection_tries: int | None = 3,
         max_send_retries: int | None = None,
         retry_delay_secs: float | None = None,
+        reconnect_timeout_ms: int | None = 10_000,
+        reconnect_delay_initial_ms: int | None = 2_000,
+        reconnect_delay_max_ms: int | None = 30_000,
+        reconnect_backoff_factor: float | None = 1.5,
+        reconnect_jitter_ms: int | None = 100,
     ) -> None:
         """
         Provide a dYdX streaming WebSocket client.
@@ -91,6 +105,11 @@ class DYDXWebsocketClient:
         self._reconnect_task: asyncio.Task | None = None
         self._max_send_retries = max_send_retries
         self._retry_delay_secs = retry_delay_secs
+        self._reconnect_timeout_ms = reconnect_timeout_ms
+        self._reconnect_delay_initial_ms = reconnect_delay_initial_ms
+        self._reconnect_delay_max_ms = reconnect_delay_max_ms
+        self._reconnect_backoff_factor = reconnect_backoff_factor
+        self._reconnect_jitter_ms = reconnect_jitter_ms
 
     def is_connected(self) -> bool:
         """
@@ -165,6 +184,11 @@ class DYDXWebsocketClient:
             heartbeat=10,
             headers=[],
             ping_handler=self._handle_ping,
+            reconnect_timeout_ms=self._reconnect_timeout_ms,
+            reconnect_delay_initial_ms=self._reconnect_delay_initial_ms,
+            reconnect_delay_max_ms=self._reconnect_delay_max_ms,
+            reconnect_backoff_factor=self._reconnect_backoff_factor,
+            reconnect_jitter_ms=self._reconnect_jitter_ms,
         )
         client = await WebSocketClient.connect(
             config=config,
@@ -207,6 +231,12 @@ class DYDXWebsocketClient:
     async def send_pong(self, raw: bytes) -> None:
         """
         Send the given raw payload to the server as a PONG message.
+
+        Parameters
+        ----------
+        raw : bytes
+            The received ping in bytes.
+
         """
         if self._client is None:
             return
