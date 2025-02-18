@@ -100,8 +100,9 @@ impl BinaryOption {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
-            _ => panic!("Not implemented"),
+            _ => py.NotImplemented(),
         }
     }
 
