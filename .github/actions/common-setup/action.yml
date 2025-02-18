@@ -145,6 +145,10 @@ runs:
         restore-keys: |
           ${{ runner.os }}-site-packages-
 
+    - name: Install pre-commit
+      shell: bash
+      run: pip install pre-commit==4.1.0
+
     # > --------------------------------------------------
     # > UV
     - name: Get uv version from uv-version
