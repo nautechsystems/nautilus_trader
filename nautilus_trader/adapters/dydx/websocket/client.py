@@ -69,7 +69,6 @@ class DYDXWebsocketClient:
         handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
         subscription_rate_limit_per_second: int = 2,
-        max_reconnection_tries: int | None = 3,
         max_send_retries: int | None = None,
         retry_delay_secs: float | None = None,
     ) -> None:
@@ -207,6 +206,12 @@ class DYDXWebsocketClient:
     async def send_pong(self, raw: bytes) -> None:
         """
         Send the given raw payload to the server as a PONG message.
+
+        Parameters
+        ----------
+        raw : bytes
+            The pong message in bytes.
+
         """
         if self._client is None:
             return
