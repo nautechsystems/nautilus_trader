@@ -18,13 +18,13 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::serialization::from_dict_pyo3;
+use nautilus_core::python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt};
 use nautilus_model::{
     enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
@@ -35,14 +35,8 @@ use crate::{
 impl DatabentoImbalance {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self
-                .eq(other)
-                .into_py_any(py)
-                .expect("Boolean should be convertible to Python"),
-            CompareOp::Ne => self
-                .ne(other)
-                .into_py_any(py)
-                .expect("Boolean should be convertible to Python"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -160,14 +154,8 @@ impl DatabentoImbalance {
 impl DatabentoStatistics {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self
-                .eq(other)
-                .into_py_any(py)
-                .expect("Boolean should be convertible to Python"),
-            CompareOp::Ne => self
-                .ne(other)
-                .into_py_any(py)
-                .expect("Boolean should be convertible to Python"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
