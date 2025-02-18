@@ -26,4 +26,7 @@ runs:
 
     - name: Install Python wheel
       shell: bash
-      run: uv pip install dist/*.whl
+      run: |
+        uv pip freeze --exclude-editable > requirements.txt
+        pip install -r requirements.txt
+        pip install dist/*.whl
