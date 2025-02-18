@@ -30,6 +30,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -276,7 +277,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
-    async def _request_instrument(self, request: RequestInstruments) -> None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
         if request.start is not None:
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
