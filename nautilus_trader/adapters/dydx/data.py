@@ -836,6 +836,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 venue=command.venue,
                 ts_init=command.ts_init,
                 params=command.params,
+                only_deltas=True,  # not used
             )
             await self._unsubscribe_order_book_deltas(order_book_command)
 
