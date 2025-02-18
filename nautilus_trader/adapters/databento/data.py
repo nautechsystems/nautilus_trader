@@ -40,6 +40,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -844,7 +845,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             params=None,
         )
 
-    async def _request_instrument(self, request: RequestInstruments) -> None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
