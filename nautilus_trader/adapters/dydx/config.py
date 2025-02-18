@@ -40,16 +40,6 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
         Maximum retries when sending websocket messages.
     max_ws_retry_delay_secs : float, optional
         The delay (seconds) between retry attempts when resending websocket messages.
-    reconnect_timeout_ms : int, default 10_000
-        The timeout (milliseconds) for reconnection attempts.
-    reconnect_delay_initial_ms : int, default 2_000
-        The initial reconnection delay (milliseconds) for reconnects.
-    reconnect_delay_max_ms : int, default 30_000
-        The maximum reconnect delay (milliseconds) for exponential backoff.
-    reconnect_backoff_factor : float, default = 1.5
-        The maximum jitter (milliseconds) added to reconnection delays.
-    reconnect_jitter_ms : int, default = 100
-        The maximum jitter (milliseconds) added to reconnection delays.
 
     """
 
