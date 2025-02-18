@@ -181,7 +181,7 @@ pub fn get_time_bar_start(
         }
         BarAggregation::Month => {
             // Set to the first day of the year
-            let mut start_time = DateTime::<Utc>::from_utc(
+            let mut start_time = DateTime::from_naive_utc_and_offset(
                 chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)
                     .expect("valid date")
                     .and_hms_opt(0, 0, 0)

@@ -182,14 +182,20 @@ pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
 #[must_use]
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
     let datetime = Utc.timestamp_nanos(unix_nanos.as_i64());
-    (subtract_n_months(datetime, n).timestamp_nanos() as u64).into()
+    (subtract_n_months(datetime, n)
+        .timestamp_nanos_opt()
+        .expect("Months should be withing 584 years") as u64)
+        .into()
 }
 
 /// Add `n` months to a given UNIX nanoseconds timestamp.
 #[must_use]
 pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
     let date = Utc.timestamp_nanos(unix_nanos.as_i64());
-    (add_n_months(date, n).timestamp_nanos() as u64).into()
+    (add_n_months(date, n)
+        .timestamp_nanos_opt()
+        .expect("Months should be within 584 years") as u64)
+        .into()
 }
 
 /// Returns the last valid day of `(year, month)`.
