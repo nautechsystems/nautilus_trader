@@ -77,7 +77,7 @@ impl ExecutionEngine {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
-        config: ExecutionEngineConfig,
+        config: Option<ExecutionEngineConfig>,
     ) -> Self {
         let trader_id = msgbus.borrow().trader_id;
         Self {
@@ -90,7 +90,7 @@ impl ExecutionEngine {
             oms_overrides: HashMap::new(),
             external_order_claims: HashMap::new(),
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
-            config,
+            config: config.unwrap_or_default(),
         }
     }
 
@@ -1067,7 +1067,6 @@ mod tests {
         clock: Rc<RefCell<TestClock>>,
         config: Option<ExecutionEngineConfig>,
     ) -> ExecutionEngine {
-        let config = config.unwrap_or_default();
         ExecutionEngine::new(clock, cache, msgbus, config)
     }
 

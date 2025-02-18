@@ -8,17 +8,26 @@ Released on TBD (UTC).
 - Added `UnixNanos::to_datetime_utc()` in Rust
 - Added `Mark` variant for `PriceType` enum
 - Added mark price handling for `Cache`
+- Added mark exchange rate handling for `Cache`
+- Added `PortfolioConfig` for configuration settings specific to the `Portfolio`
+- Added mark price calculations and xrate handling for `Portfolio`
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
+- Removed internal `ExchangeRateCalculator`, replaced with `get_exchange_rate(...)` function implemented in Rust
+- Replaced `ForexSession` enum with equivalent from PyO3
+- Replaced `ForexSessionFilter` with equivalent functions from PyO3
 - Renamed `InterestRateData` to `YieldCurveData`
 - Renamed `Cache.add_interest_rate_curve` to `add_yield_curve`
 - Renamed `Cache.interest_rate_curve` to `yield_curve`
+- Moved `ExecEngineConfig.portfolio_bar_updates` config option to `PortfolioConfig.bar_updates`
 
 ### Internal Improvements
+- Implemented exchange rate calculations in Rust
 - Improved error logging for live engines to now include stacktrace for easier debugging
-- Improved Redis queries, error handling and connections (#2295, #2308, #2318), thanks @Pushkarm029
+- Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
+- Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
@@ -29,9 +38,10 @@ Released on TBD (UTC).
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
 - Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek
 - Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
+- Ported market-if-touched order handler for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded `datafusion` crate to v45.0.0
-- Upgraded `arrow` and `parquet` crates to v54.1.0
+- Upgraded `arrow` and `parquet` crates to v54.2.0
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
 
 ### Fixes
@@ -41,10 +51,15 @@ Released on TBD (UTC).
 - Fixed memory allocation performance issue for `TardisCSVDataLoader`
 - Fixed `effective` timestamp filtering for `TardisHttpClient` to now only retain latest version at or before `effective`
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
+- Fixed hard-coded signature type for `PolymarketExecutionClient`
 
 ### Documentation Updates
-- Improved `emulation_trigger` parameter description in docstrings (#2313)
-- Improved docs for emulated orders (#2316)
+- Added backtest clock and timers example (#2327), thanks @stefansimik
+- Added documentation for debugging with Rust (#2325), thanks @faysou
+- Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
+- Improved docs for emulated orders (#2316), thanks @stefansimik
+- Improved getting started doc for backtesting API levels (#2324), thanks @faysou
+- Refined option greeks docstrings (#2320), thanks @faysou
 
 ### Deprecations
 None

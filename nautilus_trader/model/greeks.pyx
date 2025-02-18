@@ -102,13 +102,16 @@ cdef class GreeksCalculator:
         """
         Calculate option greeks for a given instrument.
 
-        Also allows to apply shocks to spot, volatility and time to expiry.
+        Additional features:
+        - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
+        - Compute percent greeks.
+        - Compute beta-weighted delta and gamma with respect to an index.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The ID of the instrument to calculate greeks for.
-        flat_interest_rate : float, default 0.05
+        flat_interest_rate : float, default 0.0425
             The interest rate to use for calculations.
             The function first searches if an interest rate curve for the currency of the option is stored in cache;
             if not, flat_interest_rate is used.
@@ -252,7 +255,7 @@ cdef class GreeksCalculator:
         beta_weights: dict[InstrumentId, float] | None,
     ) -> tuple[float, float]:
         """
-        Modify option Greeks based on beta weighting and percentage calculations.
+        Modify delta and gamma based on beta weighting and percentage calculations.
 
         Parameters
         ----------
@@ -349,7 +352,11 @@ cdef class GreeksCalculator:
         Calculate the portfolio Greeks for a given set of positions.
 
         Aggregates the Greeks data for all open positions that match the specified criteria.
-        Also allows to apply shocks to spot, volatility and time to expiry.
+
+        Additional features:
+        - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
+        - Compute percent greeks.
+        - Compute beta-weighted delta and gamma with respect to an index.
 
         Parameters
         ----------

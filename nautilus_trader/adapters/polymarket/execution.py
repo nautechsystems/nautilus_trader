@@ -146,8 +146,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Configuration
         self._config = config
+        self._log.info(f"{config.signature_type=}", LogColor.BLUE)
+        self._log.info(f"{config.funder=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+        self._log.info(f"{config.generate_order_history_from_trades=}", LogColor.BLUE)
 
         account_id = AccountId(f"{name or POLYMARKET_VENUE.value}-001")
         self._set_account_id(account_id)
@@ -161,7 +164,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.info(f"{wallet_address=}", LogColor.BLUE)
 
         # HTTP API
-        self._signature_type = 0
         self._http_client = http_client
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
@@ -253,7 +255,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
     async def _update_allowances(self, instrument_ids: list[InstrumentId]) -> None:
         params = BalanceAllowanceParams(
             asset_type=AssetType.COLLATERAL,
-            signature_type=self._signature_type,
+            signature_type=self._config.signature_type,
         )
         self._log.info(f"Updating {params}")
         await asyncio.to_thread(self._http_client.update_balance_allowance, params)
@@ -263,7 +265,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params = BalanceAllowanceParams(
                 asset_type=AssetType.CONDITIONAL,
                 token_id=token_id,
-                signature_type=self._signature_type,
+                signature_type=self._config.signature_type,
             )
             self._log.info(f"Updating {params}")
             await asyncio.to_thread(self._http_client.update_balance_allowance, params)
@@ -271,7 +273,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params = BalanceAllowanceParams(
                 asset_type=AssetType.CONDITIONAL,
                 token_id=token_id,
-                signature_type=self._signature_type,
+                signature_type=self._config.signature_type,
             )
             response: dict[str, Any] = await asyncio.to_thread(
                 self._http_client.get_balance_allowance,
@@ -284,7 +286,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         params = BalanceAllowanceParams(
             asset_type=AssetType.COLLATERAL,
-            signature_type=self._signature_type,
+            signature_type=self._config.signature_type,
         )
         response = await asyncio.to_thread(
             self._http_client.get_balance_allowance,
@@ -610,7 +612,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params = BalanceAllowanceParams(
                 asset_type=AssetType.CONDITIONAL,
                 token_id=token_id,
-                signature_type=self._signature_type,
+                signature_type=self._config.signature_type,
             )
             response: dict[str, Any] = await asyncio.to_thread(
                 self._http_client.get_balance_allowance,

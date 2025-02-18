@@ -15,6 +15,7 @@
 
 import datetime as dt
 
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.trading.strategy import Strategy
@@ -39,7 +40,7 @@ class DemoStrategy(Strategy):
 
     def on_bar(self, bar: Bar):
         self.bars_processed += 1
-        self.log.info(f"Processed bars: {self.bars_processed}")
+        self.log.info(f"Processed bars: {self.bars_processed}", color=LogColor.YELLOW)
 
     def on_stop(self):
         # Remember and log end time of strategy

@@ -22,7 +22,7 @@ use nautilus_model::identifiers::{
 
 /// A key-value lookup index for a `Cache`.
 #[derive(Debug)]
-pub(crate) struct CacheIndex {
+pub struct CacheIndex {
     pub(crate) venue_account: HashMap<Venue, AccountId>,
     pub(crate) venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,
     pub(crate) venue_positions: HashMap<Venue, HashSet<PositionId>>,

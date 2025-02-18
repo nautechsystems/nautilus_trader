@@ -47,6 +47,7 @@ pub mod generators;
 pub mod logging;
 pub mod messages;
 pub mod msgbus;
+pub mod runner;
 pub mod runtime;
 pub mod signal;
 pub mod testing;

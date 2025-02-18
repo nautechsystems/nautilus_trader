@@ -28,7 +28,7 @@ mod tests {
         orderbook::OrderBook,
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Price, Quantity},
+        types::{Currency, Price, Quantity},
     };
     use rstest::{fixture, rstest};
 
@@ -671,5 +671,73 @@ mod tests {
         let result = cache.account_for_venue(&venue);
         assert!(result.is_some());
         assert_eq!(*result.unwrap(), account);
+    }
+
+    #[rstest]
+    fn test_get_mark_xrate_returns_none(cache: Cache) {
+        // When no mark xrate is set for (USD, EUR), it should return None
+        assert!(cache
+            .get_mark_xrate(Currency::USD(), Currency::EUR())
+            .is_none());
+    }
+
+    #[rstest]
+    fn test_set_and_get_mark_xrate(mut cache: Cache) {
+        // Set a mark xrate for (USD, EUR) and check both forward and inverse rates
+        let xrate = 1.25;
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), xrate);
+        assert_eq!(
+            cache.get_mark_xrate(Currency::USD(), Currency::EUR()),
+            Some(xrate)
+        );
+        assert_eq!(
+            cache.get_mark_xrate(Currency::EUR(), Currency::USD()),
+            Some(1.0 / xrate)
+        );
+    }
+
+    #[rstest]
+    fn test_clear_mark_xrate(mut cache: Cache) {
+        // Set a rate and then clear the forward key
+        let xrate = 1.25;
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), xrate);
+        assert!(cache
+            .get_mark_xrate(Currency::USD(), Currency::EUR())
+            .is_some());
+        cache.clear_mark_xrate(Currency::USD(), Currency::EUR());
+        assert!(cache
+            .get_mark_xrate(Currency::USD(), Currency::EUR())
+            .is_none());
+        assert_eq!(
+            cache.get_mark_xrate(Currency::EUR(), Currency::USD()),
+            Some(1.0 / xrate)
+        );
+    }
+
+    #[rstest]
+    fn test_clear_mark_xrates(mut cache: Cache) {
+        // Set two mark xrates and then clear them all
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 1.25);
+        cache.set_mark_xrate(Currency::AUD(), Currency::USD(), 0.75);
+        cache.clear_mark_xrates();
+        assert!(cache
+            .get_mark_xrate(Currency::USD(), Currency::EUR())
+            .is_none());
+        assert!(cache
+            .get_mark_xrate(Currency::EUR(), Currency::USD())
+            .is_none());
+        assert!(cache
+            .get_mark_xrate(Currency::AUD(), Currency::USD())
+            .is_none());
+        assert!(cache
+            .get_mark_xrate(Currency::USD(), Currency::AUD())
+            .is_none());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "xrate was zero")]
+    fn test_set_mark_xrate_panics_on_zero(mut cache: Cache) {
+        // Setting a mark xrate of zero should panic
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.0);
     }
 }

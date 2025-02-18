@@ -27,6 +27,13 @@ The following table lists example locations ordered by recommended learning prog
 
 ## Backtesting API levels
 
+NautilusTrader provides two different API levels for backtesting:
+
+| API Level      | Description                           | Characteristics                                                                                                                                                                                                                                                                                                                                                        |
+|:---------------|:--------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| High-Level API | Uses `BacktestNode` and `TradingNode` | • Recommended for production use<br>• Provides easier transition to live trading<br>• Requires using the data catalog (structured storage of market data in Parquet format)                                                                                                                                                                                            |
+| Low-Level API  | Uses `BacktestEngine`                 | • Primarily intended for testing and development of the library, but it is very useful for general backtesting<br>• Does not support live trading transition<br>• Allows direct access to components, so it may be easier to understand for beginners<br>• More transparent about internal operations but may lead to developing habits incompatible with live trading |
+
 Backtesting involves running simulated trading systems on historical data.
 
 To get started backtesting with NautilusTrader you need to first understand the two different API

@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// TODO: Under development
+#![allow(dead_code)] // For PortfolioConfig
+
 //! Provides a generic `Portfolio` for all environments.
 use std::{
     cell::RefCell,
@@ -37,14 +40,12 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price},
 };
-use rust_decimal::{
-    prelude::{FromPrimitive, ToPrimitive},
-    Decimal,
-};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use ustr::Ustr;
 use uuid::Uuid;
 
 use crate::{
+    config::PortfolioConfig,
     handlers::{
         UpdateAccountHandler, UpdateBarHandler, UpdateOrderHandler, UpdatePositionHandler,
         UpdateQuoteTickHandler,
@@ -93,6 +94,7 @@ pub struct Portfolio {
     pub(crate) cache: Rc<RefCell<Cache>>,
     pub(crate) msgbus: Rc<RefCell<MessageBus>>,
     inner: Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
 }
 
 impl Portfolio {
@@ -100,19 +102,20 @@ impl Portfolio {
         msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
-        portfolio_bar_updates: bool,
+        config: Option<PortfolioConfig>,
     ) -> Self {
         let inner = Rc::new(RefCell::new(PortfolioState::new(
             clock.clone(),
             cache.clone(),
         )));
+        let config = config.unwrap_or_default();
 
         Self::register_message_handlers(
             msgbus.clone(),
             cache.clone(),
             clock.clone(),
             inner.clone(),
-            portfolio_bar_updates,
+            config.bar_updates,
         );
 
         Self {
@@ -120,6 +123,7 @@ impl Portfolio {
             cache,
             msgbus,
             inner,
+            config,
         }
     }
 
@@ -128,7 +132,7 @@ impl Portfolio {
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         inner: Rc<RefCell<PortfolioState>>,
-        portfolio_bar_updates: bool,
+        bar_updates: bool,
     ) {
         let update_account_handler = {
             let cache = cache.clone();
@@ -220,7 +224,7 @@ impl Portfolio {
         msgbus.register("Portfolio.update_account", update_account_handler.clone());
 
         msgbus.subscribe("data.quotes.*", update_quote_handler, Some(10));
-        if portfolio_bar_updates {
+        if bar_updates {
             msgbus.subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
         }
         msgbus.subscribe("events.order.*", update_order_handler, Some(10));
@@ -410,23 +414,26 @@ impl Portfolio {
                 continue; // Nothing to calculate
             }
 
-            let last = self.get_last_price(position)?;
-            let xrate = self.calculate_xrate_to_base(instrument, account, position.entry);
-            if xrate == 0.0 {
-                log::error!(
-                    "Cannot calculate net exposures: insufficient data for {}/{:?}",
-                    instrument.settlement_currency(),
-                    account.base_currency()
-                );
-                return None; // Cannot calculate
-            }
+            let price = self.get_price(position)?;
+            let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry) {
+                Some(xrate) => xrate,
+                None => {
+                    log::error!(
+                        // TODO: Improve logging
+                        "Cannot calculate net exposures: insufficient data for {}/{:?}",
+                        instrument.settlement_currency(),
+                        account.base_currency()
+                    );
+                    return None; // Cannot calculate
+                }
+            };
 
             let settlement_currency = account
                 .base_currency()
                 .unwrap_or_else(|| instrument.settlement_currency());
 
             let net_exposure = instrument
-                .calculate_notional_value(position.quantity, last, None)
+                .calculate_notional_value(position.quantity, price, None)
                 .as_f64()
                 * xrate;
 
@@ -522,22 +529,23 @@ impl Portfolio {
         let mut net_exposure = 0.0;
 
         for position in positions_open {
-            let last = self.get_last_price(position)?;
-            let xrate = self.calculate_xrate_to_base(instrument, account, position.entry);
-            if xrate == 0.0 {
-                log::error!(
-                    "Cannot calculate net exposure: insufficient data for {}/{:?}",
-                    instrument.settlement_currency(),
-                    account.base_currency()
-                );
-                return None;
-            }
+            let price = self.get_price(position)?;
+            let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry) {
+                Some(xrate) => xrate,
+                None => {
+                    log::error!(
+                        // TODO: Improve logging
+                        "Cannot calculate net exposures: insufficient data for {}/{:?}",
+                        instrument.settlement_currency(),
+                        account.base_currency()
+                    );
+                    return None; // Cannot calculate
+                }
+            };
 
-            let notional_value = instrument
-                .calculate_notional_value(position.quantity, last, None)
-                .as_f64();
-
-            net_exposure += notional_value * xrate;
+            let notional_value =
+                instrument.calculate_notional_value(position.quantity, price, None);
+            net_exposure += notional_value.as_f64() * xrate;
         }
 
         let settlement_currency = account
@@ -894,7 +902,7 @@ impl Portfolio {
                 continue; // Nothing to calculate
             }
 
-            let last = if let Some(price) = self.get_last_price(position) {
+            let price = if let Some(price) = self.get_price(position) {
                 price
             } else {
                 log::debug!(
@@ -905,20 +913,23 @@ impl Portfolio {
                 return None; // Cannot calculate
             };
 
-            let mut pnl = position.unrealized_pnl(last).as_f64();
+            let mut pnl = position.unrealized_pnl(price).as_f64();
 
             if let Some(base_currency) = account.base_currency() {
-                let xrate = self.calculate_xrate_to_base(instrument, account, position.entry);
-
-                if xrate == 0.0 {
-                    log::debug!(
-                        "Cannot calculate unrealized PnL: insufficient data for {}/{}",
-                        instrument.settlement_currency(),
-                        base_currency
-                    );
-                    self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                    return None;
-                }
+                let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry)
+                {
+                    Some(xrate) => xrate,
+                    None => {
+                        log::error!(
+                            // TODO: Improve logging
+                            "Cannot calculate unrealized PnL: insufficient data for {}/{}",
+                            instrument.settlement_currency(),
+                            base_currency
+                        );
+                        self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                        return None; // Cannot calculate
+                    }
+                };
 
                 let scale = 10f64.powi(currency.precision.into());
                 pnl = ((pnl * xrate) * scale).round() / scale;
@@ -981,17 +992,20 @@ impl Portfolio {
             let mut pnl = position.realized_pnl?.as_f64();
 
             if let Some(base_currency) = account.base_currency() {
-                let xrate = self.calculate_xrate_to_base(instrument, account, position.entry);
-
-                if xrate == 0.0 {
-                    log::debug!(
-                        "Cannot calculate realized PnL: insufficient data for {}/{}",
-                        instrument.settlement_currency(),
-                        base_currency
-                    );
-                    self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                    return None; // Cannot calculate
-                }
+                let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry)
+                {
+                    Some(xrate) => xrate,
+                    None => {
+                        log::error!(
+                            // TODO: Improve logging
+                            "Cannot calculate realized PnL: insufficient data for {}/{}",
+                            instrument.settlement_currency(),
+                            base_currency
+                        );
+                        self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                        return None; // Cannot calculate
+                    }
+                };
 
                 let scale = 10f64.powi(currency.precision.into());
                 pnl = ((pnl * xrate) * scale).round() / scale;
@@ -1003,7 +1017,7 @@ impl Portfolio {
         Some(Money::new(total_pnl, currency))
     }
 
-    fn get_last_price(&self, position: &Position) -> Option<Price> {
+    fn get_price(&self, position: &Position) -> Option<Price> {
         let price_type = match position.side {
             PositionSide::Long => PriceType::Bid,
             PositionSide::Short => PriceType::Ask,
@@ -1030,35 +1044,29 @@ impl Portfolio {
         instrument: &InstrumentAny,
         account: &AccountAny,
         side: OrderSide,
-    ) -> f64 {
+    ) -> Option<f64> {
         match account.base_currency() {
+            None => Some(1.0), // No conversion needed
             Some(base_currency) => {
+                let cache = self.cache.borrow();
+
+                if self.config.use_mark_xrates {
+                    return cache.get_mark_xrate(instrument.settlement_currency(), base_currency);
+                };
+
                 let price_type = if side == OrderSide::Buy {
                     PriceType::Bid
                 } else {
                     PriceType::Ask
                 };
 
-                self.cache
-                    .borrow()
-                    .get_xrate(
-                        instrument.id().venue,
-                        instrument.settlement_currency(),
-                        base_currency,
-                        price_type,
-                    )
-                    .to_f64()
-                    .unwrap_or_else(|| {
-                        log::error!(
-                            "Failed to get/convert xrate for instrument {} from {} to {}",
-                            instrument.id(),
-                            instrument.settlement_currency(),
-                            base_currency
-                        );
-                        1.0
-                    })
+                cache.get_xrate(
+                    instrument.id().venue,
+                    instrument.settlement_currency(),
+                    base_currency,
+                    price_type,
+                )
             }
-            None => 1.0, // No conversion needed
         }
     }
 }
@@ -1169,6 +1177,7 @@ fn update_instrument_id(
         cache,
         msgbus,
         inner: inner.clone(),
+        config: PortfolioConfig::default(), // TODO: TBD
     };
 
     let result_unrealized_pnl: Option<Money> =
@@ -1272,6 +1281,7 @@ fn update_order(
             cache: cache.clone(),
             msgbus: msgbus.clone(),
             inner: inner.clone(),
+            config: PortfolioConfig::default(), // TODO: TBD
         };
 
         match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id) {
@@ -1341,6 +1351,7 @@ fn update_position(
         cache: cache.clone(),
         msgbus,
         inner: inner.clone(),
+        config: PortfolioConfig::default(), // TODO: TBD
     };
 
     portfolio_clone.update_net_position(&instrument_id, positions_open.clone());

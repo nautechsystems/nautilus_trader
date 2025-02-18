@@ -55,6 +55,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -70,6 +71,7 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.data import MyData
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.trading.messages import RemoveStrategy
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -339,6 +341,13 @@ class TestBacktestEngine:
 
         # Assert
         assert len(engine.kernel.trader.strategies()) == 1
+
+        # Act
+        msg = RemoveStrategy(StrategyId("SignalStrategy-000"))
+        engine.kernel.msgbus.send("Controller.execute", msg)
+
+        # Assert
+        assert len(engine.kernel.trader.strategies()) == 0
 
 
 class TestBacktestEngineCashAccount:

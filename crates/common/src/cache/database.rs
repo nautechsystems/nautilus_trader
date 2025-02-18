@@ -77,20 +77,24 @@ pub trait CacheDatabaseAdapter {
 
     fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
 
-    fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>>;
+    async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>>;
 
-    fn load_instrument(
+    async fn load_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>>;
 
-    fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument>;
+    async fn load_synthetic(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>>;
 
-    fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>>;
+    async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>>;
 
-    fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>>;
+    async fn load_order(&self, client_order_id: &ClientOrderId)
+        -> anyhow::Result<Option<OrderAny>>;
 
-    fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position>;
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>>;
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
 

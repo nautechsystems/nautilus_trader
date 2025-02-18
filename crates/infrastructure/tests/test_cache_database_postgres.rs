@@ -174,24 +174,41 @@ mod serial_tests {
 
         // Check individual currencies
         assert_eq!(
-            pg_cache.load_currency(&Ustr::from("BTC")).unwrap().unwrap(),
+            pg_cache
+                .load_currency(&Ustr::from("BTC"))
+                .await
+                .unwrap()
+                .unwrap(),
             btc
         );
         assert_eq!(
-            pg_cache.load_currency(&Ustr::from("ETH")).unwrap().unwrap(),
+            pg_cache
+                .load_currency(&Ustr::from("ETH"))
+                .await
+                .unwrap()
+                .unwrap(),
             eth
         );
         assert_eq!(
-            pg_cache.load_currency(&Ustr::from("GBP")).unwrap().unwrap(),
+            pg_cache
+                .load_currency(&Ustr::from("GBP"))
+                .await
+                .unwrap()
+                .unwrap(),
             gbp
         );
         assert_eq!(
-            pg_cache.load_currency(&Ustr::from("USD")).unwrap().unwrap(),
+            pg_cache
+                .load_currency(&Ustr::from("USD"))
+                .await
+                .unwrap()
+                .unwrap(),
             usd
         );
         assert_eq!(
             pg_cache
                 .load_currency(&Ustr::from("USDC"))
+                .await
                 .unwrap()
                 .unwrap(),
             usdc
@@ -199,6 +216,7 @@ mod serial_tests {
         assert_eq!(
             pg_cache
                 .load_currency(&Ustr::from("USDT"))
+                .await
                 .unwrap()
                 .unwrap(),
             usdt
@@ -208,6 +226,7 @@ mod serial_tests {
         assert_eq!(
             pg_cache
                 .load_instrument(&binary_option.id())
+                .await
                 .unwrap()
                 .unwrap(),
             InstrumentAny::BinaryOption(binary_option)
@@ -215,6 +234,7 @@ mod serial_tests {
         assert_eq!(
             pg_cache
                 .load_instrument(&crypto_future.id())
+                .await
                 .unwrap()
                 .unwrap(),
             InstrumentAny::CryptoFuture(crypto_future)
@@ -222,6 +242,7 @@ mod serial_tests {
         assert_eq!(
             pg_cache
                 .load_instrument(&crypto_perpetual.id())
+                .await
                 .unwrap()
                 .unwrap(),
             InstrumentAny::CryptoPerpetual(crypto_perpetual)
@@ -229,17 +250,23 @@ mod serial_tests {
         assert_eq!(
             pg_cache
                 .load_instrument(&currency_pair.id())
+                .await
                 .unwrap()
                 .unwrap(),
             InstrumentAny::CurrencyPair(currency_pair)
         );
         assert_eq!(
-            pg_cache.load_instrument(&equity.id()).unwrap().unwrap(),
+            pg_cache
+                .load_instrument(&equity.id())
+                .await
+                .unwrap()
+                .unwrap(),
             InstrumentAny::Equity(equity)
         );
         assert_eq!(
             pg_cache
                 .load_instrument(&futures_contract.id())
+                .await
                 .unwrap()
                 .unwrap(),
             InstrumentAny::FuturesContract(futures_contract)
@@ -247,6 +274,7 @@ mod serial_tests {
         assert_eq!(
             pg_cache
                 .load_instrument(&option_contract.id())
+                .await
                 .unwrap()
                 .unwrap(),
             InstrumentAny::OptionContract(option_contract)
@@ -344,23 +372,30 @@ mod serial_tests {
         // Add orders
         pg_cache.add_order(&market_order, Some(client_id)).unwrap();
         pg_cache.add_order(&limit_order, Some(client_id)).unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 pg_cache
                     .load_order(&market_order.client_order_id())
+                    .await
                     .unwrap()
                     .is_some()
                     && pg_cache
                         .load_order(&limit_order.client_order_id())
+                        .await
                         .unwrap()
                         .is_some()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
         let market_order_result = pg_cache
             .load_order(&market_order.client_order_id())
+            .await
             .unwrap();
-        let limit_order_result = pg_cache.load_order(&limit_order.client_order_id()).unwrap();
+        let limit_order_result = pg_cache
+            .load_order(&limit_order.client_order_id())
+            .await
+            .unwrap();
         let client_order_ids = pg_cache.load_index_order_client().unwrap();
         assert_entirely_equal(market_order_result.unwrap(), market_order);
         assert_entirely_equal(limit_order_result.unwrap(), limit_order);
@@ -438,18 +473,21 @@ mod serial_tests {
         market_order.apply(filled).unwrap();
 
         pg_cache.update_order(market_order.last_event()).unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 let result = pg_cache
                     .load_order(&market_order.client_order_id())
+                    .await
                     .unwrap();
                 result.is_some() && result.unwrap().status() == OrderStatus::Filled
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         let market_order_result = pg_cache
             .load_order(&market_order.client_order_id())
+            .await
             .unwrap();
         assert_entirely_equal(market_order_result.unwrap(), market_order);
 
@@ -472,11 +510,18 @@ mod serial_tests {
                 .unwrap();
         }
         pg_cache.add_account(&account).unwrap();
-        wait_until(
-            || pg_cache.load_account(&account.id()).unwrap().is_some(),
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
             Duration::from_secs(2),
-        );
-        let account_result = pg_cache.load_account(&account.id()).unwrap();
+        )
+        .await;
+        let account_result = pg_cache.load_account(&account.id()).await.unwrap();
         assert_entirely_equal(account_result.unwrap(), account.clone());
 
         // Update account
@@ -484,14 +529,15 @@ mod serial_tests {
             cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
         account.apply(new_account_state_event);
         pg_cache.update_account(&account).unwrap();
-        wait_until(
-            || {
-                let result = pg_cache.load_account(&account.id()).unwrap();
+        wait_until_async(
+            || async {
+                let result = pg_cache.load_account(&account.id()).await.unwrap();
                 result.is_some() && result.unwrap().events().len() >= 2
             },
             Duration::from_secs(2),
-        );
-        let account_result = pg_cache.load_account(&account.id()).unwrap();
+        )
+        .await;
+        let account_result = pg_cache.load_account(&account.id()).await.unwrap();
         assert_entirely_equal(account_result.unwrap(), account);
     }
 
@@ -510,16 +556,18 @@ mod serial_tests {
         // Add quote
         let quote = quote_ethusdt_binance();
         pg_cache.add_quote(&quote).unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 pg_cache
                     .load_instrument(&instrument.id())
+                    .await
                     .unwrap()
                     .is_some()
                     && !pg_cache.load_quotes(&instrument.id()).unwrap().is_empty()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
         let quotes = pg_cache.load_quotes(&instrument.id()).unwrap();
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0], quote);
@@ -543,16 +591,18 @@ mod serial_tests {
         // Add trade
         let trade = stub_trade_ethusdt_buyer();
         pg_cache.add_trade(&trade).unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 pg_cache
                     .load_instrument(&instrument.id())
+                    .await
                     .unwrap()
                     .is_some()
                     && !pg_cache.load_trades(&instrument.id()).unwrap().is_empty()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
         let trades = pg_cache.load_trades(&instrument.id()).unwrap();
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0], trade);
@@ -576,16 +626,18 @@ mod serial_tests {
         // Add bar
         let bar = stub_bar();
         pg_cache.add_bar(&bar).unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 pg_cache
                     .load_instrument(&instrument.id())
+                    .await
                     .unwrap()
                     .is_some()
                     && !pg_cache.load_bars(&instrument.id()).unwrap().is_empty()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
         let bars = pg_cache.load_bars(&instrument.id()).unwrap();
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0], bar);

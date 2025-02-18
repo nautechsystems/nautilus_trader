@@ -24,7 +24,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-pub(crate) struct UpdateQuoteTickHandler {
+pub struct UpdateQuoteTickHandler {
     pub(crate) id: Ustr,
     pub(crate) callback: Box<dyn Fn(&QuoteTick)>,
 }
@@ -44,7 +44,7 @@ impl MessageHandler for UpdateQuoteTickHandler {
     }
 }
 
-pub(crate) struct UpdateBarHandler {
+pub struct UpdateBarHandler {
     pub(crate) id: Ustr,
     pub(crate) callback: Box<dyn Fn(&Bar)>,
 }
@@ -64,7 +64,7 @@ impl MessageHandler for UpdateBarHandler {
     }
 }
 
-pub(crate) struct UpdateOrderHandler {
+pub struct UpdateOrderHandler {
     pub(crate) id: Ustr,
     pub(crate) callback: Box<dyn Fn(&OrderEventAny)>,
 }
@@ -84,7 +84,7 @@ impl MessageHandler for UpdateOrderHandler {
     }
 }
 
-pub(crate) struct UpdatePositionHandler {
+pub struct UpdatePositionHandler {
     pub(crate) id: Ustr,
     pub(crate) callback: Box<dyn Fn(&PositionEvent)>,
 }
@@ -104,7 +104,7 @@ impl MessageHandler for UpdatePositionHandler {
     }
 }
 
-pub(crate) struct UpdateAccountHandler {
+pub struct UpdateAccountHandler {
     pub(crate) id: Ustr,
     pub(crate) callback: Box<dyn Fn(&AccountState)>,
 }

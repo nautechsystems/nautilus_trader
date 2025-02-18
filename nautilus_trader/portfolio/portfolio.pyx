@@ -29,6 +29,7 @@ from decimal import Decimal
 from nautilus_trader.analysis import statistics
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.portfolio.config import PortfolioConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -90,6 +91,13 @@ cdef class Portfolio(PortfolioFacade):
         The read-only cache for the portfolio.
     clock : Clock
         The clock for the portfolio.
+    config : PortfolioConfig
+       The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `PortfolioConfig`.
     """
 
     def __init__(
@@ -97,8 +105,12 @@ cdef class Portfolio(PortfolioFacade):
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
-        bint portfolio_bar_updates = True,
-    ):
+        config: PortfolioConfig | None = None,
+    ) -> None:
+        if config is None:
+            config = PortfolioConfig()
+        Condition.type(config, PortfolioConfig, "config")
+
         self._clock = clock
         self._log = Logger(name=type(self).__name__)
         self._msgbus = msgbus
@@ -108,6 +120,13 @@ cdef class Portfolio(PortfolioFacade):
             clock=clock,
             logger=self._log,
         )
+
+        # Configuration
+        self._config = config
+        self._use_mark_prices = config.use_mark_prices
+        self._use_mark_xrates = config.use_mark_xrates
+        self._log_price = "mark price" if config.use_mark_prices else "quote, trade or bar prices"
+        self._log_xrate = "mark" if config.use_mark_xrates else "data to calculate"
 
         self._venue = None  # Venue for specific portfolio behavior (Interactive Brokers)
         self._realized_pnls: dict[InstrumentId, Money] = {}
@@ -142,11 +161,16 @@ cdef class Portfolio(PortfolioFacade):
         self._msgbus.register(endpoint="Portfolio.update_account", handler=self.update_account)
 
         # Required subscriptions
-        self._msgbus.subscribe(topic="data.quotes.*", handler=self.update_quote_tick, priority=10)
         self._msgbus.subscribe(topic="events.order.*", handler=self.update_order, priority=10)
         self._msgbus.subscribe(topic="events.position.*", handler=self.update_position, priority=10)
         self._msgbus.subscribe(topic="events.account.*", handler=self.update_account, priority=10)
-        if portfolio_bar_updates:
+
+        if config.use_mark_prices:
+            self._msgbus.subscribe(topic="data.mark_prices.*", handler=self.update_mark_price, priority=10)
+        else:
+            self._msgbus.subscribe(topic="data.quotes.*", handler=self.update_quote_tick, priority=10)
+
+        if config.bar_updates:
             self._msgbus.subscribe(topic="data.bars.*EXTERNAL", handler=self.update_bar, priority=10)
 
         self.initialized = False
@@ -324,6 +348,13 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(tick, "tick")
 
         self._update_instrument_id(tick.instrument_id)
+
+    cpdef void update_mark_price(self, object mark_price):
+        """
+        TBD
+        """
+        # TODO: Feature is WIP
+        self._log.warning("Mark price updates not yet supported")
 
     cpdef void update_bar(self, Bar bar):
         """
@@ -847,22 +878,23 @@ cdef class Portfolio(PortfolioFacade):
             if price is None:
                 self._log.error(
                     f"Cannot calculate net exposures: "
-                    f"no prices for {position.instrument_id}",
+                    f"no {self._log_price} for {position.instrument_id}",
                 )
                 continue  # Cannot calculate
 
-            xrate = self._calculate_xrate_to_base(
+            xrate_result = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
                 side=position.entry,
             )
-
-            if xrate == 0.0:
+            if not xrate_result:
                 self._log.error(
                     f"Cannot calculate net exposures: "
-                    f"insufficient data for {instrument.get_settlement_currency()}/{account.base_currency}",
+                    f"no {self._log_xrate} exchange rate for {instrument.get_settlement_currency()}/{account.base_currency}",
                 )
                 return None  # Cannot calculate
+
+            xrate = xrate_result  # Cast to double
 
             if account.base_currency is not None:
                 settlement_currency = account.base_currency
@@ -1036,22 +1068,23 @@ cdef class Portfolio(PortfolioFacade):
             if price is None:
                 self._log.error(
                     f"Cannot calculate net exposure: "
-                    f"no prices for {position.instrument_id}",
+                    f"no {self._log_price} for {position.instrument_id}",
                 )
                 continue  # Cannot calculate
 
-            xrate = self._calculate_xrate_to_base(
+            xrate_result = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
                 side=position.entry,
             )
-
-            if xrate == 0.0:
+            if not xrate_result:
                 self._log.error(
                     f"Cannot calculate net exposure: "
-                    f"insufficient data for {instrument.get_settlement_currency()}/{account.base_currency}",
+                    f"no {self._log_xrate} exchange rate for {instrument.get_settlement_currency()}/{account.base_currency}",
                 )
                 return None  # Cannot calculate
+
+            xrate = xrate_result  # Cast to double
 
             if isinstance(instrument, BettingInstrument):
                 bet_position = self._bet_positions.get(instrument.id)
@@ -1298,19 +1331,20 @@ cdef class Portfolio(PortfolioFacade):
                 pnl = position.realized_pnl.as_f64_c()
 
             if account.base_currency is not None:
-                xrate = self._calculate_xrate_to_base(
+                xrate_result = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
                     side=position.entry,
                 )
-
-                if xrate == 0.0:
+                if not xrate_result:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.get_settlement_currency()}/{account.base_currency}",
+                        f"no {self._log_xrate} exchange rate yet for {instrument.get_settlement_currency()}/{account.base_currency}",
                     )
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
+
+                xrate = xrate_result  # Cast to double
 
                 pnl = round(pnl * xrate, currency.get_precision())
 
@@ -1364,7 +1398,7 @@ cdef class Portfolio(PortfolioFacade):
             price = price or self._get_price(position)
             if price is None:
                 self._log.debug(
-                    f"Cannot calculate unrealized PnL: no prices for {instrument_id}",
+                    f"Cannot calculate unrealized PnL: no {self._log_price} for {instrument_id}",
                 )
                 self._pending_calcs.add(instrument.id)
                 return None  # Cannot calculate
@@ -1382,19 +1416,20 @@ cdef class Portfolio(PortfolioFacade):
                 pnl = position.unrealized_pnl(price).as_f64_c()
 
             if account.base_currency is not None:
-                xrate = self._calculate_xrate_to_base(
+                xrate_result = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
                     side=position.entry,
                 )
-
-                if xrate == 0.0:
+                if not xrate_result:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.get_settlement_currency()}/{account.base_currency}",
+                        f"no {self._log_xrate} exchange rate for {instrument.get_settlement_currency()}/{account.base_currency}",
                     )
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
+
+                xrate = xrate_result  # Cast to double
 
                 pnl = round(pnl * xrate, currency.get_precision())
 
@@ -1404,7 +1439,9 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef Price _get_price(self, Position position):
         cdef PriceType price_type
-        if position.side == PositionSide.FLAT:
+        if self._use_mark_prices:
+            price_type = PriceType.MARK
+        elif position.side == PositionSide.FLAT:
             price_type = PriceType.LAST
         elif position.side == PositionSide.LONG:
             price_type = PriceType.BID
@@ -1424,13 +1461,19 @@ cdef class Portfolio(PortfolioFacade):
             price_type=PriceType.LAST,
         ) or self._bar_close_prices.get(instrument_id)
 
-    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
-        if account.base_currency is not None:
-            return self._cache.get_xrate(
-                venue=self._venue or instrument.id.venue,
+    cdef _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
+        if account.base_currency is None:
+            return 1.0  # No conversion needed
+
+        if self._use_mark_xrates:
+            return self._cache.get_mark_xrate(
                 from_currency=instrument.get_settlement_currency(),
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )
 
-        return Decimal(1)  # No conversion needed
+        return self._cache.get_xrate(
+            venue=self._venue or instrument.id.venue,
+            from_currency=instrument.get_settlement_currency(),
+            to_currency=account.base_currency,
+            price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
+        )
