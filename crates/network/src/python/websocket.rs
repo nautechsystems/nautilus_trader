@@ -263,10 +263,10 @@ impl WebSocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
     use std::ffi::CString;
 
     use futures_util::{SinkExt, StreamExt};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
         net::TcpListener,
