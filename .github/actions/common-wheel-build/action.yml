@@ -26,4 +26,4 @@ runs:
 
     - name: Install Python wheel
       shell: bash
-      run: pip install dist/*.whl
+      run: uv pip install dist/*.whl
