@@ -34,11 +34,13 @@ Released on TBD (UTC).
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
+- Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
 - Ported `update_stop_market_order` for `OrderMatchingEngine` in Rust (#2310), thanks @filipmacek
 - Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
-- Ported market-if-touched order handler for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
+- Ported market-if-touched order handling for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
+- Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded `datafusion` crate to v45.0.0
 - Upgraded `arrow` and `parquet` crates to v54.2.0
@@ -52,6 +54,8 @@ Released on TBD (UTC).
 - Fixed `effective` timestamp filtering for `TardisHttpClient` to now only retain latest version at or before `effective`
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
+- Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
+- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
