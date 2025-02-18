@@ -3349,6 +3349,7 @@ dependencies = [
  "nautilus-serialization",
  "nautilus-tardis",
  "nautilus-test-kit",
+ "nautilus-trading",
  "pyo3",
 ]
 

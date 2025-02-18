@@ -13,15 +13,97 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use pyo3::prelude::*;
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::python::common::EnumIterator;
+use pyo3::{prelude::*, types::PyType, PyTypeInfo};
 
 use crate::sessions::{
     fx_local_from_utc, fx_next_end, fx_next_start, fx_prev_end, fx_prev_start, ForexSession,
 };
 
+#[pymethods]
+impl ForexSession {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(PositionSide),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "SYDNEY")]
+    fn py_no_position_side() -> Self {
+        Self::Sydney
+    }
+
+    #[classattr]
+    #[pyo3(name = "TOKYO")]
+    fn py_flat() -> Self {
+        Self::Tokyo
+    }
+
+    #[classattr]
+    #[pyo3(name = "LONDON")]
+    fn py_long() -> Self {
+        Self::London
+    }
+
+    #[classattr]
+    #[pyo3(name = "NEW_YORK")]
+    fn py_short() -> Self {
+        Self::NewYork
+    }
+}
+
 /// Converts a UTC timestamp to the local time for the given Forex session.
+///
+/// The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+/// (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
 #[pyfunction]
 #[pyo3(name = "fx_local_from_utc")]
 pub fn py_fx_local_from_utc(
@@ -32,27 +114,39 @@ pub fn py_fx_local_from_utc(
 }
 
 /// Returns the next session start time in UTC.
+///
+/// The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+/// (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
 #[pyfunction]
 #[pyo3(name = "fx_next_start")]
 pub fn py_fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
     Ok(fx_next_start(session, time_now))
 }
 
-/// Returns the previous session start time in UTC.
-#[pyfunction]
-#[pyo3(name = "fx_prev_start")]
-pub fn py_fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
-    Ok(fx_prev_start(session, time_now))
-}
-
 /// Returns the next session end time in UTC.
+///
+/// The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+/// (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
 #[pyfunction]
 #[pyo3(name = "fx_next_end")]
 pub fn py_fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
     Ok(fx_next_end(session, time_now))
 }
 
+/// Returns the previous session start time in UTC.
+///
+/// The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+/// (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+#[pyfunction]
+#[pyo3(name = "fx_prev_start")]
+pub fn py_fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
+    Ok(fx_prev_start(session, time_now))
+}
+
 /// Returns the previous session end time in UTC.
+///
+/// The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+/// (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
 #[pyfunction]
 #[pyo3(name = "fx_prev_end")]
 pub fn py_fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {

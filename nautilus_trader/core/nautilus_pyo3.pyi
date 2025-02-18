@@ -1004,6 +1004,12 @@ class LogColor(Enum):
     YELLOW = "YELLOW"
     RED = "RED"
 
+class ForexSession(Enum):
+    SYDNEY = "SYDNEY"
+    TOKYO = "TOKYO"
+    LONDON = "LONDON"
+    NEW_YORK = "NEW_YORK"
+
 # Identifiers
 
 class AccountId:
@@ -4925,3 +4931,37 @@ class YieldCurveData(Data):
 ###################################################################################################
 
 def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None): ...
+
+###################################################################################################
+# Trading
+###################################################################################################
+
+# Converts a UTC timestamp to the local time for the given Forex session.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the next session start time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_next_start(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the next session end time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_next_end(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the previous session start time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_prev_start(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the previous session end time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_prev_end(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
