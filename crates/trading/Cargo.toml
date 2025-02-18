@@ -45,4 +45,3 @@ python = [
   "nautilus-execution/python",
   "nautilus-model/python",
 ]
-high-precision = ["nautilus-model/high-precision"]

@@ -15,6 +15,8 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
 - Removed internal `ExchangeRateCalculator`, replaced with `get_exchange_rate(...)` function implemented in Rust
+- Replaced `ForexSession` enum with equivalent from PyO3
+- Replaced `ForexSessionFilter` with equivalent functions from PyO3
 - Renamed `InterestRateData` to `YieldCurveData`
 - Renamed `Cache.add_interest_rate_curve` to `add_yield_curve`
 - Renamed `Cache.interest_rate_curve` to `yield_curve`
