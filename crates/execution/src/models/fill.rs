@@ -71,7 +71,7 @@ impl FillModel {
         match probability {
             0.0 => false,
             1.0 => true,
-            _ => self.rng.gen_bool(probability),
+            _ => self.rng.random_bool(probability),
         }
     }
 }

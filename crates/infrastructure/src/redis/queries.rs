@@ -657,7 +657,11 @@ fn convert_timestamp_strings(value: &mut Value) {
                     if let Value::String(s) = v {
                         if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
                             *v = Value::Number(
-                                (dt.with_timezone(&Utc).timestamp_nanos() as u64).into(),
+                                (dt.with_timezone(&Utc)
+                                    .timestamp_nanos_opt()
+                                    .expect("Invalid DateTime")
+                                    as u64)
+                                    .into(),
                             );
                         }
                     }
