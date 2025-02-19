@@ -27,12 +27,13 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{AsyncCommands, aio::ConnectionManager};
-use serde::{Serialize, de::DeserializeOwned};
+use redis::{aio::ConnectionManager, AsyncCommands};
+use serde::Serialize;
 use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
 
+use super::transformer::Transformer;
 // Collection keys
 const INDEX: &str = "index";
 const GENERAL: &str = "general";
@@ -76,10 +77,10 @@ impl DatabaseQueries {
         }
     }
 
-    pub fn deserialize_payload<T: DeserializeOwned>(
+    pub fn deserialize_payload(
         encoding: SerializationEncoding,
         payload: &[u8],
-    ) -> anyhow::Result<T> {
+    ) -> anyhow::Result<Value> {
         let mut value = match encoding {
             SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
@@ -88,9 +89,9 @@ impl DatabaseQueries {
         };
 
         convert_timestamp_strings(&mut value);
+        tracing::debug!("{}", value);
 
-        serde_json::from_value(value)
-            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
+        Ok(value)
     }
 
     pub async fn scan_keys(
@@ -133,8 +134,11 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
-            Self::load_currencies(con, trader_key, encoding),
+        let currencies = Self::load_currencies(con, trader_key, encoding)
+            .await
+            .map_err(|e| anyhow::anyhow!("Error loading currencies: {e}"))?;
+
+        let (instruments, synthetics, accounts, orders, positions) = try_join!(
             Self::load_instruments(con, trader_key, encoding),
             Self::load_synthetics(con, trader_key, encoding),
             Self::load_accounts(con, trader_key, encoding),
@@ -173,7 +177,7 @@ impl DatabaseQueries {
                     let currency_code = match key.as_str().rsplit(':').next() {
                         Some(code) => Ustr::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -181,11 +185,11 @@ impl DatabaseQueries {
                     match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
                         Ok(Some(currency)) => Some((currency_code, currency)),
                         Ok(None) => {
-                            log::error!("Currency not found: {currency_code}");
+                            tracing::error!("Currency not found: {currency_code}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load currency {currency_code}: {e}");
+                            tracing::error!("Failed to load currency {currency_code}: {e}");
                             None
                         }
                     }
@@ -222,12 +226,12 @@ impl DatabaseQueries {
                         .rsplit(':')
                         .next()
                         .ok_or_else(|| {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             "Invalid key format"
                         })
                         .and_then(|code| {
                             InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to convert to InstrumentId for {key}: {e}");
+                                tracing::error!("Failed to convert to InstrumentId for {key}: {e}");
                                 "Invalid instrument ID"
                             })
                         });
@@ -240,11 +244,11 @@ impl DatabaseQueries {
                     match Self::load_instrument(&con, trader_key, &instrument_id, encoding).await {
                         Ok(Some(instrument)) => Some((instrument_id, instrument)),
                         Ok(None) => {
-                            log::error!("Instrument not found: {instrument_id}");
+                            tracing::error!("Instrument not found: {instrument_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load instrument {instrument_id}: {e}");
+                            tracing::error!("Failed to load instrument {instrument_id}: {e}");
                             None
                         }
                     }
@@ -281,12 +285,12 @@ impl DatabaseQueries {
                         .rsplit(':')
                         .next()
                         .ok_or_else(|| {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             "Invalid key format"
                         })
                         .and_then(|code| {
                             InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to parse InstrumentId for {key}: {e}");
+                                tracing::error!("Failed to parse InstrumentId for {key}: {e}");
                                 "Invalid instrument ID"
                             })
                         });
@@ -299,11 +303,11 @@ impl DatabaseQueries {
                     match Self::load_synthetic(&con, trader_key, &instrument_id, encoding).await {
                         Ok(Some(synthetic)) => Some((instrument_id, synthetic)),
                         Ok(None) => {
-                            log::error!("Synthetic not found: {instrument_id}");
+                            tracing::error!("Synthetic not found: {instrument_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load synthetic {instrument_id}: {e}");
+                            tracing::error!("Failed to load synthetic {instrument_id}: {e}");
                             None
                         }
                     }
@@ -338,7 +342,7 @@ impl DatabaseQueries {
                     let account_id = match key.as_str().rsplit(':').next() {
                         Some(code) => AccountId::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -346,11 +350,11 @@ impl DatabaseQueries {
                     match Self::load_account(&con, trader_key, &account_id, encoding).await {
                         Ok(Some(account)) => Some((account_id, account)),
                         Ok(None) => {
-                            log::error!("Account not found: {account_id}");
+                            tracing::error!("Account not found: {account_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load account {account_id}: {e}");
+                            tracing::error!("Failed to load account {account_id}: {e}");
                             None
                         }
                     }
@@ -385,7 +389,7 @@ impl DatabaseQueries {
                     let client_order_id = match key.as_str().rsplit(':').next() {
                         Some(code) => ClientOrderId::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -393,11 +397,11 @@ impl DatabaseQueries {
                     match Self::load_order(&con, trader_key, &client_order_id, encoding).await {
                         Ok(Some(order)) => Some((client_order_id, order)),
                         Ok(None) => {
-                            log::error!("Order not found: {client_order_id}");
+                            tracing::error!("Order not found: {client_order_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load order {client_order_id}: {e}");
+                            tracing::error!("Failed to load order {client_order_id}: {e}");
                             None
                         }
                     }
@@ -432,7 +436,7 @@ impl DatabaseQueries {
                     let position_id = match key.as_str().rsplit(':').next() {
                         Some(code) => PositionId::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -440,11 +444,11 @@ impl DatabaseQueries {
                     match Self::load_position(&con, trader_key, &position_id, encoding).await {
                         Ok(Some(position)) => Some((position_id, position)),
                         Ok(None) => {
-                            log::error!("Position not found: {position_id}");
+                            tracing::error!("Position not found: {position_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load position {position_id}: {e}");
+                            tracing::error!("Failed to load position {position_id}: {e}");
                             None
                         }
                     }
@@ -472,8 +476,12 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Self::deserialize_payload(encoding, &result[0])?;
-        Ok(currency)
+        let currency = Transformer::currency_from_value(
+            Self::deserialize_payload(encoding, &result[0])?,
+            code,
+        )?;
+
+        Ok(Some(currency))
     }
 
     pub async fn load_instrument(
@@ -488,7 +496,9 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let instrument: InstrumentAny = Self::deserialize_payload(encoding, &result[0])?;
+        let instrument =
+            Transformer::instrument_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+
         Ok(Some(instrument))
     }
 
@@ -504,7 +514,9 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let synthetic: SyntheticInstrument = Self::deserialize_payload(encoding, &result[0])?;
+        let synthetic =
+            Transformer::synthetic_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+
         Ok(Some(synthetic))
     }
 
@@ -520,7 +532,9 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let account: AccountAny = Self::deserialize_payload(encoding, &result[0])?;
+        let account =
+            Transformer::account_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+
         Ok(Some(account))
     }
 
@@ -536,7 +550,9 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let order: OrderAny = Self::deserialize_payload(encoding, &result[0])?;
+        let order =
+            Transformer::order_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+
         Ok(Some(order))
     }
 
@@ -552,7 +568,9 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let position: Position = Self::deserialize_payload(encoding, &result[0])?;
+        let position =
+            Transformer::position_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+
         Ok(Some(position))
     }
 

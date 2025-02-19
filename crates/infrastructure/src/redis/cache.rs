@@ -45,8 +45,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{Pipeline, aio::ConnectionManager};
-use tokio::try_join;
+use redis::{aio::ConnectionManager, Pipeline};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -621,25 +620,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         tracing::debug!("Loading all data");
-
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
-            self.load_currencies(),
-            self.load_instruments(),
-            self.load_synthetics(),
-            self.load_accounts(),
-            self.load_orders(),
-            self.load_positions()
-        )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
-
-        Ok(CacheMap {
-            currencies,
-            instruments,
-            synthetics,
-            accounts,
-            orders,
-            positions,
-        })
+        DatabaseQueries::load_all(&self.database.con, self.encoding, &self.database.trader_key)
+            .await
     }
 
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {

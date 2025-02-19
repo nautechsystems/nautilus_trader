@@ -18,6 +18,7 @@
 pub mod cache;
 pub mod msgbus;
 pub mod queries;
+pub mod transformer;
 
 use std::time::Duration;
 
