@@ -767,7 +767,6 @@ cdef class DataEngine(Component):
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
-
         cdef:
             uint64_t interval_ns
             uint64_t timestamp_ns
@@ -2063,7 +2062,16 @@ cdef class DataEngine(Component):
                 topic=f"data.bars.{composite_bar_type}",
                 handler=aggregator.handle_bar,
             )
-            self._handle_subscribe_bars(client, command)
+            bars_subscription = SubscribeBars(
+                command.id,
+                composite_bar_type,
+                command.await_partial,
+                command.client_id,
+                command.venue,
+                command.ts_init,
+                command.params
+            )
+            self._handle_subscribe_bars(client, bars_subscription)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
@@ -2072,7 +2080,15 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_trade_tick,
                 priority=5,
             )
-            self._handle_subscribe_trade_ticks(client, SubscribeTradeTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            trade_ticks_subscription = SubscribeTradeTicks(
+                command.id,
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.ts_init,
+                command.params
+            )
+            self._handle_subscribe_trade_ticks(client, trade_ticks_subscription)
         else:
             self._msgbus.subscribe(
                 topic=f"data.quotes"
@@ -2081,7 +2097,15 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_quote_tick,
                 priority=5,
             )
-            self._handle_subscribe_quote_ticks(client, SubscribeQuoteTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            quote_ticks_subscription = SubscribeQuoteTicks(
+                command.id,
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.ts_init,
+                command.params
+            )
+            self._handle_subscribe_quote_ticks(client, quote_ticks_subscription)
 
         aggregator.is_running = True
 
@@ -2105,8 +2129,15 @@ cdef class DataEngine(Component):
                 topic=f"data.bars.{composite_bar_type}",
                 handler=aggregator.handle_bar,
             )
-            command.bar_type = composite_bar_type
-            self._handle_unsubscribe_bars(client, command)
+            bars_unsubscription = UnsubscribeBars(
+                command.id,
+                composite_bar_type,
+                command.client_id,
+                command.venue,
+                command.ts_init,
+                command.params
+            )
+            self._handle_unsubscribe_bars(client, bars_unsubscription)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
@@ -2114,7 +2145,15 @@ cdef class DataEngine(Component):
                       f".{command.bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
             )
-            self._handle_unsubscribe_trade_ticks(client, UnsubscribeTradeTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            trade_ticks_unsubscription =UnsubscribeTradeTicks(
+                command.id,
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.ts_init,
+                command.params
+            )
+            self._handle_unsubscribe_trade_ticks(client, trade_ticks_unsubscription)
         else:
             self._msgbus.unsubscribe(
                 topic=f"data.quotes"
@@ -2122,7 +2161,15 @@ cdef class DataEngine(Component):
                       f".{command.bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
             )
-            self._handle_unsubscribe_quote_ticks(client, UnsubscribeQuoteTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            quote_ticks_unsubscription =UnsubscribeQuoteTicks(
+                command.id,
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.ts_init,
+                command.params
+            )
+            self._handle_unsubscribe_quote_ticks(client, quote_ticks_unsubscription)
 
         # Remove from aggregators
         del self._bar_aggregators[command.bar_type.standard()]
