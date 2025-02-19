@@ -415,17 +415,18 @@ impl Portfolio {
             }
 
             let price = self.get_price(position)?;
-            let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry) {
-                Some(xrate) => xrate,
-                None => {
-                    log::error!(
-                        // TODO: Improve logging
-                        "Cannot calculate net exposures: insufficient data for {}/{:?}",
-                        instrument.settlement_currency(),
-                        account.base_currency()
-                    );
-                    return None; // Cannot calculate
-                }
+            let xrate = if let Some(xrate) =
+                self.calculate_xrate_to_base(instrument, account, position.entry)
+            {
+                xrate
+            } else {
+                log::error!(
+                    // TODO: Improve logging
+                    "Cannot calculate net exposures: insufficient data for {}/{:?}",
+                    instrument.settlement_currency(),
+                    account.base_currency()
+                );
+                return None; // Cannot calculate
             };
 
             let settlement_currency = account
@@ -530,17 +531,18 @@ impl Portfolio {
 
         for position in positions_open {
             let price = self.get_price(position)?;
-            let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry) {
-                Some(xrate) => xrate,
-                None => {
-                    log::error!(
-                        // TODO: Improve logging
-                        "Cannot calculate net exposures: insufficient data for {}/{:?}",
-                        instrument.settlement_currency(),
-                        account.base_currency()
-                    );
-                    return None; // Cannot calculate
-                }
+            let xrate = if let Some(xrate) =
+                self.calculate_xrate_to_base(instrument, account, position.entry)
+            {
+                xrate
+            } else {
+                log::error!(
+                    // TODO: Improve logging
+                    "Cannot calculate net exposures: insufficient data for {}/{:?}",
+                    instrument.settlement_currency(),
+                    account.base_currency()
+                );
+                return None; // Cannot calculate
             };
 
             let notional_value =
@@ -916,19 +918,19 @@ impl Portfolio {
             let mut pnl = position.unrealized_pnl(price).as_f64();
 
             if let Some(base_currency) = account.base_currency() {
-                let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry)
+                let xrate = if let Some(xrate) =
+                    self.calculate_xrate_to_base(instrument, account, position.entry)
                 {
-                    Some(xrate) => xrate,
-                    None => {
-                        log::error!(
-                            // TODO: Improve logging
-                            "Cannot calculate unrealized PnL: insufficient data for {}/{}",
-                            instrument.settlement_currency(),
-                            base_currency
-                        );
-                        self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                        return None; // Cannot calculate
-                    }
+                    xrate
+                } else {
+                    log::error!(
+                        // TODO: Improve logging
+                        "Cannot calculate unrealized PnL: insufficient data for {}/{}",
+                        instrument.settlement_currency(),
+                        base_currency
+                    );
+                    self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                    return None; // Cannot calculate
                 };
 
                 let scale = 10f64.powi(currency.precision.into());
@@ -992,19 +994,19 @@ impl Portfolio {
             let mut pnl = position.realized_pnl?.as_f64();
 
             if let Some(base_currency) = account.base_currency() {
-                let xrate = match self.calculate_xrate_to_base(instrument, account, position.entry)
+                let xrate = if let Some(xrate) =
+                    self.calculate_xrate_to_base(instrument, account, position.entry)
                 {
-                    Some(xrate) => xrate,
-                    None => {
-                        log::error!(
-                            // TODO: Improve logging
-                            "Cannot calculate realized PnL: insufficient data for {}/{}",
-                            instrument.settlement_currency(),
-                            base_currency
-                        );
-                        self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                        return None; // Cannot calculate
-                    }
+                    xrate
+                } else {
+                    log::error!(
+                        // TODO: Improve logging
+                        "Cannot calculate realized PnL: insufficient data for {}/{}",
+                        instrument.settlement_currency(),
+                        base_currency
+                    );
+                    self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                    return None; // Cannot calculate
                 };
 
                 let scale = 10f64.powi(currency.precision.into());
@@ -1052,7 +1054,7 @@ impl Portfolio {
 
                 if self.config.use_mark_xrates {
                     return cache.get_mark_xrate(instrument.settlement_currency(), base_currency);
-                };
+                }
 
                 let price_type = if side == OrderSide::Buy {
                     PriceType::Bid

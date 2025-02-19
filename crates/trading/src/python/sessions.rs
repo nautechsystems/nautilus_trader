@@ -33,7 +33,7 @@ impl ForexSession {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
     }
 
@@ -58,7 +58,7 @@ impl ForexSession {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
+    pub const fn value(&self) -> u8 {
         *self as u8
     }
 
@@ -77,25 +77,25 @@ impl ForexSession {
 
     #[classattr]
     #[pyo3(name = "SYDNEY")]
-    fn py_no_position_side() -> Self {
+    const fn py_no_position_side() -> Self {
         Self::Sydney
     }
 
     #[classattr]
     #[pyo3(name = "TOKYO")]
-    fn py_flat() -> Self {
+    const fn py_flat() -> Self {
         Self::Tokyo
     }
 
     #[classattr]
     #[pyo3(name = "LONDON")]
-    fn py_long() -> Self {
+    const fn py_long() -> Self {
         Self::London
     }
 
     #[classattr]
     #[pyo3(name = "NEW_YORK")]
-    fn py_short() -> Self {
+    const fn py_short() -> Self {
         Self::NewYork
     }
 }
