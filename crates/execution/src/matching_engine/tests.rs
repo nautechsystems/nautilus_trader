@@ -2432,3 +2432,50 @@ fn test_update_limit_if_touched_order_valid(
     assert_eq!(order_updated.client_order_id, client_order_id);
     assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
 }
+
+#[rstest]
+fn test_process_market_to_limit_orders_not_fully_filled(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+){
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // Add SELL limit orderbook delta to have ask initialized
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create MARKET TO LIMIT order with quantity of 2 which will be half filled
+    // and order half will be accepted as limit order
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut market_to_limit_order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(client_order_id)
+        .build();
+    engine_l2.process_order(&mut market_to_limit_order, account_id);
+
+    // Check that we have received OrderAccepted and then OrderFilled
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+}

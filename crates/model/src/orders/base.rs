@@ -101,6 +101,7 @@ impl OrderStatus {
             (Self::Initialized, OrderEventAny::Canceled(_)) => Self::Canceled,  // External orders
             (Self::Initialized, OrderEventAny::Expired(_)) => Self::Expired,  // External orders
             (Self::Initialized, OrderEventAny::Triggered(_)) => Self::Triggered, // External orders
+            (Self::Initialized, OrderEventAny::Updated(_)) => Self::Initialized,  // Updates should preserve state
             (Self::Emulated, OrderEventAny::Canceled(_)) => Self::Canceled,  // Emulated orders
             (Self::Emulated, OrderEventAny::Expired(_)) => Self::Expired,  // Emulated orders
             (Self::Emulated, OrderEventAny::Released(_)) => Self::Released,  // Emulated orders
