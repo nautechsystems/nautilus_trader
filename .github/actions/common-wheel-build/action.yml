@@ -28,5 +28,6 @@ runs:
       shell: bash
       run: |
         uv pip freeze --exclude-editable > requirements.txt
+        cat requirements.txt
         pip install -r requirements.txt
         pip install dist/*.whl
