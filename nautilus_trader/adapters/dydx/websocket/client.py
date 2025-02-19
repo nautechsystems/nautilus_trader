@@ -22,7 +22,6 @@ from collections.abc import Callable
 from typing import Any
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
 from nautilus_trader.adapters.dydx.http.errors import should_retry
@@ -85,9 +84,6 @@ class DYDXWebsocketClient:
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
         self._subscription_rate_limit_per_second = subscription_rate_limit_per_second
-        self._msg_timestamp = self._clock.utc_now()
-        self._msg_timeout_secs: int = 60
-        self._reconnect_task: asyncio.Task | None = None
         self._max_send_retries = max_send_retries
         self._retry_delay_secs = retry_delay_secs
 
@@ -160,7 +156,7 @@ class DYDXWebsocketClient:
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
-            handler=self._msg_handler,
+            handler=self._handler,
             heartbeat=10,
             headers=[],
             ping_handler=self._handle_ping,
@@ -172,24 +168,6 @@ class DYDXWebsocketClient:
         )
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
-
-        self._msg_timestamp = self._clock.utc_now()
-
-        if self._reconnect_task is None:
-            self._reconnect_task = self._loop.create_task(self._reconnect_guard())
-
-    def _msg_handler(self, raw: bytes) -> None:
-        """
-        Handle pushed websocket messages.
-
-        Parameters
-        ----------
-        raw : bytes
-            The received message in bytes.
-
-        """
-        self._msg_timestamp = self._clock.utc_now()
-        self._handler(raw)
 
     def _handle_ping(self, raw: bytes) -> None:
         """
@@ -213,7 +191,7 @@ class DYDXWebsocketClient:
             The pong message in bytes.
 
         """
-        if self._client is None:
+        if self._client is None or self._client.is_active() is False:
             return
 
         async with self._retry_manager_pool as retry_manager:
@@ -223,42 +201,6 @@ class DYDXWebsocketClient:
                 func=self._client.send_pong,
                 data=raw,
             )
-
-    async def _reconnect_guard(self) -> None:
-        """
-        Reconnect the websocket client when a message has not been received for some
-        time.
-        """
-        try:
-            while True:
-                await asyncio.sleep(1)
-                time_since_previous_msg = self._clock.utc_now() - self._msg_timestamp
-
-                if self.is_disconnected() or time_since_previous_msg > pd.Timedelta(
-                    seconds=self._msg_timeout_secs,
-                ):
-                    if self.is_disconnected():
-                        self._log.error("Websocket disconnected. Reconnecting.")
-
-                    # Print error if no message has been received for twice the timeout time
-                    # to reduce log noise.
-                    if time_since_previous_msg > pd.Timedelta(seconds=2 * self._msg_timeout_secs):
-                        self._log.error(
-                            f"{time_since_previous_msg} since previous received message. Reconnecting.",
-                        )
-
-                    try:
-                        await self.disconnect()
-                        await self.connect()
-                        self.reconnect()
-
-                        self._log.info("Websocket connected")
-                    except Exception as e:
-                        self._log.error(f"Failed to connect the websocket: {e}")
-                        self._client = None
-
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'reconnect_guard'")
 
     def reconnect(self) -> None:
         """
