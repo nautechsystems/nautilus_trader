@@ -183,9 +183,10 @@ mod tests {
     use tokio::sync::Mutex;
 
     use nautilus_core::{
-        datetime::NANOSECONDS_IN_MILLISECOND, time::get_atomic_clock_realtime, UnixNanos,
+        datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
+        time::get_atomic_clock_realtime, UnixNanos,
     };
-    use pyo3::{prelude::*, IntoPyObjectExt};
+    use pyo3::prelude::*;
     use tokio::time::Duration;
 
     use crate::{
@@ -205,9 +206,7 @@ mod tests {
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
-            let callable = callable
-                .into_py_any(py)
-                .expect("Python function should be convertible to PyObject");
+            let callable = callable.into_py_any_unwrap(py);
             TimeEventCallback::from(callable)
         });
 
@@ -244,9 +243,7 @@ mod tests {
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
-            let callable = callable
-                .into_py_any(py)
-                .expect("Python function should be convertible to PyObject");
+            let callable = callable.into_py_any_unwrap(py);
             TimeEventCallback::from(callable)
         });
 
@@ -297,9 +294,7 @@ mod tests {
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
-            let callable = callable
-                .into_py_any(py)
-                .expect("Python function should be convertible to PyObject");
+            let callable = callable.into_py_any_unwrap(py);
             TimeEventCallback::from(callable)
         });
 
