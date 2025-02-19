@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
@@ -58,6 +58,8 @@ pub enum OrderAny {
     TrailingStopLimit(TrailingStopLimitOrder),
     TrailingStopMarket(TrailingStopMarketOrder),
 }
+
+pub type SharedOrder = Rc<RefCell<OrderAny>>;
 
 impl Default for OrderAny {
     fn default() -> Self {

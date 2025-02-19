@@ -24,11 +24,12 @@ use nautilus_model::{
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
     events::{AccountState, OrderFilled},
     instruments::InstrumentAny,
-    orders::OrderAny,
+    orders::{any::SharedOrder, OrderAny},
     position::Position,
     types::{AccountBalance, Money},
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
+
 pub struct AccountsManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -92,7 +93,7 @@ impl AccountsManager {
         &self,
         account: &AccountAny,
         instrument: InstrumentAny,
-        orders_open: Vec<&OrderAny>,
+        orders_open: Vec<SharedOrder>,
         ts_event: UnixNanos,
     ) -> Option<(AccountAny, AccountState)> {
         match account.clone() {

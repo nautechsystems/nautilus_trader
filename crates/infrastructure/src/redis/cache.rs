@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    cell::RefCell,
     collections::{HashMap, VecDeque},
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -632,12 +634,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
+        let shared_orders = orders
+            .into_iter()
+            .map(|(client_order_id, order)| (client_order_id, Rc::new(RefCell::new(order))))
+            .collect();
+
         Ok(CacheMap {
             currencies,
             instruments,
             synthetics,
             accounts,
-            orders,
+            orders: shared_orders,
             positions,
         })
     }

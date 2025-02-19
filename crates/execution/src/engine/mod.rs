@@ -23,6 +23,7 @@
 pub mod config;
 
 use std::{
+    any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -46,7 +47,7 @@ use nautilus_model::{
     },
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
-    orders::{OrderAny, OrderError},
+    orders::{any::SharedOrder, OrderAny, OrderError},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -428,7 +429,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn create_order_state_snapshot(&self, order: &OrderAny) {
+    fn create_order_state_snapshot(&self, order: SharedOrder) {
         if self.config.debug {
             log::debug!("Creating order state snapshot for {order}");
         }
@@ -476,7 +477,7 @@ impl ExecutionEngine {
         let client_order_id = event.client_order_id();
         let cache = self.cache.borrow();
         let mut order = if let Some(order) = cache.order(&client_order_id) {
-            order.clone()
+            order
         } else {
             log::warn!(
                 "Order with {} not found in the cache to apply {}",
@@ -530,7 +531,7 @@ impl ExecutionEngine {
                     order_filled.position_id = Some(position_id);
                 }
 
-                self.apply_event_to_order(&mut order, OrderEventAny::Filled(order_filled));
+                self.apply_event_to_order(order.clone(), OrderEventAny::Filled(order_filled));
                 self.handle_order_fill(&order, order_filled, oms_type);
             }
             _ => {
@@ -613,8 +614,8 @@ impl ExecutionEngine {
         PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
-    fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
-        if let Err(e) = order.apply(event.clone()) {
+    fn apply_event_to_order(&self, order: SharedOrder, event: OrderEventAny) {
+        if let Err(e) = order.borrow_mut().apply(event.clone()) {
             match e {
                 OrderError::InvalidStateTransition => {
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
@@ -626,7 +627,7 @@ impl ExecutionEngine {
             return;
         }
 
-        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+        if let Err(e) = self.cache.borrow_mut().update_order(order.clone()) {
             log::error!("Error updating order in cache: {e}");
         }
 
@@ -634,7 +635,7 @@ impl ExecutionEngine {
         let topic = msgbus
             .switchboard
             .get_event_orders_topic(event.strategy_id());
-        msgbus.publish(&topic, order);
+        msgbus.publish(&topic, order.clone() as &dyn Any);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
@@ -953,13 +954,13 @@ impl ExecutionEngine {
 
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
-                match self.cache.borrow_mut().mut_order(&client_order_id) {
+                match self.cache.borrow_mut().order(&client_order_id) {
                     Some(contingent_order) => {
-                        if !contingent_order.is_quote_quantity() {
+                        if !contingent_order.borrow().is_quote_quantity() {
                             continue; // Already base quantity
                         }
 
-                        if contingent_order.quantity() != original_qty {
+                        if contingent_order.borrow().quantity() != original_qty {
                             log::warn!(
                                 "Contingent order quantity {} was not equal to the OTO parent original quantity {} when setting to base quantity of {}",
                                 contingent_order.quantity(),
@@ -970,14 +971,14 @@ impl ExecutionEngine {
 
                         log::info!(
                             "Setting {} order quote quantity {} to base quantity {}",
-                            contingent_order.instrument_id(),
-                            contingent_order.quantity(),
+                            contingent_order.borrow().instrument_id(),
+                            contingent_order.borrow().quantity(),
                             base_qty
                         );
 
-                        contingent_order.set_quantity(base_qty);
-                        contingent_order.set_leaves_qty(base_qty);
-                        contingent_order.set_is_quote_quantity(false);
+                        contingent_order.borrow_mut().set_quantity(base_qty);
+                        contingent_order.borrow_mut().set_leaves_qty(base_qty);
+                        contingent_order.borrow_mut().set_is_quote_quantity(false);
                     }
                     None => {
                         log::error!("Contingency order {client_order_id} not found");

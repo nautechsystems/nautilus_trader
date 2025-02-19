@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
@@ -25,7 +25,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
-    orders::{Order, OrderAny},
+    orders::{any::SharedOrder, Order, OrderAny},
     types::{AccountBalance, Currency, MarginBalance},
 };
 use sqlx::{PgPool, Row};

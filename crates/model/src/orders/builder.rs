@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{cell::RefCell, rc::Rc};
+
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, UUID4};
 use rust_decimal::Decimal;
@@ -27,10 +29,15 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
     },
     orders::{
-        any::OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
-        market::MarketOrder, market_if_touched::MarketIfTouchedOrder,
-        market_to_limit::MarketToLimitOrder, stop_limit::StopLimitOrder,
-        stop_market::StopMarketOrder, trailing_stop_limit::TrailingStopLimitOrder,
+        any::{OrderAny, SharedOrder},
+        limit::LimitOrder,
+        limit_if_touched::LimitIfTouchedOrder,
+        market::MarketOrder,
+        market_if_touched::MarketIfTouchedOrder,
+        market_to_limit::MarketToLimitOrder,
+        stop_limit::StopLimitOrder,
+        stop_market::StopMarketOrder,
+        trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },
     types::{Currency, Price, Quantity},
@@ -466,6 +473,10 @@ impl OrderTestBuilder {
             self.contingency_type
                 .unwrap_or(ContingencyType::NoContingency),
         )
+    }
+
+    pub fn build_shared(&self) -> SharedOrder {
+        Rc::new(RefCell::new(self.build()))
     }
 
     pub fn build(&self) -> OrderAny {

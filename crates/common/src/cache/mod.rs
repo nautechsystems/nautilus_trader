@@ -24,7 +24,9 @@ mod index;
 mod tests;
 
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
+    rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -49,7 +51,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::{OrderAny, OrderList},
+    orders::{any::SharedOrder, OrderAny, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
@@ -73,7 +75,7 @@ pub struct Cache {
     instruments: HashMap<InstrumentId, InstrumentAny>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
     accounts: HashMap<AccountId, AccountAny>,
-    orders: HashMap<ClientOrderId, OrderAny>,
+    orders: HashMap<ClientOrderId, SharedOrder>,
     order_lists: HashMap<OrderListId, OrderList>,
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Bytes>,
@@ -207,7 +209,14 @@ impl Cache {
     /// Clears the current orders cache and loads orders from the cache database.
     pub async fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &mut self.database {
-            Some(db) => db.load_orders().await?,
+            Some(db) => {
+                let orders = db.load_orders().await?;
+                let mut result = HashMap::new();
+                for (client_order_id, order) in orders {
+                    result.insert(client_order_id, Rc::new(RefCell::new(order)));
+                }
+                result
+            }
             None => HashMap::new(),
         };
 
@@ -240,6 +249,7 @@ impl Cache {
 
         // Index orders
         for (client_order_id, order) in &self.orders {
+            let order = order.borrow();
             let instrument_id = order.instrument_id();
             let venue = instrument_id.venue;
             let strategy_id = order.strategy_id();
@@ -456,6 +466,7 @@ impl Cache {
         }
 
         for (client_order_id, order) in &self.orders {
+            let order = order.borrow();
             if !self.index.order_strategy.contains_key(client_order_id) {
                 log::error!(
                     "{failure} in orders: {client_order_id} not found in `self.index.order_strategy`"
@@ -1220,7 +1231,8 @@ impl Cache {
             // }
         }
 
-        self.orders.insert(client_order_id, order);
+        self.orders
+            .insert(client_order_id, Rc::new(RefCell::new(order)));
 
         Ok(())
     }
@@ -1316,7 +1328,8 @@ impl Cache {
     }
 
     /// Updates the given `order` in the cache.
-    pub fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+    pub fn update_order(&mut self, order: SharedOrder) -> anyhow::Result<()> {
+        let order = order.borrow();
         let client_order_id = order.client_order_id();
 
         // Update venue order ID
@@ -1362,17 +1375,14 @@ impl Cache {
             // }
         }
 
-        // update the order in the cache
-        self.orders.insert(client_order_id, order.clone());
-
         Ok(())
     }
 
     /// Updates the given `order` as pending cancel locally.
-    pub fn update_order_pending_cancel_local(&mut self, order: &OrderAny) {
+    pub fn update_order_pending_cancel_local(&mut self, order: SharedOrder) {
         self.index
             .orders_pending_cancel
-            .insert(order.client_order_id());
+            .insert(order.borrow().client_order_id());
     }
 
     /// Updates the given `position` in the cache.
@@ -1456,13 +1466,13 @@ impl Cache {
         todo!()
     }
 
-    pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+    pub fn snapshot_order_state(&self, order: SharedOrder) -> anyhow::Result<()> {
         let database = if let Some(database) = &self.database {
             database
         } else {
             log::warn!(
                 "Cannot snapshot order state for {} (no database configured)",
-                order.client_order_id()
+                order.borrow().client_order_id()
             );
             return Ok(());
         };
@@ -1588,7 +1598,7 @@ impl Cache {
         &self,
         client_order_ids: &HashSet<ClientOrderId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let side = side.unwrap_or(OrderSide::NoOrderSide);
         let mut orders = Vec::new();
 
@@ -1597,8 +1607,8 @@ impl Cache {
                 .orders
                 .get(client_order_id)
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
-            if side == OrderSide::NoOrderSide || side == order.order_side() {
-                orders.push(order);
+            if side == OrderSide::NoOrderSide || side == order.borrow().order_side() {
+                orders.push(order.clone());
             }
         }
 
@@ -1798,14 +1808,8 @@ impl Cache {
 
     /// Gets a reference to the order with the given `client_order_id` (if found).
     #[must_use]
-    pub fn order(&self, client_order_id: &ClientOrderId) -> Option<&OrderAny> {
-        self.orders.get(client_order_id)
-    }
-
-    /// Gets a reference to the order with the given `client_order_id` (if found).
-    #[must_use]
-    pub fn mut_order(&mut self, client_order_id: &ClientOrderId) -> Option<&mut OrderAny> {
-        self.orders.get_mut(client_order_id)
+    pub fn order(&self, client_order_id: &ClientOrderId) -> Option<SharedOrder> {
+        self.orders.get(client_order_id).cloned()
     }
 
     /// Gets a reference to the client order ID for given `venue_order_id` (if found).
@@ -1834,7 +1838,7 @@ impl Cache {
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let client_order_ids = self.client_order_ids(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(&client_order_ids, side)
     }
@@ -1847,7 +1851,7 @@ impl Cache {
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let client_order_ids = self.client_order_ids_open(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(&client_order_ids, side)
     }
@@ -1860,7 +1864,7 @@ impl Cache {
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let client_order_ids = self.client_order_ids_closed(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(&client_order_ids, side)
     }
@@ -1873,7 +1877,7 @@ impl Cache {
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let client_order_ids = self.client_order_ids_emulated(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(&client_order_ids, side)
     }
@@ -1886,14 +1890,14 @@ impl Cache {
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let client_order_ids = self.client_order_ids_inflight(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
     /// Returns references to all orders for the given `position_id`.
     #[must_use]
-    pub fn orders_for_position(&self, position_id: &PositionId) -> Vec<&OrderAny> {
+    pub fn orders_for_position(&self, position_id: &PositionId) -> Vec<SharedOrder> {
         let client_order_ids = self.index.position_orders.get(position_id);
         match client_order_ids {
             Some(client_order_ids) => {
@@ -2052,7 +2056,7 @@ impl Cache {
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&OrderAny> {
+    ) -> Vec<SharedOrder> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         let exec_algorithm_order_ids = self.index.exec_algorithm_orders.get(exec_algorithm_id);
 
@@ -2071,7 +2075,7 @@ impl Cache {
 
     /// Returns references to all orders with the given `exec_spawn_id`.
     #[must_use]
-    pub fn orders_for_exec_spawn(&self, exec_spawn_id: &ClientOrderId) -> Vec<&OrderAny> {
+    pub fn orders_for_exec_spawn(&self, exec_spawn_id: &ClientOrderId) -> Vec<SharedOrder> {
         self.get_orders_for_ids(
             self.index
                 .exec_spawn_orders
@@ -2093,6 +2097,7 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
+            let spawn_order = spawn_order.borrow();
             if !active_only || !spawn_order.is_closed() {
                 if let Some(mut total_quantity) = total_quantity {
                     total_quantity += spawn_order.quantity();
@@ -2117,6 +2122,7 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
+            let spawn_order = spawn_order.borrow();
             if !active_only || !spawn_order.is_closed() {
                 if let Some(mut total_quantity) = total_quantity {
                     total_quantity += spawn_order.filled_qty();
@@ -2141,6 +2147,7 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
+            let spawn_order = spawn_order.borrow();
             if !active_only || !spawn_order.is_closed() {
                 if let Some(mut total_quantity) = total_quantity {
                     total_quantity += spawn_order.leaves_qty();
