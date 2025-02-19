@@ -120,21 +120,19 @@ class TestHistoricalAggStrategy(Strategy):
         end_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_end_delay)
         self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # external_bar_type = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-EXTERNAL")
-        # self.subscribe_bars(external_bar_type)
-
-        bar_type_1 = BarType.from_str(
+        self.external_bar_type = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-EXTERNAL")
+        self.bar_type_1 = BarType.from_str(
             f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
         )
-        bar_type_2 = BarType.from_str(
+        self.bar_type_2 = BarType.from_str(
             f"{self.config.symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL",
         )
-        bar_type_3 = BarType.from_str(
+        self.bar_type_3 = BarType.from_str(
             f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
         )
 
         self.request_aggregated_bars(
-            [bar_type_1, bar_type_2, bar_type_3],
+            [self.bar_type_1, self.bar_type_2, self.bar_type_3],
             start=start_historical_bars,
             end=end_historical_bars,
             update_subscriptions=True,
@@ -143,15 +141,16 @@ class TestHistoricalAggStrategy(Strategy):
 
         self.user_log("request_aggregated_bars done")
 
-        self.subscribe_bars(bar_type_1)
-        self.subscribe_bars(bar_type_2)
-        self.subscribe_bars(bar_type_3)
+        self.subscribe_bars(self.external_bar_type)
+        self.subscribe_bars(self.bar_type_1)
+        self.subscribe_bars(self.bar_type_2)
+        self.subscribe_bars(self.bar_type_3)
 
         self.user_log("subscribe_bars done")
 
         #### for testing indicators with bars
-        # self.register_indicator_for_bars(external_bar_type, self.external_sma)
-        # self.register_indicator_for_bars(composite_bar_type, self.composite_sma)
+        # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
+        # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
 
         ######### for testing quotes
         # utc_now = self._clock.utc_now()
@@ -162,19 +161,19 @@ class TestHistoricalAggStrategy(Strategy):
         # )
         # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
-        # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
+        # self.bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
+        # self.bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
 
         # self.request_aggregated_bars(
-        #     [bar_type_1, bar_type_2],
+        #     [self.bar_type_1, self.bar_type_2],
         #     start=start_historical_bars,
         #     end=end_historical_bars,
         #     update_subscriptions=True,
         #     include_external_data=False,
         # )
 
-        # self.subscribe_bars(bar_type_1)
-        # self.subscribe_bars(bar_type_2)
+        # self.subscribe_bars(self.bar_type_1)
+        # self.subscribe_bars(self.bar_type_2)
 
         ######### for testing trades
         # utc_now = self._clock.utc_now()
@@ -185,19 +184,19 @@ class TestHistoricalAggStrategy(Strategy):
         # )
         # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
-        # bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
+        # self.bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
+        # self.bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
 
         # self.request_aggregated_bars(
-        #     [bar_type_1, bar_type_2],
+        #     [self.bar_type_1, self.bar_type_2],
         #     start=start_historical_bars,
         #     end=end_historical_bars,
         #     update_subscriptions=True,
         #     include_external_data=False,
         # )
 
-        # self.subscribe_bars(bar_type_1)
-        # self.subscribe_bars(bar_type_2)
+        # self.subscribe_bars(self.bar_type_1)
+        # self.subscribe_bars(self.bar_type_2)
 
     def on_historical_data(self, data):
         if type(data) is Bar:
@@ -218,6 +217,12 @@ class TestHistoricalAggStrategy(Strategy):
 
     def user_log(self, msg):
         self.log.warning(str(msg), color=LogColor.GREEN)
+
+    def on_stop(self):
+        # self.subscribe_bars(self.external_bar_type)
+        self.unsubscribe_bars(self.bar_type_1)
+        self.unsubscribe_bars(self.bar_type_2)
+        # self.subscribe_bars(self.bar_type_3)
 
 
 # %% [markdown]
