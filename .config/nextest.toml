@@ -11,3 +11,7 @@ test-group = 'serial-tests'
 [[profile.default.overrides]]
 filter = 'test(test_order_book)'
 slow-timeout = { period = "300s" }
+
+[profile.nextest]
+filter = "package(*)"
+cargo-options = ["--profile=nextest"]
