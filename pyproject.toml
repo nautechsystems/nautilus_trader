@@ -14,7 +14,7 @@ dependencies = [
     "msgspec<1.0.0,>=0.19.0",
     "numpy>=1.26.4",
     "pandas<3.0.0,>=2.2.3",
-    "pyarrow>=19.0.0",
+    "pyarrow>=19.0.1",
     "pytz>=2025.1.0",
     "tqdm<5.0.0,>=4.67.1",
     "uvloop<1.0.0,>=0.21.0; sys_platform != \"win32\"",
