@@ -58,8 +58,8 @@ pub fn get_exchange_rate(
 
     // Build effective quotes based on the requested price type
     let effective_quotes: HashMap<String, f64> = match price_type {
-        PriceType::Bid => quotes_bid.clone(),
-        PriceType::Ask => quotes_ask.clone(),
+        PriceType::Bid => quotes_bid,
+        PriceType::Ask => quotes_ask,
         PriceType::Mid => {
             let mut mid_quotes = HashMap::new();
             for (pair, bid) in &quotes_bid {
@@ -198,7 +198,7 @@ mod tests {
         )
         .unwrap();
 
-        let rate = rate.expect(&format!("Expected a conversion rate for {price_type}"));
+        let rate = rate.unwrap_or_else(|| panic!("Expected a conversion rate for {price_type}"));
         assert!((rate - expected).abs() < 0.0001);
     }
 
@@ -223,7 +223,7 @@ mod tests {
         )
         .unwrap();
         if let (Some(eur_usd), Some(usd_eur)) = (rate_eur_usd, rate_usd_eur) {
-            assert!((eur_usd * usd_eur - 1.0).abs() < 0.0001);
+            assert!(eur_usd.mul_add(usd_eur, -1.0).abs() < 0.0001);
         } else {
             panic!("Expected valid conversion rates for inverse conversion");
         }

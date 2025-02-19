@@ -1718,12 +1718,11 @@ impl OrderMatchingEngine {
                     );
                     // Cannot update order
                     return;
-                } else {
-                    self.generate_order_updated(order, quantity, Some(price), None);
-                    order.set_liquidity_side(LiquiditySide::Taker);
-                    self.fill_limit_order(order);
-                    return;
                 }
+                self.generate_order_updated(order, quantity, Some(price), None);
+                order.set_liquidity_side(LiquiditySide::Taker);
+                self.fill_limit_order(order);
+                return;
             }
         } else {
             // Update trigger price

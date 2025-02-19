@@ -38,7 +38,7 @@ use crate::{
     UUID4,
 };
 
-/// Extend IntoPyObjectExt helper trait to unwrap PyObject after conversion.
+/// Extend `IntoPyObjectExt` helper trait to unwrap `PyObject` after conversion.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
     #[inline]
     fn into_py_any_unwrap(self, py: Python<'py>) -> PyObject {

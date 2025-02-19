@@ -19,10 +19,10 @@
 //!
 //! All FX sessions run Monday to Friday local time:
 //!
-//! - Sydney Session    0700-1600 'Australia/Sydney'
-//! - Tokyo Session     0900-1800 'Asia/Tokyo'
-//! - London Session    0800-1600 'Europe/London'
-//! - New York Session  0800-1700 'America/New_York'
+//! - Sydney Session    0700-1600 (Australia / Sydney)
+//! - Tokyo Session     0900-1800 (Asia / Tokyo)
+//! - London Session    0800-1600 (Europe / London)
+//! - New York Session  0800-1700 (America / New York)
 
 use chrono::{DateTime, Datelike, Duration, NaiveTime, TimeZone, Timelike, Utc};
 use chrono_tz::{America::New_York, Asia::Tokyo, Australia::Sydney, Europe::London, Tz};
@@ -45,31 +45,31 @@ pub enum ForexSession {
 
 impl ForexSession {
     /// Returns the timezone associated with the session.
-    fn timezone(&self) -> Tz {
+    const fn timezone(&self) -> Tz {
         match self {
-            ForexSession::Sydney => Sydney,
-            ForexSession::Tokyo => Tokyo,
-            ForexSession::London => London,
-            ForexSession::NewYork => New_York,
+            Self::Sydney => Sydney,
+            Self::Tokyo => Tokyo,
+            Self::London => London,
+            Self::NewYork => New_York,
         }
     }
 
     /// Returns the start and end times for the session in local time.
-    fn session_times(&self) -> (NaiveTime, NaiveTime) {
+    const fn session_times(&self) -> (NaiveTime, NaiveTime) {
         match self {
-            ForexSession::Sydney => (
+            Self::Sydney => (
                 NaiveTime::from_hms_opt(7, 0, 0).unwrap(),
                 NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
             ),
-            ForexSession::Tokyo => (
+            Self::Tokyo => (
                 NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
                 NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
             ),
-            ForexSession::London => (
+            Self::London => (
                 NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
                 NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
             ),
-            ForexSession::NewYork => (
+            Self::NewYork => (
                 NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
                 NaiveTime::from_hms_opt(17, 0, 0).unwrap(),
             ),
@@ -78,11 +78,13 @@ impl ForexSession {
 }
 
 /// Converts a UTC timestamp to the local time for the given Forex session.
+#[must_use]
 pub fn fx_local_from_utc(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Tz> {
     session.timezone().from_utc_datetime(&time_now.naive_utc())
 }
 
 /// Returns the next session start time in UTC.
+#[must_use]
 pub fn fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
     let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
@@ -104,13 +106,14 @@ pub fn fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime
     }
 
     if next_start.weekday().number_from_monday() > 5 {
-        next_start += Duration::days(8 - next_start.weekday().number_from_monday() as i64);
+        next_start += Duration::days(8 - i64::from(next_start.weekday().number_from_monday()));
     }
 
     next_start.with_timezone(&Utc)
 }
 
 /// Returns the previous session start time in UTC.
+#[must_use]
 pub fn fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
     let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
@@ -132,13 +135,14 @@ pub fn fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime
     }
 
     if prev_start.weekday().number_from_monday() > 5 {
-        prev_start -= Duration::days(prev_start.weekday().number_from_monday() as i64 - 5);
+        prev_start -= Duration::days(i64::from(prev_start.weekday().number_from_monday()) - 5);
     }
 
     prev_start.with_timezone(&Utc)
 }
 
 /// Returns the next session end time in UTC.
+#[must_use]
 pub fn fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
     let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
@@ -160,13 +164,14 @@ pub fn fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<U
     }
 
     if next_end.weekday().number_from_monday() > 5 {
-        next_end += Duration::days(8 - next_end.weekday().number_from_monday() as i64);
+        next_end += Duration::days(8 - i64::from(next_end.weekday().number_from_monday()));
     }
 
     next_end.with_timezone(&Utc)
 }
 
 /// Returns the previous session end time in UTC.
+#[must_use]
 pub fn fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
     let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
@@ -188,7 +193,7 @@ pub fn fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<U
     }
 
     if prev_end.weekday().number_from_monday() > 5 {
-        prev_end -= Duration::days(prev_end.weekday().number_from_monday() as i64 - 5);
+        prev_end -= Duration::days(i64::from(prev_end.weekday().number_from_monday()) - 5);
     }
 
     prev_end.with_timezone(&Utc)
