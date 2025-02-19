@@ -28,6 +28,7 @@ Released on TBD (UTC).
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
+- Improved build by adding placeholders to avoid unnecessary rebuilds (#2336), thanks @bartolootrit
 - Removed obsolete reconnect guard for dYdX (#2334), thanks @davidsblom
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
