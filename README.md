@@ -19,7 +19,7 @@
 | `macOS (arm64)`    | 1.84.1+ | 3.11, 3.12  |
 | `Windows (x86_64)` | 1.84.1+ | 3.11, 3.12  |
 
-[![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
+[![](https://dcbadge.limes.pink/api/server/nautilustrader)](https://discord.gg/NautilusTrader)
 
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
@@ -425,7 +425,7 @@ Thank you again for your interest in NautilusTrader! We look forward to reviewin
 
 ## Community
 
-Join our community of users and contributors on [Discord](https://discord.gg/AUWVs3XaCS) to chat
+Join our community of users and contributors on [Discord](https://discord.gg/NautilusTrader) to chat
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
 developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
 
@@ -433,7 +433,8 @@ developer looking to contribute or just want to learn more about the platform, a
 >
 > NautilusTrader does not issue, promote, or endorse any cryptocurrency tokens. Any claims or communications suggesting otherwise are unauthorized and false.
 >
-> All official updates and communications from NautilusTrader will be shared exclusively through https://nautilustrader.io, our official Discord server, or our X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
+> All official updates and communications from NautilusTrader will be shared exclusively through https://nautilustrader.io, our [Discord server](https://discord.gg/NautilusTrader),
+> or our X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
 >
 > If you encounter any suspicious activity, please report it to the appropriate platform and contact us at info@nautechsystems.io.
 
