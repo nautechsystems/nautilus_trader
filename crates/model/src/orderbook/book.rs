@@ -87,8 +87,8 @@ impl OrderBook {
             sequence: 0,
             ts_last: UnixNanos::default(),
             count: 0,
-            bids: BookLadder::new(OrderSide::Buy),
-            asks: BookLadder::new(OrderSide::Sell),
+            bids: BookLadder::new(OrderSideSpecified::Buy),
+            asks: BookLadder::new(OrderSideSpecified::Sell),
         }
     }
 
@@ -460,7 +460,7 @@ mod tests {
 
     use crate::{
         data::{depth::OrderBookDepth10, order::BookOrder, stubs::*, QuoteTick, TradeTick},
-        enums::{AggressorSide, BookType, OrderSide},
+        enums::{AggressorSide, BookType, OrderSide, OrderSideSpecified},
         identifiers::{InstrumentId, TradeId},
         orderbook::{analysis::book_check_integrity, BookIntegrityError, BookPrice, OrderBook},
         types::{Price, Quantity},
@@ -482,8 +482,8 @@ mod tests {
         (OrderSide::Sell, "99.00", 100, 2001),
     ],
     Err(BookIntegrityError::OrdersCrossed(
-        BookPrice::new(Price::from("101.00"), OrderSide::Buy),
-        BookPrice::new(Price::from("99.00"), OrderSide::Sell),
+        BookPrice::new(Price::from("101.00"), OrderSideSpecified::Buy),
+        BookPrice::new(Price::from("99.00"), OrderSideSpecified::Sell),
     ))
 )]
     #[case::too_many_levels_l1(
