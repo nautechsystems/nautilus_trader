@@ -15,24 +15,34 @@
 
 use std::str::FromStr;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, UUID4};
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
-    enums::{AccountType, AssetClass, CurrencyType, OptionKind},
-    events::AccountState,
-    identifiers::{AccountId, InstrumentId, Symbol},
+    enums::{
+        AccountType, AssetClass, ContingencyType, CurrencyType, LiquiditySide, OptionKind,
+        OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+    },
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated,
+    },
+    identifiers::{
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
+    },
     instruments::{
         BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
         FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
         SyntheticInstrument,
     },
-    orders::OrderAny,
-    position::Position,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde_json::{Map, Value};
 use ustr::Ustr;
+
 pub struct Transformer;
 
 impl Transformer {
@@ -149,17 +159,1505 @@ impl Transformer {
         }
     }
 
-    pub fn position_from_value(value: Value) -> anyhow::Result<Position> {
-        let _ = match value {
+    pub fn order_filled_from_value(value: Value) -> anyhow::Result<OrderFilled> {
+        let o_map = match value {
             Value::Object(map) => map,
-            _ => anyhow::bail!("Invalid position map"),
+            _ => anyhow::bail!("Invalid order filled map"),
         };
+        // TODO: replace new with new_checked where possible
 
-        todo!()
+        // trader_id: TraderId,
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+        // strategy_id: StrategyId,
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+        // instrument_id: InstrumentId,
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+        // client_order_id: ClientOrderId,
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        // venue_order_id: VenueOrderId,
+        let venue_order_id = VenueOrderId::new_checked(
+            o_map["venue_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing venue_order_id field"))?,
+        )?;
+        // account_id: AccountId,
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )?;
+        // trade_id: TradeId,
+        let trade_id = TradeId::new_checked(
+            o_map["trade_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trade_id field"))?,
+        )?;
+        // order_side: OrderSide,
+        let order_side = OrderSide::from_str(
+            o_map["order_side"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing order_side field"))?,
+        )?;
+        // order_type: OrderType,
+        let order_type = OrderType::from_str(
+            o_map["order_type"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing order_type field"))?,
+        )?;
+        // last_qty: Quantity,
+        let last_qty = Quantity::from_str(
+            o_map["last_qty"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing last_qty field"))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid last_qty: {}", e))?;
+
+        let last_px = Price::from_str(
+            o_map["last_px"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing last_px field"))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid last_px: {}", e))?;
+
+        let currency = Currency::from_str(
+            o_map["currency"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing currency field"))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid currency: {}", e))?;
+        // liquidity_side: LiquiditySide,
+        let liquidity_side = LiquiditySide::from_str(
+            o_map["liquidity_side"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing liquidity_side field"))?,
+        )?;
+        // event_id: UUID4,
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+        // ts_event: UnixNanos,
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+        // reconciliation: bool,
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+        // position_id: Option<PositionId>,
+        // let position_id = PositionId::new_checked(
+        //     o_map["position_id"]
+        //         .as_str()
+        //         .ok_or_else(|| anyhow::anyhow!("Missing position_id field"))?,
+        // )?;
+        // let margin_init = i_map["margin_init"]
+        // .as_str()
+        // .map(|value| Decimal::from_str(value).unwrap());
+        let position_id = o_map["position_id"]
+            .as_str()
+            .map(|value| PositionId::new_checked(value).unwrap());
+        // commission: Option<Money>,
+        let commission = o_map["commission"]
+            .as_str()
+            .map(|value| Money::from_str(value).unwrap());
+
+        let order_filled = OrderFilled::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id,
+            trade_id,
+            order_side,
+            order_type,
+            last_qty,
+            last_px,
+            currency,
+            liquidity_side,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            position_id,
+            commission,
+        );
+
+        Ok(order_filled)
     }
 
-    pub fn order_from_value(_: Value) -> anyhow::Result<OrderAny> {
-        todo!()
+    pub fn order_initialized_from_value(value: Value) -> anyhow::Result<OrderInitialized> {
+        // let o_map =
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order initialized map"),
+        };
+
+        // trader_id: TraderId,
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        // strategy_id: StrategyId,
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+        // instrument_id: InstrumentId,
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+        // client_order_id: ClientOrderId,
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        // order_side: OrderSide,
+        let order_side = OrderSide::from_str(
+            o_map["order_side"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing order_side field"))?,
+        )?;
+        // order_type: OrderType,
+        let order_type = OrderType::from_str(
+            o_map["order_type"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing order_type field"))?,
+        )?;
+        // quantity: Quantity,
+        let quantity = Quantity::from_str(
+            o_map["quantity"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing quantity field"))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid quantity: {}", e))?;
+        // time_in_force: TimeInForce,
+        let time_in_force = TimeInForce::from_str(
+            o_map["time_in_force"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing time_in_force field"))?,
+        )?;
+        // post_only: bool,
+        let post_only = o_map["post_only"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing post_only field"))?;
+        // reduce_only: bool,
+        let reduce_only = o_map["reduce_only"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reduce_only field"))?;
+        // quote_quantity: bool,
+        let quote_quantity = o_map["quote_quantity"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing quote_quantity field"))?;
+        // reconciliation: bool,
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+        // event_id: UUID4,
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+        // ts_event: UnixNanos,
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+        // ts_init: UnixNanos,
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+        // price: Option<Price>,
+        let price = o_map["price"]
+            .as_str()
+            .map(|value| Price::from_str(value).unwrap());
+        // trigger_price: Option<Price>,
+        let trigger_price = o_map["trigger_price"]
+            .as_str()
+            .map(|value| Price::from_str(value).unwrap());
+        // trigger_type: Option<TriggerType>,
+        let trigger_type = o_map["trigger_type"]
+            .as_str()
+            .map(|value| TriggerType::from_str(value).unwrap());
+        // limit_offset: Option<Decimal>,
+        let limit_offset = o_map["limit_offset"]
+            .as_str()
+            .map(|value| Decimal::from_str(value).unwrap());
+        // trailing_offset: Option<Decimal>,
+        let trailing_offset = o_map["trailing_offset"]
+            .as_str()
+            .map(|value| Decimal::from_str(value).unwrap());
+        // trailing_offset_type: Option<TrailingOffsetType>,
+        let trailing_offset_type = o_map["trailing_offset_type"]
+            .as_str()
+            .map(|value| TrailingOffsetType::from_str(value).unwrap());
+        // expire_time: Option<UnixNanos>,
+        let expire_time = o_map["expire_time"]
+            .as_str()
+            .map(|value| UnixNanos::from_str(value).unwrap());
+        // display_qty: Option<Quantity>,
+        let display_qty = o_map["display_qty"]
+            .as_str()
+            .map(|value| Quantity::from_str(value).unwrap());
+        // emulation_trigger: Option<TriggerType>,
+        let emulation_trigger = o_map["emulation_trigger"]
+            .as_str()
+            .map(|value| TriggerType::from_str(value).unwrap());
+        // trigger_instrument_id: Option<InstrumentId>,
+        let trigger_instrument_id = o_map["trigger_instrument_id"]
+            .as_str()
+            .map(|value| InstrumentId::from_str(value).unwrap());
+        // contingency_type: Option<ContingencyType>,
+        let contingency_type = o_map["contingency_type"]
+            .as_str()
+            .map(|value| ContingencyType::from_str(value).unwrap());
+        // order_list_id: Option<OrderListId>,
+        let order_list_id = o_map["order_list_id"]
+            .as_str()
+            .map(|value| OrderListId::new_checked(value).unwrap());
+        // linked_order_ids: Option<Vec<ClientOrderId>>,
+        let linked_order_ids = o_map["linked_order_ids"].as_array().map(|value| {
+            value
+                .iter()
+                .map(|v| ClientOrderId::new_checked(v.as_str().unwrap()).unwrap())
+                .collect()
+        });
+        // parent_order_id: Option<ClientOrderId>,
+        let parent_order_id = o_map["parent_order_id"]
+            .as_str()
+            .map(|value| ClientOrderId::new_checked(value).unwrap());
+        // exec_algorithm_id: Option<ExecAlgorithmId>,
+        let exec_algorithm_id = o_map["exec_algorithm_id"]
+            .as_str()
+            .map(|value| ExecAlgorithmId::new_checked(value).unwrap());
+        // exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        // let exec_algorithm_params = o_map["exec_algorithm_params"].as_str().map(|value| {
+        //     IndexMap::try_from(value)
+        //         .map_err(|e| anyhow::anyhow!("Invalid exec_algorithm_params: {}", e))
+        // });
+        let exec_algorithm_params = None;
+        // exec_spawn_id: Option<ClientOrderId>,
+        let exec_spawn_id = o_map["exec_spawn_id"]
+            .as_str()
+            .map(|value| ClientOrderId::new_checked(value).unwrap());
+        // tags: Option<Vec<Ustr>>,
+        let tags = o_map["tags"].as_str().map(|value| {
+            value
+                .split(',')
+                .map(|s| Ustr::from_str(s).unwrap())
+                .collect()
+        });
+
+        let order_initialized = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            order_type,
+            quantity,
+            time_in_force,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            reconciliation,
+            event_id,
+            ts_event,
+            ts_init,
+            price,
+            trigger_price,
+            trigger_type,
+            limit_offset,
+            trailing_offset,
+            trailing_offset_type,
+            expire_time,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+        );
+
+        Ok(order_initialized)
+    }
+
+    pub fn order_denied_from_value(value: Value) -> anyhow::Result<OrderDenied> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+
+        let reason = Ustr::from_str(
+            o_map["reason"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing reason field"))?,
+        )?;
+
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let order_denied = OrderDenied::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+        );
+
+        Ok(order_denied)
+    }
+
+    pub fn order_emulated_from_value(value: Value) -> anyhow::Result<OrderEmulated> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let order_emulated = OrderEmulated::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            event_id,
+            ts_event,
+            ts_init,
+        );
+
+        Ok(order_emulated)
+    }
+
+    pub fn order_released_from_value(value: Value) -> anyhow::Result<OrderReleased> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+
+        let released_price = Price::from_str(
+            o_map["released_price"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing released_price field"))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid released_price: {}", e))?;
+
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let order_released = OrderReleased::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            released_price,
+            event_id,
+            ts_event,
+            ts_init,
+        );
+
+        Ok(order_released)
+    }
+
+    pub fn order_submitted_from_value(value: Value) -> anyhow::Result<OrderSubmitted> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )?;
+
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let order_submitted = OrderSubmitted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            account_id,
+            event_id,
+            ts_event,
+            ts_init,
+        );
+
+        Ok(order_submitted)
+    }
+
+    pub fn order_accepted_from_value(value: Value) -> anyhow::Result<OrderAccepted> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+
+        let venue_order_id = VenueOrderId::new_checked(
+            o_map["venue_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing venue_order_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )?;
+
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_accepted = OrderAccepted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+        );
+
+        Ok(order_accepted)
+    }
+
+    pub fn order_rejected_from_value(value: Value) -> anyhow::Result<OrderRejected> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )?;
+
+        let reason = Ustr::from_str(
+            o_map["reason"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing reason field"))?,
+        )?;
+
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_rejected = OrderRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            account_id,
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+        );
+
+        Ok(order_rejected)
+    }
+
+    pub fn order_canceled_from_value(value: Value) -> anyhow::Result<OrderCanceled> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )
+        .map(Some)
+        .unwrap_or(None);
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_canceled = OrderCanceled::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+            account_id,
+        );
+
+        Ok(order_canceled)
+    }
+
+    pub fn order_expired_from_value(value: Value) -> anyhow::Result<OrderExpired> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )
+        .map(Some)
+        .unwrap_or(None);
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_expired = OrderExpired::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+            account_id,
+        );
+
+        Ok(order_expired)
+    }
+
+    pub fn order_triggered_from_value(value: Value) -> anyhow::Result<OrderTriggered> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )
+        .map(Some)
+        .unwrap_or(None);
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_triggered = OrderTriggered::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+            account_id,
+        );
+
+        Ok(order_triggered)
+    }
+
+    pub fn order_pending_update_from_value(value: Value) -> anyhow::Result<OrderPendingUpdate> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_pending_update = OrderPendingUpdate::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            account_id,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+        );
+
+        Ok(order_pending_update)
+    }
+
+    pub fn order_pending_cancel_from_value(value: Value) -> anyhow::Result<OrderPendingCancel> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_pending_cancel = OrderPendingCancel::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            account_id,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+        );
+
+        Ok(order_pending_cancel)
+    }
+
+    pub fn order_modify_rejected_from_value(value: Value) -> anyhow::Result<OrderModifyRejected> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )
+        .map(Some)
+        .unwrap_or(None);
+
+        let reason = Ustr::from_str(
+            o_map["reason"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing reason field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_modify_rejected = OrderModifyRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+            account_id,
+        );
+
+        Ok(order_modify_rejected)
+    }
+
+    pub fn order_cancel_rejected_from_value(value: Value) -> anyhow::Result<OrderCancelRejected> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )
+        .map(Some)
+        .unwrap_or(None);
+
+        let reason = Ustr::from_str(
+            o_map["reason"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing reason field"))?,
+        )?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let order_cancel_rejected = OrderCancelRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+            account_id,
+        );
+
+        Ok(order_cancel_rejected)
+    }
+
+    pub fn order_updated_from_value(value: Value) -> anyhow::Result<OrderUpdated> {
+        let o_map = match value {
+            Value::Object(map) => map,
+            _ => anyhow::bail!("Invalid order denied map"),
+        };
+
+        let trader_id = TraderId::new_checked(
+            o_map["trader_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+        )?;
+
+        let strategy_id = StrategyId::new_checked(
+            o_map["strategy_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+        )?;
+
+        let instrument_id = InstrumentId::from_str(
+            o_map["instrument_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+        )?;
+
+        let client_order_id = ClientOrderId::new_checked(
+            o_map["client_order_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+        )?;
+        let event_id = UUID4::from_str(
+            o_map["event_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+        )?;
+
+        let account_id = AccountId::new_checked(
+            o_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id field"))?,
+        )
+        .map(Some)
+        .unwrap_or(None);
+
+        let quantity = Quantity::from_str(
+            o_map["quantity"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing quantity field"))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid quantity: {}", e))?;
+
+        let ts_event = UnixNanos::from_str(
+            o_map["ts_event"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event field"))?,
+        )?;
+
+        let ts_init = UnixNanos::from_str(
+            o_map["ts_init"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
+        )?;
+
+        let venue_order_id = o_map["venue_order_id"]
+            .as_str()
+            .map(|value| VenueOrderId::new_checked(value).unwrap());
+
+        // TODO: check type later
+        let reconciliation = o_map["reconciliation"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+        let price = o_map["price"]
+            .as_str()
+            .map(|value| Price::from_str(value).unwrap());
+
+        let trigger_price = o_map["trigger_price"]
+            .as_str()
+            .map(|value| Price::from_str(value).unwrap());
+
+        let order_updated = OrderUpdated::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            quantity,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            venue_order_id,
+            account_id,
+            price,
+            trigger_price,
+        );
+
+        Ok(order_updated)
+    }
+
+    pub fn order_event_any_from_value(value: Value) -> anyhow::Result<OrderEventAny> {
+        let event_type = match &value {
+            Value::Object(map) => map["type"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing type field"))?,
+            _ => anyhow::bail!("Invalid synthetic map"),
+        };
+
+        let event = match event_type {
+            "Initialized" => OrderEventAny::Initialized(Self::order_initialized_from_value(value)?),
+            "Denied" => OrderEventAny::Denied(Self::order_denied_from_value(value)?),
+            "Emulated" => OrderEventAny::Emulated(Self::order_emulated_from_value(value)?),
+            "Released" => OrderEventAny::Released(Self::order_released_from_value(value)?),
+            "Submitted" => OrderEventAny::Submitted(Self::order_submitted_from_value(value)?),
+            "Accepted" => OrderEventAny::Accepted(Self::order_accepted_from_value(value)?),
+            "Rejected" => OrderEventAny::Rejected(Self::order_rejected_from_value(value)?),
+            "Canceled" => OrderEventAny::Canceled(Self::order_canceled_from_value(value)?),
+            "Expired" => OrderEventAny::Expired(Self::order_expired_from_value(value)?),
+            "Triggered" => OrderEventAny::Triggered(Self::order_triggered_from_value(value)?),
+            "PendingUpdate" => {
+                OrderEventAny::PendingUpdate(Self::order_pending_update_from_value(value)?)
+            }
+            "PendingCancel" => {
+                OrderEventAny::PendingCancel(Self::order_pending_cancel_from_value(value)?)
+            }
+            "ModifyRejected" => {
+                OrderEventAny::ModifyRejected(Self::order_modify_rejected_from_value(value)?)
+            }
+            "CancelRejected" => {
+                OrderEventAny::CancelRejected(Self::order_cancel_rejected_from_value(value)?)
+            }
+            "Updated" => OrderEventAny::Updated(Self::order_updated_from_value(value)?),
+            "PartiallyFilled" => {
+                OrderEventAny::PartiallyFilled(Self::order_filled_from_value(value)?)
+            }
+            "Filled" => OrderEventAny::Filled(Self::order_filled_from_value(value)?),
+            _ => anyhow::bail!("Invalid event type"),
+        };
+
+        Ok(event)
     }
 
     pub fn synthetic_from_value(value: Value) -> anyhow::Result<SyntheticInstrument> {

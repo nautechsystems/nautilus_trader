@@ -21,6 +21,7 @@ use futures::{StreamExt, future::join_all};
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
+    events::{OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
@@ -538,6 +539,7 @@ impl DatabaseQueries {
         Ok(Some(account))
     }
 
+    // TODO
     pub async fn load_order(
         con: &ConnectionManager,
         trader_key: &str,
@@ -550,12 +552,30 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let order =
-            Transformer::order_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        // let order =
+        //     Transformer::order_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        // first get order_initialized from result.0
+        let order_initialized: OrderInitialized = Transformer::order_initialized_from_value(
+            Self::deserialize_payload(encoding, &result[0])?,
+        )?;
+        // // then get OrderAny from it
+        let mut order = OrderAny::from_events(vec![OrderEventAny::Initialized(order_initialized)])?;
+
+        // // then traverse through rest of the events, deserialize it, then if else eazy
+        for event in result.iter().skip(1) {
+            let event: OrderEventAny = Transformer::order_event_any_from_value(
+                Self::deserialize_payload(encoding, event)?,
+            )?;
+            order.apply(event)?;
+        }
+        // else apply
+        // also store event count while looping
+        // return order(OrderAny)
 
         Ok(Some(order))
     }
 
+    // TODO
     pub async fn load_position(
         con: &ConnectionManager,
         trader_key: &str,
@@ -568,9 +588,34 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let position =
-            Transformer::position_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        // get orderfill from result.0
+        let initial_fill: OrderFilled =
+            Transformer::order_filled_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        // load_instrument from initial_fill.instrument_id
+        let instrument = if let Some(instrument) =
+            Self::load_instrument(con, trader_key, &initial_fill.instrument_id, encoding).await?
+        {
+            instrument
+        } else {
+            tracing::error!("Instrument not found: {}", initial_fill.instrument_id);
+            return Ok(None);
+        };
+        // create position object with instrument and orderfill
+        let mut position = Position::new(&instrument, initial_fill);
+        // then loop through rest of the events(orderfill) present in reult expect first one
+        for event in result.iter().skip(1) {
+            let order_filled: OrderFilled =
+                Transformer::order_filled_from_value(Self::deserialize_payload(encoding, event)?)?;
 
+            if position.events.contains(&order_filled) {
+                anyhow::bail!("Corrupt cache with duplicate event for position {order_filled}");
+            }
+
+            // then apply each event to position
+            position.apply(&order_filled);
+        }
+
+        // return position
         Ok(Some(position))
     }
 
