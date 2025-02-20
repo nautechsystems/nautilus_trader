@@ -1,13 +1,13 @@
 [test-groups]
 serial-tests = { max-threads = 1 }
 
-[profile.nextest]
+[profile.default]
 # Default settings
 
-[[profile.nextest.overrides]]
+[[profile.default.overrides]]
 filter = 'test(serial_tests)'
 test-group = 'serial-tests'
 
-[[profile.nextest.overrides]]
+[[profile.default.overrides]]
 filter = 'test(test_order_book)'
 slow-timeout = { period = "300s" }
