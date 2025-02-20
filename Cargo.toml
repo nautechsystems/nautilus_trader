@@ -32,7 +32,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 arrow = "54.2.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.86"
@@ -61,7 +61,7 @@ rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.25"
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde_json = "1.0.139"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "2.0.11"
 thousands = "0.2.0"
@@ -100,13 +100,18 @@ codegen-units = 256
 
 [profile.test]
 opt-level = 0
-debug = false  # Improves compile times
+debug = true
 debug-assertions = true  # Fails Cython build if true
 overflow-checks = true
-strip = "debuginfo"  # Improves compile times
+strip = false
 lto = false
 incremental = true
 codegen-units = 256
+
+[profile.nextest]
+inherits = "test"
+debug = false # Improves compile times
+strip = "debuginfo" # Improves compile times
 
 [profile.release]
 opt-level = 3
