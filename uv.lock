@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.11, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -131,14 +132,14 @@ wheels = [
 
 [[package]]
 name = "betfair-parser"
-version = "0.14.2"
+version = "0.14.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "msgspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/af/b73414c812f2ad02e88136af38760a663dab0391d7239b44f9fdb4a05347/betfair_parser-0.14.2.tar.gz", hash = "sha256:cf8476e5717a0ca63849c1a27a18252b7c31034d450280a1bd6c886e658f40b8", size = 54602 }
+sdist = { url = "https://files.pythonhosted.org/packages/76/d6/3f7e97eaddf97dd3c48fdc97701583dcbdb3962ac734e0e343cc961ca709/betfair_parser-0.14.4.tar.gz", hash = "sha256:a6abd8c89c3c5486d35c7d7966a8c35600c7fba11678b3b9a8bc07f3fb45ba09", size = 54644 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/e0/97e69b5c3065ea025d4e30752623595e0d8b9bbfac197ca039ea9ab635f3/betfair_parser-0.14.2-py3-none-any.whl", hash = "sha256:eedde62f4f185f2ea7348ad74aeb9081df3ce5458fddb5b501194329ae90764f", size = 66295 },
+    { url = "https://files.pythonhosted.org/packages/f4/bb/e054ad61d387786382f97a73a611d2519bf94ccd43e6c3d97b283969b052/betfair_parser-0.14.4-py3-none-any.whl", hash = "sha256:57422cb5d4d5a2ae87de229526bee8ddfdc8d719283e8513906fc6bb4c9b15aa", size = 66340 },
 ]
 
 [[package]]
@@ -758,11 +759,11 @@ wheels = [
 
 [[package]]
 name = "fsspec"
-version = "2024.12.0"
+version = "2025.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ee/11/de70dee31455c546fbc88301971ec03c328f3d1138cfba14263f651e9551/fsspec-2024.12.0.tar.gz", hash = "sha256:670700c977ed2fb51e0d9f9253177ed20cbde4a3e5c0283cc5385b5870c8533f", size = 291600 }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/79/68612ed99700e6413de42895aa725463e821a6b3be75c87fcce1b4af4c70/fsspec-2025.2.0.tar.gz", hash = "sha256:1c24b16eaa0a1798afa0337aa0db9b256718ab2a89c425371f5628d22c3b6afd", size = 292283 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/86/5486b0188d08aa643e127774a99bac51ffa6cf343e3deb0583956dca5b22/fsspec-2024.12.0-py3-none-any.whl", hash = "sha256:b520aed47ad9804237ff878b504267a3b0b441e97508bd6d2d8774e3db85cee2", size = 183862 },
+    { url = "https://files.pythonhosted.org/packages/e2/94/758680531a00d06e471ef649e4ec2ed6bf185356a7f9fbfbb7368a40bd49/fsspec-2025.2.0-py3-none-any.whl", hash = "sha256:9de2ad9ce1f85e1931858535bc882543171d197001a0a5eb2ddc04f1781ab95b", size = 184484 },
 ]
 
 [[package]]
@@ -1150,13 +1151,13 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "bech32", marker = "extra == 'dydx'", specifier = ">=1.2.0,<2.0.0" },
-    { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.14.2" },
+    { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.14.4" },
     { name = "bip-utils", marker = "extra == 'dydx'", specifier = ">=2.9.3,<3.0.0" },
     { name = "click", specifier = ">=8.1.8,<9.0.0" },
     { name = "defusedxml", marker = "extra == 'ib'", specifier = ">=0.7.1,<1.0.0" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.1.0,<8.0.0" },
     { name = "ecdsa", marker = "extra == 'dydx'", specifier = ">=0.19.0,<1.0.0" },
-    { name = "fsspec", specifier = ">=2024.12.0,<2025.0.0" },
+    { name = "fsspec", specifier = ">=2025.2.0,<2026.0.0" },
     { name = "grpcio", marker = "extra == 'dydx'", specifier = "==1.68.1" },
     { name = "msgspec", specifier = ">=0.19.0,<1.0.0" },
     { name = "nautilus-ibapi", marker = "extra == 'ib'", specifier = "==10.19.4" },
@@ -1171,6 +1172,7 @@ requires-dist = [
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.21.0,<1.0.0" },
     { name = "v4-proto", marker = "extra == 'dydx'", specifier = "==7.0.5" },
 ]
+provides-extras = ["betfair", "ib", "docker", "dydx", "polymarket"]
 
 [package.metadata.requires-dev]
 dev = [
