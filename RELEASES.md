@@ -28,12 +28,15 @@ Released on TBD (UTC).
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
+- Improved build by adding placeholders to avoid unnecessary rebuilds (#2336), thanks @bartolootrit
+- Removed obsolete reconnect guard for dYdX (#2334), thanks @davidsblom
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
+- Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
@@ -56,6 +59,7 @@ Released on TBD (UTC).
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
 - Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
+- Fixed composite bars subscription (#2337), thanks @faysou
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik

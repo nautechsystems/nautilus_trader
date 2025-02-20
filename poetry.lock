@@ -206,13 +206,13 @@ files = [
 
 [[package]]
 name = "betfair-parser"
-version = "0.14.2"
+version = "0.14.4"
 description = "A betfair parser"
 optional = true
 python-versions = ">=3.10"
 files = [
-    {file = "betfair_parser-0.14.2-py3-none-any.whl", hash = "sha256:eedde62f4f185f2ea7348ad74aeb9081df3ce5458fddb5b501194329ae90764f"},
-    {file = "betfair_parser-0.14.2.tar.gz", hash = "sha256:cf8476e5717a0ca63849c1a27a18252b7c31034d450280a1bd6c886e658f40b8"},
+    {file = "betfair_parser-0.14.4-py3-none-any.whl", hash = "sha256:57422cb5d4d5a2ae87de229526bee8ddfdc8d719283e8513906fc6bb4c9b15aa"},
+    {file = "betfair_parser-0.14.4.tar.gz", hash = "sha256:a6abd8c89c3c5486d35c7d7966a8c35600c7fba11678b3b9a8bc07f3fb45ba09"},
 ]
 
 [package.dependencies]
@@ -1572,13 +1572,13 @@ files = [
 
 [[package]]
 name = "fsspec"
-version = "2024.12.0"
+version = "2025.2.0"
 description = "File-system specification"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "fsspec-2024.12.0-py3-none-any.whl", hash = "sha256:b520aed47ad9804237ff878b504267a3b0b441e97508bd6d2d8774e3db85cee2"},
-    {file = "fsspec-2024.12.0.tar.gz", hash = "sha256:670700c977ed2fb51e0d9f9253177ed20cbde4a3e5c0283cc5385b5870c8533f"},
+    {file = "fsspec-2025.2.0-py3-none-any.whl", hash = "sha256:9de2ad9ce1f85e1931858535bc882543171d197001a0a5eb2ddc04f1781ab95b"},
+    {file = "fsspec-2025.2.0.tar.gz", hash = "sha256:1c24b16eaa0a1798afa0337aa0db9b256718ab2a89c425371f5628d22c3b6afd"},
 ]
 
 [package.extras]
@@ -1605,7 +1605,7 @@ sftp = ["paramiko"]
 smb = ["smbprotocol"]
 ssh = ["paramiko"]
 test = ["aiohttp (!=4.0.0a0,!=4.0.0a1)", "numpy", "pytest", "pytest-asyncio (!=0.22.0)", "pytest-benchmark", "pytest-cov", "pytest-mock", "pytest-recording", "pytest-rerunfailures", "requests"]
-test-downstream = ["aiobotocore (>=2.5.4,<3.0.0)", "dask-expr", "dask[dataframe,test]", "moto[server] (>4,<5)", "pytest-timeout", "xarray"]
+test-downstream = ["aiobotocore (>=2.5.4,<3.0.0)", "dask[dataframe,test]", "moto[server] (>4,<5)", "pytest-timeout", "xarray"]
 test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "cloudpickle", "dask", "distributed", "dropbox", "dropboxdrivefs", "fastparquet", "fusepy", "gcsfs", "jinja2", "kerchunk", "libarchive-c", "lz4", "notebook", "numpy", "ocifs", "pandas", "panel", "paramiko", "pyarrow", "pyarrow (>=1)", "pyftpdlib", "pygit2", "pytest", "pytest-asyncio (!=0.22.0)", "pytest-benchmark", "pytest-cov", "pytest-mock", "pytest-recording", "pytest-rerunfailures", "python-snappy", "requests", "smbprotocol", "tqdm", "urllib3", "zarr", "zstandard"]
 tqdm = ["tqdm"]
 
@@ -4136,4 +4136,4 @@ polymarket = ["py-clob-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "0b1fff2e9512920e24a7aff49a202d0d0cf21009a123766192db15f7c212c355"
+content-hash = "fd50e7ac8939512252049e8758fddcd58fef2c108835b5e8426faafb7ed444a0"

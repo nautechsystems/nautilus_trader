@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a generic L1/L2/L3 order book the trading domain model.
-
-pub mod book;
-pub mod level;
-pub mod own;
+// This minimal crate (with a placeholder src/ and Cargo.toml) ensures Cargo treats it as a valid
+// compilation unit. Without these placeholders, Cargo might skip or rebuild this directory in a
+// way that forces other crates to rebuild. By including a “dummy” crate, we keep the build cache
+// fresh and avoid unnecessary full rebuilds.
