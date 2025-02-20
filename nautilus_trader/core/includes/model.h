@@ -845,8 +845,7 @@ typedef enum TriggerType {
 /**
  * Represents a discrete price level in an order book.
  *
- * The level maintains a collection of orders as well as tracking insertion order
- * to preserve FIFO queue dynamics.
+ * Orders are stored in an [`IndexMap`] which preserves FIFO (insertion) order.
  */
 typedef struct BookLevel BookLevel;
 
