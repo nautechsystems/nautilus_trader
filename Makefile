@@ -105,32 +105,44 @@ cargo-build:
 cargo-update:
 	cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov
 
-.PHONY: cargo-test
-cargo-test: RUST_BACKTRACE=1
-cargo-test: HIGH_PRECISION=true
-cargo-test:
+.PHONY: check-nextest
+check-nextest:
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision"
+
+.PHONY: cargo-test
+cargo-test: RUST_BACKTRACE=1
+cargo-test: HIGH_PRECISION=true
+cargo-test: check-nextest
+cargo-test:
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision" --profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
+cargo-test-standard-precision: check-nextest
 cargo-test-standard-precision:
-	@if ! cargo nextest --version >/dev/null 2>&1; then \
-    echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
-    exit 1; \
-	fi
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi" --profile nextest
+
+.PHONY: cargo-test-debug
+cargo-test-debug: RUST_BACKTRACE=1
+cargo-test-debug: HIGH_PRECISION=true
+cargo-test-debug: check-nextest
+cargo-test-debug:
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision"
+
+.PHONY: cargo-test-standard-precision-debug
+cargo-test-standard-precision-debug: RUST_BACKTRACE=1
+cargo-test-standard-precision-debug: HIGH_PRECISION=false
+cargo-test-standard-precision-debug: check-nextest
+cargo-test-standard-precision-debug:
 	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi"
 
 .PHONY: cargo-test-coverage
+cargo-test-coverage: check-nextest
 cargo-test-coverage:
-	@if ! cargo nextest --version >/dev/null 2>&1; then \
-		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
-		exit 1; \
-	fi
 	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \

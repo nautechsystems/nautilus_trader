@@ -20,9 +20,9 @@ runs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: true
-        android: false
-        dotnet: false
-        haskell: false
+        android: true
+        dotnet: true
+        haskell: true
         large-packages: true
         docker-images: true
         swap-storage: true

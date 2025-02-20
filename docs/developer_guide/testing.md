@@ -50,18 +50,16 @@ removed when no longer appropriate, and its use *restricted* to the above cases.
 
 ## Debugging Rust Tests
 
-If you want to debug a Rust test in an IDE, you should modify the `profile.test` section of the
-root `Cargo.toml` file, setting the `debug` field to `true` and the `strip` field to `false`.
-It should look like this after the modification:
+Rust tests can be debugged using the default test configuration.
 
-```toml
-[profile.test]
-opt-level = 0
-debug = true  # Improves compile times
-debug-assertions = true  # Fails Cython build if true
-overflow-checks = true
-strip = false  # Improves compile times
-lto = false
-incremental = true
-codegen-units = 256
-```
+If you want to run all tests while compiling with debug symbols for later debugging some tests individually,
+run `make cargo-test-debug` instead of `make cargo-test`.
+
+In IntellijIdea, to debug parametrised tests starting with `#[rstest]` with arguments defined in the header of the test
+you need to modify the run configuration of the test so it looks like
+`test --package nautilus-model --lib data::bar::tests::test_get_time_bar_start::case_1`
+(remove ` -- --exact` at the end of the string and append `::case_n` where `n` is an integer corresponding to
+the n-th parametrised test starting at 1).
+The reason for this is [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851)
+(the test is expanded into a module with several functions named `case_n`).
+In VSCode, it is possible to directly select which test case to debug.
