@@ -66,7 +66,7 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
     let price = BookPrice {
         value: price,
-        side: order_side,
+        side: order_side.as_specified(),
     };
     let mut level = BookLevel::new(price);
     level.add_bulk(orders);

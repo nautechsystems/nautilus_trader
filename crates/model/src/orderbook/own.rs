@@ -93,7 +93,7 @@ impl OwnBookOrder {
     /// Returns a [`BookPrice`] from this order.
     #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
-        BookPrice::new(self.price, self.side.as_order_side())
+        BookPrice::new(self.price, self.side)
     }
 
     /// Returns the order exposure as an `f64`.
@@ -557,7 +557,6 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::enums::OrderSide;
 
     #[fixture]
     fn own_order() -> OwnBookOrder {
@@ -584,7 +583,7 @@ mod tests {
     fn test_to_book_price(own_order: OwnBookOrder) {
         let book_price = own_order.to_book_price();
         assert_eq!(book_price.value, Price::from("100.00"));
-        assert_eq!(book_price.side, OrderSide::Buy);
+        assert_eq!(book_price.side, OrderSideSpecified::Buy);
     }
 
     #[rstest]

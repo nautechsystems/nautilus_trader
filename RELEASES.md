@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
+- Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
 - Ported `update_limit_order` for `OrderMatchingEngine` in Rust (#2301), thanks @filipmacek
