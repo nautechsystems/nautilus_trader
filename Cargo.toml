@@ -101,7 +101,7 @@ codegen-units = 256
 [profile.test]
 opt-level = 0
 debug = true
-debug-assertions = true  # Fails Cython build if true
+debug-assertions = true
 overflow-checks = true
 strip = false
 lto = false
