@@ -452,8 +452,7 @@ cdef extern from "../includes/model.h":
 
     # Represents a discrete price level in an order book.
     #
-    # The level maintains a collection of orders as well as tracking insertion order
-    # to preserve FIFO queue dynamics.
+    # Orders are stored in an [`IndexMap`] which preserves FIFO (insertion) order.
     cdef struct BookLevel:
         pass
 
