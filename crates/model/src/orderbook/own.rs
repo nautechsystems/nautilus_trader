@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 //! An `OwnBookOrder` for use with tracking own/user orders in L3 order books.
 
 use std::{
@@ -154,7 +150,7 @@ impl Debug for OwnBookOrder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -200,6 +196,11 @@ impl OwnOrderBook {
         }
     }
 
+    fn increment(&mut self, order: &OwnBookOrder) {
+        self.ts_last = order.ts_last;
+        self.count += 1;
+    }
+
     /// Resets the order book to its initial empty state.
     pub fn reset(&mut self) {
         self.bids.clear();
@@ -210,6 +211,7 @@ impl OwnOrderBook {
 
     /// Adds an order to the book after preprocessing based on book type.
     pub fn add(&mut self, order: OwnBookOrder) {
+        self.increment(&order);
         match order.side {
             OrderSideSpecified::Buy => self.bids.add(order),
             OrderSideSpecified::Sell => self.asks.add(order),
@@ -218,6 +220,7 @@ impl OwnOrderBook {
 
     /// Updates an existing order in the book after preprocessing based on book type.
     pub fn update(&mut self, order: OwnBookOrder) {
+        self.increment(&order);
         match order.side {
             OrderSideSpecified::Buy => self.bids.update(order),
             OrderSideSpecified::Sell => self.asks.update(order),
@@ -226,6 +229,7 @@ impl OwnOrderBook {
 
     /// Deletes an order from the book after preprocessing based on book type.
     pub fn delete(&mut self, order: OwnBookOrder) {
+        self.increment(&order);
         match order.side {
             OrderSideSpecified::Buy => self.bids.delete(order),
             OrderSideSpecified::Sell => self.asks.delete(order),
@@ -280,7 +284,6 @@ impl Display for OwnBookOrder {
 }
 
 /// Represents a ladder of price levels for one side of an order book.
-#[derive(Clone, Debug)]
 pub(crate) struct OwnBookLadder {
     pub side: OrderSideSpecified,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
@@ -300,12 +303,14 @@ impl OwnBookLadder {
 
     /// Returns the number of price levels in the ladder.
     #[must_use]
+    #[allow(dead_code)] // Used in tests
     pub fn len(&self) -> usize {
         self.levels.len()
     }
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
+    #[allow(dead_code)] // Used in tests
     pub fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
@@ -374,18 +379,21 @@ impl OwnBookLadder {
 
     /// Returns the total size of all orders in the ladder.
     #[must_use]
+    #[allow(dead_code)] // Used in tests
     pub fn sizes(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
+    #[allow(dead_code)] // Used in tests
     pub fn exposures(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::exposure).sum()
     }
 
     /// Returns the best price level in the ladder.
     #[must_use]
+    #[allow(dead_code)] // Used in tests
     pub fn top(&self) -> Option<&OwnBookLevel> {
         match self.levels.iter().next() {
             Some((_, l)) => Option::Some(l),
@@ -394,15 +402,29 @@ impl OwnBookLadder {
     }
 }
 
+impl Debug for OwnBookLadder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OwnBookLadder))
+            .field("side", &self.side)
+            .field("levels", &self.levels)
+            .finish()
+    }
+}
+
+impl Display for OwnBookLadder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}(side={})", stringify!(OwnBookLadder), self.side)?;
+        for (price, level) in &self.levels {
+            writeln!(f, "  {} -> {} orders", price, level.len())?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
 pub struct OwnBookLevel {
     pub price: BookPrice,
-    pub orders: Vec<OwnBookOrder>, // TODO: Optimize
-    pub index: HashMap<ClientOrderId, usize>,
+    pub orders: IndexMap<ClientOrderId, OwnBookOrder>,
 }
 
 impl OwnBookLevel {
@@ -411,8 +433,7 @@ impl OwnBookLevel {
     pub fn new(price: BookPrice) -> Self {
         Self {
             price,
-            orders: Vec::new(),
-            index: HashMap::new(),
+            orders: IndexMap::new(),
         }
     }
 
@@ -421,11 +442,9 @@ impl OwnBookLevel {
     pub fn from_order(order: OwnBookOrder) -> Self {
         let mut level = Self {
             price: order.to_book_price(),
-            orders: Vec::new(),
-            index: HashMap::new(),
+            orders: IndexMap::new(),
         };
-        level.add(order);
-        level.index.insert(order.client_order_id, 0);
+        level.orders.insert(order.client_order_id, order);
         level
     }
 
@@ -444,25 +463,30 @@ impl OwnBookLevel {
     /// Returns a reference to the first order at this price level in FIFO order.
     #[must_use]
     pub fn first(&self) -> Option<&OwnBookOrder> {
-        self.orders.first()
+        self.orders.get_index(0).map(|(_key, order)| order)
+    }
+
+    /// Returns an iterator over the orders at this price level in FIFO order.
+    pub fn iter(&self) -> impl Iterator<Item = &OwnBookOrder> {
+        self.orders.values()
     }
 
     /// Returns all orders at this price level in FIFO insertion order.
     #[must_use]
     pub fn get_orders(&self) -> Vec<OwnBookOrder> {
-        self.orders.clone()
+        self.orders.values().copied().collect()
     }
 
     /// Returns the total size of all orders at this price level as a float.
     #[must_use]
     pub fn size(&self) -> f64 {
-        self.orders.iter().map(|o| o.size.as_f64()).sum()
+        self.orders.iter().map(|(_, o)| o.size.as_f64()).sum()
     }
 
     /// Returns the total size of all orders at this price level as a decimal.
     #[must_use]
     pub fn size_decimal(&self) -> Decimal {
-        self.orders.iter().map(|o| o.size.as_decimal()).sum()
+        self.orders.iter().map(|(_, o)| o.size.as_decimal()).sum()
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as a float.
@@ -470,7 +494,7 @@ impl OwnBookLevel {
     pub fn exposure(&self) -> f64 {
         self.orders
             .iter()
-            .map(|o| o.price.as_f64() * o.size.as_f64())
+            .map(|(_, o)| o.price.as_f64() * o.size.as_f64())
             .sum()
     }
 
@@ -483,32 +507,24 @@ impl OwnBookLevel {
 
     /// Adds an order to this price level. Order must match the level's price.
     pub fn add(&mut self, order: OwnBookOrder) {
-        debug_assert!(order.price == self.price.value);
-        self.index.insert(order.client_order_id, self.orders.len());
-        self.orders.push(order);
+        debug_assert_eq!(order.price, self.price.value);
+
+        self.orders.insert(order.client_order_id, order);
     }
 
     /// Updates an existing order at this price level. Updated order must match the level's price.
     /// Removes the order if size becomes zero.
     pub fn update(&mut self, order: OwnBookOrder) {
-        if let Some(index) = self.index.get(&order.client_order_id) {
-            self.orders[*index] = order;
-        } else {
-            // Panic for now
-            panic!("Order {} not found for update", order.client_order_id)
-        }
+        debug_assert_eq!(order.price, self.price.value);
+
+        self.orders[&order.client_order_id] = order;
     }
 
     /// Deletes an order from this price level.
     pub fn delete(&mut self, client_order_id: &ClientOrderId) {
-        if let Some(index) = self.index.get(client_order_id) {
-            self.orders.remove(*index);
-            // TODO: Log if not in index
-            let _ = self.index.remove(client_order_id);
-        } else {
-            // Panic for now
-            panic!("Order {} not found for delete", client_order_id)
-        }
+        if self.orders.shift_remove(client_order_id).is_none() {
+            panic!("Order {client_order_id} not found for delete")
+        };
     }
 }
 
@@ -524,22 +540,6 @@ impl PartialOrd for OwnBookLevel {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.price.lt(&other.price)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.price.le(&other.price)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.price.gt(&other.price)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.price.ge(&other.price)
-    }
 }
 
 impl Ord for OwnBookLevel {
@@ -554,7 +554,9 @@ impl Ord for OwnBookLevel {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -619,6 +621,207 @@ mod tests {
         assert_eq!(
             own_order.to_string(),
             "O-123456789,BUY,100.00,10,LIMIT,GTC,0".to_string()
+        );
+    }
+
+    #[rstest]
+    fn test_own_book_level_size_and_exposure() {
+        let mut level = OwnBookLevel::new(BookPrice::new(
+            Price::from("100.00"),
+            OrderSideSpecified::Buy,
+        ));
+        let order1 = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        let order2 = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        level.add(order1);
+        level.add(order2);
+
+        assert_eq!(level.len(), 2);
+        assert_eq!(level.size(), 30.0);
+        assert_eq!(level.exposure(), 3000.0);
+    }
+
+    #[rstest]
+    fn test_own_book_level_add_update_delete() {
+        let mut level = OwnBookLevel::new(BookPrice::new(
+            Price::from("100.00"),
+            OrderSideSpecified::Buy,
+        ));
+        let order = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        level.add(order);
+        assert_eq!(level.len(), 1);
+
+        // Update the order to a new size
+        let order_updated = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        level.update(order_updated);
+        let orders = level.get_orders();
+        assert_eq!(orders[0].size, Quantity::from("15"));
+
+        // Delete the order
+        level.delete(&ClientOrderId::from("O-1"));
+        assert!(level.is_empty());
+    }
+
+    #[rstest]
+    fn test_own_book_ladder_add_update_delete() {
+        let mut ladder = OwnBookLadder::new(OrderSideSpecified::Buy);
+        let order1 = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        let order2 = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        ladder.add(order1);
+        ladder.add(order2);
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.sizes(), 30.0);
+
+        // Update order2 to a larger size
+        let order2_updated = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("25"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        ladder.update(order2_updated);
+        assert_eq!(ladder.sizes(), 35.0);
+
+        // Delete order1
+        ladder.delete(order1);
+        assert_eq!(ladder.sizes(), 25.0);
+    }
+
+    #[rstest]
+    fn test_own_order_book_add_update_delete_clear() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+        let order_buy = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        let order_sell = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+
+        // Add orders to respective ladders
+        book.add(order_buy);
+        book.add(order_sell);
+        assert!(!book.bids.is_empty());
+        assert!(!book.asks.is_empty());
+
+        // Update buy order
+        let order_buy_updated = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        book.update(order_buy_updated);
+        book.delete(order_sell);
+
+        assert_eq!(book.bids.sizes(), 15.0);
+        assert!(book.asks.is_empty());
+
+        // Clear the book
+        book.clear();
+        assert!(book.bids.is_empty());
+        assert!(book.asks.is_empty());
+    }
+
+    #[rstest]
+    fn test_own_order_book_bids_and_asks_as_map() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+        let order1 = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        let order2 = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            UnixNanos::default(),
+        );
+        book.add(order1);
+        book.add(order2);
+        let bids_map = book.bids_as_map(None);
+        let asks_map = book.asks_as_map(None);
+
+        assert_eq!(
+            bids_map.get(&Price::from("100.00").as_decimal()),
+            Some(&dec!(10))
+        );
+        assert_eq!(
+            asks_map.get(&Price::from("101.00").as_decimal()),
+            Some(&dec!(20))
         );
     }
 }

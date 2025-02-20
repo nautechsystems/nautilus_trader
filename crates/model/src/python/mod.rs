@@ -153,6 +153,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::python::orderbook::book::py_update_book_with_trade_tick,
         m
     )?)?;
+    m.add_class::<crate::orderbook::own::OwnOrderBook>()?;
+    m.add_class::<crate::orderbook::own::OwnBookOrder>()?;
     // Events
     m.add_class::<crate::events::AccountState>()?;
     m.add_class::<crate::events::OrderDenied>()?;
