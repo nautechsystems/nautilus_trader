@@ -24,7 +24,7 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.84.1"
+rust-version = "1.85.0"
 version = "0.42.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
@@ -60,7 +60,7 @@ rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.25"
-serde = { version = "1.0.217", features = ["derive"] }
+serde = { version = "1.0.218", features = ["derive"] }
 serde_json = "1.0.139"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "2.0.11"

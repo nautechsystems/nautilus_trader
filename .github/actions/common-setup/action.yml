@@ -42,18 +42,6 @@ runs:
         sudo apt-get update --fix-missing
         sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
-    # > --------------------------------------------------
-    # > mold https://github.com/rui314/mold
-    # - name: Install mold
-    #   if: runner.os == 'Linux'
-    #   env:
-    #     MOLD_VERSION: 2.36.0
-    #   shell: bash
-    #   run: |
-    #     curl -sSL --retry 10 \
-    #       "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(uname -m)-linux.tar.gz" \
-    #       | sudo tar -C /usr/local --strip-components=1 -xzf -
-
     - name: Install mold
       uses: rui314/setup-mold@v1
 
@@ -62,7 +50,7 @@ runs:
     - name: Set up Rust toolchain
       shell: bash
       run: |
-        rustup toolchain add --profile minimal stable --component clippy,rustfmt
+        rustup toolchain add "$(bash scripts/rust-toolchain.sh)" --profile minimal --component clippy,rustfmt
 
     - name: Install cargo-nextest
       uses: taiki-e/install-action@v2
@@ -79,8 +67,12 @@ runs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
+
+    - name: Cargo clean  # Keeps cache under control while we figure out profiles
+      shell: bash
+      run: cargo clean
 
     # > --------------------------------------------------
     # > sccache
@@ -114,7 +106,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/poetry.lock') }}
         restore-keys: |
           sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
           sccache-${{ runner.os }}-${{ github.workflow }}-
