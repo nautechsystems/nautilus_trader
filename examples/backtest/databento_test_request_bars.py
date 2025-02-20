@@ -120,23 +120,23 @@ class TestHistoricalAggStrategy(Strategy):
         end_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_end_delay)
         self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        self.external_bar_type = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-EXTERNAL")
-        self.bar_type_1 = BarType.from_str(
-            f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
-        )
-        self.bar_type_2 = BarType.from_str(
-            f"{self.config.symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL",
-        )
-        self.bar_type_3 = BarType.from_str(
-            f"{self.config.symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
-        )
+        symbol_id = self.config.symbol_id
+        self.external_bar_type = BarType.from_str(f"{symbol_id}-1-MINUTE-LAST-EXTERNAL")
+        self.bar_type_1 = BarType.from_str(f"{symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+        self.bar_type_2 = BarType.from_str(f"{symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
+        self.bar_type_3 = BarType.from_str(f"{symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+
+        # registering bar types with indicators, request_aggregated_bars below will update both indicators
+        # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
+        # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
 
         self.request_aggregated_bars(
             [self.bar_type_1, self.bar_type_2, self.bar_type_3],
             start=start_historical_bars,
             end=end_historical_bars,
             update_subscriptions=True,
-            include_external_data=False,
+            # includes external bars in the response, not just internally aggregated ones
+            include_external_data=True,
         )
 
         self.user_log("request_aggregated_bars done")
@@ -147,10 +147,6 @@ class TestHistoricalAggStrategy(Strategy):
         self.subscribe_bars(self.bar_type_3)
 
         self.user_log("subscribe_bars done")
-
-        #### for testing indicators with bars
-        # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
-        # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
 
         ######### for testing quotes
         # utc_now = self._clock.utc_now()
