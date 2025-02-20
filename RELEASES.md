@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added mark exchange rate handling for `Cache`
 - Added `PortfolioConfig` for configuration settings specific to the `Portfolio`
 - Added mark price calculations and xrate handling for `Portfolio`
+- Added Rust debugging support and refined cargo nextest usage (#2335, #2339), thanks @faysou
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
