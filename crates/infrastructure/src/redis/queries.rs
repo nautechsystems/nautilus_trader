@@ -28,7 +28,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::try_join;

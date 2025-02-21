@@ -45,7 +45,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{aio::ConnectionManager, Pipeline};
+use redis::{Pipeline, aio::ConnectionManager};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
