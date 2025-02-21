@@ -867,8 +867,6 @@ typedef struct OrderBook OrderBook;
  */
 typedef struct OrderBookDeltas_t OrderBookDeltas_t;
 
-typedef struct OwnOrderBook OwnOrderBook;
-
 /**
  * Represents a synthetic instrument with prices derived from component instruments using a
  * formula.
@@ -1684,64 +1682,6 @@ typedef struct OrderBook_API {
 typedef struct BookLevel_API {
     struct BookLevel *_0;
 } BookLevel_API;
-
-/**
- * Represents an own/user order for a book.
- *
- * The order may be in-flight to the venue, or working depending on the `status` field.
- */
-typedef struct OwnBookOrder_t {
-    /**
-     * The client order ID.
-     */
-    struct ClientOrderId_t client_order_id;
-    /**
-     * The specified order side (BUY or SELL).
-     */
-    OrderSide side;
-    /**
-     * The order price.
-     */
-    struct Price_t price;
-    /**
-     * The order size.
-     */
-    struct Quantity_t size;
-    /**
-     * The order type.
-     */
-    enum OrderType order_type;
-    /**
-     * The order time in force.
-     */
-    enum TimeInForce time_in_force;
-    /**
-     * The current order status (SUBMITTED/ACCEPTED/CANCELED/FILLED).
-     */
-    enum OrderStatus status;
-    /**
-     * UNIX timestamp (nanoseconds) when the last event occurred for this order.
-     */
-    uint64_t ts_last;
-    /**
-     * UNIX timestamp (nanoseconds) when the order was initialized.
-     */
-    uint64_t ts_init;
-} OwnBookOrder_t;
-
-/**
- * C compatible Foreign Function Interface (FFI) for an underlying `OwnOrderBook`.
- *
- * This struct wraps `OwnOrderBook` in a way that makes it compatible with C function
- * calls, enabling interaction with `OrderBook` in a C environment.
- *
- * It implements the `Deref` trait, allowing instances of `OwnOrderBook_API` to be
- * dereferenced to `OwnOrderBook`, providing access to `OwnOrderBook`'s methods without
- * having to manually access the underlying `OrderBook` instance.
- */
-typedef struct OwnOrderBook_API {
-    struct OwnOrderBook *_0;
-} OwnOrderBook_API;
 
 /**
  * Represents a medium of exchange in a specified denomination with a fixed decimal precision.
@@ -2806,50 +2746,6 @@ double level_exposure(const struct BookLevel_API *level);
 void vec_levels_drop(CVec v);
 
 void vec_orders_drop(CVec v);
-
-struct OwnBookOrder_t own_book_order_new(struct ClientOrderId_t client_order_id,
-                                         enum OrderSide side,
-                                         struct Price_t price,
-                                         struct Quantity_t size,
-                                         enum OrderType order_type,
-                                         enum TimeInForce time_in_force,
-                                         enum OrderStatus status,
-                                         uint64_t ts_last,
-                                         uint64_t ts_init);
-
-uint8_t own_book_order_eq(const struct OwnBookOrder_t *lhs, const struct OwnBookOrder_t *rhs);
-
-uint64_t own_book_order_hash(const struct OwnBookOrder_t *order);
-
-/**
- * Returns a [`OwnBookOrder`] display string as a C string pointer.
- */
-const char *own_book_order_display_to_cstr(const struct OwnBookOrder_t *order);
-
-/**
- * Returns a [`OwnBookOrder`] debug string as a C string pointer.
- */
-const char *own_book_order_debug_to_cstr(const struct OwnBookOrder_t *order);
-
-struct OwnOrderBook_API own_orderbook_new(struct InstrumentId_t instrument_id);
-
-void own_orderbook_drop(struct OwnOrderBook_API book);
-
-void own_orderbook_reset(struct OwnOrderBook_API *book);
-
-struct InstrumentId_t own_orderbook_instrument_id(const struct OwnOrderBook_API *book);
-
-uint64_t own_orderbook_ts_last(const struct OwnOrderBook_API *book);
-
-uint64_t own_orderbook_count(const struct OwnOrderBook_API *book);
-
-void own_orderbook_add(struct OwnOrderBook_API *book, struct OwnBookOrder_t order);
-
-void own_orderbook_update(struct OwnOrderBook_API *book, struct OwnBookOrder_t order);
-
-void own_orderbook_delete(struct OwnOrderBook_API *book, struct OwnBookOrder_t order);
-
-void own_orderbook_clear(struct OwnOrderBook_API *book);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.

@@ -21,7 +21,6 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
-from nautilus_trader.core.rust.model cimport OwnBookOrder_t
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
@@ -171,7 +170,6 @@ cdef class Order:
     cdef bint is_inflight_c(self)
     cdef bint is_pending_update_c(self)
     cdef bint is_pending_cancel_c(self)
-    cdef OwnBookOrder_t to_own_book_order_c(self)
 
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side)
