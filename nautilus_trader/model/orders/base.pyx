@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core import nautilus_pyo3
+
 # This needs to be a Python import so it can used in the FSM
 from nautilus_trader.model.enums import order_status_to_str
 
@@ -25,9 +27,11 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport OwnBookOrder_t
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
+from nautilus_trader.core.rust.model cimport own_book_order_new
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -424,6 +428,48 @@ cdef class Order:
 
     cdef bint is_pending_cancel_c(self):
         return self._fsm.state == OrderStatus.PENDING_CANCEL
+
+    cdef OwnBookOrder_t to_own_book_order_c(self):
+        if not self.has_price_c():
+            raise TypeError(f"Cannot initialize {self.type_string_c()} orders as `OwnBookOrder_t`, no price")
+
+        cdef Price price = self.price
+        return own_book_order_new(
+            self.client_order_id._mem,
+            self.side,
+            price._mem,
+            self.leaves_qty._mem,
+            self.order_type,
+            self.time_in_force,
+            self.status,
+            self.ts_last,
+            self.ts_init,
+        )
+
+    def to_own_book_order(self) -> nautilus_pyo3.OwnBookOrder:
+        """
+        Returns an own/user order representation of this order.
+
+        Returns
+        -------
+        nautilus_pyo3.OwnBookOrder
+
+        """
+        if not self.has_price_c():
+            raise TypeError(f"Cannot initialize {self.type_string_c()} orders as `nautilus_pyo3.OwnBookOrder`, no price")
+
+        cdef Price price = self.price
+        return nautilus_pyo3.OwnBookOrder(
+            client_order_id=nautilus_pyo3.ClientOrderId(self.client_order_id.value),
+            side=nautilus_pyo3.OrderSide.BUY if self.side == OrderSide.BUY else nautilus_pyo3.OrderSide.SELL,
+            price=nautilus_pyo3.Price(price.as_f64_c(), price._mem.precision),
+            size=nautilus_pyo3.Quantity(self.leaves_qty.as_f64_c(), self.leaves_qty._mem.precision),
+            order_type=nautilus_pyo3.OrderType(self.type_string_c()),  # TODO: Optimize
+            time_in_force=nautilus_pyo3.TimeInForce(time_in_force_to_str(self.time_in_force)),  # TODO: Optimize
+            status=nautilus_pyo3.OrderStatus(self.status_string_c()),  # TODO: Optimize
+            ts_last=self.ts_last,
+            ts_init=self.ts_init,
+        )
 
     @property
     def symbol(self):

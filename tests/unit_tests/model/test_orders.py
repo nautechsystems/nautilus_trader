@@ -21,6 +21,7 @@ import pytest
 
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import ContingencyType
@@ -2296,3 +2297,28 @@ class TestOrders:
         # Assert
         assert order.order_type == OrderType.MARKET
         assert order.ts_init == 0  # Retains original order `ts_init`
+
+    def test_limit_order_to_own_book_order(self) -> None:
+        # Arrange
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        own_order = order.to_own_book_order()
+
+        # Assert
+        assert isinstance(own_order, nautilus_pyo3.OwnBookOrder)
+        assert own_order.client_order_id == nautilus_pyo3.ClientOrderId(
+            "O-19700101-000000-000-001-1",
+        )
+        assert own_order.side == nautilus_pyo3.OrderSide.BUY
+        assert own_order.price == nautilus_pyo3.Price.from_str("1.00000")
+        assert own_order.size == nautilus_pyo3.Quantity.from_int(100_000)
+        assert own_order.time_in_force == nautilus_pyo3.TimeInForce.GTC
+        assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
+        assert own_order.ts_last == 0
+        assert own_order.ts_init == 0

@@ -55,6 +55,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint manage_own_order_books
+    """If the execution engine should maintain own order books based on commands and events.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_orders
     """If order state snapshots should be persisted.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions

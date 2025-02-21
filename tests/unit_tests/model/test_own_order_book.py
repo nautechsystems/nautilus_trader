@@ -18,6 +18,7 @@ import pytest
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import OrderStatus
 from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import OwnBookOrder
 from nautilus_trader.core.nautilus_pyo3 import OwnOrderBook
@@ -37,6 +38,8 @@ def test_own_book_order_creation():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
 
@@ -56,6 +59,8 @@ def test_own_book_order_exposure():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
 
@@ -77,6 +82,8 @@ def test_own_book_order_signed_size(side, expected):
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
 
@@ -91,6 +98,8 @@ def test_own_book_order_repr():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
 
@@ -135,6 +144,8 @@ def test_own_order_book_add_update_delete():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
 
@@ -153,6 +164,8 @@ def test_own_order_book_add_update_delete():
         size=Quantity(15.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
     book.update(updated_order)
@@ -190,6 +203,8 @@ def test_own_order_book_clear():
             size=Quantity(10.0, 0),
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
+            status=OrderStatus.ACCEPTED,
+            ts_last=0,
             ts_init=0,
         ),
     )
@@ -225,6 +240,8 @@ def test_own_order_book_bids_asks_as_map(side):
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
         ts_init=0,
     )
     book.add(order)
@@ -267,7 +284,9 @@ def test_own_order_book_fifo_same_price():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
-        ts_init=1,
+        status=OrderStatus.ACCEPTED,
+        ts_last=1,
+        ts_init=0,
     )
     order2 = OwnBookOrder(
         client_order_id=ClientOrderId("O-2"),
@@ -276,7 +295,9 @@ def test_own_order_book_fifo_same_price():
         size=Quantity(5.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
-        ts_init=2,
+        status=OrderStatus.ACCEPTED,
+        ts_last=2,
+        ts_init=0,
     )
     book.add(order1)
     book.add(order2)
@@ -307,7 +328,9 @@ def test_own_order_book_price_change():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
-        ts_init=10,
+        status=OrderStatus.ACCEPTED,
+        ts_last=10,
+        ts_init=0,
     )
     book.add(order)
     assert len(book.bids_to_dict()) == 1
@@ -320,7 +343,9 @@ def test_own_order_book_price_change():
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
-        ts_init=11,
+        status=OrderStatus.ACCEPTED,
+        ts_last=11,
+        ts_init=0,
     )
     book.update(updated)
 

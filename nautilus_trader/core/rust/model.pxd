@@ -472,6 +472,9 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBookDeltas_t:
         pass
 
+    cdef struct OwnOrderBook:
+        pass
+
     # Represents a synthetic instrument with prices derived from component instruments using a
     # formula.
     #
@@ -935,6 +938,40 @@ cdef extern from "../includes/model.h":
     # having to manually acce wss the underlying `Level` instance.
     cdef struct BookLevel_API:
         BookLevel *_0;
+
+    # Represents an own/user order for a book.
+    #
+    # The order may be in-flight to the venue, or working depending on the `status` field.
+    cdef struct OwnBookOrder_t:
+        # The client order ID.
+        ClientOrderId_t client_order_id;
+        # The specified order side (BUY or SELL).
+        OrderSide side;
+        # The order price.
+        Price_t price;
+        # The order size.
+        Quantity_t size;
+        # The order type.
+        OrderType order_type;
+        # The order time in force.
+        TimeInForce time_in_force;
+        # The current order status (SUBMITTED/ACCEPTED/CANCELED/FILLED).
+        OrderStatus status;
+        # UNIX timestamp (nanoseconds) when the last event occurred for this order.
+        uint64_t ts_last;
+        # UNIX timestamp (nanoseconds) when the order was initialized.
+        uint64_t ts_init;
+
+    # C compatible Foreign Function Interface (FFI) for an underlying `OwnOrderBook`.
+    #
+    # This struct wraps `OwnOrderBook` in a way that makes it compatible with C function
+    # calls, enabling interaction with `OrderBook` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `OwnOrderBook_API` to be
+    # dereferenced to `OwnOrderBook`, providing access to `OwnOrderBook`'s methods without
+    # having to manually access the underlying `OrderBook` instance.
+    cdef struct OwnOrderBook_API:
+        OwnOrderBook *_0;
 
     # Represents a medium of exchange in a specified denomination with a fixed decimal precision.
     #
@@ -1826,6 +1863,46 @@ cdef extern from "../includes/model.h":
     void vec_levels_drop(CVec v);
 
     void vec_orders_drop(CVec v);
+
+    OwnBookOrder_t own_book_order_new(ClientOrderId_t client_order_id,
+                                      OrderSide side,
+                                      Price_t price,
+                                      Quantity_t size,
+                                      OrderType order_type,
+                                      TimeInForce time_in_force,
+                                      OrderStatus status,
+                                      uint64_t ts_last,
+                                      uint64_t ts_init);
+
+    uint8_t own_book_order_eq(const OwnBookOrder_t *lhs, const OwnBookOrder_t *rhs);
+
+    uint64_t own_book_order_hash(const OwnBookOrder_t *order);
+
+    # Returns a [`OwnBookOrder`] display string as a C string pointer.
+    const char *own_book_order_display_to_cstr(const OwnBookOrder_t *order);
+
+    # Returns a [`OwnBookOrder`] debug string as a C string pointer.
+    const char *own_book_order_debug_to_cstr(const OwnBookOrder_t *order);
+
+    OwnOrderBook_API own_orderbook_new(InstrumentId_t instrument_id);
+
+    void own_orderbook_drop(OwnOrderBook_API book);
+
+    void own_orderbook_reset(OwnOrderBook_API *book);
+
+    InstrumentId_t own_orderbook_instrument_id(const OwnOrderBook_API *book);
+
+    uint64_t own_orderbook_ts_last(const OwnOrderBook_API *book);
+
+    uint64_t own_orderbook_count(const OwnOrderBook_API *book);
+
+    void own_orderbook_add(OwnOrderBook_API *book, OwnBookOrder_t order);
+
+    void own_orderbook_update(OwnOrderBook_API *book, OwnBookOrder_t order);
+
+    void own_orderbook_delete(OwnOrderBook_API *book, OwnBookOrder_t order);
+
+    void own_orderbook_clear(OwnOrderBook_API *book);
 
     # Returns a [`Currency`] from pointers and primitives.
     #

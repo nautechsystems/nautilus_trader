@@ -3172,6 +3172,8 @@ class OwnBookOrder:
         size: Quantity,
         order_type: OrderType,
         time_in_force: TimeInForce,
+        status: OrderStatus,
+        ts_last: int,
         ts_init: int,
     ) -> None: ...
     @property
@@ -3186,6 +3188,8 @@ class OwnBookOrder:
     def order_type(self) -> OrderType: ...
     @property
     def time_in_force(self) -> TimeInForce: ...
+    @property
+    def status(self) -> OrderStatus: ...
     @property
     def ts_last(self) -> int: ...
     @property
