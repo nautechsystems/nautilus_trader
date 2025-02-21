@@ -1,3 +1,3 @@
 #!/bin/bash
 
-grep '^version' "rust-toolchain.toml" | sed -E 's/version\s*=\s*"([^"]+)"/\1/'
+grep 'version\s*=\s*"' "rust-toolchain.toml" | head -n 1 | sed -E 's/version\s*=\s*"([^"]+)"/\1/' | tr -d '[:space:]'
