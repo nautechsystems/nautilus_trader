@@ -50,7 +50,9 @@ runs:
     - name: Set up Rust toolchain
       shell: bash
       run: |
-        rustup toolchain add "$(bash scripts/rust-toolchain.sh)" --profile minimal --component cargo,clippy,rustfmt
+        toolchain=$(bash scripts/rust-toolchain.sh)
+        rustup toolchain add "$toolchain" --profile minimal --component cargo,clippy,rustfmt
+        rustup default "$toolchain"
         cargo --version
 
     - name: Install cargo-nextest
