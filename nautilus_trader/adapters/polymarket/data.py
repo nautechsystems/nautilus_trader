@@ -120,14 +120,12 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._http_client = http_client
 
         # WebSocket API
-        self._ws_base_url = self._config.base_url_ws
         self._ws_clients: list[PolymarketWebSocketClient] = []
         self._ws_client_pending_connection: PolymarketWebSocketClient | None = None
 
         self._decoder_market_msg = msgspec.json.Decoder(MARKET_WS_MESSAGE)
 
         # Tasks
-        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
         self._delayed_ws_client_connection_task: asyncio.Task | None = None
 
@@ -140,9 +138,9 @@ class PolymarketDataClient(LiveMarketDataClient):
         await self._instrument_provider.initialize()
         self._send_all_instruments_to_data_engine()
 
-        if self._update_instruments_interval_mins:
+        if self._config.update_instruments_interval_mins:
             self._update_instruments_task = self.create_task(
-                self._update_instruments(self._update_instruments_interval_mins),
+                self._update_instruments(self._config.update_instruments_interval_mins),
             )
 
     async def _disconnect(self) -> None:
@@ -170,7 +168,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._log.info("Creating new PolymarketWebSocketClient", LogColor.MAGENTA)
         return PolymarketWebSocketClient(
             self._clock,
-            base_url=self._ws_base_url,
+            base_url=self._config.base_url_ws,
             channel=PolymarketWebSocketChannel.MARKET,
             handler=self._handle_ws_message,
             handler_reconnect=None,

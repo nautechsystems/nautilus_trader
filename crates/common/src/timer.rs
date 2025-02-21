@@ -29,16 +29,17 @@ use std::{
     num::NonZeroU64,
     rc::Rc,
     sync::{
-        atomic::{self, AtomicU64},
         Arc,
+        atomic::{self, AtomicU64},
     },
 };
 
 use nautilus_core::{
-    correctness::{check_valid_string, FAILED},
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_valid_string},
     datetime::floor_to_nearest_microsecond,
+    python::IntoPyObjectNautilusExt,
     time::get_atomic_clock_realtime,
-    UnixNanos, UUID4,
 };
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
@@ -535,14 +536,14 @@ fn call_python_with_time_event(
     ts_init: UnixNanos,
     callback: &PyObject,
 ) {
-    use pyo3::{types::PyCapsule, IntoPy};
+    use pyo3::types::PyCapsule;
 
     Python::with_gil(|py| {
         // Create new time event
         let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
         let capsule: PyObject = PyCapsule::new(py, event, None)
             .expect("Error creating `PyCapsule`")
-            .into_py(py);
+            .into_py_any_unwrap(py);
 
         match callback.call1(py, (capsule,)) {
             Ok(_) => {}

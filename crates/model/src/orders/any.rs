@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -1224,7 +1224,7 @@ impl From<LimitOrderAny> for OrderAny {
 impl AsRef<StopMarketOrder> for OrderAny {
     fn as_ref(&self) -> &StopMarketOrder {
         match self {
-            OrderAny::StopMarket(ref order) => order,
+            OrderAny::StopMarket(order) => order,
             _ => panic!(
                 "Invalid `OrderAny` not `{}`, was {self:?}",
                 stringify!(StopMarketOrder),

@@ -17,8 +17,8 @@ use bytes::Bytes;
 use futures::{pin_mut, stream::StreamExt};
 use nautilus_common::msgbus::database::MessageBusDatabaseAdapter;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
     UUID4,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;
@@ -54,7 +54,7 @@ impl RedisMessageBusDatabase {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
-                Python::with_gil(|py| call_python(py, &callback, msg.into_py(py)))
+                Python::with_gil(|py| call_python(py, &callback, msg.into_py_any_unwrap(py)));
             }
             Ok(())
         })

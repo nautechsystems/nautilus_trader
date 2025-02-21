@@ -36,10 +36,6 @@
 // Uncomment once we've added trivial `Debug` impls everywhere
 // #![warn(missing_debug_implementations)]
 
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-#![allow(deprecated)]
-
 pub mod actor;
 pub mod cache;
 pub mod clock;
@@ -51,6 +47,7 @@ pub mod generators;
 pub mod logging;
 pub mod messages;
 pub mod msgbus;
+pub mod runner;
 pub mod runtime;
 pub mod signal;
 pub mod testing;

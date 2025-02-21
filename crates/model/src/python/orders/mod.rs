@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPy, PyObject, PyResult, Python};
+use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python};
 
 use crate::{
     enums::OrderType,
@@ -70,20 +70,20 @@ pub fn pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> 
 
 pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<PyObject> {
     match order {
-        OrderAny::Limit(limit_order) => Ok(limit_order.into_py(py)),
-        OrderAny::LimitIfTouched(limit_if_touched_order) => Ok(limit_if_touched_order.into_py(py)),
-        OrderAny::Market(market_order) => Ok(market_order.into_py(py)),
+        OrderAny::Limit(limit_order) => limit_order.into_py_any(py),
+        OrderAny::LimitIfTouched(limit_if_touched_order) => limit_if_touched_order.into_py_any(py),
+        OrderAny::Market(market_order) => market_order.into_py_any(py),
         OrderAny::MarketIfTouched(market_if_touched_order) => {
-            Ok(market_if_touched_order.into_py(py))
+            market_if_touched_order.into_py_any(py)
         }
-        OrderAny::MarketToLimit(market_to_limit_order) => Ok(market_to_limit_order.into_py(py)),
-        OrderAny::StopLimit(stop_limit_order) => Ok(stop_limit_order.into_py(py)),
-        OrderAny::StopMarket(stop_market_order) => Ok(stop_market_order.into_py(py)),
+        OrderAny::MarketToLimit(market_to_limit_order) => market_to_limit_order.into_py_any(py),
+        OrderAny::StopLimit(stop_limit_order) => stop_limit_order.into_py_any(py),
+        OrderAny::StopMarket(stop_market_order) => stop_market_order.into_py_any(py),
         OrderAny::TrailingStopLimit(trailing_stop_limit_order) => {
-            Ok(trailing_stop_limit_order.into_py(py))
+            trailing_stop_limit_order.into_py_any(py)
         }
         OrderAny::TrailingStopMarket(trailing_stop_market_order) => {
-            Ok(trailing_stop_market_order.into_py(py))
+            trailing_stop_market_order.into_py_any(py)
         }
     }
 }

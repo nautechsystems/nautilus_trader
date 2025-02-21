@@ -31,21 +31,21 @@ mod serial_tests {
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
         data::{
-            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
             DataType,
+            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
-        events::{account::stubs::cash_account_state_million_usd, PositionSnapshot},
+        events::{PositionSnapshot, account::stubs::cash_account_state_million_usd},
         identifiers::{
-            stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, TradeId,
-            VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
+            stubs::account_id,
         },
         instruments::{
+            Instrument, InstrumentAny,
             stubs::{
                 audusd_sim, binary_option, crypto_future_btcusdt, crypto_perpetual_ethusdt,
                 currency_pair_ethusdt, equity_aapl, futures_contract_es, option_contract_appl,
             },
-            Instrument, InstrumentAny,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,

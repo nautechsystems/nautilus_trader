@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -266,11 +266,12 @@ mod tests {
     use std::ffi::CString;
 
     use futures_util::{SinkExt, StreamExt};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
         net::TcpListener,
         task::{self, JoinHandle},
-        time::{sleep, Duration},
+        time::{Duration, sleep},
     };
     use tokio_tungstenite::{
         accept_hdr_async,
@@ -403,8 +404,11 @@ counter = Counter()
         Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
 
-            let counter = pymod.getattr("counter").unwrap().into_py(py);
-            let handler = counter.getattr(py, "handler").unwrap().into_py(py);
+            let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
+            let handler = counter
+                .getattr(py, "handler")
+                .unwrap()
+                .into_py_any_unwrap(py);
 
             (counter, handler)
         })

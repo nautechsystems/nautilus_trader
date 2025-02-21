@@ -21,8 +21,8 @@ use std::{
 };
 
 use nautilus_core::{
-    ffi::string::{cstr_as_str, str_to_cstr},
     UnixNanos,
+    ffi::string::{cstr_as_str, str_to_cstr},
 };
 
 use crate::{
@@ -32,7 +32,7 @@ use crate::{
     types::{Price, Quantity},
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_new(
     step: usize,
     aggregation: u8,
@@ -45,44 +45,44 @@ pub extern "C" fn bar_specification_new(
 }
 
 /// Returns a [`BarSpecification`] as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
     str_to_cstr(&bar_spec.to_string())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
     let mut h = DefaultHasher::new();
     bar_spec.hash(&mut h);
     h.finish()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_eq(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_lt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
     u8::from(lhs < rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_le(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
     u8::from(lhs <= rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_gt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
     u8::from(lhs > rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
     u8::from(lhs >= rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_new(
     instrument_id: InstrumentId,
     spec: BarSpecification,
@@ -98,7 +98,7 @@ pub extern "C" fn bar_type_new(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_new_composite(
     instrument_id: InstrumentId,
     spec: BarSpecification,
@@ -118,37 +118,37 @@ pub extern "C" fn bar_type_new_composite(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_is_standard(bar_type: &BarType) -> u8 {
     bar_type.is_standard() as u8
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_is_composite(bar_type: &BarType) -> u8 {
     bar_type.is_composite() as u8
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_standard(bar_type: &BarType) -> BarType {
     bar_type.standard()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_composite(bar_type: &BarType) -> BarType {
     bar_type.composite()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_instrument_id(bar_type: &BarType) -> InstrumentId {
     bar_type.instrument_id()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_spec(bar_type: &BarType) -> BarSpecification {
     bar_type.spec()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_aggregation_source(bar_type: &BarType) -> AggregationSource {
     bar_type.aggregation_source()
 }
@@ -158,9 +158,10 @@ pub extern "C" fn bar_type_aggregation_source(bar_type: &BarType) -> Aggregation
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_char {
-    match BarType::from_str(cstr_as_str(ptr)) {
+    let value = unsafe { cstr_as_str(ptr) };
+    match BarType::from_str(value) {
         Ok(_) => str_to_cstr(""),
         Err(e) => str_to_cstr(&e.to_string()),
     }
@@ -171,37 +172,38 @@ pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_type_from_cstr(ptr: *const c_char) -> BarType {
-    BarType::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    BarType::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_lt(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs < rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_le(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs <= rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_gt(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs > rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_ge(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs >= rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
     let mut h = DefaultHasher::new();
     bar_type.hash(&mut h);
@@ -209,12 +211,12 @@ pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
 }
 
 /// Returns a [`BarType`] as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
     str_to_cstr(&bar_type.to_string())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn bar_new(
     bar_type: BarType,
@@ -238,12 +240,12 @@ pub extern "C" fn bar_new(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
     let mut h = DefaultHasher::new();
     bar.hash(&mut h);
@@ -251,7 +253,7 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
 }
 
 /// Returns a [`Bar`] as a C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
     str_to_cstr(&bar.to_string())
 }

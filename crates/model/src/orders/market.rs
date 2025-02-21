@@ -20,8 +20,8 @@ use std::{
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    correctness::{check_predicate_false, FAILED},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_predicate_false},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::OrderError,
-    types::{quantity::check_quantity_positive, Price, Quantity},
+    types::{Price, Quantity, quantity::check_quantity_positive},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -495,7 +495,7 @@ mod tests {
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        instruments::{stubs::*, CurrencyPair},
+        instruments::{CurrencyPair, stubs::*},
         orders::builder::OrderTestBuilder,
         types::Quantity,
     };

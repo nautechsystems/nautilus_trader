@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{serialization::from_bool_as_u8, UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -107,8 +107,12 @@ impl Debug for OrderExpired {
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}")
+            ),
+            self.account_id
+                .map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.event_id,
             self.ts_event,
             self.ts_init
@@ -124,8 +128,12 @@ impl Display for OrderExpired {
             stringify!(OrderExpired),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id
+                .map_or("None".to_string(), |venue_order_id| format!(
+                    "{venue_order_id}"
+                )),
+            self.account_id
+                .map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.ts_event
         )
     }

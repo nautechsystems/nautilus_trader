@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use derive_builder::Builder;
-use sqlx::{postgres::PgConnectOptions, ConnectOptions, PgPool};
+use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]

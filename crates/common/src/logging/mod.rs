@@ -27,7 +27,7 @@ use std::{
 };
 
 use log::LevelFilter;
-use nautilus_core::{time::get_atomic_clock_static, UUID4};
+use nautilus_core::{UUID4, time::get_atomic_clock_static};
 use nautilus_model::identifiers::TraderId;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
@@ -53,43 +53,43 @@ static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
 
 /// Returns whether the core logger is enabled.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_is_initialized() -> u8 {
     u8::from(LOGGING_INITIALIZED.load(Ordering::Relaxed))
 }
 
 /// Sets the logging system to bypass mode.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_set_bypass() {
     LOGGING_BYPASSED.store(true, Ordering::Relaxed);
 }
 
 /// Shuts down the logging system.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_shutdown() {
     todo!()
 }
 
 /// Returns whether the core logger is using ANSI colors.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_is_colored() -> u8 {
     u8::from(LOGGING_COLORED.load(Ordering::Relaxed))
 }
 
 /// Sets the global logging clock to real-time mode.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_clock_set_realtime_mode() {
     LOGGING_REALTIME.store(true, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock to static mode.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_clock_set_static_mode() {
     LOGGING_REALTIME.store(false, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
     clock.set_time(time_ns.into());

@@ -20,20 +20,19 @@ pub mod types;
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use async_stream::stream;
-use futures_util::{stream::SplitSink, SinkExt, Stream, StreamExt};
+use futures_util::{SinkExt, Stream, StreamExt, stream::SplitSink};
 use message::WsMessage;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async,
+    MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{self, protocol::frame::coding::CloseCode},
-    MaybeTlsStream, WebSocketStream,
 };
 use types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
 
@@ -85,7 +84,7 @@ pub async fn replay_normalized(
     tracing::debug!("Connecting to {plain_url}");
 
     let url = format!("{path}{}", urlencoding::encode(&options));
-    stream_from_websocket(base_url, &url, signal).await
+    stream_from_websocket(base_url, url, signal).await
 }
 
 pub async fn stream_normalized(
@@ -104,12 +103,12 @@ pub async fn stream_normalized(
     tracing::debug!("Connecting to {plain_url}");
 
     let url = format!("{path}{}", urlencoding::encode(&options));
-    stream_from_websocket(base_url, &url, signal).await
+    stream_from_websocket(base_url, url, signal).await
 }
 
 async fn stream_from_websocket(
     base_url: &str,
-    url: &str,
+    url: String,
     signal: Arc<AtomicBool>,
 ) -> Result<impl Stream<Item = Result<WsMessage>>> {
     let (ws_stream, ws_resp) = connect_async(url).await?;

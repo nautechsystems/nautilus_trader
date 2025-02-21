@@ -22,8 +22,8 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{check_predicate_true, FAILED},
     UnixNanos,
+    correctness::{FAILED, check_predicate_true},
 };
 use serde::{Deserialize, Serialize};
 

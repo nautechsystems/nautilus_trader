@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, UnixNanos, UUID4};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err},
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 
@@ -25,8 +28,8 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_indexmap_to_ustr, Order},
         StopLimitOrder,
+        base::{Order, str_indexmap_to_ustr},
     },
     python::{
         common::commissions_from_indexmap,
@@ -103,8 +106,9 @@ impl StopLimitOrder {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            _ => panic!("Not implemented"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 

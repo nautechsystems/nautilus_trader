@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::{
-    betting::BettingInstrument, binary_option::BinaryOption, crypto_future::CryptoFuture,
-    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-    futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    option_contract::OptionContract, option_spread::OptionSpread, Instrument,
+    Instrument, betting::BettingInstrument, binary_option::BinaryOption,
+    crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+    equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    option_contract::OptionContract, option_spread::OptionSpread,
 };
 use crate::{
     enums::InstrumentClass,

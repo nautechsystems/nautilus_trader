@@ -18,26 +18,22 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `ExecutionEngine` instances.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionEngineConfig {
-    /// If the cache should be loaded on initialization
+    /// If the cache should be loaded on initialization.
     #[serde(default = "default_true")]
     pub load_cache: bool,
-
     /// If order state snapshot lists are persisted to a backing database.
     /// Snapshots will be taken at every order state update (when events are applied).
     #[serde(default)]
     pub snapshot_orders: bool,
-
     /// If position state snapshot lists are persisted to a backing database.
     /// Snapshots will be taken at position opened, changed and closed (when events are applied).
     #[serde(default)]
     pub snapshot_positions: bool,
-
-    /// The interval (seconds) at which additional position state snapshots are persisted
-    /// If None then no additional snapshots will be taken
+    /// The interval (seconds) at which additional position state snapshots are persisted.
+    /// If None then no additional snapshots will be taken.
     #[serde(default)]
     pub snapshot_positions_interval_secs: Option<f64>,
-
-    /// If debug mode is active (will provide extra debug logging)
+    /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
 }

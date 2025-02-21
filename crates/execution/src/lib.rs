@@ -36,10 +36,6 @@
 // Uncomment once we've added trivial debug impls everywhere
 // #![deny(missing_debug_implementations)]
 
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-#![allow(deprecated)]
-
 pub mod client;
 pub mod engine;
 pub mod matching_core;

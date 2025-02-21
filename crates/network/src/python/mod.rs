@@ -25,7 +25,7 @@ pub mod http;
 pub mod socket;
 pub mod websocket;
 
-use pyo3::{prelude::*, PyTypeCheck};
+use pyo3::{PyTypeCheck, prelude::*};
 
 use crate::python::{
     http::{HttpError, HttpTimeoutError},

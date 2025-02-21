@@ -21,9 +21,9 @@ use std::{
 
 use arrow::array::RecordBatch;
 use chrono::{DateTime, Duration, NaiveDate};
-use futures_util::{future::join_all, pin_mut, StreamExt};
+use futures_util::{StreamExt, future::join_all, pin_mut};
 use heck::ToSnakeCase;
-use nautilus_core::{parsing::precision_from_str, UnixNanos};
+use nautilus_core::{UnixNanos, parsing::precision_from_str};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
@@ -46,7 +46,7 @@ use super::{enums::Exchange, http::models::InstrumentInfo};
 use crate::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
-    machine::{types::InstrumentMiniInfo, TardisMachineClient},
+    machine::{TardisMachineClient, types::InstrumentMiniInfo},
     parse::{normalize_instrument_id, parse_instrument_id},
 };
 

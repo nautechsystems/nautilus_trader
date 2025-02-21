@@ -16,8 +16,8 @@
 use bytes::Bytes;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
     UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
     identifiers::TraderId,
@@ -27,6 +27,7 @@ use nautilus_model::{
     },
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyBytes, PyDict},
 };
@@ -131,7 +132,7 @@ impl RedisCacheDatabase {
                 dict.set_item("positions", positions_dict)
                     .map_err(to_pyvalue_err)?;
 
-                Ok(dict.to_object(py))
+                dict.into_py_any(py)
             }),
             Err(e) => Err(to_pyruntime_err(e)),
         }

@@ -14,13 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     str::FromStr,
 };
 
 use nautilus_core::{
     python::{
+        IntoPyObjectNautilusExt,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -30,7 +31,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
-    data::{order::OrderId, BookOrder, Data, OrderBookDelta, NULL_ORDER},
+    data::{BookOrder, Data, NULL_ORDER, OrderBookDelta, order::OrderId},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
@@ -123,8 +124,8 @@ impl OrderBookDelta {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -265,14 +266,14 @@ impl OrderBookDelta {
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
+        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
+        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
 
@@ -347,7 +348,7 @@ mod tests {
         let delta = stub_delta;
 
         Python::with_gil(|py| {
-            let delta_pyobject = delta.into_py(py);
+            let delta_pyobject = delta.into_py_any_unwrap(py);
             let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_delta, delta);
         });

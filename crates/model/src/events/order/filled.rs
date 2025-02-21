@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -439,7 +439,7 @@ impl OrderEvent for OrderFilled {
 mod tests {
     use rstest::rstest;
 
-    use crate::events::{order::stubs::*, OrderFilled};
+    use crate::events::{OrderFilled, order::stubs::*};
 
     #[rstest]
     fn test_order_filled_display(order_filled: OrderFilled) {
@@ -449,7 +449,8 @@ mod tests {
             "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
             venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
             order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22_000 USDT, \
-            commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)");
+            commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)"
+        );
     }
 
     #[rstest]

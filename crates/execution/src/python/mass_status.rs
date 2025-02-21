@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{python::serialization::from_dict_pyo3, UUID4};
+use nautilus_core::{
+    UUID4,
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
+};
 use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
@@ -45,8 +48,8 @@ impl ExecutionMassStatus {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

@@ -27,8 +27,8 @@ use std::{
     ops::Add,
     prelude::v1::*,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -101,7 +101,7 @@ impl FakeRelativeClock {
         let by: u64 = by
             .as_nanos()
             .try_into()
-            .expect("Can not represent times past ~584 years");
+            .expect("Cannot represent durations greater than 584 years");
 
         let mut prev = self.now.load(Ordering::Acquire);
         let mut next = prev + by;

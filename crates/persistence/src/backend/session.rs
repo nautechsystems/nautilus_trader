@@ -20,7 +20,7 @@ use datafusion::{
     error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
 };
 use futures::StreamExt;
-use nautilus_core::{ffi::cvec::CVec, UnixNanos};
+use nautilus_core::{UnixNanos, ffi::cvec::CVec};
 use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,

@@ -14,11 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr, CString},
+    ffi::{CStr, CString, c_char},
     str,
 };
 
-use pyo3::{ffi, Bound, Python};
+use pyo3::{Bound, Python, ffi};
 use ustr::Ustr;
 
 /// Returns an owned string from a valid Python object pointer.
@@ -137,7 +137,7 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 ///
 /// This function panics:
 /// - If `ptr` is null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let cstring = unsafe { CString::from_raw(ptr.cast_mut()) };

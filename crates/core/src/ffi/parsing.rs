@@ -15,7 +15,7 @@
 
 use std::{
     collections::HashMap,
-    ffi::{c_char, CStr, CString},
+    ffi::{CStr, CString, c_char},
 };
 
 use serde_json::{Result, Value};
@@ -141,7 +141,7 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 ///
 /// This function panics:
 /// - If `ptr` is null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let s = unsafe { cstr_as_str(ptr) };
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 ///
 /// This function panics:
 /// - If `ptr` is null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let s = unsafe { cstr_as_str(ptr) };

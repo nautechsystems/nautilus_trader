@@ -18,11 +18,12 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use nautilus_core::python::IntoPyObjectNautilusExt;
 use pyo3::{basic::CompareOp, prelude::*};
 use rust_decimal::Decimal;
 
 use crate::{
-    data::bet::{calc_bets_pnl, inverse_probability_to_bet, probability_to_bet, Bet, BetPosition},
+    data::bet::{Bet, BetPosition, calc_bets_pnl, inverse_probability_to_bet, probability_to_bet},
     enums::{BetSide, OrderSide},
 };
 
@@ -35,8 +36,8 @@ impl Bet {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }

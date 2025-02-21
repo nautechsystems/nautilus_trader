@@ -20,8 +20,8 @@ use nautilus_model::enums::{
     TrailingOffsetType,
 };
 use sqlx::{
-    encode::IsNull, error::BoxDynError, postgres::PgTypeInfo, types::Type, Database, Decode,
-    Postgres,
+    Database, Decode, Postgres, encode::IsNull, error::BoxDynError, postgres::PgTypeInfo,
+    types::Type,
 };
 
 pub struct CurrencyTypeModel(pub CurrencyType);

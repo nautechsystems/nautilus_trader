@@ -63,7 +63,7 @@ impl Default for TimeEventAccumulator {
 mod tests {
     use nautilus_common::timer::{TimeEvent, TimeEventCallback};
     use nautilus_core::UUID4;
-    use pyo3::{prelude::*, types::PyList, Py, Python};
+    use pyo3::{Py, Python, prelude::*, types::PyList};
     use rstest::*;
     use ustr::Ustr;
 

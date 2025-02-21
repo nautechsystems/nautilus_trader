@@ -15,8 +15,8 @@
 
 use std::fmt::Display;
 
-use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[derive(Debug, Clone)]
 pub struct FillModel {
@@ -45,7 +45,7 @@ impl FillModel {
         check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage").expect(FAILED);
         let rng = match random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_entropy(),
+            None => StdRng::from_os_rng(),
         };
         Ok(Self {
             prob_fill_on_limit,
@@ -71,7 +71,7 @@ impl FillModel {
         match probability {
             0.0 => false,
             1.0 => true,
-            _ => self.rng.gen_bool(probability),
+            _ => self.rng.random_bool(probability),
         }
     }
 }

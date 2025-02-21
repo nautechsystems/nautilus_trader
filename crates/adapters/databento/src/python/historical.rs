@@ -28,8 +28,8 @@ use databento::{
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::to_pyvalue_err,
-    time::{get_atomic_clock_realtime, AtomicTime},
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
@@ -39,6 +39,7 @@ use nautilus_model::{
     types::Currency,
 };
 use pyo3::{
+    IntoPyObjectExt,
     exceptions::PyException,
     prelude::*,
     types::{PyDict, PyList},
@@ -116,7 +117,7 @@ impl DatabentoHistoricalClient {
                     let dict = PyDict::new(py);
                     dict.set_item("start", res.start.to_string())?;
                     dict.set_item("end", res.end.to_string())?;
-                    Ok(dict.to_object(py))
+                    dict.into_py_any(py)
                 }),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
                     "Error handling response: {e}"
@@ -211,7 +212,7 @@ impl DatabentoHistoricalClient {
                 py_results.map(|objs| {
                     PyList::new(py, &objs)
                         .expect("Invalid `ExactSizeIterator`")
-                        .to_object(py)
+                        .into_py_any_unwrap(py)
                 })
             })
         })
@@ -252,7 +253,7 @@ impl DatabentoHistoricalClient {
             _ => {
                 return Err(to_pyvalue_err(
                     "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m",
-                ))
+                ));
             }
         }
         let params = GetRangeParams::builder()
@@ -326,7 +327,7 @@ impl DatabentoHistoricalClient {
                 _ => panic!("Invalid schema {dbn_schema}"),
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -409,7 +410,7 @@ impl DatabentoHistoricalClient {
                 }
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -500,7 +501,7 @@ impl DatabentoHistoricalClient {
                 }
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -572,7 +573,7 @@ impl DatabentoHistoricalClient {
                 result.push(imbalance);
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -645,7 +646,7 @@ impl DatabentoHistoricalClient {
                 result.push(statistics);
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 
@@ -715,7 +716,7 @@ impl DatabentoHistoricalClient {
                 result.push(status);
             }
 
-            Python::with_gil(|py| Ok(result.into_py(py)))
+            Python::with_gil(|py| result.into_py_any(py))
         })
     }
 }

@@ -78,7 +78,7 @@ impl BookOrder {
     /// Returns a [`BookPrice`] from this order.
     #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
-        BookPrice::new(self.price, self.side)
+        BookPrice::new(self.price, self.side.as_specified())
     }
 
     /// Returns the order exposure as an `f64`.
@@ -178,7 +178,7 @@ mod tests {
         let book_price = order.to_book_price();
 
         assert_eq!(book_price.value, price);
-        assert_eq!(book_price.side, side);
+        assert_eq!(book_price.side, side.as_specified());
     }
 
     #[rstest]

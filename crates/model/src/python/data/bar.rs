@@ -14,13 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     str::FromStr,
 };
 
 use nautilus_core::{
     python::{
+        IntoPyObjectNautilusExt,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -31,8 +32,8 @@ use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use super::data_to_pycapsule;
 use crate::{
     data::{
-        bar::{Bar, BarSpecification, BarType},
         Data,
+        bar::{Bar, BarSpecification, BarType},
     },
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
@@ -52,8 +53,8 @@ impl BarSpecification {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -94,8 +95,8 @@ impl BarType {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -240,8 +241,8 @@ impl Bar {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -388,14 +389,14 @@ impl Bar {
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
+        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
+        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
 
@@ -404,7 +405,8 @@ impl Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPy, Python};
+    use nautilus_core::python::IntoPyObjectNautilusExt;
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::{
@@ -486,7 +488,7 @@ mod tests {
         let bar = Bar::default();
 
         Python::with_gil(|py| {
-            let bar_pyobject = bar.into_py(py);
+            let bar_pyobject = bar.into_py_any_unwrap(py);
             let parsed_bar = Bar::from_pyobject(bar_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_bar, bar);
         });

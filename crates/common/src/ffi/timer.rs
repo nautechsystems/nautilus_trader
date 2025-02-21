@@ -16,8 +16,8 @@
 use std::ffi::c_char;
 
 use nautilus_core::{
-    ffi::string::{cstr_to_ustr, str_to_cstr},
     UUID4,
+    ffi::string::{cstr_to_ustr, str_to_cstr},
 };
 
 use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
@@ -54,7 +54,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
 /// # Safety
 ///
 /// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn time_event_new(
     name_ptr: *const c_char,
     event_id: UUID4,
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn time_event_new(
     ts_init: u64,
 ) -> TimeEvent {
     TimeEvent::new(
-        cstr_to_ustr(name_ptr),
+        unsafe { cstr_to_ustr(name_ptr) },
         event_id,
         ts_event.into(),
         ts_init.into(),
@@ -70,13 +70,13 @@ pub unsafe extern "C" fn time_event_new(
 }
 
 /// Returns a [`TimeEvent`] as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {
     str_to_cstr(&event.to_string())
 }
 
 // This function only exists so that `TimeEventHandler` is included in the definitions
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub const extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
     v
 }

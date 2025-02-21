@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.calculators import ExchangeRateCalculator
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import PriceType
 
 
 def test_get_rate(benchmark):
@@ -32,6 +31,11 @@ def test_get_rate(benchmark):
         "XBT/USD": 11286.0,
     }
 
-    calculator = ExchangeRateCalculator()
-
-    benchmark(calculator.get_rate, ETH, USDT, PriceType.MID, bid_quotes, ask_quotes)
+    benchmark(
+        nautilus_pyo3.get_exchange_rate,
+        ETH.code,
+        USDT.code,
+        nautilus_pyo3.PriceType.MID,
+        bid_quotes,
+        ask_quotes,
+    )

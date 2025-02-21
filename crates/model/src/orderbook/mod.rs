@@ -22,6 +22,7 @@ pub mod display;
 pub mod error;
 pub mod ladder;
 pub mod level;
+pub mod own;
 
 // Re-exports
 pub use crate::orderbook::{
@@ -29,4 +30,5 @@ pub use crate::orderbook::{
     error::{BookIntegrityError, InvalidBookOperation},
     ladder::BookPrice,
     level::BookLevel,
+    own::OwnBookOrder,
 };

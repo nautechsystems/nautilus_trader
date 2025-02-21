@@ -21,9 +21,9 @@ use std::{
 
 use databento::dbn;
 use dbn::{
-    compat::InstrumentDefMsgV1,
-    decode::{dbn::Decoder, DbnMetadata, DecodeStream},
     Publisher,
+    compat::InstrumentDefMsgV1,
+    decode::{DbnMetadata, DecodeStream, dbn::Decoder},
 };
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;

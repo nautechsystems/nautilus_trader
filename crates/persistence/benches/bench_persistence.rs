@@ -15,7 +15,7 @@
 
 use std::fs;
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use nautilus_model::data::{QuoteTick, TradeTick};
 use nautilus_persistence::backend::session::{DataBackendSession, QueryResult};
 

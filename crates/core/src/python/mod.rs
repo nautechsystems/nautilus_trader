@@ -22,6 +22,7 @@ pub mod uuid;
 pub mod version;
 
 use pyo3::{
+    conversion::IntoPyObjectExt,
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
     types::PyString,
@@ -29,13 +30,24 @@ use pyo3::{
 };
 
 use crate::{
+    UUID4,
     consts::{NAUTILUS_VERSION, USER_AGENT},
     datetime::{
         MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
         NANOSECONDS_IN_SECOND,
     },
-    UUID4,
 };
+
+/// Extend `IntoPyObjectExt` helper trait to unwrap `PyObject` after conversion.
+pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
+    #[inline]
+    fn into_py_any_unwrap(self, py: Python<'py>) -> PyObject {
+        self.into_py_any(py)
+            .expect("Failed to convert type to PyObject")
+    }
+}
+
+impl<'py, T> IntoPyObjectNautilusExt<'py> for T where T: IntoPyObjectExt<'py> {}
 
 /// Gets the type name for the given Python `obj`.
 ///

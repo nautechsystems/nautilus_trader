@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::cache::{database::CacheDatabaseAdapter, Cache};
+use nautilus_common::cache::{Cache, database::CacheDatabaseAdapter};
 
 #[must_use]
 pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {
@@ -33,8 +33,8 @@ mod serial_tests {
         enums::{CurrencyType, OrderSide, OrderType},
         identifiers::ClientOrderId,
         instruments::{
-            stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
             Instrument, InstrumentAny,
+            stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
         },
         orders::builder::OrderTestBuilder,
         types::{Currency, Quantity},

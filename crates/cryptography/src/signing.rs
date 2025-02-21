@@ -18,7 +18,7 @@ use hex;
 use ring::{
     hmac,
     rand::SystemRandom,
-    signature::{Ed25519KeyPair, RsaKeyPair, Signature, RSA_PKCS1_SHA256},
+    signature::{Ed25519KeyPair, RSA_PKCS1_SHA256, RsaKeyPair, Signature},
 };
 
 #[must_use]

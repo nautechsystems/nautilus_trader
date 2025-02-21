@@ -15,7 +15,7 @@
 
 use std::{cmp, fmt::Display, time::Duration};
 
-use super::{clock, nanos::Nanos, quota::Quota, StateStore};
+use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 
 /// Information about the rate-limiting state used to reach a decision.
 #[derive(Clone, PartialEq, Eq, Debug)]

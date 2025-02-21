@@ -17,7 +17,7 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid trader ID.

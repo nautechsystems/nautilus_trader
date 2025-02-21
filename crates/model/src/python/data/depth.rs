@@ -14,12 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
 };
 
 use nautilus_core::{
     python::{
+        IntoPyObjectNautilusExt,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -30,9 +31,9 @@ use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use super::data_to_pycapsule;
 use crate::{
     data::{
-        depth::{OrderBookDepth10, DEPTH10_LEN},
-        order::BookOrder,
         Data,
+        depth::{DEPTH10_LEN, OrderBookDepth10},
+        order::BookOrder,
     },
     enums::OrderSide,
     identifiers::InstrumentId,
@@ -70,8 +71,8 @@ impl OrderBookDepth10 {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -289,13 +290,13 @@ impl OrderBookDepth10 {
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
+        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
+        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }

@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid client order ID (assigned by the Nautilus system).

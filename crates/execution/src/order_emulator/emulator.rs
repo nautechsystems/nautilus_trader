@@ -24,7 +24,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{handler::ShareableMessageHandler, MessageBus},
+    msgbus::{MessageBus, handler::ShareableMessageHandler},
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
@@ -39,9 +39,9 @@ use nautilus_model::{
 use crate::{
     matching_core::OrderMatchingCore,
     messages::{
+        CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         cancel::CancelOrderHandlerAny, modify::ModifyOrderHandlerAny,
-        submit::SubmitOrderHandlerAny, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
+        submit::SubmitOrderHandlerAny,
     },
     order_manager::manager::OrderManager,
     trailing::trailing_stop_calculate,

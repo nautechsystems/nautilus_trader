@@ -340,9 +340,7 @@ class NautilusKernel:
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
-            portfolio_bar_updates=(
-                (config.exec_engine and config.exec_engine.portfolio_bar_updates) or True
-            ),
+            config=config.portfolio,
         )
 
         ########################################################################
@@ -479,6 +477,7 @@ class NautilusKernel:
                 cache=self._cache,
                 clock=self._clock,
             )
+            self._controller.register_endpoint()
 
         # Set up stream writer
         self._writer: StreamingFeatherWriter | None = None

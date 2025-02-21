@@ -18,7 +18,7 @@ use indexmap::IndexMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_core::UnixNanos;
 use nautilus_model::{data::DataType, types::Currency};
-use sqlx::{postgres::PgRow, FromRow, Row};
+use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
 use crate::sql::models::enums::CurrencyTypeModel;

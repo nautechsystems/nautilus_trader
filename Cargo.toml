@@ -20,24 +20,26 @@ members = [
     "crates/risk",
     "crates/serialization",
     "crates/test_kit",
+    "crates/trading",
 ]
 
 [workspace.package]
-rust-version = "1.84.1"
+rust-version = "1.85.0"
 version = "0.42.0"
-edition = "2021"
+edition = "2024"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.95"
-arrow = "54.1.0"  # Keep major version in line with datafusion
+anyhow = "1.0.96"
+arrow = "54.2.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.86"
 base64 = "0.22.1"
 bytes = { version = "1.10.0", features = ["serde"] }
 chrono = { version = "0.4.39", features = ["serde"] }
+chrono-tz = { version = "0.10.1" }
 derive_builder = "0.20.2"
 futures = "0.3.31"
 futures-util = "0.3.31"
@@ -48,18 +50,18 @@ itertools = "0.13.0"
 itoa = "1.0.14"
 once_cell = "1.20.3"
 log = { version = "0.4.25", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-parquet = "54.1.0"  # Keep major version in line with datafusion
-pyo3 = { version = "0.23.4", features = ["indexmap", "rust_decimal", "smallvec"] }
+parquet = "54.2.0"  # Keep major version in line with datafusion
+pyo3 = { version = "0.23.4", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
 pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime", "tokio", "attributes"] }
-rand = "0.8.5"
+rand = "0.9.0"
 reqwest = { version = "0.12.12", features = ["blocking"] }
 ring = "0.17.9"
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.25"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "2.0.11"
 thousands = "0.2.0"
@@ -68,9 +70,9 @@ tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 tokio = { version = "1.43.0", features = ["full"] }
-tokio-tungstenite = { version = "0.26.1", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.13.1", features = ["v4", "serde"] }
+uuid = { version = "1.13.2", features = ["v4", "serde"] }
 
 # dev-dependencies
 axum = "0.8.1"
@@ -79,7 +81,7 @@ float-cmp = "0.10.0"
 iai = "0.1.1"
 proptest = "1.6.0"
 rstest = "0.24.0"
-tempfile = "3.16.0"
+tempfile = "3.17.1"
 tracing-test = "0.2.5"
 
 # build-dependencies
@@ -98,13 +100,18 @@ codegen-units = 256
 
 [profile.test]
 opt-level = 0
-debug = false  # Improves compile times
-debug-assertions = true  # Fails Cython build if true
+debug = true
+debug-assertions = true
 overflow-checks = true
-strip = "debuginfo"  # Improves compile times
+strip = false
 lto = false
 incremental = true
 codegen-units = 256
+
+[profile.nextest]
+inherits = "test"
+debug = false # Improves compile times
+strip = "debuginfo" # Improves compile times
 
 [profile.release]
 opt-level = 3

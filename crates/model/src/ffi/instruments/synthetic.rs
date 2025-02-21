@@ -19,18 +19,18 @@ use std::{
 };
 
 use nautilus_core::{
+    UnixNanos,
     ffi::{
         cvec::CVec,
         parsing::{bytes_to_string_vec, string_vec_to_bytes},
         string::{cstr_as_str, str_to_cstr},
     },
-    UnixNanos,
 };
 
 use crate::{
     identifiers::{InstrumentId, Symbol},
     instruments::synthetic::SyntheticInstrument,
-    types::{Price, ERROR_PRICE},
+    types::{ERROR_PRICE, Price},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying
@@ -64,7 +64,7 @@ impl DerefMut for SyntheticInstrument_API {
 ///
 /// - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
 /// - Assumes `formula_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_new(
     symbol: Symbol,
     price_precision: u8,
@@ -74,11 +74,11 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     ts_init: u64,
 ) -> SyntheticInstrument_API {
     // TODO: There is absolutely no error handling here yet
-    let components = bytes_to_string_vec(components_ptr)
+    let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
         .map(|s| InstrumentId::from(s.as_str()))
         .collect::<Vec<InstrumentId>>();
-    let formula = cstr_as_str(formula_ptr).to_string();
+    let formula = unsafe { cstr_as_str(formula_ptr).to_string() };
     let synth = SyntheticInstrument::new(
         symbol,
         price_precision,
@@ -91,35 +91,35 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     SyntheticInstrument_API(Box::new(synth))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_drop(synth: SyntheticInstrument_API) {
     drop(synth); // Memory freed here
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument_API) -> InstrumentId {
     synth.id
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_price_precision(synth: &SyntheticInstrument_API) -> u8 {
     synth.price_precision
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn synthetic_instrument_price_increment(synth: &SyntheticInstrument_API) -> Price {
     synth.price_increment
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_formula_to_cstr(
     synth: &SyntheticInstrument_API,
 ) -> *const c_char {
     str_to_cstr(&synth.formula)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_components_to_cstr(
     synth: &SyntheticInstrument_API,
 ) -> *const c_char {
@@ -132,17 +132,17 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
     string_vec_to_bytes(components_vec)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_components_count(synth: &SyntheticInstrument_API) -> usize {
     synth.components.len()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_ts_event(synth: &SyntheticInstrument_API) -> UnixNanos {
     synth.ts_event
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument_API) -> UnixNanos {
     synth.ts_init
 }
@@ -150,7 +150,7 @@ pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument_API) 
 /// # Safety
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
     synth: &SyntheticInstrument_API,
     formula_ptr: *const c_char,
@@ -158,23 +158,23 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
     if formula_ptr.is_null() {
         return u8::from(false);
     }
-    let formula = cstr_as_str(formula_ptr);
+    let formula = unsafe { cstr_as_str(formula_ptr) };
     u8::from(synth.is_valid_formula(formula))
 }
 
 /// # Safety
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_change_formula(
     synth: &mut SyntheticInstrument_API,
     formula_ptr: *const c_char,
 ) {
-    let formula = cstr_as_str(formula_ptr);
+    let formula = unsafe { cstr_as_str(formula_ptr) };
     synth.change_formula(formula.to_string()).unwrap();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn synthetic_instrument_calculate(
     synth: &mut SyntheticInstrument_API,

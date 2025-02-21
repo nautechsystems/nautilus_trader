@@ -18,7 +18,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
+use nautilus_core::python::{
+    IntoPyObjectNautilusExt, serialization::from_dict_pyo3, to_pyvalue_err,
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -98,8 +100,9 @@ impl BinaryOption {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            _ => panic!("Not implemented"),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -335,7 +338,7 @@ mod tests {
     use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
     use rstest::rstest;
 
-    use crate::instruments::{stubs::*, BinaryOption};
+    use crate::instruments::{BinaryOption, stubs::*};
 
     #[rstest]
     fn test_dict_round_trip(binary_option: BinaryOption) {

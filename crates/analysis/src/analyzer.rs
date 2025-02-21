@@ -29,6 +29,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
+    Returns,
     statistic::PortfolioStatistic,
     statistics::{
         expectancy::Expectancy, long_ratio::LongRatio, loser_max::MaxLoser, loser_min::MinLoser,
@@ -38,7 +39,6 @@ use crate::{
         sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
         winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
-    Returns,
 };
 
 pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
@@ -398,8 +398,8 @@ mod tests {
         enums::{AccountType, LiquiditySide, OrderSide},
         events::{AccountState, OrderFilled},
         identifiers::{
-            stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
             AccountId, ClientOrderId,
+            stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
         },
         instruments::InstrumentAny,
         types::{AccountBalance, Money, Price, Quantity},

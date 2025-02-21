@@ -647,7 +647,7 @@ class TestInstrumentProvider:
     def eurusd_future(
         expiry_year: int,
         expiry_month: int,
-        venue_name: str = "GLBX",
+        venue_name: str = "XCME",
     ) -> FuturesContract:
         activation_date = first_friday_two_years_six_months_ago(expiry_year, expiry_month)
         expiration_date = third_friday_of_month(expiry_year, expiry_month)

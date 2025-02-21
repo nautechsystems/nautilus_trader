@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-#![allow(deprecated)]
-
 use std::io::Cursor;
 
 use arrow::{ipc::writer::StreamWriter, record_batch::RecordBatch};
@@ -29,15 +25,16 @@ use nautilus_model::{
     },
 };
 use pyo3::{
+    conversion::IntoPyObjectExt,
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
     types::{PyBytes, PyType},
 };
 
 use crate::arrow::{
-    bars_to_arrow_record_batch_bytes, order_book_deltas_to_arrow_record_batch_bytes,
-    order_book_depth10_to_arrow_record_batch_bytes, quote_ticks_to_arrow_record_batch_bytes,
-    trade_ticks_to_arrow_record_batch_bytes, ArrowSchemaProvider,
+    ArrowSchemaProvider, bars_to_arrow_record_batch_bytes,
+    order_book_deltas_to_arrow_record_batch_bytes, order_book_depth10_to_arrow_record_batch_bytes,
+    quote_ticks_to_arrow_record_batch_bytes, trade_ticks_to_arrow_record_batch_bytes,
 };
 
 /// Transforms the given record `batches` into Python `bytes`.
@@ -79,7 +76,7 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
         }
     };
 
-    Ok(result_map.into_py(py))
+    result_map.into_py_any(py)
 }
 
 /// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed

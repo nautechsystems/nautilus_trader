@@ -23,7 +23,7 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime, UnixNanos};
+use nautilus_core::{UnixNanos, python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,

@@ -70,6 +70,14 @@ def convert_to_snake_case(input: str) -> str:...
 # Common
 ###################################################################################################
 
+def get_exchange_rate(
+    from_currency: str,
+    to_currency: str,
+    price_type: PriceType,
+    quotes_bid: dict[str, float],
+    quotes_ask: dict[str, float],
+) -> float | None: ...
+
 # Logging
 
 class LogGuard: ...
@@ -995,6 +1003,12 @@ class LogColor(Enum):
     CYAN = "CYAN"
     YELLOW = "YELLOW"
     RED = "RED"
+
+class ForexSession(Enum):
+    SYDNEY = "SYDNEY"
+    TOKYO = "TOKYO"
+    LONDON = "LONDON"
+    NEW_YORK = "NEW_YORK"
 
 # Identifiers
 
@@ -3149,6 +3163,52 @@ class OrderBook:
 def update_book_with_quote_tick(book: OrderBook, quote: QuoteTick) -> None: ...
 def update_book_with_trade_tick(book: OrderBook, trade: TradeTick) -> None: ...
 
+class OwnBookOrder:
+    def __init__(
+        self,
+        client_order_id: ClientOrderId,
+        side: OrderSide,
+        price: Price,
+        size: Quantity,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def client_order_id(self) -> ClientOrderId: ...
+    @property
+    def side(self) -> OrderSide: ...
+    @property
+    def price(self) -> Price: ...
+    @property
+    def size(self) -> Quantity: ...
+    @property
+    def order_type(self) -> OrderType: ...
+    @property
+    def time_in_force(self) -> TimeInForce: ...
+    @property
+    def ts_last(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def exposure(self) -> float: ...
+    def signed_size(self) -> float: ...
+
+class OwnOrderBook:
+    def __init__(self, instrument_id: InstrumentId) -> None: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def ts_last(self) -> int: ...
+    @property
+    def count(self) -> int: ...
+    def reset(self) -> None: ...
+    def add(self, order: OwnBookOrder) -> None: ...
+    def update(self, order: OwnBookOrder) -> None: ...
+    def delete(self, order: OwnBookOrder) -> None: ...
+    def clear(self) -> None: ...
+    def bids_to_dict(self) -> dict[Decimal, list[OwnBookOrder]]: ...
+    def asks_to_dict(self) -> dict[Decimal, list[OwnBookOrder]]: ...
+
 ###################################################################################################
 # Infrastructure
 ###################################################################################################
@@ -4917,3 +4977,37 @@ class YieldCurveData(Data):
 ###################################################################################################
 
 def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None): ...
+
+###################################################################################################
+# Trading
+###################################################################################################
+
+# Converts a UTC timestamp to the local time for the given Forex session.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the next session start time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_next_start(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the next session end time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_next_end(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the previous session start time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_prev_start(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the previous session end time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_prev_end(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...

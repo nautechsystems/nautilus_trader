@@ -18,7 +18,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use arrow::{
     array::{
         FixedSizeBinaryArray, FixedSizeBinaryBuilder, StringArray, StringBuilder, StringViewArray,
-        UInt64Array, UInt8Array,
+        UInt8Array, UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -28,12 +28,12 @@ use nautilus_model::{
     data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{fixed::PRECISION_BYTES, Price, Quantity},
+    types::{Price, Quantity, fixed::PRECISION_BYTES},
 };
 
 use super::{
-    extract_column, get_raw_price, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION, extract_column, get_raw_price, get_raw_quantity,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -230,7 +230,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{Array, FixedSizeBinaryArray, UInt64Array, UInt8Array},
+        array::{Array, FixedSizeBinaryArray, UInt8Array, UInt64Array},
         record_batch::RecordBatch,
     };
     use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw};

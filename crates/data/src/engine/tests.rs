@@ -27,23 +27,23 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{Action, SubscriptionCommand},
     msgbus::{
+        MessageBus,
         handler::ShareableMessageHandler,
         stubs::{get_message_saving_handler, get_saved_messages},
         switchboard::MessagingSwitchboard,
-        MessageBus,
     },
     testing::init_logger_for_testing,
 };
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        stubs::{stub_delta, stub_deltas, stub_depth10},
         Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
         QuoteTick, TradeTick,
+        stubs::{stub_delta, stub_deltas, stub_depth10},
     },
     enums::BookType,
     identifiers::{ClientId, TraderId, Venue},
-    instruments::{stubs::audusd_sim, CurrencyPair, InstrumentAny},
+    instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
 };
 use rstest::*;
 
@@ -160,10 +160,12 @@ fn test_execute_subscribe_custom_data(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(data_engine
-        .borrow()
-        .subscribed_custom_data()
-        .contains(&data_type));
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_custom_data()
+            .contains(&data_type)
+    );
 
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -177,10 +179,12 @@ fn test_execute_subscribe_custom_data(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(!data_engine
-        .borrow()
-        .subscribed_custom_data()
-        .contains(&data_type));
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_custom_data()
+            .contains(&data_type)
+    );
 }
 
 #[rstest]
@@ -220,10 +224,12 @@ fn test_execute_subscribe_order_book_deltas(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(data_engine
-        .borrow()
-        .subscribed_order_book_deltas()
-        .contains(&audusd_sim.id));
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_order_book_deltas()
+            .contains(&audusd_sim.id)
+    );
 
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -237,10 +243,12 @@ fn test_execute_subscribe_order_book_deltas(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(!data_engine
-        .borrow()
-        .subscribed_order_book_deltas()
-        .contains(&audusd_sim.id));
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_order_book_deltas()
+            .contains(&audusd_sim.id)
+    );
 }
 
 #[rstest]
@@ -280,10 +288,12 @@ fn test_execute_subscribe_order_book_snapshots(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(data_engine
-        .borrow()
-        .subscribed_order_book_snapshots()
-        .contains(&audusd_sim.id));
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_order_book_snapshots()
+            .contains(&audusd_sim.id)
+    );
 
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -297,10 +307,12 @@ fn test_execute_subscribe_order_book_snapshots(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(!data_engine
-        .borrow()
-        .subscribed_order_book_snapshots()
-        .contains(&audusd_sim.id));
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_order_book_snapshots()
+            .contains(&audusd_sim.id)
+    );
 }
 
 #[rstest]
@@ -338,10 +350,12 @@ fn test_execute_subscribe_instrument(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(data_engine
-        .borrow()
-        .subscribed_instruments()
-        .contains(&audusd_sim.id));
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_instruments()
+            .contains(&audusd_sim.id)
+    );
 
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -355,10 +369,12 @@ fn test_execute_subscribe_instrument(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(!data_engine
-        .borrow()
-        .subscribed_instruments()
-        .contains(&audusd_sim.id));
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_instruments()
+            .contains(&audusd_sim.id)
+    );
 }
 
 #[rstest]
@@ -396,10 +412,12 @@ fn test_execute_subscribe_quote_ticks(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(data_engine
-        .borrow()
-        .subscribed_quote_ticks()
-        .contains(&audusd_sim.id));
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_quote_ticks()
+            .contains(&audusd_sim.id)
+    );
 
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -413,10 +431,12 @@ fn test_execute_subscribe_quote_ticks(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(!data_engine
-        .borrow()
-        .subscribed_quote_ticks()
-        .contains(&audusd_sim.id));
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_quote_ticks()
+            .contains(&audusd_sim.id)
+    );
 }
 
 #[rstest]
@@ -454,10 +474,12 @@ fn test_execute_subscribe_trade_ticks(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(data_engine
-        .borrow()
-        .subscribed_trade_ticks()
-        .contains(&audusd_sim.id));
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_trade_ticks()
+            .contains(&audusd_sim.id)
+    );
 
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -471,10 +493,12 @@ fn test_execute_subscribe_trade_ticks(
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
-    assert!(!data_engine
-        .borrow()
-        .subscribed_trade_ticks()
-        .contains(&audusd_sim.id));
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_trade_ticks()
+            .contains(&audusd_sim.id)
+    );
 }
 
 #[rstest]

@@ -33,11 +33,11 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 use index::CacheIndex;
 use nautilus_core::{
-    correctness::{
-        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
-        FAILED,
-    },
     UUID4,
+    correctness::{
+        FAILED, check_key_not_in_map, check_predicate_false, check_slice_not_empty,
+        check_valid_string,
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -45,7 +45,7 @@ use nautilus_model::{
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Symbol, Venue, VenueOrderId,
+        OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -53,7 +53,6 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
@@ -66,7 +65,8 @@ pub struct Cache {
     general: HashMap<String, Bytes>,
     quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    marks: HashMap<InstrumentId, Price>,
+    mark_prices: HashMap<InstrumentId, Price>,
+    mark_xrates: HashMap<(Currency, Currency), f64>,
     books: HashMap<InstrumentId, OrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
@@ -98,7 +98,8 @@ impl Cache {
             index: CacheIndex::default(),
             database,
             general: HashMap::new(),
-            marks: HashMap::new(),
+            mark_prices: HashMap::new(),
+            mark_xrates: HashMap::new(),
             quotes: HashMap::new(),
             trades: HashMap::new(),
             books: HashMap::new(),
@@ -796,7 +797,8 @@ impl Cache {
         log::debug!("Resetting cache");
 
         self.general.clear();
-        self.marks.clear();
+        self.mark_prices.clear();
+        self.mark_xrates.clear();
         self.quotes.clear();
         self.trades.clear();
         self.books.clear();
@@ -864,7 +866,7 @@ impl Cache {
     pub fn add_mark_price(&mut self, instrument_id: &InstrumentId, price: Price) {
         log::debug!("Adding mark `Price` for {instrument_id}");
 
-        self.marks.insert(*instrument_id, price);
+        self.mark_prices.insert(*instrument_id, price);
     }
 
     /// Adds the given `quote` tick to the cache.
@@ -2319,7 +2321,7 @@ impl Cache {
                 .trades
                 .get(instrument_id)
                 .and_then(|trades| trades.front().map(|trade| trade.price)),
-            PriceType::Mark => self.marks.get(instrument_id).copied(),
+            PriceType::Mark => self.mark_prices.get(instrument_id).copied(),
         }
     }
 
@@ -2442,20 +2444,31 @@ impl Cache {
         from_currency: Currency,
         to_currency: Currency,
         price_type: PriceType,
-    ) -> Decimal {
+    ) -> Option<f64> {
         if from_currency == to_currency {
-            return Decimal::ONE;
+            // When the source and target currencies are identical,
+            // no conversion is needed; return an exchange rate of 1.0.
+            return Some(1.0);
         }
 
         let (bid_quote, ask_quote) = self.build_quote_table(&venue);
 
-        get_exchange_rate(from_currency, to_currency, price_type, bid_quote, ask_quote)
+        match get_exchange_rate(
+            from_currency.code,
+            to_currency.code,
+            price_type,
+            bid_quote,
+            ask_quote,
+        ) {
+            Ok(rate) => rate,
+            Err(e) => {
+                log::error!("Failed to calculate xrate: {e}");
+                None
+            }
+        }
     }
 
-    fn build_quote_table(
-        &self,
-        venue: &Venue,
-    ) -> (HashMap<Symbol, Decimal>, HashMap<Symbol, Decimal>) {
+    fn build_quote_table(&self, venue: &Venue) -> (HashMap<String, f64>, HashMap<String, f64>) {
         let mut bid_quotes = HashMap::new();
         let mut ask_quotes = HashMap::new();
 
@@ -2500,11 +2513,39 @@ impl Cache {
                 }
             };
 
-            bid_quotes.insert(instrument_id.symbol, bid_price.as_decimal());
-            ask_quotes.insert(instrument_id.symbol, ask_price.as_decimal());
+            bid_quotes.insert(instrument_id.symbol.to_string(), bid_price.as_f64());
+            ask_quotes.insert(instrument_id.symbol.to_string(), ask_price.as_f64());
         }
 
         (bid_quotes, ask_quotes)
+    }
+
+    /// Returns the mark exchange rate for the given currency pair, or `None` if not set.
+    #[must_use]
+    pub fn get_mark_xrate(&self, from_currency: Currency, to_currency: Currency) -> Option<f64> {
+        self.mark_xrates.get(&(from_currency, to_currency)).copied()
+    }
+
+    /// Sets the mark exchange rate for the given currency pair and automatically sets the inverse rate.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `xrate` is not positive.
+    pub fn set_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency, xrate: f64) {
+        assert!(xrate > 0.0, "xrate was zero");
+        self.mark_xrates.insert((from_currency, to_currency), xrate);
+        self.mark_xrates
+            .insert((to_currency, from_currency), 1.0 / xrate);
+    }
+
+    /// Clears the mark exchange rate for the given currency pair.
+    pub fn clear_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency) {
+        let _ = self.mark_xrates.remove(&(from_currency, to_currency));
+    }
+
+    /// Clears all mark exchange rates.
+    pub fn clear_mark_xrates(&mut self) {
+        self.mark_xrates.clear();
     }
 
     // -- INSTRUMENT QUERIES ----------------------------------------------------------------------

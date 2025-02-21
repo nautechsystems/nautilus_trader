@@ -19,7 +19,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -454,9 +454,17 @@ impl Display for StopLimitOrder {
             self.time_in_force,
             self.status,
             self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.position_id.map_or("None".to_string(), |position_id| format!("{position_id}")),
-            self.tags.clone().map_or("None".to_string(), |tags| tags.iter().map(|s| s.to_string()).collect::<Vec<String>>().join(", ")),
+            self.venue_order_id
+                .map_or("None".to_string(), |venue_order_id| format!(
+                    "{venue_order_id}"
+                )),
+            self.position_id
+                .map_or("None".to_string(), |position_id| format!("{position_id}")),
+            self.tags.clone().map_or("None".to_string(), |tags| tags
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")),
         )
     }
 }

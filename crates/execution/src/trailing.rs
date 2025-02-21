@@ -17,10 +17,10 @@
 use anyhow;
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
-    orders::{base::OrderError, OrderAny},
+    orders::{OrderAny, base::OrderError},
     types::Price,
 };
-use rust_decimal::{prelude::*, Decimal};
+use rust_decimal::{Decimal, prelude::*};
 
 pub fn trailing_stop_calculate(
     price_increment: Price,

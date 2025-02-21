@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{future::join_all, StreamExt};
+use futures::{StreamExt, future::join_all};
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
@@ -30,6 +30,7 @@ use nautilus_model::{
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Serialize;
+
 use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
@@ -720,7 +721,11 @@ fn convert_timestamp_strings(value: &mut Value) {
                     if let Value::String(s) = v {
                         if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
                             *v = Value::Number(
-                                (dt.with_timezone(&Utc).timestamp_nanos() as u64).into(),
+                                (dt.with_timezone(&Utc)
+                                    .timestamp_nanos_opt()
+                                    .expect("Invalid DateTime")
+                                    as u64)
+                                    .into(),
                             );
                         }
                     }

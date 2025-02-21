@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_core::time::{duration_since_unix_epoch, nanos_since_unix_epoch};
 
 // Using `SystemTime` under the hood

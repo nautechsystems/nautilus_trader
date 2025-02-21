@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{
-        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt32Array, UInt64Array, UInt8Array,
+        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt8Array, UInt32Array, UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -25,21 +25,21 @@ use arrow::{
 };
 use nautilus_model::{
     data::{
-        depth::{OrderBookDepth10, DEPTH10_LEN},
+        depth::{DEPTH10_LEN, OrderBookDepth10},
         order::BookOrder,
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{fixed::PRECISION_BYTES, Price, Quantity},
+    types::{Price, Quantity, fixed::PRECISION_BYTES},
 };
 
 use super::{
-    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION, extract_column,
 };
 use crate::arrow::{
-    get_raw_price, get_raw_quantity, ArrowSchemaProvider, Data, DecodeFromRecordBatch,
-    EncodeToRecordBatch,
+    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, get_raw_price,
+    get_raw_quantity,
 };
 
 fn get_field_data() -> Vec<(&'static str, DataType)> {

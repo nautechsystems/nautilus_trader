@@ -25,10 +25,10 @@ use rstest::*;
 
 use crate::{
     average::{
-        ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
+        MovingAverageType, ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
         ema::ExponentialMovingAverage, hma::HullMovingAverage, lr::LinearRegression,
         rma::WilderMovingAverage, sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
-        vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
+        vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage,
     },
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,

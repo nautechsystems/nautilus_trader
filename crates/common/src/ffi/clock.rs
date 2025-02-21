@@ -19,9 +19,9 @@ use std::{
 };
 
 use nautilus_core::{
+    UnixNanos,
     correctness::FAILED,
     ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_as_str},
-    UnixNanos,
 };
 use pyo3::{
     ffi,
@@ -61,12 +61,12 @@ impl DerefMut for TestClock_API {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_new() -> TestClock_API {
     TestClock_API(Box::new(TestClock::new()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_drop(clock: TestClock_API) {
     drop(clock); // Memory freed here
 }
@@ -74,46 +74,46 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
 /// # Safety
 ///
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_register_default_handler(
     clock: &mut TestClock_API,
     callback_ptr: *mut ffi::PyObject,
 ) {
     assert!(!callback_ptr.is_null());
-    assert!(ffi::Py_None() != callback_ptr);
+    assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+    let callback = Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_set_time(clock: &TestClock_API, to_time_ns: u64) {
     clock.set_time(to_time_ns.into());
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_timestamp(clock: &TestClock_API) -> f64 {
     clock.get_time()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_timestamp_ms(clock: &TestClock_API) -> u64 {
     clock.get_time_ms()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_timestamp_us(clock: &TestClock_API) -> u64 {
     clock.get_time_us()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_timestamp_ns(clock: &TestClock_API) -> u64 {
     clock.get_time_ns().as_u64()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_timer_names(clock: &TestClock_API) -> *mut ffi::PyObject {
     Python::with_gil(|py| -> Py<PyList> {
         let names: Vec<Py<PyString>> = clock
@@ -128,7 +128,7 @@ pub extern "C" fn test_clock_timer_names(clock: &TestClock_API) -> *mut ffi::PyO
     .as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
     clock.timer_count()
 }
@@ -137,7 +137,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_set_time_alert(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
@@ -146,11 +146,12 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_as_str(name_ptr);
-    let callback = if callback_ptr == ffi::Py_None() {
+    let name = unsafe { cstr_as_str(name_ptr) };
+    let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        let callback =
+            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -163,7 +164,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_set_timer(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
@@ -174,15 +175,16 @@ pub unsafe extern "C" fn test_clock_set_timer(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_as_str(name_ptr);
+    let name = unsafe { cstr_as_str(name_ptr) };
     let stop_time_ns = match stop_time_ns.into() {
         0 => None,
         _ => Some(stop_time_ns),
     };
-    let callback = if callback_ptr == ffi::Py_None() {
+    let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        let callback =
+            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -194,7 +196,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
 /// # Safety
 ///
 /// - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut TestClock_API,
     to_time_ns: u64,
@@ -212,7 +214,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
 // TODO: This struct implementation potentially leaks memory
 // TODO: Skip clippy check for now since it requires large modification
 #[allow(clippy::drop_non_drop)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
     let data: Vec<TimeEventHandler> =
@@ -223,28 +225,28 @@ pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
 /// # Safety
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_next_time(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) -> UnixNanos {
-    let name = cstr_as_str(name_ptr);
+    let name = unsafe { cstr_as_str(name_ptr) };
     clock.next_time_ns(name)
 }
 
 /// # Safety
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_cancel_timer(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) {
-    let name = cstr_as_str(name_ptr);
+    let name = unsafe { cstr_as_str(name_ptr) };
     clock.cancel_timer(name);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
     clock.cancel_timers();
 }
@@ -276,12 +278,12 @@ impl DerefMut for LiveClock_API {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_new() -> LiveClock_API {
     LiveClock_API(Box::new(LiveClock::new()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
     drop(clock); // Memory freed here
 }
@@ -289,41 +291,41 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
 /// # Safety
 ///
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_register_default_handler(
     clock: &mut LiveClock_API,
     callback_ptr: *mut ffi::PyObject,
 ) {
     assert!(!callback_ptr.is_null());
-    assert!(ffi::Py_None() != callback_ptr);
+    assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+    let callback = Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_timestamp(clock: &mut LiveClock_API) -> f64 {
     clock.get_time()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClock_API) -> u64 {
     clock.get_time_ms()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
     clock.get_time_us()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
     clock.get_time_ns().as_u64()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_timer_names(clock: &LiveClock_API) -> *mut ffi::PyObject {
     Python::with_gil(|py| -> Py<PyList> {
         let names: Vec<Py<PyString>> = clock
@@ -338,7 +340,7 @@ pub extern "C" fn live_clock_timer_names(clock: &LiveClock_API) -> *mut ffi::PyO
     .as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_timer_count(clock: &mut LiveClock_API) -> usize {
     clock.timer_count()
 }
@@ -353,7 +355,7 @@ pub extern "C" fn live_clock_timer_count(clock: &mut LiveClock_API) -> usize {
 /// This function panics:
 /// - If `name` is not a valid string.
 /// - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_set_time_alert(
     clock: &mut LiveClock_API,
     name_ptr: *const c_char,
@@ -362,11 +364,12 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_as_str(name_ptr);
-    let callback = if callback_ptr == ffi::Py_None() {
+    let name = unsafe { cstr_as_str(name_ptr) };
+    let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        let callback =
+            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -385,7 +388,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 /// This function panics:
 /// - If `name` is not a valid string.
 /// - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_set_timer(
     clock: &mut LiveClock_API,
     name_ptr: *const c_char,
@@ -396,16 +399,17 @@ pub unsafe extern "C" fn live_clock_set_timer(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_as_str(name_ptr);
+    let name = unsafe { cstr_as_str(name_ptr) };
     let stop_time_ns = match stop_time_ns.into() {
         0 => None,
         _ => Some(stop_time_ns),
     };
 
-    let callback = if callback_ptr == ffi::Py_None() {
+    let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+        let callback =
+            Python::with_gil(|py| unsafe { PyObject::from_borrowed_ptr(py, callback_ptr) });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -417,28 +421,28 @@ pub unsafe extern "C" fn live_clock_set_timer(
 /// # Safety
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_next_time(
     clock: &mut LiveClock_API,
     name_ptr: *const c_char,
 ) -> UnixNanos {
-    let name = cstr_as_str(name_ptr);
+    let name = unsafe { cstr_as_str(name_ptr) };
     clock.next_time_ns(name)
 }
 
 /// # Safety
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_cancel_timer(
     clock: &mut LiveClock_API,
     name_ptr: *const c_char,
 ) {
-    let name = cstr_as_str(name_ptr);
+    let name = unsafe { cstr_as_str(name_ptr) };
     clock.cancel_timer(name);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn live_clock_cancel_timers(clock: &mut LiveClock_API) {
     clock.cancel_timers();
 }
