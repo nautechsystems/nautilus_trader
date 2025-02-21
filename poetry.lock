@@ -3646,13 +3646,13 @@ files = [
 
 [[package]]
 name = "sphinx"
-version = "8.2.0"
+version = "8.2.1"
 description = "Python documentation generator"
 optional = false
 python-versions = ">=3.11"
 files = [
-    {file = "sphinx-8.2.0-py3-none-any.whl", hash = "sha256:3c0a40ff71ace28b316bde7387d93b9249a3688c202181519689b66d5d0aed53"},
-    {file = "sphinx-8.2.0.tar.gz", hash = "sha256:5b0067853d6e97f3fa87563e3404ebd008fce03525b55b25da90706764da6215"},
+    {file = "sphinx-8.2.1-py3-none-any.whl", hash = "sha256:b5d2bb3cdf6207fcacde9f92085d2b97667b05b9c346eaec426ca4be8af505e9"},
+    {file = "sphinx-8.2.1.tar.gz", hash = "sha256:e4b932951b9c18b039f73b72e4e63afe967d90408700ec222b981ac24647c01e"},
 ]
 
 [package.dependencies]
@@ -3676,7 +3676,7 @@ sphinxcontrib-serializinghtml = ">=1.1.9"
 
 [package.extras]
 docs = ["sphinxcontrib-websupport"]
-lint = ["betterproto (==2.0.0b6)", "mypy (==1.15.0)", "pypi-attestations (==0.0.21)", "pyright (==1.1.394)", "pytest (>=8.0)", "ruff (==0.9.6)", "sphinx-lint (>=0.9)", "types-Pillow (==10.2.0.20240822)", "types-Pygments (==2.19.0.20250107)", "types-colorama (==0.4.15.20240311)", "types-defusedxml (==0.7.0.20240218)", "types-docutils (==0.21.0.20241128)", "types-requests (==2.32.0.20241016)", "types-urllib3 (==1.26.25.14)"]
+lint = ["betterproto (==2.0.0b6)", "mypy (==1.15.0)", "pypi-attestations (==0.0.21)", "pyright (==1.1.394)", "pytest (>=8.0)", "ruff (==0.9.7)", "sphinx-lint (>=0.9)", "types-Pillow (==10.2.0.20240822)", "types-Pygments (==2.19.0.20250219)", "types-colorama (==0.4.15.20240311)", "types-defusedxml (==0.7.0.20240218)", "types-docutils (==0.21.0.20241128)", "types-requests (==2.32.0.20241016)", "types-urllib3 (==1.26.25.14)"]
 test = ["cython (>=3.0)", "defusedxml (>=0.7.1)", "pytest (>=8.0)", "pytest-xdist[psutil] (>=3.4)", "setuptools (>=70.0)", "typing_extensions (>=4.9)"]
 
 [[package]]
