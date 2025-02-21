@@ -41,6 +41,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef Cache _cache
     cdef AccountsManager _accounts
     cdef object _config
+    cdef bint _debug
     cdef bint _use_mark_prices
     cdef bint _use_mark_xrates
     cdef bint _convert_to_account_base_currency
@@ -57,6 +58,8 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_use_mark_prices(self, bint value)
+    cpdef void set_use_mark_xrates(self, bint value)
     cpdef void set_specific_venue(self, Venue venue)
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
