@@ -43,6 +43,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef object _config
     cdef bint _use_mark_prices
     cdef bint _use_mark_xrates
+    cdef bint _convert_to_account_base_currency
     cdef str _log_price
     cdef str _log_xrate
 

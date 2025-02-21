@@ -1047,6 +1047,10 @@ impl Portfolio {
         account: &AccountAny,
         side: OrderSide,
     ) -> Option<f64> {
+        if !self.config.convert_to_account_base_currency {
+            return Some(1.0); // No conversion needed
+        }
+
         match account.base_currency() {
             None => Some(1.0), // No conversion needed
             Some(base_currency) => {
