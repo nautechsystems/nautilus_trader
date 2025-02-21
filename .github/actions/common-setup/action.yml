@@ -47,13 +47,19 @@ runs:
 
     # > --------------------------------------------------
     # > Rust
-    - name: Set up Rust toolchain
+    - name: Get Rust toolchain version
+      id: rust-toolchain
       shell: bash
       run: |
-        toolchain=$(bash scripts/rust-toolchain.sh)
-        rustup toolchain add "$toolchain" --profile minimal --component cargo,clippy,rustfmt
-        rustup default "$toolchain"
-        cargo --version
+        version=$(bash scripts/rust-toolchain.sh)
+        echo "TOOLCHAIN=$version" >> $GITHUB_ENV
+
+    - name: Set up Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ env.TOOLCHAIN }}
+        components: clippy,rustfmt
+        override: true
 
     - name: Install cargo-nextest
       uses: taiki-e/install-action@v2
