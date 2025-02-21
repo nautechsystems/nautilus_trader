@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Ported market-if-touched order handling for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
 - Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
+- Upgraded Rust to 1.85.0 and 2024 edition
 - Upgraded `datafusion` crate to v45.0.0
 - Upgraded `arrow` and `parquet` crates to v54.2.0
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
@@ -65,6 +66,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
+- Added backtest bar aggregation example (#2340), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
 - Improved docs for emulated orders (#2316), thanks @stefansimik
