@@ -29,13 +29,16 @@ use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
 use crate::{
-    enums::{OrderSideSpecified, OrderType, TimeInForce},
+    enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
     orderbook::BookPrice,
     types::{Price, Quantity},
 };
 
-/// Represents an own order in a book.
+/// Represents an own/user order for a book.
+///
+/// This struct models an order that may be in-flight to the trading venue or actively working,
+/// depending on the value of the `status` field.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -55,8 +58,8 @@ pub struct OwnBookOrder {
     pub order_type: OrderType,
     /// The order time in force.
     pub time_in_force: TimeInForce,
-    /// If the order is currently in-flight to the venue.
-    pub is_inflight: bool,
+    /// The current order status (SUBMITTED/ACCEPTED/CANCELED/FILLED).
+    pub status: OrderStatus,
     /// UNIX timestamp (nanoseconds) when the last event occurred for this order.
     pub ts_last: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the order was initialized.
@@ -66,6 +69,7 @@ pub struct OwnBookOrder {
 impl OwnBookOrder {
     /// Creates a new [`OwnBookOrder`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_order_id: ClientOrderId,
         side: OrderSideSpecified,
@@ -73,6 +77,8 @@ impl OwnBookOrder {
         size: Quantity,
         order_type: OrderType,
         time_in_force: TimeInForce,
+        status: OrderStatus,
+        ts_last: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
         Self {
@@ -82,8 +88,8 @@ impl OwnBookOrder {
             size,
             order_type,
             time_in_force,
-            is_inflight: true,
-            ts_last: ts_init, // Same as ts_init
+            status,
+            ts_last,
             ts_init,
         }
     }
@@ -211,7 +217,7 @@ impl OwnOrderBook {
         self.count = 0;
     }
 
-    /// Adds an order to the book after preprocessing based on book type.
+    /// Adds an own order to the book.
     pub fn add(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
@@ -220,7 +226,7 @@ impl OwnOrderBook {
         }
     }
 
-    /// Updates an existing order in the book after preprocessing based on book type.
+    /// Updates an existing own order in the book.
     pub fn update(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
@@ -229,7 +235,7 @@ impl OwnOrderBook {
         }
     }
 
-    /// Deletes an order from the book after preprocessing based on book type.
+    /// Deletes an own order from the book.
     pub fn delete(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
@@ -579,6 +585,8 @@ mod tests {
         let size = Quantity::from("10");
         let order_type = OrderType::Limit;
         let time_in_force = TimeInForce::Gtc;
+        let status = OrderStatus::Submitted;
+        let ts_last = UnixNanos::default();
         let ts_init = UnixNanos::default();
 
         OwnBookOrder::new(
@@ -588,6 +596,8 @@ mod tests {
             size,
             order_type,
             time_in_force,
+            status,
+            ts_last,
             ts_init,
         )
     }
@@ -615,6 +625,8 @@ mod tests {
             Quantity::from("10"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -651,6 +663,8 @@ mod tests {
             Quantity::from("10"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         let order2 = OwnBookOrder::new(
@@ -660,6 +674,8 @@ mod tests {
             Quantity::from("20"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         level.add(order1);
@@ -683,6 +699,8 @@ mod tests {
             Quantity::from("10"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         level.add(order);
@@ -696,6 +714,8 @@ mod tests {
             Quantity::from("15"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         level.update(order_updated);
@@ -717,6 +737,8 @@ mod tests {
             Quantity::from("10"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         let order2 = OwnBookOrder::new(
@@ -726,6 +748,8 @@ mod tests {
             Quantity::from("20"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         ladder.add(order1);
@@ -741,6 +765,8 @@ mod tests {
             Quantity::from("25"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         ladder.update(order2_updated);
@@ -762,6 +788,8 @@ mod tests {
             Quantity::from("10"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         let order_sell = OwnBookOrder::new(
@@ -771,6 +799,8 @@ mod tests {
             Quantity::from("20"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -788,6 +818,8 @@ mod tests {
             Quantity::from("15"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         book.update(order_buy_updated);
@@ -813,6 +845,8 @@ mod tests {
             Quantity::from("10"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         let order2 = OwnBookOrder::new(
@@ -822,6 +856,8 @@ mod tests {
             Quantity::from("20"),
             OrderType::Limit,
             TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
         );
         book.add(order1);

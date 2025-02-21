@@ -24,7 +24,7 @@ use pyo3::{Python, prelude::*, pyclass::CompareOp};
 use rust_decimal::Decimal;
 
 use crate::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
     orderbook::{OwnBookOrder, own::OwnOrderBook},
     types::{Price, Quantity},
@@ -33,6 +33,7 @@ use crate::{
 #[pymethods]
 impl OwnBookOrder {
     #[new]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         client_order_id: ClientOrderId,
         side: OrderSide,
@@ -40,6 +41,8 @@ impl OwnBookOrder {
         size: Quantity,
         order_type: OrderType,
         time_in_force: TimeInForce,
+        status: OrderStatus,
+        ts_last: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
         Ok(OwnBookOrder::new(
@@ -49,6 +52,8 @@ impl OwnBookOrder {
             size,
             order_type,
             time_in_force,
+            status,
+            ts_last.into(),
             ts_init.into(),
         ))
     }
@@ -109,6 +114,12 @@ impl OwnBookOrder {
     #[pyo3(name = "time_in_force")]
     fn py_time_in_force(&self) -> TimeInForce {
         self.time_in_force
+    }
+
+    #[getter]
+    #[pyo3(name = "status")]
+    fn py_status(&self) -> OrderStatus {
+        self.status
     }
 
     #[getter]

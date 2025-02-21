@@ -53,6 +53,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
         open_check_interval_secs=5.0,
+        manage_own_order_books=True,
     ),
     cache=CacheConfig(
         # database=DatabaseConfig(),
