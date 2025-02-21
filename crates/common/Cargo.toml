@@ -10,6 +10,16 @@ documentation.workspace = true
 name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
 
+[[bench]]
+name = "cache_orders_processing"
+path = "benches/cache/orders_processing.rs"
+harness = false
+
+[[bench]]
+name = "cache_orders_indexing"
+path = "benches/cache/orders_indexing.rs"
+harness = false
+
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
@@ -39,6 +49,7 @@ sysinfo = "0.33.1"
 [dev-dependencies]
 proptest = { workspace = true }
 tempfile = { workspace = true }
+criterion = {workspace = true}
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

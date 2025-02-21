@@ -13,16 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};
 
 use super::any::OrderAny;
 use crate::{
-    enums::LiquiditySide,
+    enums::{LiquiditySide, OrderType},
     events::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
-    identifiers::{AccountId, PositionId, TradeId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, Venue, VenueOrderId,
+    },
     instruments::InstrumentAny,
+    orders::OrderTestBuilder,
     types::{Money, Price, Quantity},
 };
 
@@ -155,4 +158,70 @@ impl TestOrderStubs {
         accepted_order.apply(fill).unwrap();
         accepted_order
     }
+}
+
+pub struct TestOrdersGenerator {
+    order_type: OrderType,
+    venue_instruments: HashMap<Venue, u32>,
+    orders_per_instrument: u32,
+}
+
+impl TestOrdersGenerator {
+    pub fn new(order_type: OrderType) -> Self {
+        Self {
+            order_type,
+            venue_instruments: HashMap::new(),
+            orders_per_instrument: 5,
+        }
+    }
+
+    pub fn set_orders_per_instrument(&mut self, total_orders: u32) {
+        self.orders_per_instrument = total_orders;
+    }
+
+    pub fn add_venue_and_total_instruments(&mut self, venue: Venue, total_instruments: u32) {
+        self.venue_instruments.insert(venue, total_instruments);
+    }
+
+    fn generate_order(&self, instrument_id: InstrumentId, client_order_id_index: u32) -> OrderAny {
+        let client_order_id =
+            ClientOrderId::from(format!("O-{}-{}", instrument_id, client_order_id_index));
+        OrderTestBuilder::new(self.order_type)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("1"))
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .build()
+    }
+
+    pub fn build(&self) -> Vec<OrderAny> {
+        let mut orders = Vec::new();
+        for (venue, total_instruments) in self.venue_instruments.iter() {
+            for i in 0..*total_instruments {
+                let instrument_id = InstrumentId::from(format!("SYMBOL-{}.{}", i, venue));
+                for order_index in 0..self.orders_per_instrument {
+                    let order = self.generate_order(instrument_id, order_index);
+                    orders.push(order);
+                }
+            }
+        }
+        orders
+    }
+}
+
+pub fn create_order_list_sample(
+    total_venues: u8,
+    total_instruments: u32,
+    orders_per_instrument: u32,
+) -> Vec<OrderAny> {
+    // Create Limit orders list from order generator with spec:
+    // x venues * x instruments * x orders per instrument
+    let mut order_generator = TestOrdersGenerator::new(OrderType::Limit);
+    for i in 0..total_venues {
+        let venue = Venue::from(format!("VENUE-{}", i));
+        order_generator.add_venue_and_total_instruments(venue, total_instruments);
+    }
+    order_generator.set_orders_per_instrument(orders_per_instrument);
+
+    order_generator.build()
 }
