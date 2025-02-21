@@ -18,8 +18,10 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use indexmap::IndexMap;
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use pyo3::{Python, prelude::*, pyclass::CompareOp};
+use rust_decimal::Decimal;
 
 use crate::{
     enums::{OrderSide, OrderType, TimeInForce},
@@ -139,6 +141,14 @@ impl OwnOrderBook {
         Self::new(instrument_id)
     }
 
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
     #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
@@ -182,11 +192,13 @@ impl OwnOrderBook {
         self.clear();
     }
 
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
+    #[pyo3(name = "bids_to_dict")]
+    fn py_bids_to_dict(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+        self.bids_as_map()
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
+    #[pyo3(name = "asks_to_dict")]
+    fn py_asks_to_dict(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+        self.asks_as_map()
     }
 }
