@@ -50,7 +50,8 @@ runs:
     - name: Set up Rust toolchain
       shell: bash
       run: |
-        rustup toolchain add "$(bash scripts/rust-toolchain.sh)" --profile minimal --component clippy,rustfmt
+        rustup toolchain add "$(bash scripts/rust-toolchain.sh)" --profile minimal --component cargo,clippy,rustfmt
+        cargo --version
 
     - name: Install cargo-nextest
       uses: taiki-e/install-action@v2
@@ -69,10 +70,6 @@ runs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-
-
-    - name: Cargo clean  # Keeps cache under control while we figure out profiles
-      shell: bash
-      run: cargo clean
 
     # > --------------------------------------------------
     # > sccache
