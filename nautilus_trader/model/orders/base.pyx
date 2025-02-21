@@ -27,11 +27,9 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
-from nautilus_trader.core.rust.model cimport OwnBookOrder_t
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
-from nautilus_trader.core.rust.model cimport own_book_order_new
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -428,23 +426,6 @@ cdef class Order:
 
     cdef bint is_pending_cancel_c(self):
         return self._fsm.state == OrderStatus.PENDING_CANCEL
-
-    cdef OwnBookOrder_t to_own_book_order_c(self):
-        if not self.has_price_c():
-            raise TypeError(f"Cannot initialize {self.type_string_c()} orders as `OwnBookOrder_t`, no price")
-
-        cdef Price price = self.price
-        return own_book_order_new(
-            self.client_order_id._mem,
-            self.side,
-            price._mem,
-            self.leaves_qty._mem,
-            self.order_type,
-            self.time_in_force,
-            self.status,
-            self.ts_last,
-            self.ts_init,
-        )
 
     def to_own_book_order(self) -> nautilus_pyo3.OwnBookOrder:
         """
