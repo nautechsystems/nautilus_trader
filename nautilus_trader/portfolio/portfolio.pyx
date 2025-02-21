@@ -122,12 +122,13 @@ cdef class Portfolio(PortfolioFacade):
         )
 
         # Configuration
-        self._config = config
-        self._use_mark_prices = config.use_mark_prices
-        self._use_mark_xrates = config.use_mark_xrates
-        self._convert_to_account_base_currency = config.convert_to_account_base_currency
-        self._log_price = "mark price" if config.use_mark_prices else "quote, trade or bar prices"
-        self._log_xrate = "mark" if config.use_mark_xrates else "data to calculate"
+        self._config: PortfolioConfig = config
+        self._debug: bool = config.debug
+        self._use_mark_prices: bool = config.use_mark_prices
+        self._use_mark_xrates: bool = config.use_mark_xrates
+        self._convert_to_account_base_currency: bool = config.convert_to_account_base_currency
+        self._log_price: str = "mark price" if config.use_mark_prices else "quote, trade, or bar price"
+        self._log_xrate: str = "mark" if config.use_mark_xrates else "data to calculate"
 
         self._venue = None  # Venue for specific portfolio behavior (Interactive Brokers)
         self._realized_pnls: dict[InstrumentId, Money] = {}
@@ -177,6 +178,30 @@ cdef class Portfolio(PortfolioFacade):
         self.initialized = False
 
 # -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void set_use_mark_prices(self, bint value):
+        """
+        Set the `use_mark_prices` setting with the given `value`.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+
+        """
+        self._use_mark_prices = value
+
+    cpdef void set_use_mark_xrates(self, bint value):
+        """
+        Set the `use_mark_xrates` setting with the given `value`.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+
+        """
+        self._use_mark_xrates = value
 
     cpdef void set_specific_venue(self, Venue venue):
         """
@@ -449,6 +474,9 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
+        if self._debug:
+            self._log.debug(f"Updating with {order!r}", LogColor.MAGENTA)
+
         cdef list[Position] positions_open
         cdef AccountState account_state = None
         if isinstance(event, OrderFilled):
@@ -469,7 +497,11 @@ cdef class Portfolio(PortfolioFacade):
                     stake=event.last_qty.as_decimal(),
                     side=order_side_to_bet_side(order_side=event.order_side),
                 )
+                if self._debug:
+                    self._log.debug(f"Applying {bet} to {bet_position}", LogColor.MAGENTA)
                 bet_position.add_bet(bet)
+                if self._debug:
+                    self._log.debug(f"{bet_position}", LogColor.MAGENTA)
 
             self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
                 instrument_id=event.instrument_id,
@@ -1052,6 +1084,11 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None  # Cannot calculate
 
+        if self._debug:
+            self._log.debug(
+                f"Calculating net exposure for instrument {instrument_id} with {account}", LogColor.MAGENTA,
+            )
+
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
@@ -1074,6 +1111,9 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 continue  # Cannot calculate
 
+            if self._debug:
+                self._log.debug(f"Price for exposure calculation: {price}", LogColor.MAGENTA)
+
             xrate_result = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
@@ -1090,9 +1130,13 @@ cdef class Portfolio(PortfolioFacade):
 
             if isinstance(instrument, BettingInstrument):
                 bet_position = self._bet_positions.get(instrument.id)
+                if self._debug:
+                    self._log.debug(f"{bet_position}", LogColor.MAGENTA)
                 net_exposure += float(bet_position.exposure) * xrate if bet_position else 0.0
             else:
                 notional_value = instrument.notional_value(position.quantity, price)
+                if self._debug:
+                    self._log.debug(f"Notional value: {notional_value}", LogColor.MAGENTA)
                 net_exposure += notional_value.as_f64_c() * xrate
 
         if self._convert_to_account_base_currency and account.base_currency is not None:
@@ -1224,16 +1268,14 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
         if account is None:
             self._log.error(
-                f"Cannot update tick: "
-                f"no account registered for {instrument_id.venue}",
+                f"Cannot update: no account registered for {instrument_id.venue}",
             )
             return  # No account registered
 
         cdef Instrument instrument = self._cache.instrument(self._venue or instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot update tick: "
-                f"no instrument found for {instrument_id}",
+                f"Cannot update: no instrument found for {instrument_id}",
             )
             return  # No instrument found
 
@@ -1293,6 +1335,11 @@ cdef class Portfolio(PortfolioFacade):
                 f"no instrument for {instrument_id}",
             )
             return None  # Cannot calculate
+
+        if self._debug:
+            self._log.debug(
+                f"Calculating realized PnL for instrument {instrument_id} with {account}", LogColor.MAGENTA,
+            )
 
         cdef Currency currency
         if self._convert_to_account_base_currency and account.base_currency is not None:
@@ -1371,6 +1418,11 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None  # Cannot calculate
 
+        if self._debug:
+            self._log.debug(
+                f"Calculating unrealized PnL for instrument {instrument_id} with {account}", LogColor.MAGENTA,
+            )
+
         cdef Currency currency
         if self._convert_to_account_base_currency and account.base_currency is not None:
             currency = account.base_currency
@@ -1416,6 +1468,11 @@ cdef class Portfolio(PortfolioFacade):
                 pnl = float(bet_position.unrealized_pnl(price.as_decimal()))
             else:
                 pnl = position.unrealized_pnl(price).as_f64_c()
+
+            if self._debug:
+                self._log.debug(
+                    f"Unrealized PnL for {instrument.id}: {pnl} {currency}", LogColor.MAGENTA,
+                )
 
             if self._convert_to_account_base_currency and account.base_currency is not None:
                 xrate_result = self._calculate_xrate_to_base(
