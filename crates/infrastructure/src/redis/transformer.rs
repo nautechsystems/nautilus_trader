@@ -84,17 +84,39 @@ impl Transformer {
             _ => anyhow::bail!("Invalid account map"),
         };
 
-        let account_id = AccountId::new(a_map["account_id"].as_str().unwrap());
-        let account_type = AccountType::from_str(a_map["account_type"].as_str().unwrap())?;
-
+        let account_id = AccountId::new_checked(
+            a_map["account_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_id"))?,
+        )?;
+        let account_type = AccountType::from_str(
+            a_map["account_type"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing account_type"))?,
+        )?;
         let balances = a_map["balances"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("Missing balances array"))?
             .iter()
             .map(|b| {
-                let free = Money::from_str(b["free"].as_str().unwrap()).unwrap();
-                let locked = Money::from_str(b["locked"].as_str().unwrap()).unwrap();
-                let total = Money::from_str(b["total"].as_str().unwrap()).unwrap();
+                let free = Money::from_str(
+                    b["free"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing free"))?,
+                )
+                .map_err(|e| anyhow::anyhow!("Invalid free: {}", e))?;
+                let locked = Money::from_str(
+                    b["locked"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing locked"))?,
+                )
+                .map_err(|e| anyhow::anyhow!("Invalid locked: {}", e))?;
+                let total = Money::from_str(
+                    b["total"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing total"))?,
+                )
+                .map_err(|e| anyhow::anyhow!("Invalid total: {}", e))?;
 
                 AccountBalance::new_checked(total, locked, free)
             })
@@ -129,12 +151,25 @@ impl Transformer {
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        let is_reported = a_map["reported"].as_bool().unwrap();
-        let event_id = a_map["event_id"].as_str().unwrap().to_string();
-        let ts_event =
-            UnixNanos::from_str(&a_map["ts_event"].as_i64().map(|n| n.to_string()).unwrap())?;
-        let ts_init =
-            UnixNanos::from_str(&a_map["ts_init"].as_i64().map(|n| n.to_string()).unwrap())?;
+        let is_reported = a_map["reported"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("Missing reported"))?;
+        let event_id = a_map["event_id"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing event_id"))?
+            .to_string();
+        let ts_event = UnixNanos::from_str(
+            &a_map["ts_event"]
+                .as_i64()
+                .map(|n| n.to_string())
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_event"))?,
+        )?;
+        let ts_init = UnixNanos::from_str(
+            &a_map["ts_init"]
+                .as_i64()
+                .map(|n| n.to_string())
+                .ok_or_else(|| anyhow::anyhow!("Missing ts_init"))?,
+        )?;
         let base_currency = a_map["base_currency"]
             .as_str()
             .map(Currency::from_str)
@@ -265,27 +300,35 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
-        // reconciliation: bool,
         let reconciliation = o_map["reconciliation"]
             .as_bool()
             .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
-        // position_id: Option<PositionId>,
-        // let position_id = PositionId::new_checked(
-        //     o_map["position_id"]
-        //         .as_str()
-        //         .ok_or_else(|| anyhow::anyhow!("Missing position_id field"))?,
-        // )?;
-        // let margin_init = i_map["margin_init"]
-        // .as_str()
-        // .map(|value| Decimal::from_str(value).unwrap());
-        let position_id = o_map["position_id"]
-            .as_str()
-            .map(|value| PositionId::new_checked(value).unwrap());
-        // commission: Option<Money>,
-        let commission = o_map["commission"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
-
+        let position_id = match o_map["position_id"].as_str() {
+            Some(value) => match PositionId::new_checked(value) {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    tracing::error!("Invalid position_id: {}", e);
+                    None
+                }
+            },
+            None => {
+                tracing::error!("Missing position_id field");
+                None
+            }
+        };
+        let commission = match o_map["commission"].as_str() {
+            Some(value) => match Money::from_str(value) {
+                Ok(money) => Some(money),
+                Err(e) => {
+                    tracing::error!("Invalid commission: {}", e);
+                    None
+                }
+            },
+            None => {
+                tracing::error!("Missing commission field");
+                None
+            }
+        };
         let order_filled = OrderFilled::new(
             trader_id,
             strategy_id,
@@ -403,86 +446,251 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
         // price: Option<Price>,
-        let price = o_map["price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
-        // trigger_price: Option<Price>,
-        let trigger_price = o_map["trigger_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
-        // trigger_type: Option<TriggerType>,
-        let trigger_type = o_map["trigger_type"]
-            .as_str()
-            .map(|value| TriggerType::from_str(value).unwrap());
-        // limit_offset: Option<Decimal>,
-        let limit_offset = o_map["limit_offset"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
-        // trailing_offset: Option<Decimal>,
-        let trailing_offset = o_map["trailing_offset"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
-        // trailing_offset_type: Option<TrailingOffsetType>,
-        let trailing_offset_type = o_map["trailing_offset_type"]
-            .as_str()
-            .map(|value| TrailingOffsetType::from_str(value).unwrap());
-        // expire_time: Option<UnixNanos>,
-        let expire_time = o_map["expire_time"]
-            .as_str()
-            .map(|value| UnixNanos::from_str(value).unwrap());
-        // display_qty: Option<Quantity>,
-        let display_qty = o_map["display_qty"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
-        // emulation_trigger: Option<TriggerType>,
-        let emulation_trigger = o_map["emulation_trigger"]
-            .as_str()
-            .map(|value| TriggerType::from_str(value).unwrap());
-        // trigger_instrument_id: Option<InstrumentId>,
-        let trigger_instrument_id = o_map["trigger_instrument_id"]
-            .as_str()
-            .map(|value| InstrumentId::from_str(value).unwrap());
-        // contingency_type: Option<ContingencyType>,
-        let contingency_type = o_map["contingency_type"]
-            .as_str()
-            .map(|value| ContingencyType::from_str(value).unwrap());
-        // order_list_id: Option<OrderListId>,
-        let order_list_id = o_map["order_list_id"]
-            .as_str()
-            .map(|value| OrderListId::new_checked(value).unwrap());
-        // linked_order_ids: Option<Vec<ClientOrderId>>,
-        let linked_order_ids = o_map["linked_order_ids"].as_array().map(|value| {
-            value
+        let price = match o_map["price"].as_str() {
+            Some(value) => match Price::from_str(value) {
+                Ok(price) => Some(price),
+                Err(e) => {
+                    tracing::error!("Invalid price: {}", e);
+                    None
+                }
+            },
+            None => {
+                tracing::error!("Missing price field");
+                None
+            }
+        };
+        let trigger_price = o_map["trigger_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing trigger_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid trigger_price: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let trigger_type = o_map["trigger_type"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing trigger_type field");
+                None
+            },
+            |value| {
+                TriggerType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid trigger_type: {}", e);
+                    })
+                    .ok()
+            },
+        );
+        let limit_offset = o_map["limit_offset"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing limit_offset field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid limit_offset: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let trailing_offset = o_map["trailing_offset"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing trailing_offset field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid trailing_offset: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let trailing_offset_type = o_map["trailing_offset_type"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing trailing_offset_type field");
+                None
+            },
+            |value| {
+                TrailingOffsetType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid trailing_offset_type: {}", e);
+                    })
+                    .ok()
+            },
+        );
+        let expire_time = o_map["expire_time"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing expire_time field");
+                None
+            },
+            |value| {
+                UnixNanos::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid expire_time: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let display_qty = o_map["display_qty"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing display_qty field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid display_qty: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let emulation_trigger = o_map["emulation_trigger"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing emulation_trigger field");
+                None
+            },
+            |value| {
+                TriggerType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid emulation_trigger: {}", e);
+                    })
+                    .ok()
+            },
+        );
+        let trigger_instrument_id = o_map["trigger_instrument_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing trigger_instrument_id field");
+                None
+            },
+            |value| {
+                InstrumentId::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid trigger_instrument_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let contingency_type = o_map["contingency_type"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing contingency_type field");
+                None
+            },
+            |value| {
+                ContingencyType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid contingency_type: {}", e);
+                    })
+                    .ok()
+            },
+        );
+        let order_list_id = o_map["order_list_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing order_list_id field");
+                None
+            },
+            |value| {
+                OrderListId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid order_list_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let linked_order_ids = o_map["linked_order_ids"].as_array().and_then(|array| {
+            let order_ids: Result<Vec<_>, _> = array
                 .iter()
-                .map(|v| ClientOrderId::new_checked(v.as_str().unwrap()).unwrap())
-                .collect()
+                .map(|v| {
+                    v.as_str()
+                        .ok_or_else(|| tracing::error!("Linked order ID is not a string"))
+                        .and_then(|str_val| {
+                            ClientOrderId::new_checked(str_val).map_err(|e| {
+                                tracing::error!("Invalid linked order ID format: {}", e)
+                            })
+                        })
+                })
+                .collect();
+
+            order_ids.ok()
         });
-        // parent_order_id: Option<ClientOrderId>,
-        let parent_order_id = o_map["parent_order_id"]
-            .as_str()
-            .map(|value| ClientOrderId::new_checked(value).unwrap());
-        // exec_algorithm_id: Option<ExecAlgorithmId>,
-        let exec_algorithm_id = o_map["exec_algorithm_id"]
-            .as_str()
-            .map(|value| ExecAlgorithmId::new_checked(value).unwrap());
-        // exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        let parent_order_id = o_map["parent_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing parent_order_id field");
+                None
+            },
+            |value| {
+                ClientOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid parent_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let exec_algorithm_id = o_map["exec_algorithm_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing exec_algorithm_id field");
+                None
+            },
+            |value| {
+                ExecAlgorithmId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid exec_algorithm_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
         // let exec_algorithm_params = o_map["exec_algorithm_params"].as_str().map(|value| {
         //     IndexMap::try_from(value)
         //         .map_err(|e| anyhow::anyhow!("Invalid exec_algorithm_params: {}", e))
         // });
         let exec_algorithm_params = None;
-        // exec_spawn_id: Option<ClientOrderId>,
-        let exec_spawn_id = o_map["exec_spawn_id"]
-            .as_str()
-            .map(|value| ClientOrderId::new_checked(value).unwrap());
-        // tags: Option<Vec<Ustr>>,
-        let tags = o_map["tags"].as_str().map(|value| {
-            value
-                .split(',')
-                .map(|s| Ustr::from_str(s).unwrap())
-                .collect()
+        let exec_spawn_id = o_map["exec_spawn_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing exec_spawn_id field");
+                None
+            },
+            |value| {
+                ClientOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid exec_spawn_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+        let tags = o_map["tags"].as_array().and_then(|array| {
+            array
+                .iter()
+                .map(|v| {
+                    v.as_str()
+                        .ok_or_else(|| {
+                            tracing::error!("Tag is not a string");
+                            "Tag is not a string"
+                        })
+                        .and_then(|str_val| {
+                            Ustr::from_str(str_val).map_err(|e| {
+                                tracing::error!("Invalid tag: {}", e);
+                                "Invalid tag format"
+                            })
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .ok()
         });
-
         let order_initialized = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -1004,12 +1212,21 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
-
-        // TODO: check type later
         let reconciliation = o_map["reconciliation"]
             .as_bool()
             .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
@@ -1085,9 +1302,20 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
@@ -1165,10 +1393,20 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
-
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
             .as_bool()
@@ -1243,9 +1481,20 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
@@ -1321,9 +1570,20 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
@@ -1407,9 +1667,20 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
@@ -1494,9 +1765,20 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
@@ -1582,22 +1864,49 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing ts_init field"))?,
         )?;
 
-        let venue_order_id = o_map["venue_order_id"]
-            .as_str()
-            .map(|value| VenueOrderId::new_checked(value).unwrap());
+        let venue_order_id = o_map["venue_order_id"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing venue_order_id field");
+                None
+            },
+            |value| {
+                VenueOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid venue_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
 
         // TODO: check type later
         let reconciliation = o_map["reconciliation"]
             .as_bool()
             .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
 
-        let price = o_map["price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let price = o_map["price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid price: {}", e))
+                    .ok()
+            },
+        );
 
-        let trigger_price = o_map["trigger_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let trigger_price = o_map["trigger_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing trigger_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid trigger_price: {}", e))
+                    .ok()
+            },
+        );
 
         let order_updated = OrderUpdated::new(
             trader_id,
@@ -1878,7 +2187,8 @@ impl Transformer {
         let price_increment = i_map["price_increment"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?;
-        let price_increment = Price::from_str(price_increment).unwrap();
+        let price_increment = Price::from_str(price_increment)
+            .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
 
         // size_increment: Quantity,
         let size_increment = i_map["size_increment"]
@@ -1922,13 +2232,15 @@ impl Transformer {
         let max_price = i_map["max_price"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing max_price field"))?;
-        let max_price = Price::from_str(max_price).unwrap();
+        let max_price =
+            Price::from_str(max_price).map_err(|e| anyhow::anyhow!("Invalid max_price: {}", e))?;
 
         // min_price: Option<Price>,
         let min_price = i_map["min_price"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing min_price field"))?;
-        let min_price = Price::from_str(min_price).unwrap();
+        let min_price =
+            Price::from_str(min_price).map_err(|e| anyhow::anyhow!("Invalid min_price: {}", e))?;
 
         // margin_init: Option<Decimal>,
         let margin_init = i_map["margin_init"]
@@ -2074,7 +2386,7 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?,
         )
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
 
         let size_increment = Quantity::from_str(
             i_map["size_increment"]
@@ -2083,52 +2395,148 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid size_increment: {}", e))?;
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid margin_init: {}", e))
+                    .ok()
+            },
+        );
 
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid margin_maint: {}", e))
+                    .ok()
+            },
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid maker_fee: {}", e))
+                    .ok()
+            },
+        );
 
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid taker_fee: {}", e))
+                    .ok()
+            },
+        );
 
-        let outcome = i_map["outcome"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let outcome = i_map["outcome"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing outcome field");
+                None
+            },
+            |value| {
+                Ustr::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid outcome: {}", e))
+                    .ok()
+            },
+        );
 
-        let description = i_map["description"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let description = i_map["description"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing description field");
+                None
+            },
+            |value| {
+                Ustr::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid description: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_quantity: {}", e))
+                    .ok()
+            },
+        );
 
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_quantity: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_notional = i_map["max_notional"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
+        let max_notional = i_map["max_notional"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_notional field");
+                None
+            },
+            |value| {
+                Money::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_notional: {}", e))
+                    .ok()
+            },
+        );
 
-        let min_notional = i_map["min_notional"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
+        let min_notional = i_map["min_notional"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_notional field");
+                None
+            },
+            |value| {
+                Money::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_notional: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_price: {}", e))
+                    .ok()
+            },
+        );
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_price: {}", e))
+                    .ok()
+            },
+        );
 
         let ts_event = i_map["ts_event"]
             .as_i64()
@@ -2243,7 +2651,7 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?,
         )
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
 
         let size_increment = Quantity::from_str(
             i_map["size_increment"]
@@ -2252,47 +2660,143 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid size_increment: {}", e))?;
 
-        let multiplier = i_map["multiplier"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
-        let lot_size = i_map["lot_size"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let multiplier = i_map["multiplier"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing multiplier field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid multiplier: {}", e))
+                    .ok()
+            },
+        );
+        let lot_size = i_map["lot_size"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing lot_size field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid lot_size: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_quantity: {}", e))
+                    .ok()
+            },
+        );
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_quantity: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_notional = i_map["max_notional"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
-        let min_notional = i_map["min_notional"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
+        let max_notional = i_map["max_notional"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_notional field");
+                None
+            },
+            |value| {
+                Money::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_notional: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_notional = i_map["min_notional"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_notional field");
+                None
+            },
+            |value| {
+                Money::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_notional: {}", e))
+                    .ok()
+            },
+        );
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_price: {}", e))
+                    .ok()
+            },
+        );
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_price: {}", e))
+                    .ok()
+            },
+        );
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid margin_init: {}", e))
+                    .ok()
+            },
+        );
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid margin_maint: {}", e))
+                    .ok()
+            },
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid maker_fee: {}", e))
+                    .ok()
+            },
+        );
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid taker_fee: {}", e))
+                    .ok()
+            },
+        );
 
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -2396,7 +2900,7 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?,
         )
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
 
         let size_increment = Quantity::from_str(
             i_map["size_increment"]
@@ -2405,53 +2909,149 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid size_increment: {}", e))?;
 
-        let multiplier = i_map["multiplier"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let multiplier = i_map["multiplier"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing multiplier field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid multiplier: {}", e))
+                    .ok()
+            },
+        );
 
-        let lot_size = i_map["lot_size"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let lot_size = i_map["lot_size"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing lot_size field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid lot_size: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_quantity: {}", e))
+                    .ok()
+            },
+        );
 
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| {
+                Quantity::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_quantity: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_notional = i_map["max_notional"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
+        let max_notional = i_map["max_notional"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_notional field");
+                None
+            },
+            |value| {
+                Money::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_notional: {}", e))
+                    .ok()
+            },
+        );
 
-        let min_notional = i_map["min_notional"]
-            .as_str()
-            .map(|value| Money::from_str(value).unwrap());
+        let min_notional = i_map["min_notional"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_notional field");
+                None
+            },
+            |value| {
+                Money::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_notional: {}", e))
+                    .ok()
+            },
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid max_price: {}", e))
+                    .ok()
+            },
+        );
 
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid min_price: {}", e))
+                    .ok()
+            },
+        );
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid margin_init: {}", e))
+                    .ok()
+            },
+        );
 
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid margin_maint: {}", e))
+                    .ok()
+            },
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid maker_fee: {}", e))
+                    .ok()
+            },
+        );
 
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid taker_fee: {}", e))
+                    .ok()
+            },
+        );
 
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -2520,9 +3120,13 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing asset_class field"))?,
         )?;
 
-        let exchange = i_map["exchange"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let exchange = i_map["exchange"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing exchange field");
+                None
+            },
+            |value| Ustr::from_str(value).ok(),
+        );
 
         let underlying = Ustr::from_str(
             i_map["underlying"]
@@ -2579,37 +3183,69 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid lot_size: {}", e))?;
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -2674,9 +3310,13 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing asset_class field"))?,
         )?;
 
-        let exchange = i_map["exchange"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let exchange = i_map["exchange"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing exchange field");
+                None
+            },
+            |value| Ustr::from_str(value).ok(),
+        );
 
         let underlying = Ustr::from_str(
             i_map["underlying"]
@@ -2739,37 +3379,69 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid lot_size: {}", e))?;
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -2835,9 +3507,13 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing asset_class field"))?,
         )?;
 
-        let exchange = i_map["exchange"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let exchange = i_map["exchange"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing exchange field");
+                None
+            },
+            |value| Ustr::from_str(value).ok(),
+        );
 
         let underlying = Ustr::from_str(
             i_map["underlying"]
@@ -2856,7 +3532,7 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing strike_price field"))?,
         )
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Invalid strike_price: {}", e))?;
 
         let currency = Currency::from_str(
             i_map["currency"]
@@ -2907,37 +3583,69 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid lot_size: {}", e))?;
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -3008,9 +3716,13 @@ impl Transformer {
         )?;
 
         // exchange: Option<Ustr>,
-        let exchange = i_map["exchange"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let exchange = i_map["exchange"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing exchange field");
+                None
+            },
+            |value| Ustr::from_str(value).ok(),
+        );
 
         // underlying: Ustr,
         let underlying = Ustr::from_str(
@@ -3059,7 +3771,7 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?,
         )
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
         // multiplier: Quantity,
         let multiplier = Quantity::from_str(
             i_map["multiplier"]
@@ -3075,37 +3787,69 @@ impl Transformer {
         )
         .map_err(|e| anyhow::anyhow!("Invalid lot_size: {}", e))?;
         // max_quantity: Option<Quantity>,
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
         // min_quantity: Option<Quantity>,
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
         // max_price: Option<Price>,
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
         // min_price: Option<Price>,
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
         // margin_init: Option<Decimal>,
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
         // margin_maint: Option<Decimal>,
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
         // maker_fee: Option<Decimal>,
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
         // taker_fee: Option<Decimal>,
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
         // ts_event: UnixNanos,
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -3165,9 +3909,13 @@ impl Transformer {
                 .ok_or_else(|| anyhow::anyhow!("Missing raw_symbol field"))?,
         );
 
-        let isin = i_map["isin"]
-            .as_str()
-            .map(|value| Ustr::from_str(value).unwrap());
+        let isin = i_map["isin"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing isin field");
+                None
+            },
+            |value| Ustr::from_str(value).ok(),
+        );
 
         let currency = Currency::from_str(
             i_map["currency"]
@@ -3186,43 +3934,79 @@ impl Transformer {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?,
         )
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
 
-        let lot_size = i_map["lot_size"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let lot_size = i_map["lot_size"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing lot_size field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let max_quantity = i_map["max_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let max_quantity = i_map["max_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let min_quantity = i_map["min_quantity"]
-            .as_str()
-            .map(|value| Quantity::from_str(value).unwrap());
+        let min_quantity = i_map["min_quantity"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_quantity field");
+                None
+            },
+            |value| Quantity::from_str(value).ok(),
+        );
 
-        let max_price = i_map["max_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let max_price = i_map["max_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing max_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let min_price = i_map["min_price"]
-            .as_str()
-            .map(|value| Price::from_str(value).unwrap());
+        let min_price = i_map["min_price"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing min_price field");
+                None
+            },
+            |value| Price::from_str(value).ok(),
+        );
 
-        let margin_init = i_map["margin_init"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_init = i_map["margin_init"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_init field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let margin_maint = i_map["margin_maint"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let margin_maint = i_map["margin_maint"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing margin_maint field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let maker_fee = i_map["maker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let maker_fee = i_map["maker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing maker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
-        let taker_fee = i_map["taker_fee"]
-            .as_str()
-            .map(|value| Decimal::from_str(value).unwrap());
+        let taker_fee = i_map["taker_fee"].as_str().map_or_else(
+            || {
+                tracing::error!("Missing taker_fee field");
+                None
+            },
+            |value| Decimal::from_str(value).ok(),
+        );
 
         let ts_event = UnixNanos::from_str(
             &i_map["ts_event"]
@@ -3301,7 +4085,8 @@ impl Transformer {
         let price_increment = i_map["price_increment"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing price_increment field"))?;
-        let price_increment = Price::from_str(price_increment).unwrap();
+        let price_increment = Price::from_str(price_increment)
+            .map_err(|e| anyhow::anyhow!("Invalid price_increment: {}", e))?;
 
         let size_increment = i_map["size_increment"]
             .as_str()
@@ -3342,12 +4127,14 @@ impl Transformer {
         let max_price = i_map["max_price"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing max_price field"))?;
-        let max_price = Price::from_str(max_price).unwrap();
+        let max_price =
+            Price::from_str(max_price).map_err(|e| anyhow::anyhow!("Invalid max_price: {}", e))?;
 
         let min_price = i_map["min_price"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing min_price field"))?;
-        let min_price = Price::from_str(min_price).unwrap();
+        let min_price =
+            Price::from_str(min_price).map_err(|e| anyhow::anyhow!("Invalid min_price: {}", e))?;
 
         let margin_init = i_map["margin_init"]
             .as_str()
