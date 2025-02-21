@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 //! An `OwnBookOrder` for use with tracking own/user orders in L3 order books.
+//! It organizes orders into bid and ask ladders, maintains timestamps for state changes,
+//! and provides various methods for adding, updating, deleting, and querying orders.
 
 use std::{
     cmp::Ordering,
@@ -243,26 +245,36 @@ impl OwnOrderBook {
     }
 
     /// Returns an iterator over bid price levels.
-    pub fn bids(&self, depth: Option<usize>) -> impl Iterator<Item = &OwnBookLevel> {
-        self.bids.levels.values().take(depth.unwrap_or(usize::MAX))
+    pub fn bids(&self) -> impl Iterator<Item = &OwnBookLevel> {
+        self.bids.levels.values()
     }
 
     /// Returns an iterator over ask price levels.
-    pub fn asks(&self, depth: Option<usize>) -> impl Iterator<Item = &OwnBookLevel> {
-        self.asks.levels.values().take(depth.unwrap_or(usize::MAX))
+    pub fn asks(&self) -> impl Iterator<Item = &OwnBookLevel> {
+        self.asks.levels.values()
     }
 
-    /// Returns bid price levels as a map of price to size.
-    pub fn bids_as_map(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
-        self.bids(depth)
-            .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
+    /// Returns bid price levels as a map of level price to order list at that level.
+    pub fn bids_as_map(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+        self.bids()
+            .map(|level| {
+                (
+                    level.price.value.as_decimal(),
+                    level.orders.values().cloned().collect(),
+                )
+            })
             .collect()
     }
 
-    /// Returns ask price levels as a map of price to size.
-    pub fn asks_as_map(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
-        self.asks(depth)
-            .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
+    /// Returns ask price levels as a map of level price to order list at that level.
+    pub fn asks_as_map(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+        self.asks()
+            .map(|level| {
+                (
+                    level.price.value.as_decimal(),
+                    level.orders.values().cloned().collect(),
+                )
+            })
             .collect()
     }
 }
@@ -556,7 +568,6 @@ impl Ord for OwnBookLevel {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
-    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -815,16 +826,19 @@ mod tests {
         );
         book.add(order1);
         book.add(order2);
-        let bids_map = book.bids_as_map(None);
-        let asks_map = book.asks_as_map(None);
+        let bids_map = book.bids_as_map();
+        let asks_map = book.asks_as_map();
 
-        assert_eq!(
-            bids_map.get(&Price::from("100.00").as_decimal()),
-            Some(&dec!(10))
-        );
-        assert_eq!(
-            asks_map.get(&Price::from("101.00").as_decimal()),
-            Some(&dec!(20))
-        );
+        assert_eq!(bids_map.len(), 1);
+        let bid_price = Price::from("100.00").as_decimal();
+        let bid_orders = bids_map.get(&bid_price).unwrap();
+        assert_eq!(bid_orders.len(), 1);
+        assert_eq!(bid_orders[0], order1);
+
+        assert_eq!(asks_map.len(), 1);
+        let ask_price = Price::from("101.00").as_decimal();
+        let ask_orders = asks_map.get(&ask_price).unwrap();
+        assert_eq!(ask_orders.len(), 1);
+        assert_eq!(ask_orders[0], order2);
     }
 }
