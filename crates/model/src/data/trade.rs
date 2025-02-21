@@ -23,14 +23,14 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::FAILED, serialization::Serializable, UnixNanos};
+use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity, Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
 };
 
 /// Represents a single trade tick in a market.
@@ -175,12 +175,12 @@ impl GetTsInit for TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{serialization::Serializable, UnixNanos};
+    use nautilus_core::{UnixNanos, serialization::Serializable};
     use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::stub_trade_ethusdt_buyer, TradeTick},
+        data::{TradeTick, stubs::stub_trade_ethusdt_buyer},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},

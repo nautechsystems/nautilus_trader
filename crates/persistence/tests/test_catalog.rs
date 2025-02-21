@@ -17,8 +17,8 @@ use std::path::PathBuf;
 
 use nautilus_core::{ffi::cvec::CVec, python::IntoPyObjectNautilusExt};
 use nautilus_model::data::{
-    is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
-    TradeTick,
+    Bar, Data, OrderBookDelta, QuoteTick, TradeTick, is_monotonically_increasing_by_init,
+    to_variant,
 };
 use nautilus_persistence::{
     backend::{

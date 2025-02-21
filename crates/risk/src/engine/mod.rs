@@ -37,7 +37,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_portfolio::Portfolio;
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
 pub mod config;
@@ -1075,49 +1075,49 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         msgbus::{
+            MessageBus,
             handler::ShareableMessageHandler,
             stubs::{get_message_saving_handler, get_saved_messages},
-            MessageBus,
         },
         throttler::RateLimit,
     };
-    use nautilus_core::{UnixNanos, UUID4};
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::{
-        engine::{config::ExecutionEngineConfig, ExecutionEngine},
+        engine::{ExecutionEngine, config::ExecutionEngineConfig},
         messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
     };
     use nautilus_model::{
         accounts::{
-            stubs::{cash_account, margin_account},
             AccountAny,
+            stubs::{cash_account, margin_account},
         },
-        data::{stubs::quote_audusd, QuoteTick},
+        data::{QuoteTick, stubs::quote_audusd},
         enums::{AccountType, LiquiditySide, OrderSide, OrderType, TradingState},
         events::{
-            account::stubs::cash_account_state_million_usd, AccountState, OrderAccepted,
-            OrderDenied, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
+            AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderEventType, OrderFilled,
+            OrderSubmitted, account::stubs::cash_account_state_million_usd,
         },
         identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            Symbol, TradeId, TraderId, VenueOrderId,
             stubs::{
                 account_id, client_id_binance, client_order_id, strategy_id_ema_cross, trader_id,
                 uuid4, venue_order_id,
             },
-            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-            Symbol, TradeId, TraderId, VenueOrderId,
         },
         instruments::{
-            stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
             CryptoPerpetual, CurrencyPair, InstrumentAny,
+            stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
         },
         orders::{OrderAny, OrderList, OrderTestBuilder},
-        types::{fixed::FIXED_PRECISION, AccountBalance, Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
     };
     use nautilus_portfolio::Portfolio;
     use rstest::{fixture, rstest};
-    use rust_decimal::{prelude::FromPrimitive, Decimal};
+    use rust_decimal::{Decimal, prelude::FromPrimitive};
     use ustr::Ustr;
 
-    use super::{config::RiskEngineConfig, RiskEngine};
+    use super::{RiskEngine, config::RiskEngineConfig};
 
     #[fixture]
     fn msgbus() -> MessageBus {
@@ -2210,12 +2210,14 @@ mod tests {
             saved_process_messages.first().unwrap().event_type(),
             OrderEventType::Denied
         );
-        assert!(saved_process_messages
-            .first()
-            .unwrap()
-            .message()
-            .unwrap()
-            .contains(&format!("invalid (precision {FIXED_PRECISION} > 5)")));
+        assert!(
+            saved_process_messages
+                .first()
+                .unwrap()
+                .message()
+                .unwrap()
+                .contains(&format!("invalid (precision {FIXED_PRECISION} > 5)"))
+        );
     }
 
     #[rstest]
@@ -2755,7 +2757,9 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional=Money(1.00, USD), notional=Money(0.90, USD)")
+            Ustr::from(
+                "NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional=Money(1.00, USD), notional=Money(0.90, USD)"
+            )
         );
     }
 
@@ -2843,7 +2847,9 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional=Money(10000000.00, USD), notional=Money(10000001.00, USD)")
+            Ustr::from(
+                "NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional=Money(10000000.00, USD), notional=Money(10000001.00, USD)"
+            )
         );
     }
 
@@ -2929,7 +2935,9 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional=Money(100000.00, USD), notional=Money(750050.00, USD)")
+            Ustr::from(
+                "NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional=Money(100000.00, USD), notional=Money(750050.00, USD)"
+            )
         );
     }
 
@@ -3015,7 +3023,9 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional=Money(100000.00, USD), notional=Money(750000.00, USD)")
+            Ustr::from(
+                "NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional=Money(100000.00, USD), notional=Money(750000.00, USD)"
+            )
         );
     }
 
@@ -3089,7 +3099,9 @@ mod tests {
         );
         assert_eq!(
             saved_process_messages.first().unwrap().message().unwrap(),
-            Ustr::from("NOTIONAL_EXCEEDS_FREE_BALANCE: free=Money(1000000.00, USD), notional=Money(10100000.00, USD)")
+            Ustr::from(
+                "NOTIONAL_EXCEEDS_FREE_BALANCE: free=Money(1000000.00, USD), notional=Money(10100000.00, USD)"
+            )
         );
     }
 
@@ -3177,7 +3189,12 @@ mod tests {
         }
 
         // The actual reason is in the first denial; the rest will show `OrderListID` as Denied.
-        assert_eq!(saved_process_messages.first().unwrap().message().unwrap(), Ustr::from("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1067873.00 USD"));
+        assert_eq!(
+            saved_process_messages.first().unwrap().message().unwrap(),
+            Ustr::from(
+                "CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1067873.00 USD"
+            )
+        );
     }
 
     #[rstest]
@@ -3264,7 +3281,12 @@ mod tests {
         }
 
         // Correct reason is in First deny, rest will show OrderList`ID` Denied.
-        assert_eq!(saved_process_messages.first().unwrap().message().unwrap(), Ustr::from("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1057300.00 USD"));
+        assert_eq!(
+            saved_process_messages.first().unwrap().message().unwrap(),
+            Ustr::from(
+                "CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1057300.00 USD"
+            )
+        );
     }
 
     // TODO: After ExecutionClient

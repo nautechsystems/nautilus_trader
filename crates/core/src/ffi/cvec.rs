@@ -87,7 +87,7 @@ impl Display for CVec {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "ffi")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cvec_drop(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
     let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), len, cap) };
@@ -95,7 +95,7 @@ pub extern "C" fn cvec_drop(cvec: CVec) {
 }
 
 #[cfg(feature = "ffi")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub const extern "C" fn cvec_new() -> CVec {
     CVec::empty()
 }

@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{serialization::from_bool_as_u8, UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -101,7 +101,8 @@ impl OrderAccepted {
 
 impl Debug for OrderAccepted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,
+        write!(
+            f,
             "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, event_id={}, ts_event={}, ts_init={})",
             stringify!(OrderAccepted),
             self.trader_id,

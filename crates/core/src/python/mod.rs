@@ -30,12 +30,12 @@ use pyo3::{
 };
 
 use crate::{
+    UUID4,
     consts::{NAUTILUS_VERSION, USER_AGENT},
     datetime::{
         MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
         NANOSECONDS_IN_SECOND,
     },
-    UUID4,
 };
 
 /// Extend `IntoPyObjectExt` helper trait to unwrap `PyObject` after conversion.

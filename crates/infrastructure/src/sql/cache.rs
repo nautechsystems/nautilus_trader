@@ -29,7 +29,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
+    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -40,7 +40,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use sqlx::{postgres::PgConnectOptions, PgPool};
+use sqlx::{PgPool, postgres::PgConnectOptions};
 use tokio::try_join;
 use ustr::Ustr;
 

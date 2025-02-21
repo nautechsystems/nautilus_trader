@@ -25,9 +25,9 @@ use std::{
 use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
-    correctness::{check_equal_u8, FAILED},
-    serialization::Serializable,
     UnixNanos,
+    correctness::{FAILED, check_equal_u8},
+    serialization::Serializable,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,8 +36,8 @@ use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
     types::{
-        fixed::{FIXED_PRECISION, FIXED_SIZE_BINARY},
         Price, Quantity,
+        fixed::{FIXED_PRECISION, FIXED_SIZE_BINARY},
     },
 };
 
@@ -222,11 +222,11 @@ impl GetTsInit for QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{serialization::Serializable, UnixNanos};
+    use nautilus_core::{UnixNanos, serialization::Serializable};
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::quote_ethusdt_binance, QuoteTick},
+        data::{QuoteTick, stubs::quote_ethusdt_binance},
         enums::PriceType,
         identifiers::InstrumentId,
         types::{Price, Quantity},

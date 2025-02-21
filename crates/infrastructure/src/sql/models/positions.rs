@@ -22,7 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
     types::{Currency, Money, Quantity},
 };
-use sqlx::{postgres::PgRow, FromRow, Row};
+use sqlx::{FromRow, Row, postgres::PgRow};
 
 pub struct PositionSnapshotModel(pub PositionSnapshot);
 

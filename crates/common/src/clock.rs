@@ -26,15 +26,15 @@ use std::{
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
+    AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
     time::get_atomic_clock_realtime,
-    AtomicTime, UnixNanos,
 };
 use tokio::sync::Mutex;
 use ustr::Ustr;
 
 use crate::timer::{
-    create_valid_interval, LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
+    LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2, create_valid_interval,
 };
 
 /// Represents a type of clock.

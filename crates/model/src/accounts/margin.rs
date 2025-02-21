@@ -411,10 +411,10 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        accounts::{stubs::*, Account, MarginAccount},
-        events::{account::stubs::*, AccountState},
-        identifiers::{stubs::*, InstrumentId},
-        instruments::{stubs::*, CryptoPerpetual, CurrencyPair},
+        accounts::{Account, MarginAccount, stubs::*},
+        events::{AccountState, account::stubs::*},
+        identifiers::{InstrumentId, stubs::*},
+        instruments::{CryptoPerpetual, CurrencyPair, stubs::*},
         types::{Currency, Money, Price, Quantity},
     };
 

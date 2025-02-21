@@ -23,23 +23,23 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "high-precision")]
-use nautilus_core::correctness::check_positive_u128;
 #[cfg(not(feature = "high-precision"))]
 use nautilus_core::correctness::check_positive_u64;
+#[cfg(feature = "high-precision")]
+use nautilus_core::correctness::check_positive_u128;
 use nautilus_core::{
-    correctness::{check_in_range_inclusive_f64, FAILED},
+    correctness::{FAILED, check_in_range_inclusive_f64},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
-#[cfg(feature = "high-precision")]
-use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+#[cfg(feature = "high-precision")]
+use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 
 #[cfg(feature = "high-precision")]
 pub type QuantityRaw = u128;
@@ -47,7 +47,7 @@ pub type QuantityRaw = u128;
 pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
 
 /// The sentinel value for an unset or null quantity.

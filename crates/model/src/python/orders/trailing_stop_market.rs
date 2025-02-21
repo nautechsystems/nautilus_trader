@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, UUID4};
+use nautilus_core::{UUID4, python::to_pyruntime_err};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -26,8 +26,8 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_indexmap_to_ustr, Order},
         TrailingStopMarketOrder,
+        base::{Order, str_indexmap_to_ustr},
     },
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::{Price, Quantity},

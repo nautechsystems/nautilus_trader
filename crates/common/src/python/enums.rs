@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
-use pyo3::{prelude::*, types::PyType, PyTypeInfo};
+use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
 use crate::enums::{LogColor, LogLevel};
 

@@ -15,7 +15,7 @@
 
 //! Common message types.
 
-use crate::{UnixNanos, UUID4};
+use crate::{UUID4, UnixNanos};
 
 #[derive(Debug, Clone)]
 pub enum Message {

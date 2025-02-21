@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, UnixNanos};
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MICROSECOND};
 use nautilus_model::{
     data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol},
-    types::{Price, ERROR_PRICE, PRICE_MAX, PRICE_MIN},
+    types::{ERROR_PRICE, PRICE_MAX, PRICE_MIN, Price},
 };
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;

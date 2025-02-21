@@ -21,7 +21,7 @@
 use nautilus_core::correctness::FAILED;
 
 /// Indicates if high_precision mode is enabled.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 
 #[cfg(feature = "high-precision")]
@@ -33,11 +33,11 @@ pub const FIXED_PRECISION: u8 = 9;
 
 #[cfg(feature = "high-precision")]
 /// The width in bytes for fixed-point value types in high-precision mode (128-bit).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static PRECISION_BYTES: i32 = 16;
 #[cfg(not(feature = "high-precision"))]
 /// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static PRECISION_BYTES: i32 = 8;
 
 #[cfg(feature = "high-precision")]

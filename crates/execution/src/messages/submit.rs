@@ -15,7 +15,7 @@
 
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     identifiers::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,

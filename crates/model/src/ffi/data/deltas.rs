@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{ffi::cvec::CVec, UnixNanos};
+use nautilus_core::{UnixNanos, ffi::cvec::CVec};
 
 use crate::{
     data::{OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
@@ -27,7 +27,7 @@ use crate::{
 /// - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
 /// - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it
 /// - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_new(
     instrument_id: InstrumentId,
     deltas: &CVec,
@@ -40,53 +40,53 @@ pub extern "C" fn orderbook_deltas_new(
     OrderBookDeltas_API::new(OrderBookDeltas::new(instrument_id, cloned_deltas))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_drop(deltas: OrderBookDeltas_API) {
     drop(deltas); // Memory freed here
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_clone(deltas: &OrderBookDeltas_API) -> OrderBookDeltas_API {
     deltas.clone()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_instrument_id(deltas: &OrderBookDeltas_API) -> InstrumentId {
     deltas.instrument_id
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_vec_deltas(deltas: &OrderBookDeltas_API) -> CVec {
     deltas.deltas.clone().into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_is_snapshot(deltas: &OrderBookDeltas_API) -> u8 {
     u8::from(deltas.deltas[0].action == BookAction::Clear)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_flags(deltas: &OrderBookDeltas_API) -> u8 {
     deltas.flags
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_sequence(deltas: &OrderBookDeltas_API) -> u64 {
     deltas.sequence
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_ts_event(deltas: &OrderBookDeltas_API) -> UnixNanos {
     deltas.ts_event
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas_API) -> UnixNanos {
     deltas.ts_init
 }
 
 #[allow(clippy::drop_non_drop)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_vec_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
     let deltas: Vec<OrderBookDelta> =

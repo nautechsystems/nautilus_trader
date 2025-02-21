@@ -29,7 +29,7 @@ use nautilus_serialization::{
 };
 use serde::Serialize;
 
-use super::session::{self, build_query, DataBackendSession, QueryResult};
+use super::session::{self, DataBackendSession, QueryResult, build_query};
 
 pub struct ParquetDataCatalog {
     base_path: PathBuf,

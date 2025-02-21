@@ -15,13 +15,13 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
-    ffi::{c_char, CStr},
+    ffi::{CStr, c_char},
     hash::{Hash, Hasher},
 };
 
 use crate::UUID4;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
 }
@@ -36,7 +36,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 ///
 /// This function panics:
 /// - If `ptr` cannot be cast to a valid C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let cstr = unsafe { CStr::from_ptr(ptr) };
@@ -44,17 +44,17 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     UUID4::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
     uuid.to_cstr().as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
     let mut h = DefaultHasher::new();
     uuid.hash(&mut h);

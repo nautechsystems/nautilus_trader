@@ -23,7 +23,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::csv::{
-    load_deltas, load_depth10_from_snapshot25, load_depth10_from_snapshot5, load_quote_ticks,
+    load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quote_ticks,
     load_trade_ticks,
 };
 

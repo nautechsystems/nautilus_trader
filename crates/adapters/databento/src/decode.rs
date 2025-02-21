@@ -16,21 +16,21 @@
 use std::{cmp, ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn::{self};
-use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, UnixNanos};
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data, InstrumentStatus, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN,
+        Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, Data, InstrumentStatus,
+        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{
-        AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU16, FromU8,
+        AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU8, FromU16,
         InstrumentClass, MarketStatusAction, OptionKind, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, TradeId},
     instruments::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
-    types::{price::decode_raw_price_i64, Currency, Price, Quantity},
+    types::{Currency, Price, Quantity, price::decode_raw_price_i64},
 };
 use ustr::Ustr;
 
@@ -1215,7 +1215,7 @@ pub fn decode_statistics_msg(
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use databento::dbn::decode::{dbn::Decoder, DecodeStream};
+    use databento::dbn::decode::{DecodeStream, dbn::Decoder};
     use fallible_streaming_iterator::FallibleStreamingIterator;
     use rstest::*;
 

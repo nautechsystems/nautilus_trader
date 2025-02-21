@@ -20,13 +20,13 @@ use std::{
 };
 
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyTuple},
-    IntoPyObjectExt,
 };
 
-use super::{to_pyvalue_err, IntoPyObjectNautilusExt};
+use super::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use crate::uuid::{UUID4, UUID4_LEN};
 
 #[pymethods]

@@ -217,10 +217,10 @@ mod tests {
     use dashmap::DashMap;
 
     use super::{
+        DashMapStateStore, RateLimiter,
         clock::{Clock, FakeRelativeClock},
         gcra::Gcra,
         quota::Quota,
-        DashMapStateStore, RateLimiter,
     };
 
     fn initialize_mock_rate_limiter() -> RateLimiter<String, FakeRelativeClock> {

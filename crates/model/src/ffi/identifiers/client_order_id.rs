@@ -24,12 +24,13 @@ use crate::identifiers::ClientOrderId;
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
-    ClientOrderId::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    ClientOrderId::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
     id.inner().precomputed_hash()
 }

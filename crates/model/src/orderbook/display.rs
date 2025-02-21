@@ -15,7 +15,7 @@
 
 //! Functions related to order book display.
 
-use tabled::{settings::Style, Table, Tabled};
+use tabled::{Table, Tabled, settings::Style};
 
 use super::{BookLevel, BookPrice};
 use crate::orderbook::ladder::BookLadder;

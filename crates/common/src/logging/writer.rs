@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fs::{create_dir_all, File},
+    fs::{File, create_dir_all},
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::PathBuf,
     sync::OnceLock,

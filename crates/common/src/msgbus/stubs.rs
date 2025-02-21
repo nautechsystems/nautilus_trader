@@ -18,8 +18,8 @@ use std::{
     cell::RefCell,
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::{
     messages::data::DataResponse,
-    msgbus::{handler::MessageHandler, ShareableMessageHandler},
+    msgbus::{ShareableMessageHandler, handler::MessageHandler},
 };
 
 // Stub message handler which logs the data it receives

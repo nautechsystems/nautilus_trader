@@ -16,8 +16,8 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -26,21 +26,21 @@ use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
     msgbus::{
-        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
         CLOSE_TOPIC,
+        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
     },
     runtime::get_runtime,
 };
 use nautilus_core::{
-    time::{duration_since_unix_epoch, get_atomic_clock_realtime},
     UUID4,
+    time::{duration_since_unix_epoch, get_atomic_clock_realtime},
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
 
-use super::{await_handle, REDIS_MINID, REDIS_XTRIM};
+use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
 use crate::redis::{create_redis_connection, get_stream_key};
 
 const MSGBUS_PUBLISH: &str = "msgbus-publish";

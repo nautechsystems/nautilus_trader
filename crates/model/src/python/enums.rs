@@ -18,7 +18,7 @@
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
+use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyType};
 
 use crate::{
     enums::{

@@ -16,8 +16,8 @@
 use bytes::Bytes;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
     UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
     identifiers::TraderId,
@@ -27,9 +27,9 @@ use nautilus_model::{
     },
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyBytes, PyDict},
-    IntoPyObjectExt,
 };
 
 use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};

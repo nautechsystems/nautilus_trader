@@ -34,10 +34,10 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::messages::{
+    SubmitOrder, TradingCommand,
     cancel::{CancelOrderHandler, CancelOrderHandlerAny},
     modify::{ModifyOrderHandler, ModifyOrderHandlerAny},
     submit::{SubmitOrderHandler, SubmitOrderHandlerAny},
-    SubmitOrder, TradingCommand,
 };
 
 pub struct OrderManager {

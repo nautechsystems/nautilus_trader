@@ -531,8 +531,8 @@ mod tests {
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::OrderFilled,
-        identifiers::{stubs::uuid4, AccountId, PositionId, StrategyId, TradeId, VenueOrderId},
-        instruments::{stubs::*, CryptoPerpetual, CurrencyPair, InstrumentAny},
+        identifiers::{AccountId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4},
+        instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         stubs::*,

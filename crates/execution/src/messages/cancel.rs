@@ -16,7 +16,7 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use derive_builder::Builder;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::OrderAny,

@@ -23,7 +23,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     messages::data::DataResponse,
-    msgbus::{handler::MessageHandler, MessageBus},
+    msgbus::{MessageBus, handler::MessageHandler},
     timer::TimeEvent,
 };
 use nautilus_model::{

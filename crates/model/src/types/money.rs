@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -31,9 +31,9 @@ use thousands::Separable;
 use super::fixed::FIXED_PRECISION;
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
+use crate::types::Currency;
 #[cfg(not(feature = "high-precision"))]
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
-use crate::types::Currency;
 
 /// The maximum valid money amount which can be represented.
 #[cfg(feature = "high-precision")]

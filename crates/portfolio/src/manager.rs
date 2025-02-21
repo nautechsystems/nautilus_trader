@@ -18,7 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
@@ -28,7 +28,7 @@ use nautilus_model::{
     position::Position,
     types::{AccountBalance, Money},
 };
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 pub struct AccountsManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -212,7 +212,11 @@ impl AccountsManager {
                 if let Some(xrate) = base_xrate {
                     margin_maint *= xrate;
                 } else {
-                    log::debug!("Cannot calculate maintenance (position) margin: insufficient data for {}/{}", instrument.settlement_currency(), base_currency);
+                    log::debug!(
+                        "Cannot calculate maintenance (position) margin: insufficient data for {}/{}",
+                        instrument.settlement_currency(),
+                        base_currency
+                    );
                     return None;
                 }
             }

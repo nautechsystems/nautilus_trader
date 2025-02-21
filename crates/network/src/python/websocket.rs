@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -271,7 +271,7 @@ mod tests {
     use tokio::{
         net::TcpListener,
         task::{self, JoinHandle},
-        time::{sleep, Duration},
+        time::{Duration, sleep},
     };
     use tokio_tungstenite::{
         accept_hdr_async,

@@ -22,7 +22,7 @@ use nautilus_core::UnixNanos;
 
 use crate::{
     data::{
-        depth::{OrderBookDepth10, DEPTH10_LEN},
+        depth::{DEPTH10_LEN, OrderBookDepth10},
         order::BookOrder,
     },
     identifiers::InstrumentId,
@@ -32,7 +32,7 @@ use crate::{
 ///
 /// - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
 /// - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub unsafe extern "C" fn orderbook_depth10_new(
     instrument_id: InstrumentId,
@@ -52,13 +52,13 @@ pub unsafe extern "C" fn orderbook_depth10_new(
     assert!(!bid_counts_ptr.is_null());
     assert!(!ask_counts_ptr.is_null());
 
-    let bids_slice = std::slice::from_raw_parts(bids_ptr, DEPTH10_LEN);
-    let asks_slice = std::slice::from_raw_parts(asks_ptr, DEPTH10_LEN);
+    let bids_slice = unsafe { std::slice::from_raw_parts(bids_ptr, DEPTH10_LEN) };
+    let asks_slice = unsafe { std::slice::from_raw_parts(asks_ptr, DEPTH10_LEN) };
     let bids: [BookOrder; DEPTH10_LEN] = bids_slice.try_into().expect("Slice length != 10");
     let asks: [BookOrder; DEPTH10_LEN] = asks_slice.try_into().expect("Slice length != 10");
 
-    let bid_counts_slice = std::slice::from_raw_parts(bid_counts_ptr, DEPTH10_LEN);
-    let ask_counts_slice = std::slice::from_raw_parts(ask_counts_ptr, DEPTH10_LEN);
+    let bid_counts_slice = unsafe { std::slice::from_raw_parts(bid_counts_ptr, DEPTH10_LEN) };
+    let ask_counts_slice = unsafe { std::slice::from_raw_parts(ask_counts_ptr, DEPTH10_LEN) };
     let bid_counts: [u32; DEPTH10_LEN] = bid_counts_slice.try_into().expect("Slice length != 10");
     let ask_counts: [u32; DEPTH10_LEN] = ask_counts_slice.try_into().expect("Slice length != 10");
 
@@ -75,40 +75,40 @@ pub unsafe extern "C" fn orderbook_depth10_new(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_depth10_clone(depth: &OrderBookDepth10) -> OrderBookDepth10 {
     *depth
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_eq(lhs: &OrderBookDepth10, rhs: &OrderBookDepth10) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_hash(delta: &OrderBookDepth10) -> u64 {
     let mut hasher = DefaultHasher::new();
     delta.hash(&mut hasher);
     hasher.finish()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_bids_array(depth: &OrderBookDepth10) -> *const BookOrder {
     depth.bids.as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_asks_array(depth: &OrderBookDepth10) -> *const BookOrder {
     depth.asks.as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_bid_counts_array(depth: &OrderBookDepth10) -> *const u32 {
     depth.bid_counts.as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_ask_counts_array(depth: &OrderBookDepth10) -> *const u32 {
     depth.ask_counts.as_ptr()
 }

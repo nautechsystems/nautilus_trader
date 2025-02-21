@@ -15,8 +15,8 @@
 
 use std::fmt::Display;
 
-use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[derive(Debug, Clone)]
 pub struct FillModel {

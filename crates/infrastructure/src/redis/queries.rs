@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{future::join_all, StreamExt};
+use futures::{StreamExt, future::join_all};
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
@@ -27,8 +27,8 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{aio::ConnectionManager, AsyncCommands};
-use serde::{de::DeserializeOwned, Serialize};
+use redis::{AsyncCommands, aio::ConnectionManager};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;

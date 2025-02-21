@@ -15,11 +15,11 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::AccountType, events::AccountState, identifiers::AccountId, types::Currency,
 };
-use sqlx::{postgres::PgRow, FromRow, Row};
+use sqlx::{FromRow, Row, postgres::PgRow};
 
 pub struct AccountEventModel(pub AccountState);
 

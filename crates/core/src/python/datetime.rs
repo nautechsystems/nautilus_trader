@@ -17,12 +17,12 @@ use pyo3::prelude::*;
 
 use super::to_pyvalue_err;
 use crate::{
+    UnixNanos,
     datetime::{
         is_within_last_24_hours, last_weekday_nanos, micros_to_nanos, millis_to_nanos,
         nanos_to_micros, nanos_to_millis, nanos_to_secs, secs_to_millis, secs_to_nanos,
         unix_nanos_to_iso8601, unix_nanos_to_iso8601_millis,
     },
-    UnixNanos,
 };
 
 /// Return round nanoseconds (ns) converted from the given seconds.

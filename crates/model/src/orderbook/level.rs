@@ -198,7 +198,7 @@ mod tests {
         data::order::BookOrder,
         enums::{OrderSide, OrderSideSpecified},
         orderbook::{BookLevel, BookPrice},
-        types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
+        types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
     };
 
     #[rstest]

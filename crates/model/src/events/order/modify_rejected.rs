@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{serialization::from_bool_as_u8, UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -104,15 +104,20 @@ impl OrderModifyRejected {
 
 impl Debug for OrderModifyRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,
+        write!(
+            f,
             "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason='{}', event_id={}, ts_event={}, ts_init={})",
             stringify!(OrderModifyRejected),
             self.trader_id,
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id
+                .map_or("None".to_string(), |venue_order_id| format!(
+                    "{venue_order_id}"
+                )),
+            self.account_id
+                .map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.event_id,
             self.ts_event,
@@ -129,8 +134,12 @@ impl Display for OrderModifyRejected {
             stringify!(OrderModifyRejected),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id
+                .map_or("None".to_string(), |venue_order_id| format!(
+                    "{venue_order_id}"
+                )),
+            self.account_id
+                .map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.ts_event
         )

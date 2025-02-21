@@ -179,12 +179,14 @@ mod tests {
                     .unwrap(),
                 42
             );
-            assert!(!py_dict
-                .get_item("is_reconciliation")
-                .unwrap()
-                .downcast::<PyBool>()
-                .unwrap()
-                .is_true());
+            assert!(
+                !py_dict
+                    .get_item("is_reconciliation")
+                    .unwrap()
+                    .downcast::<PyBool>()
+                    .unwrap()
+                    .is_true()
+            );
         });
     }
 

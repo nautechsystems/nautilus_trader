@@ -19,7 +19,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -262,9 +262,9 @@ mod tests {
     use crate::{
         accounts::{base::Account, cash::CashAccount, stubs::*},
         enums::{AccountType, LiquiditySide, OrderSide, OrderType},
-        events::{account::stubs::*, AccountState},
-        identifiers::{position_id::PositionId, AccountId},
-        instruments::{stubs::*, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny},
+        events::{AccountState, account::stubs::*},
+        identifiers::{AccountId, position_id::PositionId},
+        instruments::{CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Currency, Money, Price, Quantity},

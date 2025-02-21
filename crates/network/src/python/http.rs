@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
 };
 

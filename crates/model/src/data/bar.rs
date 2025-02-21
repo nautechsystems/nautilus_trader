@@ -27,10 +27,10 @@ use chrono::{DateTime, Datelike, Duration, SubsecRound, TimeDelta, Timelike, Utc
 use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{
-    correctness::{check_predicate_true, FAILED},
+    UnixNanos,
+    correctness::{FAILED, check_predicate_true},
     datetime::{add_n_months, subtract_n_months},
     serialization::Serializable,
-    UnixNanos,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -38,7 +38,7 @@ use super::GetTsInit;
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{fixed::FIXED_SIZE_BINARY, Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_SIZE_BINARY},
 };
 
 /// Returns the bar interval as a `TimeDelta`.
@@ -1042,7 +1042,9 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!("Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0")
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0"
+            )
         );
     }
 

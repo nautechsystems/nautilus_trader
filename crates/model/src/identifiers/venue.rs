@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
 
 use crate::venues::VENUE_MAP;
@@ -131,7 +131,7 @@ impl Display for Venue {
 mod tests {
     use rstest::rstest;
 
-    use crate::identifiers::{stubs::*, Venue};
+    use crate::identifiers::{Venue, stubs::*};
 
     #[rstest]
     fn test_string_reprs(venue_binance: Venue) {

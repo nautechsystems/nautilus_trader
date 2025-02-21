@@ -20,8 +20,8 @@ use std::{fs::File, io::BufReader, path::Path};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
-    tungstenite::{handshake::client::Request, stream::Mode, Error},
     MaybeTlsStream,
+    tungstenite::{Error, handshake::client::Request, stream::Mode},
 };
 
 /// A connector that can be used when establishing connections, allowing to control whether
@@ -43,13 +43,13 @@ mod encryption {
         use std::{convert::TryFrom, sync::Arc};
 
         use nautilus_cryptography::tls::create_tls_config;
-        use rustls::pki_types::ServerName;
         pub use rustls::ClientConfig;
+        use rustls::pki_types::ServerName;
         use tokio::io::{AsyncRead, AsyncWrite};
         use tokio_rustls::TlsConnector as TokioTlsConnector;
         use tokio_tungstenite::{
-            tungstenite::{error::TlsError, stream::Mode, Error},
             MaybeTlsStream,
+            tungstenite::{Error, error::TlsError, stream::Mode},
         };
 
         pub async fn wrap_stream<S>(
@@ -86,11 +86,11 @@ mod encryption {
     pub mod plain {
         use tokio::io::{AsyncRead, AsyncWrite};
         use tokio_tungstenite::{
+            MaybeTlsStream,
             tungstenite::{
                 error::{Error, UrlError},
                 stream::Mode,
             },
-            MaybeTlsStream,
         };
 
         pub async fn wrap_stream<S>(socket: S, mode: Mode) -> Result<MaybeTlsStream<S>, Error>

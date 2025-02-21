@@ -24,12 +24,13 @@ use crate::identifiers::component_id::ComponentId;
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
-    ComponentId::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    ComponentId::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
     id.inner().precomputed_hash()
 }

@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_core::correctness::{check_predicate_true, FAILED};
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,

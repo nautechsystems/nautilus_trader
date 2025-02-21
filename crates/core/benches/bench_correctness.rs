@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use iai::{black_box, main};
 use indexmap::IndexMap;
 use nautilus_core::correctness::{
-    check_equal, check_in_range_inclusive_u64, check_in_range_inclusive_u8, check_key_in_index_map,
+    check_equal, check_in_range_inclusive_u8, check_in_range_inclusive_u64, check_key_in_index_map,
     check_key_in_map, check_key_not_in_index_map, check_key_not_in_map, check_map_empty,
     check_map_not_empty, check_member_in_set, check_member_not_in_set, check_predicate_false,
     check_predicate_true, check_string_contains, check_valid_string, check_valid_string_optional,

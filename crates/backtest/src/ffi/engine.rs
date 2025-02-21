@@ -17,8 +17,8 @@ use std::ops::{Deref, DerefMut};
 
 use nautilus_common::ffi::{clock::TestClock_API, timer::TimeEventHandler};
 use nautilus_core::{
-    ffi::{cvec::CVec, parsing::u8_as_bool},
     UnixNanos,
+    ffi::{cvec::CVec, parsing::u8_as_bool},
 };
 
 use crate::engine::TimeEventAccumulator;
@@ -40,17 +40,17 @@ impl DerefMut for TimeEventAccumulatorAPI {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn time_event_accumulator_new() -> TimeEventAccumulatorAPI {
     TimeEventAccumulatorAPI(Box::new(TimeEventAccumulator::new()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorAPI) {
     drop(accumulator); // Memory freed here
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn time_event_accumulator_advance_clock(
     accumulator: &mut TimeEventAccumulatorAPI,
     clock: &mut TestClock_API,
@@ -60,7 +60,7 @@ pub extern "C" fn time_event_accumulator_advance_clock(
     accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
     let handlers: Vec<TimeEventHandler> = accumulator.drain().into_iter().map(Into::into).collect();
     handlers.into()

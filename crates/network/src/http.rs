@@ -18,13 +18,13 @@
 use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use http::{status::InvalidStatusCode, HeaderValue, StatusCode};
+use http::{HeaderValue, StatusCode, status::InvalidStatusCode};
 use reqwest::{
-    header::{HeaderMap, HeaderName},
     Method, Response, Url,
+    header::{HeaderMap, HeaderName},
 };
 
-use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
+use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 
 /// Represents a HTTP status code.
 ///
@@ -378,8 +378,9 @@ mod tests {
     use std::net::{SocketAddr, TcpListener};
 
     use axum::{
+        Router,
         routing::{delete, get, patch, post},
-        serve, Router,
+        serve,
     };
     use http::status::StatusCode;
 

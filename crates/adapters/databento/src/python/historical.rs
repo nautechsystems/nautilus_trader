@@ -28,8 +28,8 @@ use databento::{
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
-    time::{get_atomic_clock_realtime, AtomicTime},
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
@@ -39,10 +39,10 @@ use nautilus_model::{
     types::Currency,
 };
 use pyo3::{
+    IntoPyObjectExt,
     exceptions::PyException,
     prelude::*,
     types::{PyDict, PyList},
-    IntoPyObjectExt,
 };
 use tokio::sync::Mutex;
 
@@ -253,7 +253,7 @@ impl DatabentoHistoricalClient {
             _ => {
                 return Err(to_pyvalue_err(
                     "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m",
-                ))
+                ));
             }
         }
         let params = GetRangeParams::builder()

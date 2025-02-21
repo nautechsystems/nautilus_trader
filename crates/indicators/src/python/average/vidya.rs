@@ -20,7 +20,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
-    average::{vidya::VariableIndexDynamicAverage, MovingAverageType},
+    average::{MovingAverageType, vidya::VariableIndexDynamicAverage},
     indicator::{Indicator, MovingAverage},
 };
 

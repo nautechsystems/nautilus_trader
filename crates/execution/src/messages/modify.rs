@@ -16,7 +16,7 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use derive_builder::Builder;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::OrderAny,
@@ -80,10 +80,17 @@ impl Display for ModifyOrder {
         write!(
             f,
             "ModifyOrder(instrument_id={}, client_order_id={}, venue_order_id={}, quantity={}, price={}, trigger_price={})",
-            self.instrument_id, self.client_order_id, self.venue_order_id,
-            self.quantity.map_or("None".to_string(), |quantity| format!("{quantity}")),
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id,
+            self.quantity
+                .map_or("None".to_string(), |quantity| format!("{quantity}")),
+            self.price
+                .map_or("None".to_string(), |price| format!("{price}")),
+            self.trigger_price
+                .map_or("None".to_string(), |trigger_price| format!(
+                    "{trigger_price}"
+                )),
         )
     }
 }

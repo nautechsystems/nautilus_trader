@@ -26,7 +26,7 @@ use datafusion::arrow::{
 use nautilus_common::clock::Clock;
 use nautilus_core::UnixNanos;
 use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
-use object_store::{path::Path, ObjectStore};
+use object_store::{ObjectStore, path::Path};
 
 use super::catalog::CatalogPathPrefix;
 
@@ -325,7 +325,7 @@ mod tests {
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
     };
-    use object_store::{local::LocalFileSystem, ObjectStore};
+    use object_store::{ObjectStore, local::LocalFileSystem};
     use tempfile::TempDir;
 
     use super::*;
