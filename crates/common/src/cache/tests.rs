@@ -360,6 +360,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_correct_order_indexing(mut cache: Cache) {
+        let binance = Venue::from("BINANCE");
+        let bybit = Venue::from("BYBIT");
+        let mut orders_generator = TestOrdersGenerator::new(OrderType::Limit);
+        orders_generator.add_venue_and_total_instruments(bybit, 10);
+        orders_generator.add_venue_and_total_instruments(binance, 10);
+        orders_generator.set_orders_per_instrument(2);
+        let orders = orders_generator.build();
+        // There will be 2 Venues * 10 Instruments * 2 Orders = 40 Orders
+        assert_eq!(orders.len(), 40);
+        for order in orders {
+            cache.add_order(order, None, None, false).unwrap();
+        }
+        assert_eq!(cache.orders(None, None, None, None).len(), 40);
+        assert_eq!(cache.orders(Some(&bybit), None, None, None).len(), 20);
+        assert_eq!(cache.orders(Some(&binance), None, None, None).len(), 20);
+        assert_eq!(
+            cache
+                .orders(
+                    Some(&bybit),
+                    Some(&InstrumentId::from("SYMBOL-0.BYBIT")),
+                    None,
+                    None
+                )
+                .len(),
+            2
+        );
+        assert_eq!(
+            cache
+                .orders(
+                    Some(&binance),
+                    Some(&InstrumentId::from("SYMBOL-0.BINANCE")),
+                    None,
+                    None
+                )
+                .len(),
+            2
+        );
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_cache_positions_when_no_database(mut cache: Cache) {
         assert!(cache.cache_positions().await.is_ok());

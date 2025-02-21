@@ -3033,6 +3033,7 @@ dependencies = [
  "bytes",
  "cbindgen",
  "chrono",
+ "criterion",
  "futures",
  "indexmap",
  "log",
