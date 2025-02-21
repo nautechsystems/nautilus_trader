@@ -51,8 +51,7 @@ runs:
       id: rust-toolchain
       shell: bash
       run: |
-        version=$(bash scripts/rust-toolchain.sh)
-        echo "TOOLCHAIN=$version" >> $GITHUB_ENV
+        echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> $GITHUB_ENV
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
@@ -131,8 +130,7 @@ runs:
     - name: Get Python version
       shell: bash
       run: |
-        version=$(bash scripts/python-version.sh)
-        echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+        echo "PYTHON_VERSION=$(bash scripts/python-version.sh)" >> $GITHUB_ENV
 
     - name: Cache Python site-packages
       id: cached-site-packages
@@ -148,8 +146,7 @@ runs:
     - name: Get Poetry version from poetry-version
       shell: bash
       run: |
-        version=$(cat poetry-version)
-        echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+        echo "POETRY_VERSION=$(cat poetry-version)" >> $GITHUB_ENV
 
     - name: Install Poetry
       uses: snok/install-poetry@v1
