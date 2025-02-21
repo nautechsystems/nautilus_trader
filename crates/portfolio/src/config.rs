@@ -32,6 +32,10 @@ pub struct PortfolioConfig {
     /// If external bars should be considered for updating unrealized pnls.
     #[serde(default = "default_true")]
     pub bar_updates: bool,
+    /// If calculations should be converted into each account's base currency.
+    /// This setting is only effective for accounts with a specified base currency.
+    #[serde(default = "default_true")]
+    pub convert_to_account_base_currency: bool,
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
@@ -47,6 +51,7 @@ impl Default for PortfolioConfig {
             use_mark_prices: false,
             use_mark_xrates: false,
             bar_updates: true,
+            convert_to_account_base_currency: true,
             debug: false,
         }
     }

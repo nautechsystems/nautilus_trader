@@ -125,6 +125,7 @@ cdef class Portfolio(PortfolioFacade):
         self._config = config
         self._use_mark_prices = config.use_mark_prices
         self._use_mark_xrates = config.use_mark_xrates
+        self._convert_to_account_base_currency = config.convert_to_account_base_currency
         self._log_price = "mark price" if config.use_mark_prices else "quote, trade or bar prices"
         self._log_xrate = "mark" if config.use_mark_xrates else "data to calculate"
 
@@ -894,9 +895,10 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 return None  # Cannot calculate
 
+
             xrate = xrate_result  # Cast to double
 
-            if account.base_currency is not None:
+            if self._convert_to_account_base_currency and account.base_currency is not None:
                 settlement_currency = account.base_currency
             else:
                 settlement_currency = instrument.get_settlement_currency()
@@ -1093,7 +1095,7 @@ cdef class Portfolio(PortfolioFacade):
                 notional_value = instrument.notional_value(position.quantity, price)
                 net_exposure += notional_value.as_f64_c() * xrate
 
-        if account.base_currency is not None:
+        if self._convert_to_account_base_currency and account.base_currency is not None:
             return Money(net_exposure, account.base_currency)
         else:
             return Money(net_exposure, instrument.get_settlement_currency())
@@ -1293,7 +1295,7 @@ cdef class Portfolio(PortfolioFacade):
             return None  # Cannot calculate
 
         cdef Currency currency
-        if account.base_currency is not None:
+        if self._convert_to_account_base_currency and account.base_currency is not None:
             currency = account.base_currency
         else:
             currency = instrument.get_settlement_currency()
@@ -1330,7 +1332,7 @@ cdef class Portfolio(PortfolioFacade):
             else:
                 pnl = position.realized_pnl.as_f64_c()
 
-            if account.base_currency is not None:
+            if self._convert_to_account_base_currency and account.base_currency is not None:
                 xrate_result = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
@@ -1370,7 +1372,7 @@ cdef class Portfolio(PortfolioFacade):
             return None  # Cannot calculate
 
         cdef Currency currency
-        if account.base_currency is not None:
+        if self._convert_to_account_base_currency and account.base_currency is not None:
             currency = account.base_currency
         else:
             currency = instrument.get_settlement_currency()
@@ -1415,7 +1417,7 @@ cdef class Portfolio(PortfolioFacade):
             else:
                 pnl = position.unrealized_pnl(price).as_f64_c()
 
-            if account.base_currency is not None:
+            if self._convert_to_account_base_currency and account.base_currency is not None:
                 xrate_result = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
@@ -1462,7 +1464,7 @@ cdef class Portfolio(PortfolioFacade):
         ) or self._bar_close_prices.get(instrument_id)
 
     cdef _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
-        if account.base_currency is None:
+        if not self._convert_to_account_base_currency or account.base_currency is None:
             return 1.0  # No conversion needed
 
         if self._use_mark_xrates:

@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added mark price handling for `Cache`
 - Added mark exchange rate handling for `Cache`
 - Added `PortfolioConfig` for configuration settings specific to the `Portfolio`
+- Added `use_mark_prices`, `use_mark_xrates` and `convert_to_account_base_currency` options for `PortfolioConfig`
 - Added mark price calculations and xrate handling for `Portfolio`
 - Added Rust debugging support and refined cargo nextest usage (#2335, #2339), thanks @faysou
 
