@@ -15,7 +15,7 @@
 
 use std::{
     fs::{File, OpenOptions},
-    io::{copy, BufReader, BufWriter, Read},
+    io::{BufReader, BufWriter, Read, copy},
     path::Path,
 };
 
@@ -163,14 +163,14 @@ mod tests {
         sync::Arc,
     };
 
-    use axum::{http::StatusCode, routing::get, serve, Router};
+    use axum::{Router, http::StatusCode, routing::get, serve};
     use rstest::*;
     use serde_json::{json, to_writer};
     use tempfile::TempDir;
     use tokio::{
         net::TcpListener,
         task,
-        time::{sleep, Duration},
+        time::{Duration, sleep},
     };
 
     use super::*;

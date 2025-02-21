@@ -20,7 +20,7 @@ use std::any::Any;
 use nautilus_common::{messages::data::DataResponse, msgbus::handler::MessageHandler};
 use nautilus_model::{
     data::{Bar, Data, QuoteTick},
-    events::{position::PositionEvent, AccountState, OrderEventAny},
+    events::{AccountState, OrderEventAny, position::PositionEvent},
 };
 use ustr::Ustr;
 

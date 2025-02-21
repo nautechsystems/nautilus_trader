@@ -26,7 +26,7 @@ use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{ladder::BookLadder, InvalidBookOperation},
+    orderbook::{InvalidBookOperation, ladder::BookLadder},
     types::{Price, Quantity},
 };
 
@@ -459,10 +459,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use crate::{
-        data::{depth::OrderBookDepth10, order::BookOrder, stubs::*, QuoteTick, TradeTick},
+        data::{QuoteTick, TradeTick, depth::OrderBookDepth10, order::BookOrder, stubs::*},
         enums::{AggressorSide, BookType, OrderSide, OrderSideSpecified},
         identifiers::{InstrumentId, TradeId},
-        orderbook::{analysis::book_check_integrity, BookIntegrityError, BookPrice, OrderBook},
+        orderbook::{BookIntegrityError, BookPrice, OrderBook, analysis::book_check_integrity},
         types::{Price, Quantity},
     };
 

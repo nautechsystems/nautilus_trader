@@ -24,27 +24,28 @@ use crate::identifiers::Symbol;
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
-    Symbol::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    Symbol::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
     id.inner().precomputed_hash()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn symbol_is_composite(id: &Symbol) -> u8 {
     u8::from(id.is_composite())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn symbol_root(id: &Symbol) -> *const c_char {
     str_to_cstr(id.root())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn symbol_topic(id: &Symbol) -> *const c_char {
     str_to_cstr(&id.topic())
 }

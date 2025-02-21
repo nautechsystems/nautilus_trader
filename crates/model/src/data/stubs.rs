@@ -19,8 +19,8 @@ use nautilus_core::UnixNanos;
 use rstest::fixture;
 
 use super::{
-    Bar, BarSpecification, BarType, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
-    OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN,
+    Bar, BarSpecification, BarType, DEPTH10_LEN, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
+    OrderBookDepth10, QuoteTick, TradeTick,
 };
 use crate::{
     data::order::BookOrder,

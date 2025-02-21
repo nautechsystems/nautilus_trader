@@ -36,15 +36,15 @@
 use std::{
     ops::Deref,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         OnceLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
-    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
     UnixNanos,
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
 };
 
 /// Global atomic time in **real-time mode** for use across the system.

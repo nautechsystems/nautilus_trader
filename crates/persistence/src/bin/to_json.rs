@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 
 use datafusion::parquet::file::reader::{FileReader, SerializedFileReader};
-use nautilus_model::data::{to_variant, Bar, Data, OrderBookDelta, QuoteTick, TradeTick};
+use nautilus_model::data::{Bar, Data, OrderBookDelta, QuoteTick, TradeTick, to_variant};
 use nautilus_persistence::{
     backend::session::DataBackendSession, python::backend::session::NautilusDataType,
 };

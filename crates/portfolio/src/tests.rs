@@ -18,30 +18,30 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
-    use nautilus_core::{UnixNanos, UUID4};
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Bar, BarType, QuoteTick},
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{
-            account::stubs::cash_account_state,
-            order::stubs::{order_accepted, order_filled, order_submitted},
             AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
             PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+            account::stubs::cash_account_state,
+            order::stubs::{order_accepted, order_filled, order_submitted},
         },
         identifiers::{
-            stubs::{account_id, uuid4},
             AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, VenueOrderId,
+            stubs::{account_id, uuid4},
         },
         instruments::{
-            stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
             CryptoPerpetual, CurrencyPair, InstrumentAny,
+            stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
         },
         orders::{OrderAny, OrderTestBuilder},
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
-    use rust_decimal::{prelude::FromPrimitive, Decimal};
+    use rust_decimal::{Decimal, prelude::FromPrimitive};
 
     use crate::portfolio::Portfolio;
 

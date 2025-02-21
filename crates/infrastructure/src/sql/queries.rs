@@ -20,8 +20,8 @@ use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
     data::{Bar, DataType, QuoteTick, TradeTick},
     events::{
-        position::snapshot::PositionSnapshot, AccountState, OrderEvent, OrderEventAny,
-        OrderSnapshot,
+        AccountState, OrderEvent, OrderEventAny, OrderSnapshot,
+        position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},

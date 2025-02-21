@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{PyObject, PyResult, Python};
 
 use crate::events::{

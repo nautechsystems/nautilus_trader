@@ -15,16 +15,16 @@
 
 use std::{env, time::Duration};
 
-use nautilus_core::{consts::USER_AGENT, UnixNanos};
+use nautilus_core::{UnixNanos, consts::USER_AGENT};
 use nautilus_model::instruments::InstrumentAny;
 use reqwest::Response;
 
 use super::{
+    TARDIS_BASE_URL,
     error::{Error, TardisErrorResponse},
     models::InstrumentInfo,
     parse::parse_instrument_any,
     query::InstrumentFilter,
-    TARDIS_BASE_URL,
 };
 use crate::enums::Exchange;
 

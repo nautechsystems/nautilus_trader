@@ -57,14 +57,14 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{Action, DataRequest, DataResponse, SubscriptionCommand},
     msgbus::{
-        handler::{MessageHandler, ShareableMessageHandler},
         MessageBus,
+        handler::{MessageHandler, ShareableMessageHandler},
     },
     timer::TimeEventCallback,
 };
 use nautilus_core::{
-    correctness::{check_key_in_index_map, check_key_not_in_index_map, FAILED},
-    datetime::{millis_to_nanos, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+    correctness::{FAILED, check_key_in_index_map, check_key_not_in_index_map},
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, millis_to_nanos},
 };
 use nautilus_model::{
     data::{

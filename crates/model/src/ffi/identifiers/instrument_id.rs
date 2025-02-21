@@ -24,7 +24,7 @@ use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};
 
 use crate::identifiers::{InstrumentId, Symbol, Venue};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentId {
     InstrumentId::new(symbol, venue)
 }
@@ -34,9 +34,10 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *const c_char {
-    match InstrumentId::from_str(cstr_as_str(ptr)) {
+    let value = unsafe { cstr_as_str(ptr) };
+    match InstrumentId::from_str(value) {
         Ok(_) => str_to_cstr(""),
         Err(e) => str_to_cstr(&e.to_string()),
     }
@@ -47,25 +48,26 @@ pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *con
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn instrument_id_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    InstrumentId::from(value)
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
     str_to_cstr(&instrument_id.to_string())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
     let mut h = DefaultHasher::new();
     instrument_id.hash(&mut h);
     h.finish()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn instrument_id_is_synthetic(instrument_id: &InstrumentId) -> u8 {
     u8::from(instrument_id.is_synthetic())
 }
@@ -76,7 +78,7 @@ pub mod stubs {
 
     use rstest::fixture;
 
-    use crate::identifiers::{stubs::*, InstrumentId, Symbol, Venue};
+    use crate::identifiers::{InstrumentId, Symbol, Venue, stubs::*};
 
     #[fixture]
     pub fn btc_usdt_perp_binance() -> InstrumentId {

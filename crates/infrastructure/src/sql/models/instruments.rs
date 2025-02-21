@@ -30,7 +30,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use sqlx::{postgres::PgRow, FromRow, Row};
+use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
 use crate::sql::models::enums::AssetClassModel;

@@ -19,31 +19,31 @@ use chrono::{DateTime, TimeZone, Utc};
 use nautilus_common::{
     cache::Cache,
     msgbus::{
+        MessageBus,
         handler::ShareableMessageHandler,
         stubs::{get_message_saving_handler, get_saved_messages},
-        MessageBus,
     },
 };
-use nautilus_core::{AtomicTime, UnixNanos, UUID4};
+use nautilus_core::{AtomicTime, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{stubs::OrderBookDeltaTestBuilder, BookOrder, TradeTick},
+    data::{BookOrder, TradeTick, stubs::OrderBookDeltaTestBuilder},
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, LiquiditySide, OmsType,
         OrderSide, OrderType, TimeInForce,
     },
     events::{
-        order::rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
-        OrderRejected,
+        OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
+        order::rejected::OrderRejectedBuilder,
     },
     identifiers::{
-        stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, PositionId,
-        StrategyId, TradeId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId, stubs::account_id,
     },
     instruments::{
-        stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
         CryptoPerpetual, Equity, InstrumentAny,
+        stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
-    orders::{stubs::TestOrderStubs, OrderAny, OrderTestBuilder},
+    orders::{OrderAny, OrderTestBuilder, stubs::TestOrderStubs},
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -330,7 +330,9 @@ fn test_process_order_when_invalid_quantity_precision(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Invalid order quantity precision for order O-19700101-000000-001-001-1, was 0 when ETHUSDT-PERP.BINANCE size precision is 3")
+        Ustr::from(
+            "Invalid order quantity precision for order O-19700101-000000-001-001-1, was 0 when ETHUSDT-PERP.BINANCE size precision is 3"
+        )
     );
 }
 
@@ -372,7 +374,9 @@ fn test_process_order_when_invalid_price_precision(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Invalid order price precision for order O-19700101-000000-001-001-1, was 5 when ESZ21.GLBX price precision is 2")
+        Ustr::from(
+            "Invalid order price precision for order O-19700101-000000-001-001-1, was 5 when ESZ21.GLBX price precision is 2"
+        )
     );
 }
 
@@ -413,7 +417,9 @@ fn test_process_order_when_invalid_trigger_price_precision(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Invalid order trigger price precision for order O-19700101-000000-001-001-1, was 5 when ESZ21.GLBX price precision is 2")
+        Ustr::from(
+            "Invalid order trigger price precision for order O-19700101-000000-001-001-1, was 5 when ESZ21.GLBX price precision is 2"
+        )
     );
 }
 
@@ -496,7 +502,9 @@ fn test_process_order_when_invalid_reduce_only(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Reduce-only order O-19700101-000000-001-001-1 (MARKET-BUY) would have increased position")
+        Ustr::from(
+            "Reduce-only order O-19700101-000000-001-001-1 (MARKET-BUY) would have increased position"
+        )
     );
 }
 
@@ -916,7 +924,9 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
     };
     assert_eq!(
         order_rejected.reason,
-        Ustr::from("POST_ONLY LIMIT BUY order limit px of 1501.00 would have been a TAKER: bid=None, ask=1500.00")
+        Ustr::from(
+            "POST_ONLY LIMIT BUY order limit px of 1501.00 would have been a TAKER: bid=None, ask=1500.00"
+        )
     );
 }
 
@@ -1100,7 +1110,9 @@ fn test_process_stop_market_order_triggered_rejected(
     assert_eq!(order_rejected.client_order_id, client_order_id);
     assert_eq!(
         order_rejected.reason,
-        Ustr::from("STOP_MARKET BUY order stop px of 1495.00 was in the market: bid=None, ask=1500.00, but rejected because of configuration")
+        Ustr::from(
+            "STOP_MARKET BUY order stop px of 1495.00 was in the market: bid=None, ask=1500.00, but rejected because of configuration"
+        )
     );
 }
 
@@ -1925,7 +1937,9 @@ fn test_update_limit_order_post_only_matched(
     assert_eq!(order_rejected.client_order_id, client_order_id);
     assert_eq!(
         order_rejected.reason,
-        Ustr::from("POST_ONLY LIMIT BUY order with new limit px of 1500.00 would have been a TAKER: bid=None, ask=1500.00")
+        Ustr::from(
+            "POST_ONLY LIMIT BUY order with new limit px of 1500.00 would have been a TAKER: bid=None, ask=1500.00"
+        )
     );
 }
 

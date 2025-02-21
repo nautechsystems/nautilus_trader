@@ -46,8 +46,8 @@ use serde_json::to_string;
 pub use bar::{Bar, BarSpecification, BarType};
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
-pub use depth::{OrderBookDepth10, DEPTH10_LEN};
-pub use greeks::{black_scholes_greeks, BlackScholesGreeksResult};
+pub use depth::{DEPTH10_LEN, OrderBookDepth10};
+pub use greeks::{BlackScholesGreeksResult, black_scholes_greeks};
 pub use order::{BookOrder, NULL_ORDER};
 pub use quote::QuoteTick;
 pub use status::InstrumentStatus;
@@ -191,7 +191,7 @@ impl From<Bar> for Data {
 // TODO: https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
 // i128 and u128 is now FFI compatible. However, since the clippy lint
 // hasn't been removed yet. We'll suppress with #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn data_clone(data: &Data) -> Data {
     // Dummy function for cbindgen to export types

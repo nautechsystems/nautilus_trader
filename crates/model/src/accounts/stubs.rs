@@ -16,7 +16,7 @@
 use rstest::fixture;
 
 use crate::{
-    accounts::{base::Account, cash::CashAccount, margin::MarginAccount, AccountAny},
+    accounts::{AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
     enums::{AccountType, LiquiditySide},
     events::account::{state::AccountState, stubs::*},
     identifiers::stubs::{account_id, uuid4},

@@ -27,20 +27,20 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{handler::ShareableMessageHandler, MessageBus},
+    msgbus::{MessageBus, handler::ShareableMessageHandler},
 };
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
-    events::{position::PositionEvent, AccountState, OrderEventAny},
+    events::{AccountState, OrderEventAny, position::PositionEvent},
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
     orders::OrderAny,
     position::Position,
     types::{Currency, Money, Price},
 };
-use rust_decimal::{prelude::FromPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
 use uuid::Uuid;
 

@@ -20,7 +20,7 @@ use std::{
 
 use derive_builder::Builder;
 use evalexpr::{ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node, Value};
-use nautilus_core::{correctness::FAILED, UnixNanos};
+use nautilus_core::{UnixNanos, correctness::FAILED};
 use serde::{Deserialize, Serialize};
 
 use crate::{

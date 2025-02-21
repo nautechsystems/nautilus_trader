@@ -15,7 +15,7 @@
 
 use std::sync::Once;
 
-use rustls::crypto::{aws_lc_rs, CryptoProvider};
+use rustls::crypto::{CryptoProvider, aws_lc_rs};
 
 // Static flag to ensure the provider is installed only once
 static INSTALL_PROVIDER: Once = Once::new();

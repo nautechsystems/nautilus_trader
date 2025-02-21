@@ -14,14 +14,15 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
 };
 
 use nautilus_core::{
     python::{
+        IntoPyObjectNautilusExt,
         serialization::{from_dict_pyo3, to_dict_pyo3},
-        to_pyvalue_err, IntoPyObjectNautilusExt,
+        to_pyvalue_err,
     },
     serialization::Serializable,
 };
@@ -30,9 +31,9 @@ use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use super::data_to_pycapsule;
 use crate::{
     data::{
-        depth::{OrderBookDepth10, DEPTH10_LEN},
-        order::BookOrder,
         Data,
+        depth::{DEPTH10_LEN, OrderBookDepth10},
+        order::BookOrder,
     },
     enums::OrderSide,
     identifiers::InstrumentId,

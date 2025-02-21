@@ -32,7 +32,7 @@ use nautilus_model::{
     },
     types::Currency,
 };
-use pyo3::{prelude::*, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 

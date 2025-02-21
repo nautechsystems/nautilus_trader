@@ -19,12 +19,12 @@ use std::{
 };
 
 use nautilus_core::python::IntoPyObjectNautilusExt;
-use pyo3::{prelude::*, pyclass::CompareOp, Python};
+use pyo3::{Python, prelude::*, pyclass::CompareOp};
 
 use crate::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
-    orderbook::{own::OwnOrderBook, OwnBookOrder},
+    orderbook::{OwnBookOrder, own::OwnOrderBook},
     types::{Price, Quantity},
 };
 

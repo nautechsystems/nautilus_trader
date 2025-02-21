@@ -100,7 +100,9 @@ impl IdsGenerator {
             if generate {
                 self.generate_venue_position_id()
             } else {
-                panic!("Position id should be generated. Hedging Oms type order matching engine doesnt exists in cache.")
+                panic!(
+                    "Position id should be generated. Hedging Oms type order matching engine doesnt exists in cache."
+                )
             }
         } else {
             // Netting OMS (position id will be derived from instrument and strategy)

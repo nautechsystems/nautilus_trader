@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_core::{correctness::check_slice_not_empty, UnixNanos};
+use nautilus_core::{UnixNanos, correctness::check_slice_not_empty};
 use serde::{Deserialize, Serialize};
 
 use super::any::OrderAny;
@@ -91,7 +91,7 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType},
         identifiers::{OrderListId, StrategyId},
-        instruments::{stubs::*, CurrencyPair},
+        instruments::{CurrencyPair, stubs::*},
         orders::OrderTestBuilder,
         types::{Price, Quantity},
     };

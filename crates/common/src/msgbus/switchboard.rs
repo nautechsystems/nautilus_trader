@@ -241,9 +241,11 @@ mod tests {
         let expected_topic = Ustr::from("data.book.snapshots.XCME.ESZ24");
         let result = switchboard.get_book_snapshots_topic(instrument_id);
         assert_eq!(result, expected_topic);
-        assert!(switchboard
-            .book_snapshots_topics
-            .contains_key(&instrument_id));
+        assert!(
+            switchboard
+                .book_snapshots_topics
+                .contains_key(&instrument_id)
+        );
     }
 
     #[rstest]
@@ -285,8 +287,10 @@ mod tests {
         let expected_topic = Ustr::from(&format!("order.snapshots.{client_order_id}"));
         let result = switchboard.get_order_snapshots_topic(client_order_id);
         assert_eq!(result, expected_topic);
-        assert!(switchboard
-            .order_snapshots_topics
-            .contains_key(&client_order_id));
+        assert!(
+            switchboard
+                .order_snapshots_topics
+                .contains_key(&client_order_id)
+        );
     }
 }

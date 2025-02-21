@@ -27,8 +27,8 @@ use std::{
     ops::Add,
     prelude::v1::*,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };

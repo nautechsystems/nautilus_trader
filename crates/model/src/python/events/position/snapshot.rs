@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::events::PositionSnapshot;

@@ -15,11 +15,11 @@
 
 use std::rc::Rc;
 
-use pyo3::{pymethods, PyObject, PyRefMut};
+use pyo3::{PyObject, PyRefMut, pymethods};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
-use crate::msgbus::{database::BusMessage, handler::ShareableMessageHandler, MessageBus};
+use crate::msgbus::{MessageBus, database::BusMessage, handler::ShareableMessageHandler};
 
 #[pymethods]
 impl BusMessage {

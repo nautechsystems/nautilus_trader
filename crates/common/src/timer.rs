@@ -29,17 +29,17 @@ use std::{
     num::NonZeroU64,
     rc::Rc,
     sync::{
-        atomic::{self, AtomicU64},
         Arc,
+        atomic::{self, AtomicU64},
     },
 };
 
 use nautilus_core::{
-    correctness::{check_valid_string, FAILED},
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_valid_string},
     datetime::floor_to_nearest_microsecond,
     python::IntoPyObjectNautilusExt,
     time::get_atomic_clock_realtime,
-    UnixNanos, UUID4,
 };
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};

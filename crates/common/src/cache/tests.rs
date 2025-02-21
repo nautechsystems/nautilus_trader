@@ -24,7 +24,7 @@ mod tests {
         enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
         events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
         identifiers::{AccountId, ClientOrderId, PositionId, Venue},
-        instruments::{stubs::*, CurrencyPair, InstrumentAny, SyntheticInstrument},
+        instruments::{CurrencyPair, InstrumentAny, SyntheticInstrument, stubs::*},
         orderbook::OrderBook,
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -676,9 +676,11 @@ mod tests {
     #[rstest]
     fn test_get_mark_xrate_returns_none(cache: Cache) {
         // When no mark xrate is set for (USD, EUR), it should return None
-        assert!(cache
-            .get_mark_xrate(Currency::USD(), Currency::EUR())
-            .is_none());
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_none()
+        );
     }
 
     #[rstest]
@@ -701,13 +703,17 @@ mod tests {
         // Set a rate and then clear the forward key
         let xrate = 1.25;
         cache.set_mark_xrate(Currency::USD(), Currency::EUR(), xrate);
-        assert!(cache
-            .get_mark_xrate(Currency::USD(), Currency::EUR())
-            .is_some());
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_some()
+        );
         cache.clear_mark_xrate(Currency::USD(), Currency::EUR());
-        assert!(cache
-            .get_mark_xrate(Currency::USD(), Currency::EUR())
-            .is_none());
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_none()
+        );
         assert_eq!(
             cache.get_mark_xrate(Currency::EUR(), Currency::USD()),
             Some(1.0 / xrate)
@@ -720,18 +726,26 @@ mod tests {
         cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 1.25);
         cache.set_mark_xrate(Currency::AUD(), Currency::USD(), 0.75);
         cache.clear_mark_xrates();
-        assert!(cache
-            .get_mark_xrate(Currency::USD(), Currency::EUR())
-            .is_none());
-        assert!(cache
-            .get_mark_xrate(Currency::EUR(), Currency::USD())
-            .is_none());
-        assert!(cache
-            .get_mark_xrate(Currency::AUD(), Currency::USD())
-            .is_none());
-        assert!(cache
-            .get_mark_xrate(Currency::USD(), Currency::AUD())
-            .is_none());
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_mark_xrate(Currency::EUR(), Currency::USD())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_mark_xrate(Currency::AUD(), Currency::USD())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::AUD())
+                .is_none()
+        );
     }
 
     #[rstest]

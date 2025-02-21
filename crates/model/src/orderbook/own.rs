@@ -613,7 +613,10 @@ mod tests {
 
     #[rstest]
     fn test_debug(own_order: OwnBookOrder) {
-        assert_eq!(format!("{own_order:?}"), "OwnBookOrder(client_order_id=O-123456789, side=BUY, price=100.00, size=10, order_type=LIMIT, time_in_force=GTC, ts_init=0)");
+        assert_eq!(
+            format!("{own_order:?}"),
+            "OwnBookOrder(client_order_id=O-123456789, side=BUY, price=100.00, size=10, order_type=LIMIT, time_in_force=GTC, ts_init=0)"
+        );
     }
 
     #[rstest]

@@ -28,7 +28,7 @@ use crate::{
     types::{Price, Quantity},
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn trade_tick_new(
     instrument_id: InstrumentId,
@@ -50,12 +50,12 @@ pub extern "C" fn trade_tick_new(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trade_tick_eq(lhs: &TradeTick, rhs: &TradeTick) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trade_tick_hash(delta: &TradeTick) -> u64 {
     let mut hasher = DefaultHasher::new();
     delta.hash(&mut hasher);
@@ -63,7 +63,7 @@ pub extern "C" fn trade_tick_hash(delta: &TradeTick) -> u64 {
 }
 
 /// Returns a [`TradeTick`] as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trade_tick_to_cstr(trade: &TradeTick) -> *const c_char {
     str_to_cstr(&trade.to_string())
 }

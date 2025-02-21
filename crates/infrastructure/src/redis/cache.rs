@@ -21,20 +21,20 @@ use std::{
 use bytes::Bytes;
 use nautilus_common::{
     cache::{
-        database::{CacheDatabaseAdapter, CacheMap},
         CacheConfig,
+        database::{CacheDatabaseAdapter, CacheMap},
     },
     custom::CustomData,
     enums::SerializationEncoding,
     runtime::get_runtime,
     signal::Signal,
 };
-use nautilus_core::{correctness::check_slice_not_empty, UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
+    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -45,7 +45,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{aio::ConnectionManager, Pipeline};
+use redis::{Pipeline, aio::ConnectionManager};
 use tokio::try_join;
 use ustr::Ustr;
 

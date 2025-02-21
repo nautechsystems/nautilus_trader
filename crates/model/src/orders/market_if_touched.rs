@@ -16,7 +16,7 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;

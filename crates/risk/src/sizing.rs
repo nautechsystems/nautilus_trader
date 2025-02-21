@@ -19,8 +19,8 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::{
-    prelude::{FromPrimitive, ToPrimitive},
     Decimal,
+    prelude::{FromPrimitive, ToPrimitive},
 };
 
 #[must_use]

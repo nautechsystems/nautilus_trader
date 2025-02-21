@@ -31,30 +31,29 @@
 
 use std::{
     sync::{
-        atomic::{AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
 
 use futures_util::{
-    stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
+    stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
 use tokio::{net::TcpStream, sync::Mutex};
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::{client::IntoClientRequest, http::HeaderValue, Error, Message},
-    MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream, WebSocketStream, connect_async,
+    tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
 use crate::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
-    ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter},
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =

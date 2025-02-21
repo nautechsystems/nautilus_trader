@@ -24,12 +24,13 @@ use crate::identifiers::venue_order_id::VenueOrderId;
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
-    VenueOrderId::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    VenueOrderId::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn venue_order_id_hash(id: &VenueOrderId) -> u64 {
     id.inner().precomputed_hash()
 }

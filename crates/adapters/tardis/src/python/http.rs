@@ -17,15 +17,15 @@ use std::str::FromStr;
 
 use chrono::DateTime;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt},
     UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
 use pyo3::prelude::*;
 
 use crate::{
     enums::Exchange,
-    http::{query::InstrumentFilterBuilder, TardisHttpClient},
+    http::{TardisHttpClient, query::InstrumentFilterBuilder},
 };
 
 #[pymethods]

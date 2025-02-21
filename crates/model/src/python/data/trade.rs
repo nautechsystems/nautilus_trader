@@ -14,24 +14,25 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     str::FromStr,
 };
 
 use nautilus_core::{
+    UnixNanos,
     python::{
+        IntoPyObjectNautilusExt,
         serialization::{from_dict_pyo3, to_dict_pyo3},
-        to_pyvalue_err, IntoPyObjectNautilusExt,
+        to_pyvalue_err,
     },
     serialization::Serializable,
-    UnixNanos,
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     pyclass::CompareOp,
     types::{PyDict, PyInt, PyString, PyTuple},
-    IntoPyObjectExt,
 };
 
 use super::data_to_pycapsule;
@@ -348,7 +349,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::stub_trade_ethusdt_buyer, TradeTick},
+        data::{TradeTick, stubs::stub_trade_ethusdt_buyer},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},

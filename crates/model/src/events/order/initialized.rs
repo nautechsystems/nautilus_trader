@@ -17,7 +17,7 @@ use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -615,6 +615,7 @@ mod test {
             side=BUY, type=LIMIT, quantity=0.561, time_in_force=DAY, post_only=true, reduce_only=true, \
             quote_quantity=false, price=22000, emulation_trigger=BID_ASK, trigger_instrument_id=BTCUSDT.COINBASE, \
             contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], parent_order_id=None, \
-            exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None)");
+            exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None)"
+        );
     }
 }

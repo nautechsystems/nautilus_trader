@@ -22,15 +22,15 @@ use std::{
 
 use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
 use pyo3::{
+    IntoPyObjectExt,
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyFloat, PyInt, PyString, PyTuple},
-    IntoPyObjectExt,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{money::MoneyRaw, Currency, Money};
+use crate::types::{Currency, Money, money::MoneyRaw};
 
 #[pymethods]
 impl Money {

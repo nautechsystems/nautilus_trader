@@ -16,14 +16,14 @@
 use std::{str::FromStr, sync::Arc};
 
 use nautilus_core::{
-    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
 };
 use pyo3::{
+    IntoPyObjectExt,
     basic::CompareOp,
     prelude::*,
     types::{PyInt, PyString, PyTuple},
-    IntoPyObjectExt,
 };
 use ustr::Ustr;
 
@@ -183,8 +183,8 @@ mod tests {
     use tokio::sync::Mutex;
 
     use nautilus_core::{
-        datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
-        time::get_atomic_clock_realtime, UnixNanos,
+        UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
+        time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;

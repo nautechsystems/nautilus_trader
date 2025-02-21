@@ -19,10 +19,10 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
-use pyo3::{prelude::*, types::PyType, PyTypeInfo};
+use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
 use crate::sessions::{
-    fx_local_from_utc, fx_next_end, fx_next_start, fx_prev_end, fx_prev_start, ForexSession,
+    ForexSession, fx_local_from_utc, fx_next_end, fx_next_start, fx_prev_end, fx_prev_start,
 };
 
 #[pymethods]

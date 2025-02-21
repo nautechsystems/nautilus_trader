@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict, IntoPyObjectExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     accounts::MarginAccount,

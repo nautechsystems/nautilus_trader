@@ -22,16 +22,16 @@ use flate2::read::GzDecoder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        BookOrder, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN, NULL_ORDER,
+        BookOrder, DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
-    types::{fixed::FIXED_PRECISION, Quantity},
+    types::{Quantity, fixed::FIXED_PRECISION},
 };
 
 use super::{
     csv::record::{
-        TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
+        TardisBookUpdateRecord, TardisOrderBookSnapshot5Record, TardisOrderBookSnapshot25Record,
         TardisQuoteRecord, TardisTradeRecord,
     },
     parse::{
@@ -156,7 +156,10 @@ pub fn load_deltas<P: AsRef<Path>>(
             }
         }
 
-        assert!(!(action != BookAction::Delete && size.is_zero()), "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}");
+        assert!(
+            !(action != BookAction::Delete && size.is_zero()),
+            "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}"
+        );
 
         last_ts_event = ts_event;
 
@@ -731,7 +734,7 @@ mod tests {
         types::Price,
     };
     use nautilus_test_kit::common::{
-        ensure_data_exists_tardis_binance_snapshot25, ensure_data_exists_tardis_binance_snapshot5,
+        ensure_data_exists_tardis_binance_snapshot5, ensure_data_exists_tardis_binance_snapshot25,
         ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
         ensure_data_exists_tardis_huobi_quotes,
     };

@@ -33,11 +33,11 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 use index::CacheIndex;
 use nautilus_core::{
-    correctness::{
-        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
-        FAILED,
-    },
     UUID4,
+    correctness::{
+        FAILED, check_key_not_in_map, check_predicate_false, check_slice_not_empty,
+        check_valid_string,
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,

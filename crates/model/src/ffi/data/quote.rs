@@ -19,7 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{ffi::string::str_to_cstr, UnixNanos};
+use nautilus_core::{UnixNanos, ffi::string::str_to_cstr};
 
 use crate::{
     data::QuoteTick,
@@ -27,7 +27,7 @@ use crate::{
     types::{Price, Quantity},
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quote_tick_new(
     instrument_id: InstrumentId,
@@ -49,7 +49,7 @@ pub extern "C" fn quote_tick_new(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
     assert_eq!(lhs.ask_price, rhs.ask_price);
     assert_eq!(lhs.ask_size, rhs.ask_size);
@@ -62,7 +62,7 @@ pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn quote_tick_hash(delta: &QuoteTick) -> u64 {
     let mut hasher = DefaultHasher::new();
     delta.hash(&mut hasher);
@@ -70,7 +70,7 @@ pub extern "C" fn quote_tick_hash(delta: &QuoteTick) -> u64 {
 }
 
 /// Returns a [`QuoteTick`] as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn quote_tick_to_cstr(quote: &QuoteTick) -> *const c_char {
     str_to_cstr(&quote.to_string())
 }

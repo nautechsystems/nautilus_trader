@@ -28,9 +28,9 @@ use std::{
 
 use chrono::TimeDelta;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
-use nautilus_core::{AtomicTime, UnixNanos, UUID4};
+use nautilus_core::{AtomicTime, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{order::BookOrder, Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, order::BookOrder},
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, ContingencyType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderSideSpecified,
@@ -44,14 +44,14 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
         VenueOrderId,
     },
-    instruments::{InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
+    instruments::{EXPIRING_INSTRUMENT_TYPES, InstrumentAny},
     orderbook::OrderBook,
     orders::{
         Order, OrderAny, PassiveOrderAny, StopOrderAny, TrailingStopLimitOrder,
         TrailingStopMarketOrder,
     },
     position::Position,
-    types::{fixed::FIXED_PRECISION, Currency, Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use ustr::Ustr;
 
@@ -1204,7 +1204,7 @@ impl OrderMatchingEngine {
         if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
             if filled_qty >= &order.quantity() {
                 log::info!(
-                        "Ignoring fill as already filled pending application of events: {:?}, {:?}, {:?}, {:?}",
+                    "Ignoring fill as already filled pending application of events: {:?}, {:?}, {:?}, {:?}",
                     filled_qty,
                     order.quantity(),
                     order.filled_qty(),
@@ -1338,7 +1338,9 @@ impl OrderMatchingEngine {
                     format!("No market for {}", order.instrument_id()).into(),
                 );
             } else {
-                log::error!("Cannot fill order: no fills from book when fills were expected (check size in data)");
+                log::error!(
+                    "Cannot fill order: no fills from book when fills were expected (check size in data)"
+                );
                 return;
             }
         }
@@ -1348,7 +1350,7 @@ impl OrderMatchingEngine {
         }
 
         let mut initial_market_to_limit_fill = false;
-        for (mut fill_px, fill_qty) in &fills {
+        for &(mut fill_px, ref fill_qty) in &fills {
             // Validate price precision
             assert!(
                 (fill_px.precision == self.instrument.price_precision()),
@@ -1360,12 +1362,13 @@ impl OrderMatchingEngine {
             );
 
             // Validate quantity precision
-            assert!((fill_qty.precision == self.instrument.size_precision()),
-                    "Invalid quantity precision for fill quantity {} when instrument size precision is {}.\
+            assert!(
+                (fill_qty.precision == self.instrument.size_precision()),
+                "Invalid quantity precision for fill quantity {} when instrument size precision is {}.\
                      Check that the data quantity precision matches the {} instrument",
-                    fill_qty.precision,
-                    self.instrument.size_precision(),
-                    self.instrument.id()
+                fill_qty.precision,
+                self.instrument.size_precision(),
+                self.instrument.id()
             );
 
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)

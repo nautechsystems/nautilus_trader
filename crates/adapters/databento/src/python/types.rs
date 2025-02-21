@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3};
 use nautilus_model::{
     enums::OrderSide,
     identifiers::InstrumentId,
@@ -173,8 +173,10 @@ impl DatabentoStatistics {
             self.instrument_id,
             self.stat_type,
             self.update_action,
-            self.price.map_or_else(|| "None".to_string(), |p| format!("{p}")),
-            self.quantity.map_or_else(|| "None".to_string(), |q| format!("{q}")),
+            self.price
+                .map_or_else(|| "None".to_string(), |p| format!("{p}")),
+            self.quantity
+                .map_or_else(|| "None".to_string(), |q| format!("{q}")),
             self.channel_id,
             self.stat_flags,
             self.sequence,

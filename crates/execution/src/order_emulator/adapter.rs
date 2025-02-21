@@ -21,7 +21,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{handler::ShareableMessageHandler, MessageBus},
+    msgbus::{MessageBus, handler::ShareableMessageHandler},
 };
 use nautilus_core::UUID4;
 use ustr::Ustr;

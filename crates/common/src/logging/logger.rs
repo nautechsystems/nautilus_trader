@@ -23,13 +23,14 @@ use std::{
 
 use indexmap::IndexMap;
 use log::{
+    Level, LevelFilter, Log, STATIC_MAX_LEVEL,
     kv::{ToValue, Value},
-    set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
+    set_boxed_logger, set_max_level,
 };
 use nautilus_core::{
+    UUID4, UnixNanos,
     datetime::unix_nanos_to_iso8601,
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
-    UnixNanos, UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
@@ -771,8 +772,8 @@ mod tests {
         );
 
         assert_eq!(
-        log_contents,
-        "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
-    );
+            log_contents,
+            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        );
     }
 }

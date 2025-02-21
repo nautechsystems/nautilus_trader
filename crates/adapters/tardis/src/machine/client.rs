@@ -17,23 +17,23 @@ use std::{
     collections::HashMap,
     env,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
-use futures_util::{pin_mut, Stream, StreamExt};
+use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_model::data::Data;
 use ustr::Ustr;
 
 use super::{
+    Error,
     message::WsMessage,
     replay_normalized, stream_normalized,
     types::{
         InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
         TardisInstrumentKey,
     },
-    Error,
 };
 use crate::machine::parse::parse_tardis_ws_message;
 

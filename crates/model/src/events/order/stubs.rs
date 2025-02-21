@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rstest::fixture;
 use ustr::Ustr;
 
@@ -27,12 +27,12 @@ use crate::{
         OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
         stubs::{
             account_id, client_order_id, instrument_id_btc_usdt, strategy_id_ema_cross, trader_id,
             uuid4, venue_order_id,
         },
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
     },
     types::{Currency, Money, Price, Quantity},
 };

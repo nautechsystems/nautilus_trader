@@ -15,8 +15,8 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{to_pyruntime_err, IntoPyObjectNautilusExt},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
@@ -28,8 +28,8 @@ use crate::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        base::{str_indexmap_to_ustr, Order},
         StopLimitOrder,
+        base::{Order, str_indexmap_to_ustr},
     },
     python::{
         common::commissions_from_indexmap,

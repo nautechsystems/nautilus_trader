@@ -21,10 +21,10 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{serialization::Serializable, UnixNanos};
+use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::{order::BookOrder, GetTsInit};
+use super::{GetTsInit, order::BookOrder};
 use crate::{identifiers::InstrumentId, types::fixed::FIXED_SIZE_BINARY};
 
 pub const DEPTH10_LEN: usize = 10;

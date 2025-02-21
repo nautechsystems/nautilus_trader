@@ -15,12 +15,12 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     pyclass::CompareOp,
     types::{PyInt, PyString, PyTuple},
-    IntoPyObjectExt,
 };
 use ustr::Ustr;
 

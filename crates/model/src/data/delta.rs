@@ -22,12 +22,12 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{correctness::FAILED, serialization::Serializable, UnixNanos};
+use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    order::{BookOrder, NULL_ORDER},
     GetTsInit,
+    order::{BookOrder, NULL_ORDER},
 };
 use crate::{
     enums::{BookAction, RecordFlag},
@@ -202,11 +202,11 @@ impl GetTsInit for OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{serialization::Serializable, UnixNanos};
+    use nautilus_core::{UnixNanos, serialization::Serializable};
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::*, BookOrder, OrderBookDelta},
+        data::{BookOrder, OrderBookDelta, stubs::*},
         enums::{BookAction, OrderSide},
         identifiers::InstrumentId,
         types::{Price, Quantity},

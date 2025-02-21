@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use criterion::{black_box, criterion_group, Criterion};
-use nautilus_model::types::fixed::{f64_to_fixed_i128, f64_to_fixed_i64};
+use criterion::{Criterion, black_box, criterion_group};
+use nautilus_model::types::fixed::{f64_to_fixed_i64, f64_to_fixed_i128};
 
 pub fn bench_fixed_i64(c: &mut Criterion) {
     c.bench_function("f64_to_fixed_i64", |b| {

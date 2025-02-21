@@ -19,8 +19,8 @@
 use std::{
     path::Path,
     sync::{
-        atomic::{AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
@@ -33,14 +33,14 @@ use tokio::{
     sync::Mutex,
 };
 use tokio_tungstenite::{
-    tungstenite::{client::IntoClientRequest, stream::Mode, Error},
     MaybeTlsStream,
+    tungstenite::{Error, client::IntoClientRequest, stream::Mode},
 };
 
 use crate::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
-    tls::{create_tls_config_from_certs_dir, tcp_tls, Connector},
+    tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
@@ -665,7 +665,7 @@ mod tests {
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpStream,
         task,
-        time::{sleep, Duration},
+        time::{Duration, sleep},
     };
 
     use super::*;

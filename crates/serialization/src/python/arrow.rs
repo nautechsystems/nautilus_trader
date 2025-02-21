@@ -32,9 +32,9 @@ use pyo3::{
 };
 
 use crate::arrow::{
-    bars_to_arrow_record_batch_bytes, order_book_deltas_to_arrow_record_batch_bytes,
-    order_book_depth10_to_arrow_record_batch_bytes, quote_ticks_to_arrow_record_batch_bytes,
-    trade_ticks_to_arrow_record_batch_bytes, ArrowSchemaProvider,
+    ArrowSchemaProvider, bars_to_arrow_record_batch_bytes,
+    order_book_deltas_to_arrow_record_batch_bytes, order_book_depth10_to_arrow_record_batch_bytes,
+    quote_ticks_to_arrow_record_batch_bytes, trade_ticks_to_arrow_record_batch_bytes,
 };
 
 /// Transforms the given record `batches` into Python `bytes`.

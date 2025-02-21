@@ -21,8 +21,8 @@ use crate::{
     events::AccountState,
     identifiers::stubs::{account_id, uuid4},
     types::{
-        stubs::{stub_account_balance, stub_margin_balance},
         AccountBalance, Currency, Money,
+        stubs::{stub_account_balance, stub_margin_balance},
     },
 };
 

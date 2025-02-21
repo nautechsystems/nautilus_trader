@@ -17,7 +17,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::correctness::{check_predicate_true, FAILED};
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -164,8 +164,8 @@ mod tests {
     use rstest::rstest;
 
     use crate::types::{
-        stubs::{stub_account_balance, stub_margin_balance},
         AccountBalance, MarginBalance,
+        stubs::{stub_account_balance, stub_margin_balance},
     };
 
     #[rstest]

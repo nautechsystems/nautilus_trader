@@ -39,7 +39,11 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(UnixNanos::default(), UnixNanos::default(), "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:00.0 +00:00:00 }")]
+    #[case(
+        UnixNanos::default(),
+        UnixNanos::default(),
+        "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:00.0 +00:00:00 }"
+    )]
     #[case(UnixNanos::default(), 1_000_000_000.into(), "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:01.0 +00:00:00 }")]
     fn test_get_date_time_range(
         #[case] start: UnixNanos,

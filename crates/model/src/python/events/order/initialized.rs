@@ -15,8 +15,8 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use pyo3::{
     basic::CompareOp,

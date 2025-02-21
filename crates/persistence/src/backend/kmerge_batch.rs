@@ -178,7 +178,7 @@ where
 #[cfg(test)]
 mod tests {
 
-    use quickcheck::{empty_shrinker, Arbitrary};
+    use quickcheck::{Arbitrary, empty_shrinker};
     use quickcheck_macros::quickcheck;
     use rstest::rstest;
 

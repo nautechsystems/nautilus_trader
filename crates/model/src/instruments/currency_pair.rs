@@ -16,22 +16,22 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, FAILED},
     UnixNanos,
+    correctness::{FAILED, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{any::InstrumentAny, Instrument};
+use super::{Instrument, any::InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
         money::Money,
-        price::{check_positive_price, Price},
-        quantity::{check_positive_quantity, Quantity},
+        price::{Price, check_positive_price},
+        quantity::{Quantity, check_positive_quantity},
     },
 };
 
@@ -369,7 +369,7 @@ impl Instrument for CurrencyPair {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{stubs::*, CurrencyPair};
+    use crate::instruments::{CurrencyPair, stubs::*};
 
     #[rstest]
     fn test_equality(currency_pair_btcusdt: CurrencyPair) {

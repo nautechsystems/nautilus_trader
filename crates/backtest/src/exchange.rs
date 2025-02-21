@@ -23,8 +23,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{
-    correctness::{check_equal, FAILED},
     AtomicTime, UnixNanos,
+    correctness::{FAILED, check_equal},
 };
 use nautilus_execution::{
     client::ExecutionClient,
@@ -45,7 +45,7 @@ use nautilus_model::{
     orders::PassiveOrderAny,
     types::{AccountBalance, Currency, Money, Price},
 };
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::modules::SimulationModule;
 
@@ -622,11 +622,11 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         msgbus::{
-            stubs::{get_message_saving_handler, get_saved_messages},
             MessageBus,
+            stubs::{get_message_saving_handler, get_saved_messages},
         },
     };
-    use nautilus_core::{AtomicTime, UnixNanos, UUID4};
+    use nautilus_core::{AtomicTime, UUID4, UnixNanos};
     use nautilus_execution::{
         client::ExecutionClient,
         models::{
@@ -647,7 +647,7 @@ mod tests {
         },
         events::AccountState,
         identifiers::{AccountId, ClientId, TradeId, TraderId, Venue},
-        instruments::{stubs::crypto_perpetual_ethusdt, CryptoPerpetual, InstrumentAny},
+        instruments::{CryptoPerpetual, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;

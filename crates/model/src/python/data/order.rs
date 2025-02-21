@@ -20,8 +20,9 @@ use std::{
 
 use nautilus_core::{
     python::{
+        IntoPyObjectNautilusExt,
         serialization::{from_dict_pyo3, to_dict_pyo3},
-        to_pyvalue_err, IntoPyObjectNautilusExt,
+        to_pyvalue_err,
     },
     serialization::Serializable,
 };
