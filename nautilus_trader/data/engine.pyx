@@ -1894,9 +1894,7 @@ cdef class DataEngine(Component):
                     )
                     continue
 
-                # Create aggregator
                 aggregator = self._create_bar_aggregator(instrument, bar_type)
-
                 if params["update_subscriptions"]:
                     self._bar_aggregators[bar_type.standard()] = aggregator
 
@@ -2044,7 +2042,6 @@ cdef class DataEngine(Component):
         aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
         if aggregator is None:
-            # Create aggregator
             aggregator = self._create_bar_aggregator(instrument, command.bar_type)
 
         # Set if awaiting initial partial bar

@@ -789,7 +789,6 @@ class DYDXDataClient(LiveMarketDataClient):
                 command_id=command.id,
                 instrument_id=command.instrument_id,
                 book_type=book_type,
-                # below is just to propagate information
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
@@ -831,7 +830,6 @@ class DYDXDataClient(LiveMarketDataClient):
             order_book_command = UnsubscribeOrderBook(
                 command_id=command.id,
                 instrument_id=command.instrument_id,
-                # below is just to propagate information
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
