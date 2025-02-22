@@ -11,13 +11,8 @@ name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
 
 [[bench]]
-name = "cache_orders_processing"
-path = "benches/cache/orders_processing.rs"
-harness = false
-
-[[bench]]
-name = "cache_orders_indexing"
-path = "benches/cache/orders_indexing.rs"
+name = "cache_orders"
+path = "benches/cache/orders.rs"
 harness = false
 
 [dependencies]

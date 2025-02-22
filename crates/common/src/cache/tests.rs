@@ -23,10 +23,13 @@ mod tests {
         data::{Bar, QuoteTick, TradeTick},
         enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
         events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-        identifiers::{AccountId, ClientOrderId, PositionId, Venue},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Venue},
         instruments::{CurrencyPair, InstrumentAny, SyntheticInstrument, stubs::*},
         orderbook::OrderBook,
-        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            builder::OrderTestBuilder,
+            stubs::{TestOrderEventStubs, TestOrdersGenerator},
+        },
         position::Position,
         types::{Currency, Price, Quantity},
     };
