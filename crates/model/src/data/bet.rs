@@ -250,10 +250,8 @@ impl BetPosition {
     pub fn position_increase(&mut self, bet: &Bet) {
         if self.side().is_none() {
             self.price = bet.price;
-            self.exposure = bet.exposure();
-        } else {
-            self.exposure += bet.exposure();
         }
+        self.exposure += bet.exposure();
     }
 
     /// Decreases the position with the provided bet.
@@ -592,6 +590,38 @@ mod tests {
         position.add_bet(bet2);
         // exposure = -200 + (-100) = -300
         assert_eq!(position.exposure, dec!(-300.0));
+    }
+
+    #[rstest]
+    fn test_position_back_then_lay() {
+        let mut position = BetPosition::default();
+        let bet1 = Bet::new(dec!(3.0), dec!(100_000), BetSide::Back);
+        let bet2 = Bet::new(dec!(2.0), dec!(10_000), BetSide::Lay);
+        position.add_bet(bet1);
+        position.add_bet(bet2);
+
+        assert_eq!(position.exposure, dec!(280_000.0));
+        assert_eq!(position.realized_pnl(), dec!(3333.333333333333333333333333));
+        assert_eq!(
+            position.unrealized_pnl(dec!(4.0)),
+            dec!(-23333.33333333333333333333334)
+        );
+    }
+
+    #[rstest]
+    fn test_position_lay_then_back() {
+        let mut position = BetPosition::default();
+        let bet1 = Bet::new(dec!(2.0), dec!(10_000), BetSide::Lay);
+        let bet2 = Bet::new(dec!(3.0), dec!(100_000), BetSide::Back);
+        position.add_bet(bet1);
+        position.add_bet(bet2);
+
+        assert_eq!(position.exposure, dec!(280_000.0));
+        assert_eq!(position.realized_pnl(), dec!(190_000));
+        assert_eq!(
+            position.unrealized_pnl(dec!(4.0)),
+            dec!(-23333.33333333333333333333334)
+        );
     }
 
     #[rstest]
