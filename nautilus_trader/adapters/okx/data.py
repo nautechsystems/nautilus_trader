@@ -265,7 +265,15 @@ class OKXDataClient(LiveMarketDataClient):
             return
 
         if command.depth == 1 or command.book_type == BookType.L1_MBP:
-            await self._subscribe_quote_ticks(command.instrument_id)
+            quote_ticks_subscription = SubscribeQuoteTicks(
+                command_id=command.id,
+                instrument_id=command.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                ts_init=command.ts_init,
+                params=command.params,
+            )
+            await self._subscribe_quote_ticks(quote_ticks_subscription)
             return
 
         if command.depth is None:
@@ -288,7 +296,15 @@ class OKXDataClient(LiveMarketDataClient):
                     f"requested subscription for depth {depth}. Replacing subscription of "
                     f"depth {_depth} with depth {depth}.",
                 )
-                await self._unsubscribe_order_book_deltas(command.instrument_id)
+                order_book_unsubscription = UnsubscribeOrderBook(
+                    command_id=command.id,
+                    instrument_id=command.instrument_id,
+                    client_id=command.client_id,
+                    venue=command.venue,
+                    ts_init=command.ts_init,
+                    params=command.params,
+                )
+                await self._unsubscribe_order_book_deltas(order_book_unsubscription)
 
         ws_client = await self._get_ws_client(OKXWsBaseUrlType.PUBLIC, tbt_books=True)
 
