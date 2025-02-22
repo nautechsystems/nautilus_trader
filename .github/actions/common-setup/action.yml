@@ -51,7 +51,6 @@ runs:
       shell: bash
       run: |
         if command -v rustup &> /dev/null; then
-          rustup self update
           rustup update --force
         fi
 
