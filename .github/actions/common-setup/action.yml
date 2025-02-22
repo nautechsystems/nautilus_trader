@@ -47,17 +47,10 @@ runs:
 
     # > --------------------------------------------------
     # > Rust
-    - name: Get Rust toolchain version
-      id: rust-toolchain
-      shell: bash
-      run: |
-        echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> $GITHUB_ENV
-
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
         override: true
 
@@ -65,19 +58,6 @@ runs:
       uses: taiki-e/install-action@v2
       with:
         tool: nextest
-
-    - name: Cached cargo
-      id: cached-cargo
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
 
     # > --------------------------------------------------
     # > sccache
