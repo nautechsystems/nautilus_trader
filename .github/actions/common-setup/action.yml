@@ -47,10 +47,25 @@ runs:
 
     # > --------------------------------------------------
     # > Rust
+    - name: Reset and update Rust toolchain
+      shell: bash
+      run: |
+        if command -v rustup &> /dev/null; then
+          rustup self update
+          rustup update --force
+        fi
+
+    - name: Get Rust toolchain version
+      id: rust-toolchain
+      shell: bash
+      run: |
+        echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> $GITHUB_ENV
+
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
+        toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
         override: true
 
