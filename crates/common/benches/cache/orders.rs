@@ -36,8 +36,8 @@ fn benchmark_order_indexing(c: &mut Criterion) {
                     black_box(&cache),
                     black_box(&Venue::from("VENUE-1")),
                     black_box(None),
-                )
-            })
+                );
+            });
         },
     );
 
@@ -49,8 +49,8 @@ fn benchmark_order_indexing(c: &mut Criterion) {
                     black_box(&cache),
                     black_box(&Venue::from("VENUE-1")),
                     black_box(Some(&InstrumentId::from("SYMBOL-1.1"))),
-                )
-            })
+                );
+            });
         },
     );
 }
@@ -60,15 +60,15 @@ fn benchmark_order_processing(c: &mut Criterion) {
     let all_orders = create_order_list_sample(5, 100, 200);
 
     c.bench_function("Cache order processing one order", |b| {
-        b.iter(|| cache_orders_processing(black_box(&all_orders[..1])))
+        b.iter(|| cache_orders_processing(black_box(&all_orders[..1])));
     });
 
     c.bench_function("Cache order processing 10k orders", |b| {
-        b.iter(|| cache_orders_processing(black_box(&all_orders[..10000])))
+        b.iter(|| cache_orders_processing(black_box(&all_orders[..10000])));
     });
 
     c.bench_function("Cache order processing 100k orders", |b| {
-        b.iter(|| cache_orders_processing(black_box(&all_orders)))
+        b.iter(|| cache_orders_processing(black_box(&all_orders)));
     });
 }
 
