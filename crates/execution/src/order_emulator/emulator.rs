@@ -517,7 +517,7 @@ impl OrderEmulator {
             }
         } else {
             log::error!("Cannot modify order: {} not found", command.client_order_id);
-        };
+        }
     }
 
     pub fn handle_cancel_order(&mut self, command: CancelOrder) {
