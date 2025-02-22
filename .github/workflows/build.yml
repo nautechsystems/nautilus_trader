@@ -39,7 +39,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'pre-commit',
+              name: 'pre-commit result',
               head_sha: context.sha,
               status: 'completed',
               conclusion: conclusion,
@@ -50,6 +50,12 @@ jobs:
                   : 'All pre-commit checks passed'
               }
             });
+
+      - name: Fail job if pre-commit failed
+        if: env.PRECOMMIT_FAILED == 'true'
+        run: |
+          echo "Pre-commit checks failed, exiting"
+          exit 1
 
   build-linux-standard-precision:
     strategy:

@@ -18,10 +18,22 @@ runs:
       shell: bash
       run: poetry lock --no-update
 
-    - name: Build Python wheel
+    - name: Build Python wheel (Linux & Windows)
+      if: runner.os != 'macOS'
       shell: bash
       run: |
-        poetry build --format wheel
+        poetry build --format wheel --verbose
+        ls -lh dist/
+
+    - name: Build Python wheel (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        export PATH="$pythonLocation/bin:$PATH"
+        export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
+        export RUSTFLAGS="-C link-args=-L$pythonLocation/lib -lpython${{ inputs.python-version }}"
+        $PYO3_PYTHON --version
+        poetry build --format wheel --verbose
         ls -lh dist/
 
     - name: Install Python wheel
