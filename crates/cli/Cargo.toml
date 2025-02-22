@@ -6,10 +6,6 @@ authors.workspace = true
 description.workspace = true
 documentation.workspace = true
 
-[[bin]]
-name = "nautilus"
-path = "src/bin/cli.rs"
-
 [dependencies]
 nautilus-common = { path = "../common"}
 nautilus-model = { path = "../model" }
@@ -21,3 +17,7 @@ tokio = { workspace = true }
 clap = { version = "4.5.30", features = ["derive", "env"] }
 dotenvy = { version = "0.15.7" }
 simple_logger = "5.0.0"
+
+[[bin]]
+name = "nautilus"
+path = "src/bin/cli.rs"

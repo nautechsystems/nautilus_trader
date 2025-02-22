@@ -10,6 +10,18 @@ documentation.workspace = true
 name = "nautilus_infrastructure"
 crate-type = ["rlib", "cdylib"]
 
+[features]
+default = ["redis"]  # redis needed by `nautilus_trader` by default for now
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+python = ["pyo3", "pyo3-async-runtimes"]
+redis = ["dep:redis"]
+postgres = ["dep:sqlx"]
+
 [dependencies]
 nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
@@ -53,15 +65,3 @@ sqlx = { version = "0.8.3", features = [
 [dev-dependencies]
 rstest = { workspace = true }
 serde = { workspace = true }
-
-[features]
-default = ["redis"]  # redis needed by `nautilus_trader` by default for now
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-]
-python = ["pyo3", "pyo3-async-runtimes"]
-redis = ["dep:redis"]
-postgres = ["dep:sqlx"]

@@ -10,23 +10,6 @@ documentation.workspace = true
 name = "nautilus_portfolio"
 crate-type = ["rlib", "cdylib"]
 
-[dependencies]
-nautilus-analysis = { path = "../analysis" }
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"] }
-log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-rust_decimal = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }
-ustr = { workspace = true }
-uuid = { workspace = true }
-
-[dev-dependencies]
-criterion = { workspace = true }
-rstest = { workspace = true }
-
 [features]
 default = ["python"]
 extension-module = [
@@ -43,3 +26,20 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
 ]
+
+[dependencies]
+nautilus-analysis = { path = "../analysis" }
+nautilus-common = { path = "../common" }
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model", features = ["stubs"] }
+log = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+ustr = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }

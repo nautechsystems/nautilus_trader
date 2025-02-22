@@ -10,9 +10,19 @@ documentation.workspace = true
 name = "nautilus_databento"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
-[[bin]]
-name = "databento-sandbox"
-path = "bin/sandbox.rs"
+[features]
+default = ["python", "nautilus-core/ffi"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+python = [
+  "pyo3",
+  "pyo3-async-runtimes",
+  "nautilus-core/python",
+  "nautilus-model/python",
+]
 
 [dependencies]
 nautilus-core = { path = "../../core" }
@@ -39,16 +49,6 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
-[features]
-default = ["python", "nautilus-core/ffi"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-]
-python = [
-  "pyo3",
-  "pyo3-async-runtimes",
-  "nautilus-core/python",
-  "nautilus-model/python",
-]
+[[bin]]
+name = "databento-sandbox"
+path = "bin/sandbox.rs"

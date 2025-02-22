@@ -10,6 +10,26 @@ documentation.workspace = true
 name = "nautilus_execution"
 crate-type = ["rlib", "cdylib"]
 
+[features]
+default = ["ffi", "python"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+ffi = [
+  "nautilus-common/ffi",
+  "nautilus-core/ffi",
+  "nautilus-model/ffi",
+]
+python = [
+  "pyo3",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+]
+
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
@@ -34,23 +54,3 @@ rstest = { workspace = true }
 nautilus-portfolio = { path = "../portfolio" }
 nautilus-data = { path = "../data" }
 nautilus-risk = { path = "../risk" }
-
-[features]
-default = ["ffi", "python"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-]
-python = [
-  "pyo3",
-  "nautilus-common/python",
-  "nautilus-core/python",
-  "nautilus-model/python",
-]
