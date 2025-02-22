@@ -1485,7 +1485,8 @@ impl Cache {
                 self.index
                     .venue_orders
                     .get(venue)
-                    .map_or(HashSet::new(), |o| o.iter().copied().collect()),
+                    .cloned()
+                    .unwrap_or_default(),
             );
         }
 
@@ -1494,7 +1495,8 @@ impl Cache {
                 .index
                 .instrument_orders
                 .get(instrument_id)
-                .map_or(HashSet::new(), |o| o.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = &mut query {
                 *existing_query = existing_query
@@ -1511,7 +1513,8 @@ impl Cache {
                 .index
                 .strategy_orders
                 .get(strategy_id)
-                .map_or(HashSet::new(), |o| o.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = &mut query {
                 *existing_query = existing_query
@@ -1539,7 +1542,8 @@ impl Cache {
                 self.index
                     .venue_positions
                     .get(venue)
-                    .map_or(HashSet::new(), |p| p.iter().copied().collect()),
+                    .cloned()
+                    .unwrap_or_default(),
             );
         }
 
@@ -1548,7 +1552,8 @@ impl Cache {
                 .index
                 .instrument_positions
                 .get(instrument_id)
-                .map_or(HashSet::new(), |p| p.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = query {
                 query = Some(
@@ -1567,7 +1572,8 @@ impl Cache {
                 .index
                 .strategy_positions
                 .get(strategy_id)
-                .map_or(HashSet::new(), |p| p.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = query {
                 query = Some(
