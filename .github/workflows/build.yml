@@ -10,6 +10,10 @@ jobs:
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,27 +26,29 @@ jobs:
 
       - name: Run pre-commit
         continue-on-error: true
-        run: make pre-commit || echo "PRECOMMIT_FAILED=true" > $GITHUB_ENV
+        run: make pre-commit || echo "PRECOMMIT_FAILED=true" >> $GITHUB_ENV
 
-      # https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
-      - name: Add PR comment on failure
-        if: env.PRECOMMIT_FAILED == 'true' && github.event_name == 'pull_request'
+      - name: Set pre-commit status
+        if: always()
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.BUILD_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            github.rest.issues.createComment({
+            const conclusion = process.env.PRECOMMIT_FAILED === 'true' ? 'failure' : 'success';
+            await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: 'Thank you for your contribution! 🙏\n\nThe pre-commit checks failed, but this is easy to fix. You\'ll need to run:\n\n```bash\nmake pre-commit\n# or\npre-commit run --all-files\n```\n\nThis will automatically fix most formatting issues. Just commit any changes and push again.\n\nSee our [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) guide for more details.'
-            })
-
-      - name: Fail job if pre-commit failed
-        if: env.PRECOMMIT_FAILED == 'true'
-        run: |
-          echo "Pre-commit checks failed, exiting"
-          exit 1
+              name: 'pre-commit',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: conclusion === 'failure' ? 'Pre-commit checks failed' : 'Pre-commit checks passed',
+                summary: conclusion === 'failure'
+                  ? 'Please run `make pre-commit` (or `pre-commit run --all-files`) to fix formatting issues'
+                  : 'All pre-commit checks passed'
+              }
+            });
 
   build-linux-standard-precision:
     strategy:
