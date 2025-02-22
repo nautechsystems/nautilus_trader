@@ -47,6 +47,8 @@ runs:
 
     # > --------------------------------------------------
     # > Rust
+    # GitHub runners come with a pre-installed Rust toolchain, this step forces an update
+    # to ensure we have the latest version before setting our specific toolchain.
     - name: Reset and update Rust toolchain
       shell: bash
       run: |
