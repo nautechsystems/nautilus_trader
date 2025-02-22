@@ -10,17 +10,19 @@ documentation.workspace = true
 name = "nautilus_tardis"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
-[[bin]]
-name = "tardis-csv"
-path = "bin/example_csv.rs"
-
-[[bin]]
-name = "tardis-http"
-path = "bin/example_http.rs"
-
-[[bin]]
-name = "tardis-replay"
-path = "bin/example_replay.rs"
+[features]
+default = ["python", "nautilus-core/ffi"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+python = [
+  "pyo3",
+  "pyo3-async-runtimes",
+  "nautilus-core/python",
+  "nautilus-model/python",
+]
 
 [dependencies]
 nautilus-core = { path = "../../core" }
@@ -59,16 +61,15 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
-[features]
-default = ["python", "nautilus-core/ffi"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-]
-python = [
-  "pyo3",
-  "pyo3-async-runtimes",
-  "nautilus-core/python",
-  "nautilus-model/python",
-]
+
+[[bin]]
+name = "tardis-csv"
+path = "bin/example_csv.rs"
+
+[[bin]]
+name = "tardis-http"
+path = "bin/example_http.rs"
+
+[[bin]]
+name = "tardis-replay"
+path = "bin/example_replay.rs"

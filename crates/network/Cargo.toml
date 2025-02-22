@@ -10,6 +10,15 @@ documentation.workspace = true
 name = "nautilus_network"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
+[features]
+default = ["python", "std"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+python = ["pyo3", "pyo3-async-runtimes"]
+std = []
+
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-cryptography = { path = "../cryptography" }
@@ -42,12 +51,3 @@ criterion = { workspace = true }
 serde_json = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
-
-[features]
-default = ["python", "std"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-]
-python = ["pyo3", "pyo3-async-runtimes"]
-std = []

@@ -10,22 +10,6 @@ documentation.workspace = true
 name = "nautilus_risk"
 crate-type = ["rlib", "cdylib"]
 
-[dependencies]
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
-nautilus-execution = { path = "../execution" }
-nautilus-model = { path = "../model", features = ["stubs"] }
-nautilus-portfolio = { path = "../portfolio" }
-log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-rust_decimal = { workspace = true }
-thiserror = { workspace = true }
-ustr = { workspace = true }
-
-[dev-dependencies]
-criterion = { workspace = true }
-rstest = { workspace = true }
-
 [features]
 default = ["python"]
 extension-module = [
@@ -42,3 +26,19 @@ python = [
   "nautilus-execution/python",
   "nautilus-model/python",
 ]
+
+[dependencies]
+nautilus-common = { path = "../common" }
+nautilus-core = { path = "../core" }
+nautilus-execution = { path = "../execution" }
+nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-portfolio = { path = "../portfolio" }
+log = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+ustr = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }

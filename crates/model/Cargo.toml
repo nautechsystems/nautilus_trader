@@ -10,6 +10,17 @@ documentation.workspace = true
 name = "nautilus_model"
 crate-type = ["rlib", "staticlib"]
 
+[features]
+default = []
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+ffi = ["cbindgen", "nautilus-core/ffi"]
+python = ["pyo3", "nautilus-core/python"]
+stubs = ["rstest"]
+high-precision = []
+
 [dependencies]
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
@@ -41,25 +52,17 @@ iai = { workspace = true }
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
 
-[features]
-default = []
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-]
-ffi = ["cbindgen", "nautilus-core/ffi"]
-python = ["pyo3", "nautilus-core/python"]
-stubs = ["rstest"]
-high-precision = []
-
 [[bench]]
-name = "bench_book_iai"
+name = "book_iai"
+path = "benches/book_iai.rs"
 harness = false
 
 [[bench]]
-name = "bench_fixed_precision_criterion"
+name = "fixed_precision_criterion"
+path = "benches/fixed_precision_criterion.rs"
 harness = false
 
 [[bench]]
-name = "bench_fixed_precision_iai"
+name = "fixed_precision_iai"
+path = "benches/fixed_precision_iai.rs"
 harness = false

@@ -10,23 +10,6 @@ documentation.workspace = true
 name = "nautilus_pyo3"
 crate-type = ["cdylib"]
 
-[dependencies]
-nautilus-common = { path = "../common" , features = ["python"] }
-nautilus-core = { path = "../core" , features = ["python"] }
-nautilus-cryptography = { path = "../cryptography" , features = ["python"] }
-nautilus-execution = { path = "../execution" , features = ["python"] }
-nautilus-indicators = { path = "../indicators" , features = ["python"] }
-nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
-nautilus-model = { path = "../model" , features = ["python"] }
-nautilus-network = { path = "../network" , features = ["python"] }
-nautilus-persistence = { path = "../persistence" , features = ["python"] }
-nautilus-serialization = { path = "../serialization" , features = ["python"] }
-nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
-nautilus-trading = { path = "../trading", features = ["python"] }
-nautilus-databento = { path = "../adapters/databento", features = ["python"] }
-nautilus-tardis = { path = "../adapters/tardis", features = ["python"] }
-pyo3 = { workspace = true }
-
 [features]
 default = []
 extension-module = [
@@ -55,3 +38,20 @@ high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
 ]
+
+[dependencies]
+nautilus-common = { path = "../common" , features = ["python"] }
+nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-cryptography = { path = "../cryptography" , features = ["python"] }
+nautilus-execution = { path = "../execution" , features = ["python"] }
+nautilus-indicators = { path = "../indicators" , features = ["python"] }
+nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
+nautilus-model = { path = "../model" , features = ["python"] }
+nautilus-network = { path = "../network" , features = ["python"] }
+nautilus-persistence = { path = "../persistence" , features = ["python"] }
+nautilus-serialization = { path = "../serialization" , features = ["python"] }
+nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
+nautilus-trading = { path = "../trading", features = ["python"] }
+nautilus-databento = { path = "../adapters/databento", features = ["python"] }
+nautilus-tardis = { path = "../adapters/tardis", features = ["python"] }
+pyo3 = { workspace = true }

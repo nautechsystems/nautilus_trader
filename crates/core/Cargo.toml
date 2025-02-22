@@ -10,6 +10,12 @@ documentation.workspace = true
 name = "nautilus_core"
 crate-type = ["rlib", "staticlib"]
 
+[features]
+default = ["python"]
+extension-module = ["pyo3/extension-module"]
+ffi = ["cbindgen"]
+python = ["pyo3"]
+
 [dependencies]
 anyhow = { workspace = true }
 bytes = { workspace = true }
@@ -33,20 +39,18 @@ rstest = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 toml = { workspace = true }
 
-[features]
-default = ["python"]
-extension-module = ["pyo3/extension-module"]
-ffi = ["cbindgen"]
-python = ["pyo3"]
 
 [[bench]]
-name = "bench_correctness"
+name = "correctness"
+path = "benches/correctness.rs"
 harness = false
 
 [[bench]]
-name = "bench_time"
+name = "time"
+path = "benches/time.rs"
 harness = false
 
 [[bench]]
-name = "bench_uuid"
+name = "uuid"
+path = "benches/uuid.rs"
 harness = false

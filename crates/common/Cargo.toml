@@ -10,10 +10,16 @@ documentation.workspace = true
 name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
 
-[[bench]]
-name = "cache_orders"
-path = "benches/cache/orders.rs"
-harness = false
+[features]
+default = ["rstest"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
+"clock_v2" = []
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
@@ -49,13 +55,7 @@ criterion = {workspace = true}
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
 
-[features]
-default = ["rstest"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-]
-ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
-"clock_v2" = []
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+[[bench]]
+name = "cache_orders"
+path = "benches/cache/orders.rs"
+harness = false
