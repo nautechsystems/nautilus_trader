@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Moved `ExecEngineConfig.portfolio_bar_updates` config option to `PortfolioConfig.bar_updates`
 
 ### Internal Improvements
+- Added initial `Cache` benchmarking for orders (#2341), thanks @filipmacek
 - Implemented exchange rate calculations in Rust
 - Improved error logging for live engines to now include stacktrace for easier debugging
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
@@ -63,6 +64,7 @@ Released on TBD (UTC).
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
 - Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
 - Fixed composite bars subscription (#2337), thanks @faysou
+- Fixed sub command issue in some adapters (#2343), thanks @faysou
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
