@@ -27,7 +27,6 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 indexmap = { workspace = true }
-once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }

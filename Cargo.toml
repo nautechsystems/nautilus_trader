@@ -48,7 +48,6 @@ hex = "0.4.3"
 indexmap = { version = "2.7.1", features = ["serde"] }
 itertools = "0.13.0"
 itoa = "1.0.14"
-once_cell = "1.20.3"
 log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 parquet = "54.2.0"  # Keep major version in line with datafusion
 pyo3 = { version = "0.23.4", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
