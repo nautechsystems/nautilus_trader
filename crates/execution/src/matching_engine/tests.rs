@@ -86,6 +86,7 @@ pub fn market_order_buy(instrument_eth_usdt: InstrumentAny) -> OrderAny {
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
         .build()
 }
 
@@ -126,6 +127,7 @@ pub fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
         .side(OrderSide::Sell)
         .quantity(Quantity::from("1.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .submit(true)
         .build()
 }
 
@@ -310,6 +312,7 @@ fn test_process_order_when_invalid_quantity_precision(
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1"))
+        .submit(true)
         .build();
 
     // Create engine and process order
@@ -363,6 +366,7 @@ fn test_process_order_when_invalid_price_precision(
         .side(OrderSide::Sell)
         .price(Price::from("100.12333")) // <-- Wrong price precision for es futures contract (which is 2)
         .quantity(Quantity::from("1"))
+        .submit(true)
         .build();
 
     engine.process_order(&mut limit_order, account_id);
@@ -406,6 +410,7 @@ fn test_process_order_when_invalid_trigger_price_precision(
         .side(OrderSide::Sell)
         .trigger_price(Price::from("100.12333")) // <-- Wrong trigger price precision for es futures contract (which is 2)
         .quantity(Quantity::from("1"))
+        .submit(true)
         .build();
 
     engine.process_order(&mut stop_order, account_id);
@@ -441,6 +446,7 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         .instrument_id(instrument.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from("1"))
+        .submit(true)
         .build();
 
     // Create engine and process order
@@ -458,7 +464,7 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         first_message.message().unwrap(),
         Ustr::from(
             "Short selling not permitted on a CASH account with position None and \
-            order MarketOrder(SELL 1 AAPL.XNAS @ MARKET GTC, status=INITIALIZED, \
+            order MarketOrder(SELL 1 AAPL.XNAS @ MARKET GTC, status=SUBMITTED, \
             client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, \
             exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
         )
@@ -491,6 +497,7 @@ fn test_process_order_when_invalid_reduce_only(
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1.000"))
         .reduce_only(true)
+        .submit(true)
         .build();
 
     engine.process_order(&mut market_order_reduce, account_id);
@@ -541,6 +548,7 @@ fn test_process_order_when_invalid_contingent_orders(
         .quantity(Quantity::from(1))
         .contingency_type(ContingencyType::Oto)
         .client_order_id(entry_client_order_id)
+        .submit(true)
         .build();
     // Set entry order status to Rejected with proper event
     let rejected_event = OrderRejected::default();
@@ -557,6 +565,7 @@ fn test_process_order_when_invalid_contingent_orders(
         .contingency_type(ContingencyType::Oto)
         .client_order_id(stop_loss_client_order_id)
         .parent_order_id(entry_client_order_id)
+        .submit(true)
         .build();
     // Make it Accepted
     let mut accepted_stop_order = TestOrderStubs::make_accepted_order(&stop_order);
@@ -615,6 +624,7 @@ fn test_process_order_when_closed_linked_order(
         .contingency_type(ContingencyType::Oco)
         .client_order_id(stop_loss_client_order_id)
         .linked_order_ids(vec![take_profit_client_order_id])
+        .submit(true)
         .build();
     let take_profit_order = OrderTestBuilder::new(OrderType::MarketIfTouched)
         .instrument_id(instrument_es.id())
@@ -624,6 +634,7 @@ fn test_process_order_when_closed_linked_order(
         .contingency_type(ContingencyType::Oco)
         .client_order_id(take_profit_client_order_id)
         .linked_order_ids(vec![stop_loss_client_order_id])
+        .submit(true)
         .build();
     // Set stop loss order status to Rejected with proper event
     let rejected_event: OrderRejected = OrderRejectedBuilder::default()
@@ -775,23 +786,24 @@ fn test_not_enough_quantity_filled_fok_order(
         .quantity(Quantity::from("2.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .time_in_force(TimeInForce::Fok)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
     engine_l2.process_order(&mut market_order, account_id);
 
-    // We need to test that one Order rejected event was generated
+    // We need to test that one OrderCanceled event was generated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
     let first_message = saved_messages.first().unwrap();
-    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    assert_eq!(first_message.event_type(), OrderEventType::Canceled);
     let order_rejected = match first_message {
-        OrderEventAny::Rejected(order_rejected) => order_rejected,
-        _ => panic!("Expected OrderRejected event in first message"),
+        OrderEventAny::Canceled(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderCanceled event in first message"),
     };
     assert_eq!(
-        order_rejected.reason,
-        Ustr::from("Fill or kill order cannot be filled at full amount")
+        order_rejected.client_order_id,
+        market_order.client_order_id()
     );
 }
 
@@ -841,6 +853,7 @@ fn test_valid_market_buy(
         .side(OrderSide::Buy)
         .quantity(Quantity::from("2.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
         .build();
 
     // Process orderbook deltas to add liquidity then process market order
@@ -908,6 +921,7 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
         .quantity(Quantity::from("1.000"))
         .post_only(true)
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -970,6 +984,7 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
         .quantity(Quantity::from("1.000"))
         .time_in_force(TimeInForce::Fok)
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1029,6 +1044,7 @@ fn test_process_limit_order_matched_immediate_fill(
         .price(Price::from("1501.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1094,6 +1110,7 @@ fn test_process_stop_market_order_triggered_rejected(
         .trigger_price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1153,6 +1170,7 @@ fn test_process_stop_market_order_valid_trigger_filled(
         .trigger_price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1207,6 +1225,7 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
         .trigger_price(Price::from("1505.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1261,6 +1280,7 @@ fn test_process_stop_limit_order_triggered_not_filled(
         .price(Price::from("1490.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1322,6 +1342,7 @@ fn test_process_stop_limit_order_triggered_filled(
         .price(Price::from("1502.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
 
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
@@ -1389,6 +1410,7 @@ fn test_process_cancel_command_valid(
         .price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     // Create cancel command for limit order above
     let cancel_command = CancelOrder::new(
@@ -1517,6 +1539,7 @@ fn test_process_cancel_all_command(
         .price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_1)
+        .submit(true)
         .build();
     cache
         .borrow_mut()
@@ -1532,6 +1555,7 @@ fn test_process_cancel_all_command(
         .price(Price::from("1496.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_2)
+        .submit(true)
         .build();
     cache
         .borrow_mut()
@@ -1547,6 +1571,7 @@ fn test_process_cancel_all_command(
         .price(Price::from("1497.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_3)
+        .submit(true)
         .build();
     cache
         .borrow_mut()
@@ -1650,6 +1675,7 @@ fn test_process_batch_cancel_command(
         .price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_1)
+        .submit(true)
         .build();
     let client_order_id_2 = ClientOrderId::from("O-19700101-000000-001-001-2");
     let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
@@ -1658,6 +1684,7 @@ fn test_process_batch_cancel_command(
         .price(Price::from("1496.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_2)
+        .submit(true)
         .build();
 
     engine_l2.process_order(&mut limit_order_1, account_id);
@@ -1782,6 +1809,7 @@ fn test_expire_order(
         .quantity(Quantity::from("1.000"))
         .expire_time(UnixNanos::from(expire_time as u64))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     let tick = TradeTick::new(
         instrument_eth_usdt.id(),
@@ -1900,6 +1928,7 @@ fn test_update_limit_order_post_only_matched(
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
         .post_only(true)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut limit_order, account_id);
 
@@ -1982,6 +2011,7 @@ fn test_update_limit_order_valid(
         .price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut limit_order, account_id);
 
@@ -2069,6 +2099,7 @@ fn test_update_stop_market_order_valid(
         .trigger_price(Price::from("1505.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut stop_market_order, account_id);
 
@@ -2100,7 +2131,6 @@ fn test_update_stop_market_order_valid(
     };
     assert_eq!(order_accepted.client_order_id, client_order_id);
     let order_event_second = saved_messages.get(1).unwrap();
-    println!("{order_event_second:?}");
     let order_updated = match order_event_second {
         OrderEventAny::Updated(order_updated) => order_updated,
         _ => panic!("Expected OrderUpdated event in second message"),
@@ -2137,6 +2167,7 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
         .trigger_price(Price::from("1505.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut stop_market_order, account_id);
 
@@ -2215,6 +2246,7 @@ fn test_process_market_if_touched_order_already_triggered(
         .trigger_price(Price::from("1500.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut stop_market_order, account_id);
 
@@ -2258,6 +2290,7 @@ fn test_update_market_if_touched_order_valid(
         .trigger_price(Price::from("1505.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut stop_market_order, account_id);
 
@@ -2339,6 +2372,7 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
         .price(Price::from("1505.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut limit_if_touched_order, account_id);
 
@@ -2408,6 +2442,7 @@ fn test_update_limit_if_touched_order_valid(
         .price(Price::from("1505.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
+        .submit(true)
         .build();
     engine_l2.process_order(&mut limit_if_touched_order, account_id);
 
