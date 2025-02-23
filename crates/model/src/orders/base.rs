@@ -579,6 +579,12 @@ impl OrderCore {
     }
 
     fn filled(&mut self, event: &OrderFilled) {
+        if self.filled_qty + event.last_qty < self.quantity {
+            self.status = OrderStatus::PartiallyFilled;
+        } else {
+            self.status = OrderStatus::Filled;
+        }
+
         self.venue_order_id = Some(event.venue_order_id);
         self.position_id = event.position_id;
         self.trade_ids.push(event.trade_id);
