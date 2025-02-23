@@ -1812,10 +1812,12 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // delete order from OrderMatchingCore
-        let _ = self
-            .core
-            .delete_order(&PassiveOrderAny::from(order.clone()));
+        // Check if order exists in OrderMatching core, and delete it if it does
+        if self.core.order_exists(order.client_order_id()) {
+            let _ = self
+                .core
+                .delete_order(&PassiveOrderAny::from(order.clone()));
+        }
         self.cached_filled_qty.remove(&order.client_order_id());
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
