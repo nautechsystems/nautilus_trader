@@ -23,8 +23,10 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
+    events::{OrderEventAny, OrderSubmitted},
     identifiers::{
-        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TradeId,
+        TraderId,
     },
     orders::{
         any::OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
@@ -72,6 +74,7 @@ pub struct OrderTestBuilder {
     init_id: Option<UUID4>,
     ts_init: Option<UnixNanos>,
     contingency_type: Option<ContingencyType>,
+    submitted: bool,
 }
 
 impl OrderTestBuilder {
@@ -113,7 +116,13 @@ impl OrderTestBuilder {
             init_id: None,
             ts_init: None,
             tags: None,
+            submitted: false,
         }
+    }
+
+    pub fn submit(&mut self, submit: bool) -> &mut Self {
+        self.submitted = submit;
+        self
     }
 
     pub fn kind(&mut self, kind: OrderType) -> &mut Self {
@@ -469,7 +478,7 @@ impl OrderTestBuilder {
     }
 
     pub fn build(&self) -> OrderAny {
-        match self.kind {
+        let mut order = match self.kind {
             OrderType::Market => OrderAny::Market(MarketOrder::new(
                 self.get_trader_id(),
                 self.get_strategy_id(),
@@ -722,6 +731,22 @@ impl OrderTestBuilder {
                     self.get_ts_init(),
                 ))
             }
+        };
+
+        if self.submitted {
+            let submit_event = OrderSubmitted::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                AccountId::from("ACCOUNT-001"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+            order.apply(OrderEventAny::Submitted(submit_event)).unwrap();
         }
+
+        order
     }
 }

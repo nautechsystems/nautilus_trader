@@ -500,7 +500,7 @@ mod tests {
         let mut order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("1000000"))
+            .quantity(Quantity::from("1000000.000"))
             .build();
 
         portfolio
@@ -620,7 +620,7 @@ mod tests {
         let mut order1 = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("100.0"))
+            .quantity(Quantity::from("100.000"))
             .price(Price::new(55.0, 1))
             .trigger_price(Price::new(35.0, 1))
             .build();
@@ -628,7 +628,7 @@ mod tests {
         let order2 = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("1000.0"))
+            .quantity(Quantity::from("1000.000"))
             .price(Price::new(45.0, 1))
             .trigger_price(Price::new(30.0, 1))
             .build();

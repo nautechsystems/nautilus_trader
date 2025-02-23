@@ -529,7 +529,6 @@ impl OrderMatchingEngine {
             // Contingent orders checks
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
-                    println!("Search for parent order {parent_order_id}");
                     let parent_order = cache_borrow.order(&parent_order_id);
                     if parent_order.is_none()
                         || parent_order.unwrap().contingency_type().unwrap() != ContingencyType::Oto
@@ -1317,16 +1316,7 @@ impl OrderMatchingEngine {
             }
 
             if order.leaves_qty() > total_size {
-                // cannot fill full size, so we reject the order if only initialized
-                // and we cancel it if it is already accepted
-                if order.is_active_local() {
-                    self.generate_order_rejected(
-                        order,
-                        "Fill or kill order cannot be filled at full amount".into(),
-                    );
-                } else {
-                    self.cancel_order(order, None);
-                }
+                self.cancel_order(order, None);
                 return;
             }
         }
@@ -1450,7 +1440,7 @@ impl OrderMatchingEngine {
 
     fn fill_order(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         last_px: Price,
         last_qty: Quantity,
         liquidity_side: LiquiditySide,
@@ -1490,10 +1480,13 @@ impl OrderMatchingEngine {
             liquidity_side,
         );
 
-        if order.is_aggressive() && order.is_closed() {
-            // remove order from market
-            let passive_order = PassiveOrderAny::from(order.clone());
-            self.core.delete_order(&passive_order).unwrap();
+        if order.is_passive() && order.is_closed() {
+            // Check if order exists in OrderMatching core, and delete it if it does
+            if self.core.order_exists(order.client_order_id()) {
+                let _ = self
+                    .core
+                    .delete_order(&PassiveOrderAny::from(order.clone()));
+            }
             self.cached_filled_qty.remove(&order.client_order_id());
         }
 
@@ -1822,10 +1815,12 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // delete order from OrderMatchingCore
-        let _ = self
-            .core
-            .delete_order(&PassiveOrderAny::from(order.clone()));
+        // Check if order exists in OrderMatching core, and delete it if it does
+        if self.core.order_exists(order.client_order_id()) {
+            let _ = self
+                .core
+                .delete_order(&PassiveOrderAny::from(order.clone()));
+        }
         self.cached_filled_qty.remove(&order.client_order_id());
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
@@ -2121,7 +2116,7 @@ impl OrderMatchingEngine {
     #[allow(clippy::too_many_arguments)]
     fn generate_order_filled(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         venue_order_id: VenueOrderId,
         venue_position_id: Option<PositionId>,
         last_qty: Quantity,
@@ -2157,5 +2152,8 @@ impl OrderMatchingEngine {
         ));
         let msgbus = self.msgbus.as_ref().borrow();
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+
+        // TODO remove this when execution engine msgbus handlers are correctly set
+        order.apply(event).expect("Failed to apply order event");
     }
 }
