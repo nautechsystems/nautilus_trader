@@ -19,12 +19,14 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, future::join_all};
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
+use nautilus_core::UUID4;
 use nautilus_model::{
     accounts::AccountAny,
+    enums::{OrderType, TimeInForce, TriggerType},
     events::{OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
-    orders::OrderAny,
+    orders::{LimitOrder, MarketOrder, OrderAny},
     position::Position,
     types::Currency,
 };
@@ -539,7 +541,6 @@ impl DatabaseQueries {
         Ok(Some(account))
     }
 
-    // TODO
     pub async fn load_order(
         con: &ConnectionManager,
         trader_key: &str,
@@ -552,30 +553,131 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        // let order =
-        //     Transformer::order_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
-        // first get order_initialized from result.0
         let order_initialized: OrderInitialized = Transformer::order_initialized_from_value(
             Self::deserialize_payload(encoding, &result[0])?,
         )?;
-        // // then get OrderAny from it
         let mut order = OrderAny::from_events(vec![OrderEventAny::Initialized(order_initialized)])?;
 
-        // // then traverse through rest of the events, deserialize it, then if else eazy
-        for event in result.iter().skip(1) {
+        for (event_count, event) in result.iter().skip(1).enumerate() {
             let event: OrderEventAny = Transformer::order_event_any_from_value(
                 Self::deserialize_payload(encoding, event)?,
             )?;
-            order.apply(event)?;
+
+            if order.events().contains(&&event) {
+                anyhow::bail!("Corrupt cache with duplicate event for order {event}");
+            }
+
+            if event_count > 0 {
+                if let OrderEventAny::Initialized(order_initialized) = &event {
+                    match order_initialized.order_type {
+                        OrderType::Market => {
+                            let time_in_force = if order.time_in_force() != TimeInForce::Gtd {
+                                order.time_in_force()
+                            } else {
+                                TimeInForce::Gtc
+                            };
+
+                            let mut transformed = MarketOrder::new(
+                                order.trader_id(),
+                                order.strategy_id(),
+                                order.instrument_id(),
+                                order.client_order_id(),
+                                order.order_side(),
+                                order.quantity(),
+                                time_in_force,
+                                UUID4::new(),
+                                order.ts_init(),
+                                order.is_reduce_only(),
+                                order.is_quote_quantity(),
+                                order.contingency_type(),
+                                order.order_list_id(),
+                                order.linked_order_ids(),
+                                order.parent_order_id(),
+                                order.exec_algorithm_id(),
+                                order.exec_algorithm_params(),
+                                order.exec_spawn_id(),
+                                order.tags(),
+                            );
+
+                            let original_events = order.events();
+                            for event in original_events.into_iter().rev() {
+                                transformed.events.insert(0, event.clone());
+                            }
+
+                            order = OrderAny::from_market(transformed);
+                        }
+                        OrderType::Limit => {
+                            let price = order_initialized.price.unwrap_or(order.price().unwrap());
+                            let trigger_instrument_id = order
+                                .trigger_instrument_id()
+                                .unwrap_or(order.instrument_id());
+
+                            let mut transformed = if let Ok(transformed) = LimitOrder::new(
+                                order.trader_id(),
+                                order.strategy_id(),
+                                order.instrument_id(),
+                                order.client_order_id(),
+                                order.order_side(),
+                                order.quantity(),
+                                price,
+                                order.time_in_force(),
+                                order.expire_time(),
+                                order.is_post_only(),
+                                order.is_reduce_only(),
+                                order.is_quote_quantity(),
+                                order.display_qty(),
+                                Some(TriggerType::NoTrigger),
+                                Some(trigger_instrument_id),
+                                order.contingency_type(),
+                                order.order_list_id(),
+                                order.linked_order_ids(),
+                                order.parent_order_id(),
+                                order.exec_algorithm_id(),
+                                order.exec_algorithm_params(),
+                                order.exec_spawn_id(),
+                                order.tags(),
+                                UUID4::new(),
+                                order.ts_init(),
+                            ) {
+                                transformed
+                            } else {
+                                tracing::error!("Cannot create limit order");
+                                return Ok(None);
+                            };
+
+                            transformed.liquidity_side = order.liquidity_side();
+
+                            // TODO: fix
+                            // let triggered_price = order.trigger_price();
+                            // if triggered_price.is_some() {
+                            //     transformed.trigger_price() = (triggered_price.unwrap());
+                            // }
+
+                            let original_events = order.events();
+                            for event in original_events.into_iter().rev() {
+                                transformed.events.insert(0, event.clone());
+                            }
+
+                            order = OrderAny::from_limit(transformed);
+                        }
+                        _ => {
+                            anyhow::bail!(
+                                "Cannot transform order to {}",
+                                order_initialized.order_type
+                            );
+                        }
+                    }
+                } else {
+                    order.apply(event)?;
+                }
+            } else {
+                order.apply(event)?;
+            }
         }
-        // else apply
-        // also store event count while looping
-        // return order(OrderAny)
 
         Ok(Some(order))
     }
 
-    // TODO
     pub async fn load_position(
         con: &ConnectionManager,
         trader_key: &str,
@@ -588,10 +690,9 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        // get orderfill from result.0
         let initial_fill: OrderFilled =
             Transformer::order_filled_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
-        // load_instrument from initial_fill.instrument_id
+
         let instrument = if let Some(instrument) =
             Self::load_instrument(con, trader_key, &initial_fill.instrument_id, encoding).await?
         {
@@ -600,7 +701,7 @@ impl DatabaseQueries {
             tracing::error!("Instrument not found: {}", initial_fill.instrument_id);
             return Ok(None);
         };
-        // create position object with instrument and orderfill
+
         let mut position = Position::new(&instrument, initial_fill);
         // then loop through rest of the events(orderfill) present in reult expect first one
         for event in result.iter().skip(1) {
@@ -611,11 +712,9 @@ impl DatabaseQueries {
                 anyhow::bail!("Corrupt cache with duplicate event for position {order_filled}");
             }
 
-            // then apply each event to position
             position.apply(&order_filled);
         }
 
-        // return position
         Ok(Some(position))
     }
 
