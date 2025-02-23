@@ -1316,16 +1316,7 @@ impl OrderMatchingEngine {
             }
 
             if order.leaves_qty() > total_size {
-                // cannot fill full size, so we reject the order if only initialized
-                // and we cancel it if it is already accepted
-                if order.is_active_local() {
-                    self.generate_order_rejected(
-                        order,
-                        "Fill or kill order cannot be filled at full amount".into(),
-                    );
-                } else {
-                    self.cancel_order(order, None);
-                }
+                self.cancel_order(order, None);
                 return;
             }
         }

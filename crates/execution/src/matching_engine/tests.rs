@@ -792,18 +792,18 @@ fn test_not_enough_quantity_filled_fok_order(
     engine_l2.process_order_book_delta(&orderbook_delta_sell);
     engine_l2.process_order(&mut market_order, account_id);
 
-    // We need to test that one Order rejected event was generated
+    // We need to test that one OrderCanceled event was generated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
     let first_message = saved_messages.first().unwrap();
-    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    assert_eq!(first_message.event_type(), OrderEventType::Canceled);
     let order_rejected = match first_message {
-        OrderEventAny::Rejected(order_rejected) => order_rejected,
-        _ => panic!("Expected OrderRejected event in first message"),
+        OrderEventAny::Canceled(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderCanceled event in first message"),
     };
     assert_eq!(
-        order_rejected.reason,
-        Ustr::from("Fill or kill order cannot be filled at full amount")
+        order_rejected.client_order_id,
+        market_order.client_order_id()
     );
 }
 
