@@ -1481,9 +1481,12 @@ impl OrderMatchingEngine {
         );
 
         if order.is_passive() && order.is_closed() {
-            // remove order from market
-            let passive_order = PassiveOrderAny::from(order.clone());
-            self.core.delete_order(&passive_order).unwrap();
+            // Check if order exists in OrderMatching core, and delete it if it does
+            if self.core.order_exists(order.client_order_id()) {
+                let _ = self
+                    .core
+                    .delete_order(&PassiveOrderAny::from(order.clone()));
+            }
             self.cached_filled_qty.remove(&order.client_order_id());
         }
 
