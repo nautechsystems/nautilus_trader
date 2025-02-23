@@ -39,7 +39,6 @@ rstest = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 toml = { workspace = true }
 
-
 [[bench]]
 name = "correctness"
 path = "benches/correctness.rs"
