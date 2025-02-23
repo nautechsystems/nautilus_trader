@@ -1489,7 +1489,7 @@ impl OrderMatchingEngine {
             liquidity_side,
         );
 
-        if order.is_aggressive() && order.is_closed() {
+        if order.is_passive() && order.is_closed() {
             // remove order from market
             let passive_order = PassiveOrderAny::from(order.clone());
             self.core.delete_order(&passive_order).unwrap();
