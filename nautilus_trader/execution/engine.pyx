@@ -675,7 +675,7 @@ cdef class ExecutionEngine(Component):
         self._cache.cache_positions()
 
         # TODO: Uncomment and replace above individual caching methods once implemented
-        # self._cache.cache_all()
+        self._cache.cache_all()
         self._cache.build_index()
         self._cache.check_integrity()
         self._set_position_id_counts()
