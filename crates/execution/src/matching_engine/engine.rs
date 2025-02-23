@@ -529,7 +529,6 @@ impl OrderMatchingEngine {
             // Contingent orders checks
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
-                    println!("Search for parent order {parent_order_id}");
                     let parent_order = cache_borrow.order(&parent_order_id);
                     if parent_order.is_none()
                         || parent_order.unwrap().contingency_type().unwrap() != ContingencyType::Oto
@@ -1450,7 +1449,7 @@ impl OrderMatchingEngine {
 
     fn fill_order(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         last_px: Price,
         last_qty: Quantity,
         liquidity_side: LiquiditySide,
@@ -2121,7 +2120,7 @@ impl OrderMatchingEngine {
     #[allow(clippy::too_many_arguments)]
     fn generate_order_filled(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         venue_order_id: VenueOrderId,
         venue_position_id: Option<PositionId>,
         last_qty: Quantity,
@@ -2157,5 +2156,8 @@ impl OrderMatchingEngine {
         ));
         let msgbus = self.msgbus.as_ref().borrow();
         msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+
+        // TODO remove this when execution engine msgbus handlers are correctly set
+        order.apply(event).expect("Failed to apply order event");
     }
 }
