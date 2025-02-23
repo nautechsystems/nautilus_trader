@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
 - Improved build by adding placeholders to avoid unnecessary rebuilds (#2336), thanks @bartolootrit
+- Improved consistency of `OrderMatchingEngine` between Cython and Rust and fix issues (#2350), thanks @filipmacek
 - Removed obsolete reconnect guard for dYdX (#2334), thanks @davidsblom
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
@@ -71,9 +72,12 @@ Released on TBD (UTC).
 - Added backtest clock and timers example (#2327), thanks @stefansimik
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
+- Added MRE strategy example (#2352), thanks @stefansimik
+- Added data catalog example (#2353), thanks @stefansimik
 - Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
 - Improved docs for emulated orders (#2316), thanks @stefansimik
 - Improved getting started doc for backtesting API levels (#2324), thanks @faysou
+- Improved FSM example explanations for beginners (#2351), thanks @stefansimik
 - Refined option greeks docstrings (#2320), thanks @faysou
 
 ### Deprecations
