@@ -74,6 +74,7 @@ cdef class DataCommand(Command):
         dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
+
         super().__init__(command_id, ts_init)
 
         self.data_type = data_type
@@ -1235,8 +1236,12 @@ cdef class RequestData(Request):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
     data_type : type
         The data type for the request.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1248,14 +1253,10 @@ cdef class RequestData(Request):
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1266,18 +1267,19 @@ cdef class RequestData(Request):
 
     def __init__(
         self,
-        DataType data_type not None,
-        datetime start : datetime | None,
-        datetime end : datetime | None,
-        int limit,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        DataType data_type not None,
+        callback not None: Callable[[Any], None],
+        datetime start : datetime | None = None,
+        datetime end : datetime | None = None,
+        int limit = 0,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
+
         super().__init__(
             callback,
             request_id,
@@ -1323,8 +1325,12 @@ cdef class RequestInstrument(RequestData):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
     instrument_id : InstrumentId
         The instrument ID for the request.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1334,14 +1340,10 @@ cdef class RequestInstrument(RequestData):
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1352,25 +1354,25 @@ cdef class RequestInstrument(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
-        datetime start : datetime | None,
-        datetime end : datetime | None,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        InstrumentId instrument_id not None,
+        callback not None: Callable[[Any], None],
+        datetime start : datetime | None = None,
+        datetime end : datetime | None = None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
+            request_id,
             DataType(Instrument),
+            callback,
             start,
             end,
             0,
             client_id,
             venue,
-            callback,
-            request_id,
             ts_init,
             params
         )
@@ -1407,6 +1409,10 @@ cdef class RequestInstruments(RequestData):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1416,14 +1422,10 @@ cdef class RequestInstruments(RequestData):
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1434,24 +1436,24 @@ cdef class RequestInstruments(RequestData):
 
     def __init__(
         self,
-        datetime start : datetime | None,
-        datetime end : datetime | None,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        callback not None: Callable[[Any], None],
+        datetime start : datetime | None = None,
+        datetime end : datetime | None = None,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
+            request_id,
             DataType(Instrument),
+            callback,
             start,
             end,
             0,
             client_id,
             venue,
-            callback,
-            request_id,
             ts_init,
             params
         )
@@ -1484,22 +1486,22 @@ cdef class RequestOrderBookSnapshot(RequestData):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
     instrument_id : InstrumentId
         The instrument ID for the request.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     limit : int
         The limit on the depth of the order book snapshot (default is None).
     client_id : ClientId or ``None``
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1510,24 +1512,24 @@ cdef class RequestOrderBookSnapshot(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
-        int limit,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        InstrumentId instrument_id not None,
+        callback not None: Callable[[Any], None],
+        int limit = 0,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
+            request_id,
             DataType(OrderBookDeltas),
+            callback,
             None,
             None,
             limit,
             client_id,
             venue,
-            callback,
-            request_id,
             ts_init,
             params
         )
@@ -1562,8 +1564,12 @@ cdef class RequestQuoteTicks(RequestData):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
     instrument_id : InstrumentId
         The instrument ID for the request.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1575,14 +1581,10 @@ cdef class RequestQuoteTicks(RequestData):
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1593,26 +1595,26 @@ cdef class RequestQuoteTicks(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
-        datetime start : datetime | None,
-        datetime end : datetime | None,
-        int limit,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        InstrumentId instrument_id not None,
+        callback not None: Callable[[Any], None],
+        datetime start : datetime | None = None,
+        datetime end : datetime | None = None,
+        int limit = 0,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
+            request_id,
             DataType(QuoteTick),
+            callback,
             start,
             end,
             limit,
             client_id,
             venue,
-            callback,
-            request_id,
             ts_init,
             params
         )
@@ -1650,8 +1652,12 @@ cdef class RequestTradeTicks(RequestData):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
     instrument_id : InstrumentId
         The instrument ID for the request.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1663,14 +1669,10 @@ cdef class RequestTradeTicks(RequestData):
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1681,26 +1683,26 @@ cdef class RequestTradeTicks(RequestData):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
-        datetime start : datetime | None,
-        datetime end : datetime | None,
-        int limit,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        InstrumentId instrument_id not None,
+        callback not None: Callable[[Any], None],
+        datetime start : datetime | None = None,
+        datetime end : datetime | None = None,
+        int limit = 0,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
+            request_id,
             DataType(TradeTick),
+            callback,
             start,
             end,
             limit,
             client_id,
             venue,
-            callback,
-            request_id,
             ts_init,
             params
         )
@@ -1739,8 +1741,12 @@ cdef class RequestBars(RequestData):
 
     Parameters
     ----------
+    request_id : UUID4
+        The request ID.
     bar_type : BarType
         The bar type for the request.
+    callback : Callable[[Any], None]
+        The callback to call with the requested data as argument.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1752,14 +1758,10 @@ cdef class RequestBars(RequestData):
         The data client ID for the request.
     venue : Venue or ``None``
         The venue for the request.
-    callback : Callable[[Any], None]
-        The delegate to call with the data.
-    request_id : UUID4
-        The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object]
-        Additional parameters for the request.
+        Additional parameters for the request, also included in responses.
 
     Raises
     ------
@@ -1770,26 +1772,26 @@ cdef class RequestBars(RequestData):
 
     def __init__(
         self,
-        BarType bar_type not None,
-        datetime start : datetime | None,
-        datetime end : datetime | None,
-        int limit,
-        ClientId client_id: ClientId | None,
-        Venue venue: Venue | None,
-        callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        uint64_t ts_init,
-        dict[str, object] params: dict | None,
+        BarType bar_type not None,
+        callback not None: Callable[[Any], None],
+        datetime start : datetime | None = None,
+        datetime end : datetime | None = None,
+        int limit = 0,
+        ClientId client_id: ClientId | None = None,
+        Venue venue: Venue | None = None,
+        uint64_t ts_init = 0,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
+            request_id,
             DataType(Bar),
+            callback,
             start,
             end,
             limit,
             client_id,
             venue,
-            callback,
-            request_id,
             ts_init,
             params
         )
@@ -1853,15 +1855,15 @@ cdef class DataResponse(Response):
     """
 
     def __init__(
-            self,
-            ClientId client_id: ClientId | None,
-            Venue venue: Venue | None,
-            DataType data_type,
-            data not None,
-            UUID4 correlation_id not None,
-            UUID4 response_id not None,
-            uint64_t ts_init,
-            dict[str, object] params: dict | None = None,
+        self,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        DataType data_type,
+        data not None,
+        UUID4 correlation_id not None,
+        UUID4 response_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
