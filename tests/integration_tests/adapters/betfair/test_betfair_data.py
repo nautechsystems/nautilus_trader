@@ -112,20 +112,40 @@ async def test_connect(mocker, data_client, instrument):
 async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(
-        SubscribeTradeTicks(UUID4(), instrument.id, venue=instrument.id.venue),
+        SubscribeTradeTicks(
+            instrument.id,
+            client_id=None,
+            venue=instrument.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+        ),
     )
     await asyncio.sleep(0)
     data_client.subscribe_instrument_status(
-        SubscribeInstrumentStatus(UUID4(), instrument.id, venue=instrument.id.venue),
+        SubscribeInstrumentStatus(
+            instrument.id,
+            client_id=None,
+            venue=instrument.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+        ),
     )
     await asyncio.sleep(0)
     data_client.subscribe_instrument_close(
-        SubscribeInstrumentClose(UUID4(), instrument.id, venue=instrument.id.venue),
+        SubscribeInstrumentClose(
+            instrument.id,
+            client_id=None,
+            venue=instrument.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+        ),
     )
     await asyncio.sleep(0)
 
     # Assert
     assert data_client.subscribed_trade_ticks() == [instrument.id]
+    assert data_client.subscribed_instrument_status() == [instrument.id]
+    assert data_client.subscribed_instrument_close() == [instrument.id]
 
 
 def test_market_heartbeat(data_client):
