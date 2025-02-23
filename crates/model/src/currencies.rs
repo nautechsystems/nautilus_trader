@@ -17,10 +17,9 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::{LazyLock, Mutex, OnceLock},
 };
 
-use once_cell::sync::Lazy;
 use ustr::Ustr;
 
 use crate::{enums::CurrencyType, types::Currency};
@@ -1002,7 +1001,7 @@ impl Currency {
 }
 
 /// A map of built-in `Currency` constants.
-pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
+pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     ///////////////////////////////////////////////////////////////////////////
     // Fiat currencies
