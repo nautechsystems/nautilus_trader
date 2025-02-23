@@ -82,7 +82,15 @@ class TestDataClient:
         data_type = DataType(Data, {"Type": "MyData"})
 
         # Act
-        self.client.subscribe(SubscribeData(UUID4(), data_type, ClientId("TEST_PROVIDER")))
+        self.client.subscribe(
+            SubscribeData(
+                data_type,
+                ClientId("TEST_PROVIDER"),
+                None,
+                UUID4(),
+                0,
+            ),
+        )
 
         # Assert
         # TODO: Determine better way of asserting this than parsing logs
@@ -92,7 +100,15 @@ class TestDataClient:
         data_type = DataType(Data, {"Type": "MyData"})
 
         # Act
-        self.client.unsubscribe(UnsubscribeData(UUID4(), data_type, ClientId("TEST_PROVIDER")))
+        self.client.unsubscribe(
+            UnsubscribeData(
+                data_type,
+                ClientId("TEST_PROVIDER"),
+                None,
+                UUID4(),
+                0,
+            ),
+        )
 
         # Assert
         # TODO: Determine better way of asserting this than parsing logs

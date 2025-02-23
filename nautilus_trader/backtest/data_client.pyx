@@ -172,8 +172,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_instruments(self, SubscribeInstruments command):
         cdef Instrument instrument
         for instrument in self._cache.instruments(Venue(self.id.value)):
-            self.subscribe_instrument(SubscribeInstrument(command.id, instrument.id, command.client_id, command.venue, command.ts_init, command.params))
-        # Do nothing else for backtest
+            self.subscribe_instrument(SubscribeInstrument(instrument.id, command.client_id, command.venue, command.id, command.ts_init, command.params))
 
     cpdef void subscribe_instrument(self, SubscribeInstrument command):
         Condition.not_none(command.instrument_id, "instrument_id")
