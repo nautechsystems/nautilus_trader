@@ -125,14 +125,11 @@ pub struct TestOrderStubs;
 impl TestOrderStubs {
     pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
         let mut new_order = order.clone();
-        let submitted_event =
-            TestOrderEventStubs::order_submitted(&new_order, AccountId::from("SIM-001"));
         let accepted_event = TestOrderEventStubs::order_accepted(
             &new_order,
             AccountId::from("SIM-001"),
             VenueOrderId::from("V-001"),
         );
-        new_order.apply(submitted_event).unwrap();
         new_order.apply(accepted_event).unwrap();
         new_order
     }
