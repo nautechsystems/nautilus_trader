@@ -425,6 +425,11 @@ pub struct SocketClient {
 }
 
 impl SocketClient {
+    /// Connect to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
     pub async fn connect(
         config: SocketConfig,
         post_connection: Option<PyObject>,
@@ -533,6 +538,11 @@ impl SocketClient {
         }
     }
 
+    /// Sends a message of the given `data`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any I/O error.
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
         if self.is_closed() {
             return Err(std::io::Error::new(

@@ -48,6 +48,8 @@ impl HttpStatus {
 
     /// Attempts to construct a [`HttpStatus`] from a `u16`.
     ///
+    /// # Errors
+    ///
     /// Returns an error if the code is not in the valid `100..999` range.
     pub fn from(code: u16) -> Result<Self, InvalidStatusCode> {
         Ok(Self {
@@ -242,7 +244,12 @@ impl HttpClient {
     /// - `keys`: Rate-limit keys to control request frequency.
     /// - `timeout_secs`: Optional request timeout in seconds.
     ///
-    /// # Example
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    ///
+    /// # Examples
+    ///
     /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
     #[allow(clippy::too_many_arguments)]
     pub async fn request(
@@ -285,6 +292,10 @@ impl InnerHttpClient {
     /// - `headers`: Extra headers to send.
     /// - `body`: Optional request body.
     /// - `timeout_secs`: Optional request timeout in seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     pub async fn send_request(
         &self,
         method: Method,
@@ -335,6 +346,10 @@ impl InnerHttpClient {
     }
 
     /// Converts a `reqwest::Response` into an `HttpResponse`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
         tracing::trace!("{response:?}");
 

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(clippy::missing_errors_doc)] // Under development
+
 //! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor)
 //!
 //! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193)
@@ -85,7 +87,7 @@ pub type DashMapStateStore<K> = DashMap<K, InMemoryState>;
 /// do more than N tasks a day). The keyed kind allows one rate limit per key (e.g. an API
 /// call budget per client API key).
 ///
-/// A direct state store is expressed as [`StateStore::Key`] = [`NotKeyed`][direct::NotKeyed].
+/// A direct state store is expressed as [`StateStore::Key`] = `NotKeyed`.
 /// Keyed state stores have a
 /// type parameter for the key and set their key to that.
 pub trait StateStore {

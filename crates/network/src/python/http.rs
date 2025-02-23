@@ -54,6 +54,11 @@ impl HttpMethod {
 
 #[pymethods]
 impl HttpResponse {
+    /// Creates a new [`HttpResponse`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid `status` code.
     #[new]
     pub fn py_new(status: u16, body: Vec<u8>) -> PyResult<Self> {
         Ok(Self {
