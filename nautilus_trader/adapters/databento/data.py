@@ -332,10 +332,14 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             self._instrument_ids[dataset].add(instrument_id)
 
-            command_id = UUID4()
-            await self._subscribe_instrument(
-                SubscribeInstrument(command_id, instrument_id, venue=instrument_id.venue),
+            subscribe = SubscribeInstrument(
+                instrument_id,
+                client_id=None,
+                venue=instrument_id.venue,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
             )
+            await self._subscribe_instrument(subscribe)
         except asyncio.CancelledError:
             self._log.warning(
                 "Canceled task 'ensure_subscribed_for_instrument'",
