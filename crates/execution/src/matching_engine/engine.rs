@@ -846,8 +846,20 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_market_to_limit_order(&mut self, order: &OrderAny) {
-        todo!("process_market_to_limit_order")
+    fn process_market_to_limit_order(&mut self, order: &mut OrderAny) {
+        // Check that market exists
+        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
+            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        // Immediately fill marketable order
+        self.fill_market_order(order);
     }
 
     fn process_stop_market_order(&mut self, order: &mut OrderAny) {
@@ -1364,6 +1376,9 @@ impl OrderMatchingEngine {
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
             {
+                // Matching engine should the first accept order then update limit price
+                self.accept_order(order);
+
                 self.generate_order_updated(order, order.quantity(), Some(fill_px), None);
                 initial_market_to_limit_fill = true;
             }
