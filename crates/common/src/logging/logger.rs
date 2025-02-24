@@ -203,7 +203,7 @@ pub struct LogLineWrapper {
 impl LogLineWrapper {
     /// Creates a new [`LogLineWrapper`] instance.
     #[must_use]
-    pub fn new(line: LogLine, trader_id: Ustr) -> Self {
+    pub const fn new(line: LogLine, trader_id: Ustr) -> Self {
         Self {
             line,
             cache: None,
