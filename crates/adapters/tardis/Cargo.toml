@@ -52,7 +52,7 @@ tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 csv = "1.3.1"
-flate2 = "1.0.35"
+flate2 = "1.1.0"
 urlencoding = "2.1.3"
 
 [dev-dependencies]
@@ -60,7 +60,6 @@ nautilus-test-kit = { path = "../../test_kit" }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
-
 
 [[bin]]
 name = "tardis-csv"
