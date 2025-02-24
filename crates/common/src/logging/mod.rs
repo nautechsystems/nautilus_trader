@@ -105,7 +105,11 @@ pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-pub fn init_tracing() {
+///
+/// # Errors
+///
+/// Returns an error if tracing subscriber fails to initialize.
+pub fn init_tracing() -> anyhow::Result<()> {
     // Skip tracing initialization if `RUST_LOG` is not set
     if let Ok(v) = env::var("RUST_LOG") {
         let env_filter = EnvFilter::new(v.clone());
@@ -113,11 +117,11 @@ pub fn init_tracing() {
         tracing_subscriber::fmt()
             .with_env_filter(env_filter)
             .try_init()
-            .unwrap_or_else(|e| {
-                tracing::error!("Cannot set tracing subscriber because of error: {e}");
-            });
+            .map_err(|e| anyhow::anyhow!("Failed to initialize tracing subscriber: {e}"))?;
+
         println!("Initialized tracing logs with RUST_LOG={v}");
     }
+    Ok(())
 }
 
 /// Initialize logging.
@@ -136,7 +140,7 @@ pub fn init_logging(
     instance_id: UUID4,
     config: LoggerConfig,
     file_config: FileWriterConfig,
-) -> LogGuard {
+) -> anyhow::Result<LogGuard> {
     LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
     LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
     Logger::init_with_config(trader_id, instance_id, config, file_config)

@@ -24,9 +24,13 @@ use std::{
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 
-use crate::logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig};
+use crate::logging::{
+    init_logging,
+    logger::{LogGuard, LoggerConfig},
+    writer::FileWriterConfig,
+};
 
-pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) {
+pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow::Result<LogGuard> {
     let mut config = LoggerConfig::default();
     config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);
     init_logging(
@@ -34,7 +38,7 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) {
         UUID4::new(),
         config,
         FileWriterConfig::default(),
-    );
+    )
 }
 
 /// Repeatedly evaluates a condition with a delay until it becomes true or a timeout occurs.

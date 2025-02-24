@@ -94,50 +94,48 @@ impl LoggerConfig {
         }
     }
 
-    #[must_use]
-    pub fn from_spec(spec: &str) -> Self {
-        let Self {
-            mut stdout_level,
-            mut fileout_level,
-            mut component_level,
-            mut is_colored,
-            mut print_config,
-        } = Self::default();
-        spec.split(';').for_each(|kv| {
-            if kv == "is_colored" {
-                is_colored = true;
-            } else if kv == "print_config" {
-                print_config = true;
-            } else {
-                let mut kv = kv.split('=');
-                if let (Some(k), Some(Ok(lvl))) = (kv.next(), kv.next().map(LevelFilter::from_str))
-                {
-                    if k == "stdout" {
-                        stdout_level = lvl;
-                    } else if k == "fileout" {
-                        fileout_level = lvl;
-                    } else {
-                        component_level.insert(Ustr::from(k), lvl);
-                    }
-                }
+    pub fn from_spec(spec: &str) -> anyhow::Result<Self> {
+        let mut config = Self::default();
+        for kv in spec.split(';') {
+            let kv = kv.trim();
+            if kv.is_empty() {
+                continue;
             }
-        });
-
-        Self {
-            stdout_level,
-            fileout_level,
-            component_level,
-            is_colored,
-            print_config,
+            let kv_lower = kv.to_lowercase(); // For case-insensitive comparison
+            if kv_lower == "is_colored" {
+                config.is_colored = true;
+            } else if kv_lower == "print_config" {
+                config.print_config = true;
+            } else {
+                let parts: Vec<&str> = kv.split('=').collect();
+                if parts.len() != 2 {
+                    anyhow::bail!("Invalid spec pair: {}", kv);
+                }
+                let k = parts[0].trim(); // Trim key
+                let v = parts[1].trim(); // Trim value
+                let lvl = LevelFilter::from_str(v)
+                    .map_err(|_| anyhow::anyhow!("Invalid log level: {}", v))?;
+                let k_lower = k.to_lowercase(); // Case-insensitive key matching
+                match k_lower.as_str() {
+                    "stdout" => config.stdout_level = lvl,
+                    "fileout" => config.fileout_level = lvl,
+                    _ => {
+                        config.component_level.insert(Ustr::from(k), lvl);
+                    }
+                };
+            }
         }
+        Ok(config)
     }
 
-    #[must_use]
-    pub fn from_env() -> Self {
-        match env::var("NAUTILUS_LOG") {
-            Ok(spec) => Self::from_spec(&spec),
-            Err(e) => panic!("Error parsing `LoggerConfig` spec: {e}"),
-        }
+    /// Retrieves the logger configuration from the "NAUTILUS_LOG" environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the variable is unset or invalid.
+    pub fn from_env() -> anyhow::Result<Self> {
+        let spec = env::var("NAUTILUS_LOG")?;
+        Self::from_spec(&spec)
     }
 }
 
@@ -326,13 +324,12 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    #[must_use]
     pub fn init_with_env(
         trader_id: TraderId,
         instance_id: UUID4,
         file_config: FileWriterConfig,
-    ) -> LogGuard {
-        let config = LoggerConfig::from_env();
+    ) -> anyhow::Result<LogGuard> {
+        let config = LoggerConfig::from_env()?;
         Self::init_with_config(trader_id, instance_id, config, file_config)
     }
 
@@ -345,13 +342,12 @@ impl Logger {
     /// let file_config = FileWriterConfig::default();
     /// let log_guard = Logger::init_with_config(trader_id, instance_id, config, file_config);
     /// ```
-    #[must_use]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-    ) -> LogGuard {
+    ) -> anyhow::Result<LogGuard> {
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
 
         let logger = Self {
@@ -365,7 +361,7 @@ impl Logger {
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let mut handle: Option<std::thread::JoinHandle<()>> = None;
+        let handle: Option<std::thread::JoinHandle<()>>;
         match set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
                 handle = Some(
@@ -379,8 +375,7 @@ impl Logger {
                                 file_config,
                                 rx,
                             );
-                        })
-                        .expect("Error spawning thread '{LOGGING}'"),
+                        })?,
                 );
 
                 let max_level = log::LevelFilter::Trace;
@@ -390,11 +385,11 @@ impl Logger {
                 }
             }
             Err(e) => {
-                eprintln!("Cannot set logger because of error: {e}");
+                anyhow::bail!("Cannot initialize logger because of error: {e}");
             }
         }
 
-        LogGuard::new(handle)
+        Ok(LogGuard::new(handle))
     }
 
     fn handle_messages(
@@ -574,7 +569,8 @@ mod tests {
     #[rstest]
     fn log_config_parsing() {
         let config =
-            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Error");
+            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Error")
+                .unwrap();
         assert_eq!(
             config,
             LoggerConfig {
@@ -592,7 +588,7 @@ mod tests {
 
     #[rstest]
     fn log_config_parsing2() {
-        let config = LoggerConfig::from_spec("stdout=Warn;print_config;fileout=Error;");
+        let config = LoggerConfig::from_spec("stdout=Warn;print_config;fileout=Error;").unwrap();
         assert_eq!(
             config,
             LoggerConfig {
@@ -671,7 +667,7 @@ mod tests {
 
     #[rstest]
     fn test_log_component_level_filtering() {
-        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
+        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error").unwrap();
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let file_config = FileWriterConfig {
@@ -726,7 +722,8 @@ mod tests {
     #[rstest]
     fn test_logging_to_file_in_json_format() {
         let config =
-            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info");
+            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info")
+                .unwrap();
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let file_config = FileWriterConfig {

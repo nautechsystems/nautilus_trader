@@ -119,12 +119,9 @@ pub unsafe extern "C" fn logging_init(
         logging_set_bypass();
     }
 
-    LogGuard_API(Box::new(logging::init_logging(
-        trader_id,
-        instance_id,
-        config,
-        file_config,
-    )))
+    LogGuard_API(Box::new(
+        logging::init_logging(trader_id, instance_id, config, file_config).unwrap(),
+    ))
 }
 
 /// Creates a new log event.

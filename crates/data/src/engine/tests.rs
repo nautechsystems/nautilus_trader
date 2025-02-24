@@ -509,7 +509,7 @@ fn test_execute_subscribe_bars(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    init_logger_for_testing(None); // TODO: Remove once initial development completed
+    init_logger_for_testing(None).unwrap(); // TODO: Remove once initial development completed
 
     let endpoint = switchboard.data_engine_execute;
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
