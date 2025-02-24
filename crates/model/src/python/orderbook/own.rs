@@ -19,7 +19,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::python::IntoPyObjectNautilusExt;
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
 use pyo3::{Python, prelude::*, pyclass::CompareOp};
 use rust_decimal::Decimal;
 
@@ -189,13 +189,13 @@ impl OwnOrderBook {
     }
 
     #[pyo3(name = "update")]
-    fn py_update(&mut self, order: OwnBookOrder) {
-        self.update(order);
+    fn py_update(&mut self, order: OwnBookOrder) -> PyResult<()> {
+        self.update(order).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "delete")]
-    fn py_delete(&mut self, order: OwnBookOrder) {
-        self.delete(order);
+    fn py_delete(&mut self, order: OwnBookOrder) -> PyResult<()> {
+        self.delete(order).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "clear")]
