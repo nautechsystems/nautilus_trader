@@ -85,7 +85,7 @@ An example of this is a `DataRequest` for an `Instrument`, which the `Actor` cla
 In this particular case, the `Actor` implements a separate method `request_instrument`. A similar type of
 `DataRequest` could be instantiated and called from anywhere and/or anytime in the actor/strategy code.
 
-On the actor/strategy:
+A simplified version of `request_instrument` for an actor/strategy is:
 
 ```python
 # nautilus_trader/common/actor.pyx
@@ -101,49 +101,36 @@ cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_
     client_id : ClientId, optional
         The specific client ID for the command.
         If ``None`` then will be inferred from the venue in the instrument ID.
-
     """
     Condition.not_none(instrument_id, "instrument_id")
 
-    cdef DataRequest request = DataRequest(
+    cdef RequestInstrument request = RequestInstrument(
+        instrument_id=instrument_id,
+        start=None,
+        end=None,
         client_id=client_id,
         venue=instrument_id.venue,
-        data_type=DataType(Instrument, metadata={
-            "instrument_id": instrument_id,
-        }),
         callback=self._handle_instrument_response,
         request_id=UUID4(),
         ts_init=self._clock.timestamp_ns(),
+        params=None,
     )
 
     self._send_data_req(request)
-
 ```
 
-The handler on the `ExecutionClient`:
+A simplified version of the request handler implemented in a `LiveMarketDataClient` that will retrieve the data
+and send it back to actors/strategies is for example:
 
 ```python
-from nautilus_trader.core import UUID4
-from nautilus_trader.model import DataType
-from nautilus_trader.model import InstrumentId
+# nautilus_trader/adapters/binance/data.py
 
-# nautilus_trader/adapters/binance/spot/data.py
-def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4, params: dict[str, Any]):
-    instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+async def _request_instrument(self, request: RequestInstrument) -> None:
+    instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
+
     if instrument is None:
-        self._log.error(f"Cannot find instrument for {instrument_id}.")
+        self._log.error(f"Cannot find instrument for {request.instrument_id}")
         return
 
-    data_type = DataType(
-        type=Instrument,
-        metadata={"instrument_id": instrument_id},
-    )
-
-    self._handle_data_response(
-        data_type=data_type,
-        data=[instrument],  # Data engine handles lists of instruments
-        correlation_id=correlation_id,
-        params=params,
-    )
-
+    self._handle_instrument(instrument, request.id, request.params)
 ```
