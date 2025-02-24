@@ -24,6 +24,7 @@ The portfolio can satisfy queries for account information, margin balances,
 total risk exposures and total net positions.
 """
 
+from collections import defaultdict
 from decimal import Decimal
 
 from nautilus_trader.analysis import statistics
@@ -56,6 +57,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
@@ -135,6 +137,7 @@ cdef class Portfolio(PortfolioFacade):
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._bet_positions: dict[InstrumentId, object] = {}
+        self._index_bet_positions: dict[InstrumentId, set[PositionId]] = defaultdict(set)
         self._pending_calcs: set[InstrumentId] = set()
         self._bar_close_prices: dict[InstrumentId, Price] = {}
 
@@ -487,10 +490,12 @@ cdef class Portfolio(PortfolioFacade):
             )
 
             if isinstance(instrument, BettingInstrument):
-                bet_position = self._bet_positions.get(instrument.id)
+                position_id = event.position_id or PositionId(instrument.id.value)
+                bet_position = self._bet_positions.get(position_id)
                 if bet_position is None:
                     bet_position = nautilus_pyo3.BetPosition()
-                    self._bet_positions[instrument.id] = bet_position
+                    self._bet_positions[position_id] = bet_position
+                    self._index_bet_positions[instrument.id].add(position_id)
 
                 bet = nautilus_pyo3.Bet(
                     price=event.last_px.as_decimal(),
@@ -550,7 +555,7 @@ cdef class Portfolio(PortfolioFacade):
         )
         self._update_net_position(
             instrument_id=event.instrument_id,
-            positions_open=positions_open
+            positions_open=positions_open,
         )
 
         self._realized_pnls[event.instrument_id] = self._calculate_realized_pnl(
@@ -589,6 +594,7 @@ cdef class Portfolio(PortfolioFacade):
     def _reset(self) -> None:
         self._net_positions.clear()
         self._bet_positions.clear()
+        self._index_bet_positions.clear()
         self._realized_pnls.clear()
         self._unrealized_pnls.clear()
         self._pending_calcs.clear()
@@ -927,7 +933,6 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 return None  # Cannot calculate
 
-
             xrate = xrate_result  # Cast to double
 
             if self._convert_to_account_base_currency and account.base_currency is not None:
@@ -936,8 +941,8 @@ cdef class Portfolio(PortfolioFacade):
                 settlement_currency = instrument.get_settlement_currency()
 
             if isinstance(instrument, BettingInstrument):
-                bet_position = self._bet_positions.get(instrument.id)
-                net_exposure = float(bet_position.exposure) * xrate if bet_position else 0.0
+                bet_position = self._bet_positions.get(position.id)
+                net_exposure = float(bet_position.exposure) * xrate
             else:
                 net_exposure = instrument.notional_value(position.quantity, price).as_f64_c()
                 net_exposure = round(net_exposure * xrate, settlement_currency.get_precision())
@@ -1128,8 +1133,11 @@ cdef class Portfolio(PortfolioFacade):
 
             xrate = xrate_result  # Cast to double
 
+            if self._debug:
+                self._log.debug(f"Calculating net exposure for {position}")
+
             if isinstance(instrument, BettingInstrument):
-                bet_position = self._bet_positions.get(instrument.id)
+                bet_position = self._bet_positions.get(position.id)
                 if self._debug:
                     self._log.debug(f"{bet_position}", LogColor.MAGENTA)
                 net_exposure += float(bet_position.exposure) * xrate if bet_position else 0.0
@@ -1318,7 +1326,6 @@ cdef class Portfolio(PortfolioFacade):
             if not self._pending_calcs:
                 self.initialized = True
 
-
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
         if account is None:
@@ -1367,11 +1374,14 @@ cdef class Portfolio(PortfolioFacade):
             if position.realized_pnl is None:
                 continue  # Nothing to calculate
 
+            if self._debug:
+                self._log.debug(f"Calculating realized PnL for {position}")
+
             if isinstance(instrument, BettingInstrument):
-                bet_position = self._bet_positions.get(instrument.id)
+                bet_position = self._bet_positions.get(position.id)
                 if bet_position is None:
                     self._log.error(
-                        f"Cannot calculate unrealized PnL: no `BetPosition` for {instrument_id}",
+                        f"Cannot calculate unrealized PnL: no `BetPosition` for {position.id}",
                     )
                     return None  # Cannot calculate
 
@@ -1457,11 +1467,14 @@ cdef class Portfolio(PortfolioFacade):
                 self._pending_calcs.add(instrument.id)
                 return None  # Cannot calculate
 
+            if self._debug:
+                self._log.debug(f"Calculating unrealized PnL for {position}")
+
             if isinstance(instrument, BettingInstrument):
-                bet_position = self._bet_positions.get(instrument.id)
+                bet_position = self._bet_positions.get(position.id)
                 if bet_position is None:
                     self._log.error(
-                        f"Cannot calculate unrealized PnL: no `BetPosition` for {instrument_id}",
+                        f"Cannot calculate unrealized PnL: no `BetPosition` for {position.id}",
                     )
                     return None  # Cannot calculate
 

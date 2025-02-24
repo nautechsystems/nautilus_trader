@@ -51,7 +51,7 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
-class TestPortfolio:
+class TestPortfolioMarkPrices:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
