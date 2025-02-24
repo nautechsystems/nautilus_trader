@@ -227,7 +227,7 @@ impl OwnOrderBook {
     }
 
     /// Updates an existing own order in the book.
-    pub fn update(&mut self, order: OwnBookOrder) {
+    pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         self.increment(&order);
         match order.side {
             OrderSideSpecified::Buy => self.bids.update(order),
@@ -236,7 +236,7 @@ impl OwnOrderBook {
     }
 
     /// Deletes an own order from the book.
-    pub fn delete(&mut self, order: OwnBookOrder) {
+    pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         self.increment(&order);
         match order.side {
             OrderSideSpecified::Buy => self.bids.delete(order),
@@ -356,19 +356,19 @@ impl OwnBookLadder {
     }
 
     /// Updates an existing order in the ladder, moving it to a new price level if needed.
-    pub fn update(&mut self, order: OwnBookOrder) {
+    pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         let price = self.cache.get(&order.client_order_id).copied();
         if let Some(price) = price {
             if let Some(level) = self.levels.get_mut(&price) {
                 if order.price == level.price.value {
                     // Update at current price level
                     level.update(order);
-                    return;
+                    return Ok(());
                 }
 
                 // Price update: delete and insert at new level
                 self.cache.remove(&order.client_order_id);
-                level.delete(&order.client_order_id);
+                level.delete(&order.client_order_id)?;
                 if level.is_empty() {
                     self.levels.remove(&price);
                 }
@@ -376,23 +376,26 @@ impl OwnBookLadder {
         }
 
         self.add(order);
+        Ok(())
     }
 
     /// Deletes an order from the ladder.
-    pub fn delete(&mut self, order: OwnBookOrder) {
-        self.remove(order.client_order_id);
+    pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
+        self.remove(order.client_order_id)
     }
 
     /// Removes an order by its ID from the ladder.
-    pub fn remove(&mut self, client_order_id: ClientOrderId) {
+    pub fn remove(&mut self, client_order_id: ClientOrderId) -> anyhow::Result<()> {
         if let Some(price) = self.cache.remove(&client_order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
-                level.delete(&client_order_id);
+                level.delete(&client_order_id)?;
                 if level.is_empty() {
                     self.levels.remove(&price);
                 }
             }
         }
+
+        Ok(())
     }
 
     /// Returns the total size of all orders in the ladder.
@@ -539,10 +542,12 @@ impl OwnBookLevel {
     }
 
     /// Deletes an order from this price level.
-    pub fn delete(&mut self, client_order_id: &ClientOrderId) {
+    pub fn delete(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
         if self.orders.shift_remove(client_order_id).is_none() {
-            panic!("Order {client_order_id} not found for delete")
+            // TODO: Use a generic anyhow result for now pending specific error types
+            anyhow::bail!("Order {client_order_id} not found for delete");
         };
+        Ok(())
     }
 }
 
@@ -723,7 +728,7 @@ mod tests {
         assert_eq!(orders[0].size, Quantity::from("15"));
 
         // Delete the order
-        level.delete(&ClientOrderId::from("O-1"));
+        level.delete(&ClientOrderId::from("O-1")).unwrap();
         assert!(level.is_empty());
     }
 
@@ -769,11 +774,11 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        ladder.update(order2_updated);
+        ladder.update(order2_updated).unwrap();
         assert_eq!(ladder.sizes(), 35.0);
 
         // Delete order1
-        ladder.delete(order1);
+        ladder.delete(order1).unwrap();
         assert_eq!(ladder.sizes(), 25.0);
     }
 
@@ -822,8 +827,8 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        book.update(order_buy_updated);
-        book.delete(order_sell);
+        book.update(order_buy_updated).unwrap();
+        book.delete(order_sell).unwrap();
 
         assert_eq!(book.bids.sizes(), 15.0);
         assert!(book.asks.is_empty());
