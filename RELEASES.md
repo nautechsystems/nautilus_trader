@@ -27,6 +27,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added initial `Cache` benchmarking for orders (#2341), thanks @filipmacek
 - Implemented exchange rate calculations in Rust
+- Improved log event timestamping to avoid clock or time misalignments when events cross to the logging thread
 - Improved error logging for live engines to now include stacktrace for easier debugging
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
