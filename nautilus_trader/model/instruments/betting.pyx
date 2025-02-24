@@ -300,6 +300,6 @@ cpdef double null_handicap():
 
 cpdef object order_side_to_bet_side(OrderSide order_side):
     if order_side == OrderSide.BUY:
-        return nautilus_pyo3.BetSide.BACK
-    else:  # order_side == OrderSide.SELL
         return nautilus_pyo3.BetSide.LAY
+    else:  # order_side == OrderSide.SELL
+        return nautilus_pyo3.BetSide.BACK

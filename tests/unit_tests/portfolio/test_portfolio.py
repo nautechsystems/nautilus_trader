@@ -1752,14 +1752,14 @@ class TestPortfolio:
         self.portfolio.update_quote_tick(last)
 
         # Assert
-        assert self.portfolio.net_exposures(BETFAIR) == {GBP: Money(200.00, GBP)}  # Stake * odds
-        assert self.portfolio.unrealized_pnls(BETFAIR) == {GBP: Money(-4.76, GBP)}
+        assert self.portfolio.net_exposures(BETFAIR) == {GBP: Money(-200.00, GBP)}  # Stake * odds
+        assert self.portfolio.unrealized_pnls(BETFAIR) == {GBP: Money(4.76, GBP)}
         assert self.portfolio.realized_pnls(BETFAIR) == {GBP: Money(0.00, GBP)}  # Commission
-        assert self.portfolio.net_exposure(BETTING_INSTRUMENT.id) == Money(200.00, GBP)
-        assert self.portfolio.unrealized_pnl(BETTING_INSTRUMENT.id) == Money(-4.76, GBP)
+        assert self.portfolio.net_exposure(BETTING_INSTRUMENT.id) == Money(-200.00, GBP)
+        assert self.portfolio.unrealized_pnl(BETTING_INSTRUMENT.id) == Money(4.76, GBP)
         assert self.portfolio.realized_pnl(BETTING_INSTRUMENT.id) == Money(0.00, GBP)
-        assert self.portfolio.total_pnl(BETTING_INSTRUMENT.id) == Money(-4.76, GBP)
-        assert self.portfolio.total_pnls(BETFAIR) == {GBP: Money(-4.76, GBP)}
+        assert self.portfolio.total_pnl(BETTING_INSTRUMENT.id) == Money(4.76, GBP)
+        assert self.portfolio.total_pnls(BETFAIR) == {GBP: Money(4.76, GBP)}
         assert self.portfolio.net_position(BETTING_INSTRUMENT.id) == Decimal("100.0")
         assert self.portfolio.is_net_long(BETTING_INSTRUMENT.id)
         assert not self.portfolio.is_net_short(BETTING_INSTRUMENT.id)
@@ -1862,12 +1862,12 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(BETFAIR) == {}
         assert self.portfolio.unrealized_pnls(BETFAIR) == {GBP: Money(0.00, GBP)}
-        assert self.portfolio.realized_pnls(BETFAIR) == {GBP: Money(10.00, GBP)}
+        assert self.portfolio.realized_pnls(BETFAIR) == {GBP: Money(-10.00, GBP)}
         assert self.portfolio.net_exposure(BETTING_INSTRUMENT.id) == Money(0.00, GBP)
         assert self.portfolio.unrealized_pnl(BETTING_INSTRUMENT.id) == Money(0.00, GBP)
-        assert self.portfolio.realized_pnl(BETTING_INSTRUMENT.id) == Money(10.00, GBP)
-        assert self.portfolio.total_pnl(BETTING_INSTRUMENT.id) == Money(10.00, GBP)
-        assert self.portfolio.total_pnls(BETFAIR) == {GBP: Money(10.00, GBP)}
+        assert self.portfolio.realized_pnl(BETTING_INSTRUMENT.id) == Money(-10.00, GBP)
+        assert self.portfolio.total_pnl(BETTING_INSTRUMENT.id) == Money(-10.00, GBP)
+        assert self.portfolio.total_pnls(BETFAIR) == {GBP: Money(-10.00, GBP)}
         assert self.portfolio.net_position(BETTING_INSTRUMENT.id) == Decimal("0.0")
         assert not self.portfolio.is_net_long(BETTING_INSTRUMENT.id)
         assert not self.portfolio.is_net_short(BETTING_INSTRUMENT.id)
@@ -1886,11 +1886,11 @@ class TestPortfolio:
             "expected_unrealized",
         ),
         [
-            [2.0, 3.0, 100_000, 10_000, 3.0, 170_000.0, 0.0, -33_333.33],
-            [2.0, 3.0, 10_000, 100_000, 3.0, -280_000.0, 0.0, -3_333.33],
-            [2.0, 3.0, 50_000, 10_000, 3.0, 70_000.0, 0.0, -16_666.67],
-            [6.0, 2.0, 10_000, 50_000, 4.0, -40_000.0, 0.0, 30_000.0],
-            [3.0, 2.0, 10_000, 100_000, 3.0, -170_000, 0.0, 33_333.33],
+            [2.0, 3.0, 100_000, 10_000, 3.0, -170_000.0, 0.0, 33_333.33],
+            [2.0, 3.0, 10_000, 100_000, 3.0, 280_000.0, 0.0, 3_333.33],
+            [2.0, 3.0, 50_000, 10_000, 3.0, -70_000.0, 0.0, 16_666.67],
+            [6.0, 2.0, 10_000, 50_000, 4.0, 40_000.0, 0.0, -30_000.0],
+            [3.0, 2.0, 10_000, 100_000, 3.0, 170_000, 0.0, -33_333.33],
         ],
     )
     def test_betting_position_hedging_back_then_lay_open(
@@ -1998,8 +1998,8 @@ class TestPortfolio:
             "expected_unrealized",
         ),
         [
-            [3.0, 2.0, 10_000, 100_000, 3.0, -170_000, 0, 33_333.33],
-            [2.0, 3.0, 100_000, 10_000, 3.0, 170_000, 0, -33_333.33],
+            [3.0, 2.0, 10_000, 100_000, 3.0, 170_000, 0, -33_333.33],
+            [2.0, 3.0, 100_000, 10_000, 3.0, -170_000, 0, 33_333.33],
         ],
     )
     def test_betting_position_hedging_lay_then_back_open(
@@ -2106,9 +2106,9 @@ class TestPortfolio:
         ),
         [
             [OrderSide.BUY, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
-            [OrderSide.BUY, 3.0, 2.0, 100_000, 1.0, 100_000.0, 0.0, 100_000.0],
+            [OrderSide.BUY, 3.0, 2.0, 100_000, 1.0, -100_000.0, 0.0, -100_000.0],
             [OrderSide.SELL, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
-            [OrderSide.SELL, 3.0, 2.0, 100_000, 1.0, -100_000.0, 0.0, -100_000.0],
+            [OrderSide.SELL, 3.0, 2.0, 100_000, 1.0, 100_000.0, 0.0, 100_000.0],
         ],
     )
     def test_betting_position_hedging_close(
@@ -2217,9 +2217,9 @@ class TestPortfolio:
         ),
         [
             [OrderSide.BUY, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
-            [OrderSide.BUY, 3.0, 2.0, 100_000, 1.0, 0.0, 33_333.33, 0.0],
+            [OrderSide.BUY, 3.0, 2.0, 100_000, 1.0, 0.0, -33_333.33, 0.0],
             [OrderSide.SELL, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
-            [OrderSide.SELL, 3.0, 2.0, 100_000, 1.0, 0.0, -33_333.33, 0.0],
+            [OrderSide.SELL, 3.0, 2.0, 100_000, 1.0, 0.0, 33_333.33, 0.0],
         ],
     )
     def test_betting_position_netting_close(
