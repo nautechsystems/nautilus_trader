@@ -265,9 +265,6 @@ impl DatabaseQueries {
             OrderEventAny::Triggered(event) => {
                 DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
-            OrderEventAny::PartiallyFilled(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
-            }
         }
     }
 
