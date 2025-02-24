@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use log::LevelFilter;
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -37,9 +37,8 @@ use crate::{
 impl LoggerConfig {
     #[staticmethod]
     #[pyo3(name = "from_spec")]
-    #[must_use]
-    pub fn py_from_spec(spec: String) -> Self {
-        Self::from_spec(&spec)
+    pub fn py_from_spec(spec: String) -> PyResult<Self> {
+        Self::from_spec(&spec).map_err(to_pyvalue_err)
     }
 }
 
@@ -67,10 +66,14 @@ impl FileWriterConfig {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
+///
+/// # Errors
+///
+/// Returns an error if tracing subscriber fails to initialize.
 #[pyfunction()]
 #[pyo3(name = "init_tracing")]
-pub fn py_init_tracing() {
-    logging::init_tracing();
+pub fn py_init_tracing() -> PyResult<()> {
+    logging::init_tracing().map_err(to_pyvalue_err)
 }
 
 /// Initialize logging.
@@ -100,7 +103,7 @@ pub fn py_init_logging(
     is_colored: Option<bool>,
     is_bypassed: Option<bool>,
     print_config: Option<bool>,
-) -> LogGuard {
+) -> PyResult<LogGuard> {
     let level_file = level_file.map_or(LevelFilter::Off, map_log_level_to_filter);
 
     let config = LoggerConfig::new(
@@ -117,7 +120,7 @@ pub fn py_init_logging(
         logging_set_bypass();
     }
 
-    logging::init_logging(trader_id, instance_id, config, file_config)
+    logging::init_logging(trader_id, instance_id, config, file_config).map_err(to_pyvalue_err)
 }
 
 fn parse_component_levels(
