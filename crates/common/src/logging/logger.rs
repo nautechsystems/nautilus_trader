@@ -165,6 +165,8 @@ pub enum LogEvent {
 /// Represents a log event which includes a message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogLine {
+    /// The timestamp for the event.
+    pub timestamp: UnixNanos,
     /// The log level for the event.
     pub level: Level,
     /// The color for the log message content.
@@ -194,8 +196,6 @@ pub struct LogLineWrapper {
     cache: Option<String>,
     /// Cached colored string representation of the log line.
     colored: Option<String>,
-    /// The timestamp of when the log event occurred.
-    timestamp: String,
     /// The ID of the trader associated with this log event.
     trader_id: Ustr,
 }
@@ -203,12 +203,11 @@ pub struct LogLineWrapper {
 impl LogLineWrapper {
     /// Creates a new [`LogLineWrapper`] instance.
     #[must_use]
-    pub fn new(line: LogLine, trader_id: Ustr, timestamp: UnixNanos) -> Self {
+    pub fn new(line: LogLine, trader_id: Ustr) -> Self {
         Self {
             line,
             cache: None,
             colored: None,
-            timestamp: unix_nanos_to_iso8601(timestamp),
             trader_id,
         }
     }
@@ -221,7 +220,7 @@ impl LogLineWrapper {
         self.cache.get_or_insert_with(|| {
             format!(
                 "{} [{}] {}.{}: {}\n",
-                self.timestamp,
+                unix_nanos_to_iso8601(self.line.timestamp),
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
@@ -239,7 +238,7 @@ impl LogLineWrapper {
         self.colored.get_or_insert_with(|| {
             format!(
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
-                self.timestamp,
+                unix_nanos_to_iso8601(self.line.timestamp),
                 &self.line.color.as_ansi(),
                 self.line.level,
                 self.trader_id,
@@ -268,7 +267,8 @@ impl Serialize for LogLineWrapper {
         S: Serializer,
     {
         let mut json_obj = IndexMap::new();
-        json_obj.insert("timestamp".to_string(), self.timestamp.clone());
+        let timestamp = unix_nanos_to_iso8601(self.line.timestamp);
+        json_obj.insert("timestamp".to_string(), timestamp);
         json_obj.insert("trader_id".to_string(), self.trader_id.to_string());
         json_obj.insert("level".to_string(), self.line.level.to_string());
         json_obj.insert("color".to_string(), self.line.color.to_string());
@@ -289,6 +289,11 @@ impl Log for Logger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
+            let timestamp = if LOGGING_REALTIME.load(Ordering::Relaxed) {
+                get_atomic_clock_realtime().get_time_ns()
+            } else {
+                get_atomic_clock_static().get_time_ns()
+            };
             let key_values = record.key_values();
             let color = key_values
                 .get("color".into())
@@ -300,6 +305,7 @@ impl Log for Logger {
             );
 
             let line = LogLine {
+                timestamp,
                 level: record.level(),
                 color,
                 component,
@@ -426,12 +432,6 @@ impl Logger {
                     break;
                 }
                 LogEvent::Log(line) => {
-                    let timestamp = if LOGGING_REALTIME.load(Ordering::Relaxed) {
-                        get_atomic_clock_realtime().get_time_ns()
-                    } else {
-                        get_atomic_clock_static().get_time_ns()
-                    };
-
                     let component_level = component_level.get(&line.component);
 
                     // Check if the component exists in level_filters,
@@ -442,7 +442,7 @@ impl Logger {
                         }
                     }
 
-                    let mut wrapper = LogLineWrapper::new(line, trader_id_cache, timestamp);
+                    let mut wrapper = LogLineWrapper::new(line, trader_id_cache);
 
                     if stderr_writer.enabled(&wrapper.line) {
                         if is_colored {
@@ -556,6 +556,7 @@ mod tests {
     #[rstest]
     fn log_message_serialization() {
         let log_message = LogLine {
+            timestamp: UnixNanos::default(),
             level: log::Level::Info,
             color: LogColor::Normal,
             component: Ustr::from("Portfolio"),
