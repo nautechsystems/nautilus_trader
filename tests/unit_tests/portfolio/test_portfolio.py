@@ -1886,14 +1886,14 @@ class TestPortfolio:
             "expected_unrealized",
         ),
         [
-            [2.0, 3.0, 100_000, 10_000, 3.0, 170_000.0, -5000.0, -28_333.333333],
-            [2.0, 3.0, 10_000, 100_000, 3.0, -280_000.0, -190_000.0, 0],
-            [2.0, 3.0, 50_000, 10_000, 3.0, 70_000.0, -5_000.0, -11_666.67],
-            [6.0, 2.0, 10_000, 50_000, 4.0, -40_000.0, 0.0, 10_000.0],
-            [3.0, 2.0, 10_000, 100_000, 3.0, -170_000, -80_000, 28_333.33],
+            [2.0, 3.0, 100_000, 10_000, 3.0, 170_000.0, 0.0, -33_333.33],
+            [2.0, 3.0, 10_000, 100_000, 3.0, -280_000.0, 0.0, -3_333.33],
+            [2.0, 3.0, 50_000, 10_000, 3.0, 70_000.0, 0.0, -16_666.67],
+            [6.0, 2.0, 10_000, 50_000, 4.0, -40_000.0, 0.0, 30_000.0],
+            [3.0, 2.0, 10_000, 100_000, 3.0, -170_000, 0.0, 33_333.33],
         ],
     )
-    def test_betting_position_back_then_lay(
+    def test_betting_position_hedging_back_then_lay_open(
         self,
         back_price: float,
         lay_price: float,
@@ -1944,7 +1944,8 @@ class TestPortfolio:
             quantity=Quantity.from_int(back_size),  # Stake
             price=Price(back_price, GBP.precision),  # Odds
         )
-        self.cache.add_order(order1, position_id=None)
+        position_id1 = PositionId("1")
+        self.cache.add_order(order1, position_id=position_id1)
         self.exec_engine.process(TestEventStubs.order_submitted(order1, account_id))
         self.exec_engine.process(TestEventStubs.order_accepted(order1, account_id))
 
@@ -1953,7 +1954,7 @@ class TestPortfolio:
             instrument=instrument,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
-            position_id=PositionId("P-123456"),
+            position_id=position_id1,
             last_px=Price(back_price, GBP.precision),
         )
         self.exec_engine.process(fill1)
@@ -1965,7 +1966,8 @@ class TestPortfolio:
             quantity=Quantity.from_int(lay_size),
             price=Price(lay_price, GBP.precision),
         )
-        self.cache.add_order(order2, position_id=None)
+        position_id2 = PositionId("2")
+        self.cache.add_order(order2, position_id=position_id2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2, account_id))
         self.exec_engine.process(TestEventStubs.order_accepted(order2, account_id))
 
@@ -1974,7 +1976,7 @@ class TestPortfolio:
             instrument=instrument,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
-            position_id=PositionId("P-123456"),
+            position_id=position_id2,
             last_px=Price(lay_price, GBP.precision),
         )
         self.exec_engine.process(fill2)
@@ -1996,10 +1998,11 @@ class TestPortfolio:
             "expected_unrealized",
         ),
         [
-            [3.0, 2.0, 10_000, 100_000, 3.0, -170_000, 5_000, 28_333.33],
+            [3.0, 2.0, 10_000, 100_000, 3.0, -170_000, 0, 33_333.33],
+            [2.0, 3.0, 100_000, 10_000, 3.0, 170_000, 0, -33_333.33],
         ],
     )
-    def test_betting_position_lay_then_back(
+    def test_betting_position_hedging_lay_then_back_open(
         self,
         back_price: float,
         lay_price: float,
@@ -2044,13 +2047,145 @@ class TestPortfolio:
         self.cache.add_mark_price(instrument.id, mark)
 
         # Step 1: Place and fill a LAY bet (SELL)
-        order2 = self.order_factory.limit(
+        order1 = self.order_factory.limit(
             instrument_id=instrument.id,
             order_side=OrderSide.SELL,  # LAY bet
             quantity=Quantity.from_int(lay_size),
             price=Price(lay_price, GBP.precision),
         )
-        self.cache.add_order(order2, position_id=None)
+        position_id1 = PositionId("1")
+        self.cache.add_order(order1, position_id=position_id1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1, account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1, account_id))
+
+        fill1 = TestEventStubs.order_filled(
+            order=order1,
+            instrument=instrument,
+            account_id=account_id,
+            position_id=position_id1,
+            last_px=Price(lay_price, GBP.precision),
+        )
+        self.exec_engine.process(fill1)
+
+        # Step 2: Place and fill a BACK bet (BUY)
+        order2 = self.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,  # BACK bet
+            quantity=Quantity.from_int(back_size),  # Stake
+            price=Price(back_price, GBP.precision),  # Odds
+        )
+        position_id2 = PositionId("2")
+        self.cache.add_order(order2, position_id=position_id2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2, account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2, account_id))
+
+        fill2 = TestEventStubs.order_filled(
+            order=order2,
+            instrument=instrument,
+            account_id=account_id,
+            position_id=position_id2,
+            last_px=Price(back_price, GBP.precision),
+        )
+        self.exec_engine.process(fill2)
+
+        # Assert
+        assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
+        assert self.portfolio.realized_pnl(instrument.id) == Money(expected_realized, GBP)
+        assert self.portfolio.unrealized_pnl(instrument.id, mark) == Money(expected_unrealized, GBP)
+
+    @pytest.mark.parametrize(
+        (
+            "side",
+            "open_price",
+            "close_price",
+            "size",
+            "mark_price",
+            "expected_exposure",
+            "expected_realized",
+            "expected_unrealized",
+        ),
+        [
+            [OrderSide.BUY, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
+            [OrderSide.BUY, 3.0, 2.0, 100_000, 1.0, 100_000.0, 0.0, 100_000.0],
+            [OrderSide.SELL, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
+            [OrderSide.SELL, 3.0, 2.0, 100_000, 1.0, -100_000.0, 0.0, -100_000.0],
+        ],
+    )
+    def test_betting_position_hedging_close(
+        self,
+        side: OrderSide,
+        open_price: float,
+        close_price: float,
+        size: int,
+        mark_price: float,
+        expected_exposure: float,
+        expected_realized: float,
+        expected_unrealized: float,
+    ) -> None:
+        # Arrange
+        self.portfolio.set_specific_venue(Venue("BETFAIR"))
+        self.portfolio.set_use_mark_prices(True)
+        self.portfolio.set_use_mark_xrates(True)
+
+        AccountFactory.register_calculated_account("BETFAIR")
+        account_id = AccountId("BETFAIR-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=GBP,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    total=Money(1_000_000, GBP),
+                    locked=Money(0, GBP),
+                    free=Money(1_000_000, GBP),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        instrument = TestInstrumentProvider.betting_instrument()
+        self.cache.add_instrument(instrument)
+        self.portfolio.update_account(state)
+
+        mark = Price(mark_price, GBP.precision)
+        self.cache.add_mark_price(instrument.id, mark)
+
+        # Step 1: Place opening bet
+        order1 = self.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=side,
+            quantity=Quantity.from_int(size),
+            price=Price(open_price, GBP.precision),
+        )
+        position_id1 = PositionId("1")
+        self.cache.add_order(order1, position_id=position_id1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1, account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1, account_id))
+
+        fill1 = TestEventStubs.order_filled(
+            order=order1,
+            instrument=instrument,
+            strategy_id=StrategyId("S-001"),
+            account_id=account_id,
+            position_id=position_id1,
+            last_px=Price(open_price, GBP.precision),
+        )
+        self.exec_engine.process(fill1)
+
+        # Step 2: Place closing bet
+        order2 = self.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY,
+            quantity=Quantity.from_int(size),  # Stake
+            price=Price(close_price, GBP.precision),
+        )
+        position_id2 = PositionId("2")
+        self.cache.add_order(order2, position_id=position_id2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2, account_id))
         self.exec_engine.process(TestEventStubs.order_accepted(order2, account_id))
 
@@ -2059,17 +2194,84 @@ class TestPortfolio:
             instrument=instrument,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
-            position_id=PositionId("P-123456"),
-            last_px=Price(lay_price, GBP.precision),
+            position_id=position_id2,
+            last_px=Price(close_price, GBP.precision),
         )
         self.exec_engine.process(fill2)
 
-        # Step 2: Place and fill a BACK bet (BUY)
+        # Assert
+        assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
+        assert self.portfolio.realized_pnl(instrument.id) == Money(expected_realized, GBP)
+        assert self.portfolio.unrealized_pnl(instrument.id, mark) == Money(expected_unrealized, GBP)
+
+    @pytest.mark.parametrize(
+        (
+            "side",
+            "open_price",
+            "close_price",
+            "size",
+            "mark_price",
+            "expected_exposure",
+            "expected_realized",
+            "expected_unrealized",
+        ),
+        [
+            [OrderSide.BUY, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
+            [OrderSide.BUY, 3.0, 2.0, 100_000, 1.0, 0.0, 33_333.33, 0.0],
+            [OrderSide.SELL, 3.0, 3.0, 100_000, 3.0, 0.0, 0.0, 0.0],
+            [OrderSide.SELL, 3.0, 2.0, 100_000, 1.0, 0.0, -33_333.33, 0.0],
+        ],
+    )
+    def test_betting_position_netting_close(
+        self,
+        side: OrderSide,
+        open_price: float,
+        close_price: float,
+        size: int,
+        mark_price: float,
+        expected_exposure: float,
+        expected_realized: float,
+        expected_unrealized: float,
+    ) -> None:
+        # Arrange
+        self.portfolio.set_specific_venue(Venue("BETFAIR"))
+        self.portfolio.set_use_mark_prices(True)
+        self.portfolio.set_use_mark_xrates(True)
+
+        AccountFactory.register_calculated_account("BETFAIR")
+        account_id = AccountId("BETFAIR-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=GBP,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    total=Money(1_000_000, GBP),
+                    locked=Money(0, GBP),
+                    free=Money(1_000_000, GBP),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        instrument = TestInstrumentProvider.betting_instrument()
+        self.cache.add_instrument(instrument)
+        self.portfolio.update_account(state)
+
+        mark = Price(mark_price, GBP.precision)
+        self.cache.add_mark_price(instrument.id, mark)
+
+        # Step 1: Place opening bet
         order1 = self.order_factory.limit(
             instrument_id=instrument.id,
-            order_side=OrderSide.BUY,  # BACK bet
-            quantity=Quantity.from_int(back_size),  # Stake
-            price=Price(back_price, GBP.precision),  # Odds
+            order_side=side,
+            quantity=Quantity.from_int(size),
+            price=Price(open_price, GBP.precision),
         )
         self.cache.add_order(order1, position_id=None)
         self.exec_engine.process(TestEventStubs.order_submitted(order1, account_id))
@@ -2080,10 +2282,31 @@ class TestPortfolio:
             instrument=instrument,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
-            position_id=PositionId("P-123456"),
-            last_px=Price(back_price, GBP.precision),
+            position_id=None,
+            last_px=Price(open_price, GBP.precision),
         )
         self.exec_engine.process(fill1)
+
+        # Step 2: Place closing bet
+        order2 = self.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY,
+            quantity=Quantity.from_int(size),  # Stake
+            price=Price(close_price, GBP.precision),
+        )
+        self.cache.add_order(order2, position_id=None)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2, account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2, account_id))
+
+        fill2 = TestEventStubs.order_filled(
+            order=order2,
+            instrument=instrument,
+            strategy_id=StrategyId("S-001"),
+            account_id=account_id,
+            position_id=None,
+            last_px=Price(close_price, GBP.precision),
+        )
+        self.exec_engine.process(fill2)
 
         # Assert
         assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
