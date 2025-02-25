@@ -15,7 +15,14 @@
 
 mod record;
 
-use std::{error::Error, ffi::OsStr, fs::File, io::BufReader, path::Path};
+use std::{
+    error::Error,
+    ffi::OsStr,
+    fs::File,
+    io::{BufReader, Read, Seek, SeekFrom},
+    path::Path,
+    time::Duration,
+};
 
 use csv::{Reader, ReaderBuilder, StringRecord};
 use flate2::read::GzDecoder;
@@ -52,24 +59,108 @@ fn infer_precision(value: f64) -> u8 {
 fn create_csv_reader<P: AsRef<Path>>(
     filepath: P,
 ) -> anyhow::Result<Reader<Box<dyn std::io::Read>>> {
-    let file = File::open(filepath.as_ref())?;
-    let buf_reader = BufReader::new(file);
+    let filepath_ref = filepath.as_ref();
+    const MAX_RETRIES: u8 = 3;
+    const DELAY_MS: u64 = 100;
 
-    let is_gzipped = filepath
-        .as_ref()
+    fn open_file_with_retry<P: AsRef<Path>>(
+        path: P,
+        max_retries: u8,
+        delay_ms: u64,
+    ) -> anyhow::Result<File> {
+        let path_ref = path.as_ref();
+        for attempt in 1..=max_retries {
+            match File::open(path_ref) {
+                Ok(file) => return Ok(file),
+                Err(e) => {
+                    if attempt == max_retries {
+                        anyhow::bail!(
+                            "Failed to open file '{}' after {max_retries} attempts: {e}",
+                            path_ref.display(),
+                        );
+                    }
+                    eprintln!(
+                        "Attempt {attempt}/{max_retries} failed to open file '{}': {e}. Retrying after {delay_ms}ms...",
+                        path_ref.display(),
+                    );
+                    std::thread::sleep(Duration::from_millis(delay_ms));
+                }
+            }
+        }
+        unreachable!("Loop should return either Ok or Err");
+    }
+
+    let mut file = open_file_with_retry(filepath_ref, MAX_RETRIES, DELAY_MS)?;
+
+    let is_gzipped = filepath_ref
         .extension()
         .and_then(OsStr::to_str)
         .is_some_and(|ext| ext.eq_ignore_ascii_case("gz"));
 
-    let reader: Box<dyn std::io::Read> = if is_gzipped {
-        // Decompress gzipped file
-        Box::new(GzDecoder::new(buf_reader))
-    } else {
-        // Regular file reader
-        Box::new(buf_reader)
-    };
+    if !is_gzipped {
+        let buf_reader = BufReader::new(file);
+        return Ok(ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(Box::new(buf_reader)));
+    }
 
-    Ok(ReaderBuilder::new().has_headers(true).from_reader(reader))
+    let file_size = file.metadata()?.len();
+    if file_size < 2 {
+        anyhow::bail!("File too small to be a valid gzip file");
+    }
+
+    let mut header_buf = [0u8; 2];
+    for attempt in 1..=MAX_RETRIES {
+        match file.read_exact(&mut header_buf) {
+            Ok(()) => break,
+            Err(e) => {
+                if attempt == MAX_RETRIES {
+                    anyhow::bail!(
+                        "Failed to read gzip header from '{}' after {MAX_RETRIES} attempts: {e}",
+                        filepath_ref.display(),
+                    );
+                }
+                eprintln!(
+                    "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{}': {e}. Retrying after {DELAY_MS}ms...",
+                    filepath_ref.display(),
+                );
+                std::thread::sleep(Duration::from_millis(DELAY_MS));
+            }
+        }
+    }
+
+    if header_buf[0] != 0x1f || header_buf[1] != 0x8b {
+        anyhow::bail!(
+            "File '{}' has .gz extension but invalid gzip header",
+            filepath_ref.display(),
+        );
+    }
+
+    for attempt in 1..=MAX_RETRIES {
+        match file.seek(SeekFrom::Start(0)) {
+            Ok(_) => break,
+            Err(e) => {
+                if attempt == MAX_RETRIES {
+                    anyhow::bail!(
+                        "Failed to reset file position for '{}' after {MAX_RETRIES} attempts: {e}",
+                        filepath_ref.display(),
+                    );
+                }
+                eprintln!(
+                    "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{}': {e}. Retrying after {DELAY_MS}ms...",
+                    filepath_ref.display(),
+                );
+                std::thread::sleep(Duration::from_millis(DELAY_MS));
+            }
+        }
+    }
+
+    let buf_reader = BufReader::new(file);
+    let decoder = GzDecoder::new(buf_reader);
+
+    Ok(ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(Box::new(decoder)))
 }
 
 /// Loads [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`,
