@@ -114,6 +114,7 @@ cdef class Cache(CacheFacade):
         self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
         self._order_books: dict[InstrumentId, OrderBook] = {}
+        self._own_order_books: dict[InstrumentId, nautilus_pyo3.OwnOrderBook] = {}
         self._bars: dict[BarType, deque[Bar]] = {}
         self._bars_bid: dict[InstrumentId, Bar] = {}
         self._bars_ask: dict[InstrumentId, Bar] = {}
@@ -802,6 +803,7 @@ cdef class Cache(CacheFacade):
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._order_books.clear()
+        self._own_order_books.clear()
         self._bars.clear()
         self._bars_bid.clear()
         self._bars_ask.clear()
@@ -1197,6 +1199,21 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order_book, "order_book")
 
         self._order_books[order_book.instrument_id] = order_book
+
+    cpdef void add_own_order_book(self, own_order_book):
+        """
+        Add the given own order book to the cache.
+
+        Parameters
+        ----------
+        own_order_book : nautilus_pyo3.OwnOrderBook
+            The own order book to add.
+
+        """
+        Condition.not_none(own_order_book, "own_order_book")
+
+        cdef InstrumentId instrument_id = InstrumentId.from_str(own_order_book.instrument_id.value)
+        self._own_order_books[instrument_id] = own_order_book
 
     cpdef void add_mark_price(self, InstrumentId instrument_id, Price price):
         """
@@ -2244,6 +2261,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         instrument_id : InstrumentId
+            The instrument ID for the order book to get.
 
         Returns
         -------
@@ -2251,6 +2269,23 @@ cdef class Cache(CacheFacade):
 
         """
         return self._order_books.get(instrument_id)
+
+    cpdef object own_order_book(self, InstrumentId instrument_id):
+        """
+        Return the own order book for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book to get.
+            Note this is the standard Cython `InstumentId`.
+
+        Returns
+        -------
+        nautilus_pyo3.OwnOrderBook or ``None``
+
+        """
+        return self._own_order_books.get(instrument_id)
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """

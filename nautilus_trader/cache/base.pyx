@@ -71,6 +71,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `order_book` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef object own_order_book(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `own_order_book` must be implemented in the subclass")  # pragma: no cover
+
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `quote_tick` must be implemented in the subclass")  # pragma: no cover

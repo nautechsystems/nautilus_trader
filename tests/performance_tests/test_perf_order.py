@@ -58,3 +58,12 @@ class TestOrderPerformance:
             Quantity.from_int(100_000),
             Price.from_str("0.80010"),
         )
+
+    def test_to_own_book_order(self, benchmark):
+        order = self.order_factory.limit(
+            TestIdStubs.audusd_id(),
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("0.80010"),
+        )
+        benchmark(order.to_own_book_order)

@@ -59,6 +59,7 @@ cdef class Cache(CacheFacade):
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _order_books
+    cdef dict _own_order_books
     cdef dict _bars
     cdef dict _bars_bid
     cdef dict _bars_ask
@@ -149,6 +150,7 @@ cdef class Cache(CacheFacade):
     cpdef void load_strategy(self, Strategy strategy)
 
     cpdef void add_order_book(self, OrderBook order_book)
+    cpdef void add_own_order_book(self, own_order_book)
     cpdef void add_mark_price(self, InstrumentId instrument_id, Price price)
     cpdef void add_quote_tick(self, QuoteTick tick)
     cpdef void add_trade_tick(self, TradeTick tick)
