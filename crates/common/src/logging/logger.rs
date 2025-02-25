@@ -399,8 +399,6 @@ impl Logger {
         file_config: FileWriterConfig,
         rx: std::sync::mpsc::Receiver<LogEvent>,
     ) {
-        tracing::debug!("Starting log processing");
-
         let LoggerConfig {
             stdout_level,
             fileout_level,
@@ -469,8 +467,6 @@ impl Logger {
                 }
             }
         }
-
-        tracing::debug!("Stopped log processing");
     }
 }
 

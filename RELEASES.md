@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
 - Fixed composite bars subscription (#2337), thanks @faysou
 - Fixed sub command issue in some adapters (#2343), thanks @faysou
+- Fixed `bypass_logging` fixture to keep log guard alive for entire test session
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
