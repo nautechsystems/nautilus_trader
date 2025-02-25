@@ -1236,6 +1236,9 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
+        request.start = time_object_to_dt(request.start)
+        request.end = time_object_to_dt(request.end)
+
         if isinstance(request, RequestInstruments):
             self._handle_request_instruments(client, request)
         elif isinstance(request, RequestInstrument):
@@ -1252,9 +1255,6 @@ cdef class DataEngine(Component):
             self._handle_request_data(client, request)
 
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
-
         cdef bint update_catalog = request.params.get("update_catalog", False)
         if self._catalogs and not update_catalog:
             self._query_catalog(request)
@@ -1269,8 +1269,6 @@ cdef class DataEngine(Component):
         client.request_instruments(request)
 
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=Instrument,
             instrument_id=request.instrument_id,
@@ -1298,8 +1296,6 @@ cdef class DataEngine(Component):
         client.request_order_book_snapshot(request)
 
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=QuoteTick,
             instrument_id=request.instrument_id,
@@ -1326,8 +1322,6 @@ cdef class DataEngine(Component):
         client.request_quote_ticks(request)
 
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=TradeTick,
             instrument_id=request.instrument_id,
@@ -1354,8 +1348,6 @@ cdef class DataEngine(Component):
         client.request_trade_ticks(request)
 
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=Bar,
             bar_type=request.bar_type,
@@ -1382,8 +1374,6 @@ cdef class DataEngine(Component):
         client.request_bars(request)
 
     cpdef void _handle_request_data(self, DataClient client, RequestData request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=request.data_type.type,
         )[0]
