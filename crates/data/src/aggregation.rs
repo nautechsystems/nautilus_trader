@@ -62,6 +62,7 @@ pub trait BarAggregator {
             self.update(trade.price, trade.size, trade.ts_event);
         }
     }
+    /// Updates the aggregator with the given bar.
     fn handle_bar(&mut self, bar: Bar) {
         if !self.await_partial() {
             self.update_bar(bar, bar.volume, bar.ts_init);
