@@ -348,7 +348,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                     instrument = self._cache.instrument(instrument_id)
                     if instrument is None:
-                        self._log.error(
+                        self._log.warning(
                             f"Cannot handle order report: instrument {instrument_id} not found",
                         )
                         continue
@@ -404,7 +404,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 first_fill = fill_reports[0]
                 instrument = self._cache.instrument(first_fill.instrument_id)
                 if instrument is None:
-                    self._log.error(
+                    self._log.warning(
                         f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
                     )
                     continue
@@ -511,7 +511,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
-                self._log.error(
+                self._log.warning(
                     f"Cannot handle order report: instrument {instrument_id} not found",
                 )
                 return None
@@ -566,7 +566,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                     instrument = self._cache.instrument(instrument_id)
                     if instrument is None:
-                        self._log.error(
+                        self._log.warning(
                             f"Cannot handle trade report: instrument {instrument_id} not found",
                         )
                         continue
