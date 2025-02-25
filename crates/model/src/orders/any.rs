@@ -1133,6 +1133,7 @@ impl From<OrderAny> for PassiveOrderAny {
             OrderAny::StopMarket(_) => PassiveOrderAny::Stop(order.into()),
             OrderAny::TrailingStopLimit(_) => PassiveOrderAny::Stop(order.into()),
             OrderAny::TrailingStopMarket(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::MarketToLimit(_) => PassiveOrderAny::Limit(order.into()),
             _ => panic!("WIP: Implement trait bound to require `HasPrice`"),
         }
     }

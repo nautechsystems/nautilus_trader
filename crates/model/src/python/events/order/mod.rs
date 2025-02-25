@@ -57,7 +57,6 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
         OrderEventAny::ModifyRejected(event) => Ok(event.into_py_any_unwrap(py)),
         OrderEventAny::CancelRejected(event) => Ok(event.into_py_any_unwrap(py)),
         OrderEventAny::Updated(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::PartiallyFilled(event) => Ok(event.into_py_any_unwrap(py)),
         OrderEventAny::Filled(event) => Ok(event.into_py_any_unwrap(py)),
     }
 }
