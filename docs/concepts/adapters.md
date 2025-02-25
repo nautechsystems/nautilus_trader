@@ -123,6 +123,11 @@ A simplified version of the request handler implemented in a `LiveMarketDataClie
 and send it back to actors/strategies is for example:
 
 ```python
+# nautilus_trader/live/data_client.py
+
+def request_instrument(self, request: RequestInstrument) -> None:
+    self.create_task(self._request_instrument(request))
+
 # nautilus_trader/adapters/binance/data.py
 
 async def _request_instrument(self, request: RequestInstrument) -> None:
@@ -133,4 +138,28 @@ async def _request_instrument(self, request: RequestInstrument) -> None:
         return
 
     self._handle_instrument(instrument, request.id, request.params)
+```
+
+The `DataEngine` which is an important component in Nautilus links a request with a `DataClient`.
+For example a simplified version of handling an instrument request is:
+
+```python
+# nautilus_trader/data/engine.pyx
+
+self._msgbus.register(endpoint="DataEngine.request", handler=self.request)
+
+cpdef void request(self, RequestData request):
+    self._handle_request(request)
+
+cpdef void _handle_request(self, RequestData request):
+    cdef DataClient client = self._clients.get(request.client_id)
+
+    if client is None:
+        client = self._routing_map.get(request.venue, self._default_client)
+
+    if isinstance(request, RequestInstrument):
+        self._handle_request_instrument(client, request)
+
+cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request):
+    client.request_instrument(request)
 ```
