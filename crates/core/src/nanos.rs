@@ -206,6 +206,12 @@ impl Display for UnixNanos {
     }
 }
 
+impl From<UnixNanos> for DateTime<Utc> {
+    fn from(value: UnixNanos) -> Self {
+        value.to_datetime_utc()
+    }
+}
+
 /// Represents a duration in nanoseconds.
 pub type DurationNanos = u64;
 

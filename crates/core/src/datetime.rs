@@ -15,9 +15,7 @@
 
 //! Common data and time functions.
 
-use std::time::{Duration, UNIX_EPOCH};
-
-use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, TimeZone, Utc, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Utc, Weekday};
 
 use crate::UnixNanos;
 
@@ -95,7 +93,7 @@ pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
-    let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    let datetime = unix_nanos.to_datetime_utc();
     datetime.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
@@ -104,7 +102,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601_millis(unix_nanos: UnixNanos) -> String {
-    let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    let datetime = unix_nanos.to_datetime_utc();
     datetime.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
@@ -181,7 +179,7 @@ pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
 /// Subtract `n` months from a given UNIX nanoseconds timestamp.
 #[must_use]
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
-    let datetime = Utc.timestamp_nanos(unix_nanos.as_i64());
+    let datetime = unix_nanos.to_datetime_utc();
     (subtract_n_months(datetime, n)
         .timestamp_nanos_opt()
         .expect("Months should be within 584 years") as u64)
@@ -191,7 +189,7 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
 /// Add `n` months to a given UNIX nanoseconds timestamp.
 #[must_use]
 pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
-    let date = Utc.timestamp_nanos(unix_nanos.as_i64());
+    let date = unix_nanos.to_datetime_utc();
     (add_n_months(date, n)
         .timestamp_nanos_opt()
         .expect("Months should be within 584 years") as u64)
