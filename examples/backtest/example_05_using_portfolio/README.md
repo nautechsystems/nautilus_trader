@@ -40,5 +40,5 @@ Key differences between `Portfolio` and `Cache`:
 
 For more information about Portfolio in NautilusTrader, see:
 
-- Portfolio API documentation: `nautilus_trader/portfolio/portfolio.pyx`
-- Portfolio concept guide in `docs/concepts/portfolio.md`
+- Portfolio API documentation - search the codebase for `Portfolio` class.
+- Portfolio concept guide - see the "Portfolio" section in the documentation for more details.
