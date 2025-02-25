@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import EUR
@@ -84,6 +85,10 @@ class TestCache:
     def test_order_book_for_unknown_instrument_returns_none(self):
         # Arrange, Act, Assert
         assert self.cache.order_book(AUDUSD_SIM.id) is None
+
+    def test_own_order_book_for_unknown_instrument_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is None
 
     @pytest.mark.parametrize(
         ("price_type"),
@@ -405,6 +410,19 @@ class TestCache:
 
         # Assert
         assert result == order_book
+
+    def test_own_order_book_when_order_book_exists_returns_expected(self):
+        # Arrange
+        instrument = ETHUSDT_BINANCE
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument.id.value)
+        pyo3_own_order_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
+        self.cache.add_own_order_book(pyo3_own_order_book)
+
+        # Act
+        result = self.cache.own_order_book(instrument.id)
+
+        # Assert
+        assert result == pyo3_own_order_book
 
     def test_price_when_no_ticks_returns_none(self):
         # Act

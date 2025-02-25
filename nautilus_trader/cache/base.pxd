@@ -56,6 +56,7 @@ cdef class CacheFacade:
     cpdef list bars(self, BarType bar_type)
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
     cpdef OrderBook order_book(self, InstrumentId instrument_id)
+    cpdef object own_order_book(self, InstrumentId instrument_id)
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
