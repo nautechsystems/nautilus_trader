@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
 - Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
+- Refined Rust date functions (#2356), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -51,11 +52,13 @@ Released on TBD (UTC).
 - Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
 - Ported market-if-touched order handling for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
 - Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
+- Ported market-to-limit order handling for `OrderMatchingEngine` in Rust (#2354), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded Rust to 1.85.0 and 2024 edition
 - Upgraded `datafusion` crate to v45.0.0
 - Upgraded `arrow` and `parquet` crates to v54.2.0
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
+- Upgraded `pyo3` crate to v0.23.5
 
 ### Fixes
 - Fixed large difference between `Data` enum variants (#2315), thanks @twitu
@@ -70,6 +73,7 @@ Released on TBD (UTC).
 - Fixed composite bars subscription (#2337), thanks @faysou
 - Fixed sub command issue in some adapters (#2343), thanks @faysou
 - Fixed `bypass_logging` fixture to keep log guard alive for entire test session
+- Fixed time parsing for IB adapter (#2360), thanks @faysou
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
@@ -82,6 +86,7 @@ Released on TBD (UTC).
 - Improved getting started doc for backtesting API levels (#2324), thanks @faysou
 - Improved FSM example explanations for beginners (#2351), thanks @stefansimik
 - Refined option greeks docstrings (#2320), thanks @faysou
+- Refined adapters concept documentation (#2358), thanks @faysou
 
 ### Deprecations
 None
