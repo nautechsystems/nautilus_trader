@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.component import Clock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import ImportableActorConfig
@@ -21,6 +24,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.messages import CreateActor
@@ -64,7 +68,14 @@ class Controller(Actor):
         super().__init__(config=config)
         self._trader = trader
 
-    def register_endpoint(self):
+    def register_base(
+        self,
+        portfolio: PortfolioFacade,
+        msgbus: MessageBus,
+        cache: CacheFacade,
+        clock: Clock,
+    ) -> None:
+        super().register_base(portfolio, msgbus, cache, clock)
         self.msgbus.register(endpoint="Controller.execute", handler=self.execute)
 
     def execute(self, command: Command) -> None:
@@ -214,7 +225,8 @@ class Controller(Actor):
             If `actor` is not already registered with the trader.
 
         """
-        self._trader.remove_actor(actor.id)
+        if actor.id != self.id:
+            self._trader.remove_actor(actor.id)
 
     def remove_strategy(self, strategy: Strategy) -> None:
         """
@@ -386,7 +398,8 @@ class Controller(Actor):
             If `actor` is not already registered with the trader.
 
         """
-        self._trader.remove_actor(actor_id)
+        if actor_id != self.id:
+            self._trader.remove_actor(actor_id)
 
     def remove_strategy_from_id(self, strategy_id: StrategyId) -> None:
         """
