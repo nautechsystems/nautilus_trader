@@ -347,6 +347,7 @@ if TYPE_CHECKING:
         ASK = 2
         MID = 3
         LAST = 4
+        MARK = 5
 
     @unique
     class RecordFlag(Enum):
