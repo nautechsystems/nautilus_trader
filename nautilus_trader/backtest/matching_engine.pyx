@@ -1013,6 +1013,9 @@ cdef class OrderMatchingEngine:
         # Immediately fill marketable order
         self.fill_market_order(order)
 
+        if order.is_open_c():
+            self.accept_order(order)
+
     cdef void _process_limit_order(self, LimitOrder order):
         # Check AT_THE_OPEN/AT_THE_CLOSE time in force
         if order.time_in_force == TimeInForce.AT_THE_OPEN or order.time_in_force == TimeInForce.AT_THE_CLOSE:
@@ -1829,7 +1832,6 @@ cdef class OrderMatchingEngine:
 
             if order.filled_qty._mem.raw == 0:
                 if order.order_type == OrderType.MARKET_TO_LIMIT:
-                    self.accept_order(order)
                     self._generate_order_updated(
                         order,
                         qty=order.quantity,

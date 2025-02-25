@@ -2532,28 +2532,29 @@ fn test_process_market_to_limit_orders_not_fully_filled(
     engine_l2.process_order(&mut market_to_limit_order, account_id);
 
     // Check sequence of events for MARKET-TO-LIMIT order being not fully filled
-    // 1. OrderAccepted - order fill be transformed to limit so we must receive accepted event
-    // 2. OrderUpdated - order was updated to new limix price where market order stopped filling
-    // 3. OrderFilled - after inclusion in book we emit order filled event for market order at start
+    // 1. OrderUpdated - order was updated to new limix price where market order stopped filling
+    // 2. OrderFilled - market order which was filled emits filled event
+    // 3. OrderAccepted - remaining quantity of market order is accepted as limit order
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 3);
     let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
-        _ => panic!("Expected OrderAccepted event in first message"),
-    };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
-        _ => panic!("Expected OrderUpdated event in second message"),
+    let order_updated = match order_event_first {
+        OrderEventAny::Updated(order) => order,
+        _ => panic!("Expected OrderUpdated event in first message"),
     };
     assert_eq!(order_updated.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_filled = match order_event_second {
+        OrderEventAny::Filled(order) => order,
+        _ => panic!("Expected OrderFilled event in second message"),
+    };
+    assert_eq!(order_filled.client_order_id, client_order_id);
     let order_event_third = saved_messages.get(2).unwrap();
-    let order_filled = match order_event_third {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    let order_accepted = match order_event_third {
+        OrderEventAny::Accepted(order) => order,
         _ => panic!("Expected OrderFilled event in third message"),
     };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
     assert_eq!(order_filled.client_order_id, client_order_id);
     assert_eq!(order_filled.last_px, Price::from("1500.00"));
     assert_eq!(order_filled.last_qty, Quantity::from("1.000"));

@@ -113,6 +113,7 @@ impl OrderStatus {
             (Self::Submitted, OrderEventAny::Canceled(_)) => Self::Canceled,  // FOK and IOC cases
             (Self::Submitted, OrderEventAny::Accepted(_)) => Self::Accepted,
             (Self::Submitted, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::Submitted, OrderEventAny::Updated(_)) => Self::Submitted,
             (Self::Accepted, OrderEventAny::Rejected(_)) => Self::Rejected,  // StopLimit order
             (Self::Accepted, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Accepted, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
@@ -147,6 +148,7 @@ impl OrderStatus {
             (Self::PartiallyFilled, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PartiallyFilled, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PartiallyFilled, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::PartiallyFilled, OrderEventAny::Accepted(_)) => Self::Accepted,
             _ => return Err(OrderError::InvalidStateTransition),
         };
         Ok(new_state)

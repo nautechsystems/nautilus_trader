@@ -860,6 +860,10 @@ impl OrderMatchingEngine {
 
         // Immediately fill marketable order
         self.fill_market_order(order);
+
+        if order.is_open() {
+            self.accept_order(order);
+        }
     }
 
     fn process_stop_market_order(&mut self, order: &mut OrderAny) {
@@ -1376,9 +1380,6 @@ impl OrderMatchingEngine {
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
             {
-                // Matching engine should the first accept order then update limit price
-                self.accept_order(order);
-
                 self.generate_order_updated(order, order.quantity(), Some(fill_px), None);
                 initial_market_to_limit_fill = true;
             }
