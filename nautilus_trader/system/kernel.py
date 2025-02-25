@@ -470,14 +470,7 @@ class NautilusKernel:
                 config=self._config.controller,
                 trader=self._trader,
             )
-            assert self._controller is not None  # Type checking
-            self._controller.register_base(
-                portfolio=self._portfolio,
-                msgbus=self._msgbus,
-                cache=self._cache,
-                clock=self._clock,
-            )
-            self._controller.register_endpoint()
+            self._trader.add_actor(self._controller)
 
         # Set up stream writer
         self._writer: StreamingFeatherWriter | None = None
@@ -964,9 +957,6 @@ class NautilusKernel:
         self._initialize_portfolio()
         self._trader.start()
 
-        if self._controller:
-            self._controller.start()
-
     async def start_async(self) -> None:
         """
         Start the Nautilus system kernel in an asynchronous context with an event loop.
@@ -1002,9 +992,6 @@ class NautilusKernel:
 
         self._trader.start()
 
-        if self._controller:
-            self._controller.start()
-
     def stop(self) -> None:
         """
         Stop the Nautilus system kernel.
@@ -1012,9 +999,6 @@ class NautilusKernel:
         self._log.info("STOPPING")
 
         self._stop_clients()
-
-        if self._controller:
-            self._controller.stop()
 
         if self._trader.is_running:
             self._trader.stop()
