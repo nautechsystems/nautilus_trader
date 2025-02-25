@@ -112,18 +112,16 @@ impl OrderStatus {
             (Self::Submitted, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Submitted, OrderEventAny::Canceled(_)) => Self::Canceled,  // FOK and IOC cases
             (Self::Submitted, OrderEventAny::Accepted(_)) => Self::Accepted,
-            (Self::Submitted, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::Submitted, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::Submitted, OrderEventAny::Updated(_)) => Self::Submitted,
             (Self::Accepted, OrderEventAny::Rejected(_)) => Self::Rejected,  // StopLimit order
             (Self::Accepted, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Accepted, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::Accepted, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Accepted, OrderEventAny::Triggered(_)) => Self::Triggered,
             (Self::Accepted, OrderEventAny::Expired(_)) => Self::Expired,
-            (Self::Accepted, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::Accepted, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Accepted, OrderEventAny::Updated(_)) => Self::Accepted,  // Updates should preserve state
-            (Self::Canceled, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,  // Real world possibility
             (Self::Canceled, OrderEventAny::Filled(_)) => Self::Filled,  // Real world possibility
             (Self::PendingUpdate, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingUpdate, OrderEventAny::Accepted(_)) => Self::Accepted,
@@ -132,28 +130,25 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::Triggered(_)) => Self::Triggered,
             (Self::PendingUpdate, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
             (Self::PendingUpdate, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
-            (Self::PendingUpdate, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::PendingUpdate, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PendingCancel, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingCancel, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
             (Self::PendingCancel, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PendingCancel, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PendingCancel, OrderEventAny::Accepted(_)) => Self::Accepted,  // Allow failed cancel requests
-            (Self::PendingCancel, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::PendingCancel, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Triggered, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Triggered, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Triggered, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::Triggered, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Triggered, OrderEventAny::Expired(_)) => Self::Expired,
-            (Self::Triggered, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::Triggered, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PartiallyFilled, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::PartiallyFilled, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::PartiallyFilled, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PartiallyFilled, OrderEventAny::Expired(_)) => Self::Expired,
-            (Self::PartiallyFilled, OrderEventAny::PartiallyFilled(_)) => Self::PartiallyFilled,
             (Self::PartiallyFilled, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::PartiallyFilled, OrderEventAny::Accepted(_)) => Self::Accepted,
             _ => return Err(OrderError::InvalidStateTransition),
         };
         Ok(new_state)
@@ -508,7 +503,6 @@ impl OrderCore {
             OrderEventAny::Triggered(event) => self.triggered(event),
             OrderEventAny::Canceled(event) => self.canceled(event),
             OrderEventAny::Expired(event) => self.expired(event),
-            OrderEventAny::PartiallyFilled(event) => self.filled(event),
             OrderEventAny::Filled(event) => self.filled(event),
         }
 

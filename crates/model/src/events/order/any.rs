@@ -48,7 +48,6 @@ pub enum OrderEventAny {
     ModifyRejected(OrderModifyRejected),
     CancelRejected(OrderCancelRejected),
     Updated(OrderUpdated),
-    PartiallyFilled(OrderFilled),
     Filled(OrderFilled),
 }
 
@@ -71,7 +70,6 @@ impl OrderEventAny {
             OrderEventAny::ModifyRejected(event) => Box::new(event),
             OrderEventAny::CancelRejected(event) => Box::new(event),
             OrderEventAny::Updated(event) => Box::new(event),
-            OrderEventAny::PartiallyFilled(event) => Box::new(event),
             OrderEventAny::Filled(event) => Box::new(event),
         }
     }
@@ -94,7 +92,6 @@ impl OrderEventAny {
             Self::ModifyRejected(_) => OrderEventType::ModifyRejected,
             Self::CancelRejected(_) => OrderEventType::CancelRejected,
             Self::Updated(_) => OrderEventType::Updated,
-            Self::PartiallyFilled(_) => OrderEventType::PartiallyFilled,
             Self::Filled(_) => OrderEventType::Filled,
         }
     }
@@ -117,7 +114,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.trader_id,
             Self::CancelRejected(event) => event.trader_id,
             Self::Updated(event) => event.trader_id,
-            Self::PartiallyFilled(event) => event.trader_id,
             Self::Filled(event) => event.trader_id,
         }
     }
@@ -140,7 +136,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.client_order_id,
             Self::CancelRejected(event) => event.client_order_id,
             Self::Updated(event) => event.client_order_id,
-            Self::PartiallyFilled(event) => event.client_order_id,
             Self::Filled(event) => event.client_order_id,
         }
     }
@@ -163,7 +158,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.venue_order_id(),
             Self::CancelRejected(event) => event.venue_order_id(),
             Self::Updated(event) => event.venue_order_id(),
-            Self::PartiallyFilled(event) => event.venue_order_id(),
             Self::Filled(event) => event.venue_order_id(),
         }
     }
@@ -186,7 +180,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.account_id(),
             Self::CancelRejected(event) => event.account_id(),
             Self::Updated(event) => event.account_id(),
-            Self::PartiallyFilled(event) => event.account_id(),
             Self::Filled(event) => event.account_id(),
         }
     }
@@ -209,7 +202,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.instrument_id(),
             Self::CancelRejected(event) => event.instrument_id(),
             Self::Updated(event) => event.instrument_id(),
-            Self::PartiallyFilled(event) => event.instrument_id(),
             Self::Filled(event) => event.instrument_id(),
         }
     }
@@ -232,7 +224,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.strategy_id,
             Self::CancelRejected(event) => event.strategy_id,
             Self::Updated(event) => event.strategy_id,
-            Self::PartiallyFilled(event) => event.strategy_id,
             Self::Filled(event) => event.strategy_id,
         }
     }
@@ -255,7 +246,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => event.ts_event,
             Self::CancelRejected(event) => event.ts_event,
             Self::Updated(event) => event.ts_event,
-            Self::PartiallyFilled(event) => event.ts_event,
             Self::Filled(event) => event.ts_event,
         }
     }
@@ -278,7 +268,6 @@ impl OrderEventAny {
             Self::ModifyRejected(event) => Some(event.reason),
             Self::CancelRejected(event) => Some(event.reason),
             Self::Updated(_) => None,
-            Self::PartiallyFilled(_) => None,
             Self::Filled(_) => None,
         }
     }

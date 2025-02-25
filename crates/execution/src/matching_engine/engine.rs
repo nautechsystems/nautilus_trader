@@ -846,8 +846,24 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_market_to_limit_order(&mut self, order: &OrderAny) {
-        todo!("process_market_to_limit_order")
+    fn process_market_to_limit_order(&mut self, order: &mut OrderAny) {
+        // Check that market exists
+        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
+            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        // Immediately fill marketable order
+        self.fill_market_order(order);
+
+        if order.is_open() {
+            self.accept_order(order);
+        }
     }
 
     fn process_stop_market_order(&mut self, order: &mut OrderAny) {

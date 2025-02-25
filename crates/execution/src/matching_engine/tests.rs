@@ -43,7 +43,10 @@ use nautilus_model::{
         CryptoPerpetual, Equity, InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
-    orders::{OrderAny, OrderTestBuilder, stubs::TestOrderStubs},
+    orders::{
+        OrderAny, OrderTestBuilder,
+        stubs::{TestOrderEventStubs, TestOrderStubs},
+    },
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -2480,4 +2483,84 @@ fn test_update_limit_if_touched_order_valid(
     };
     assert_eq!(order_updated.client_order_id, client_order_id);
     assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
+}
+
+#[rstest]
+fn test_process_market_to_limit_orders_not_fully_filled(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    // Add SELL limit orderbook delta to have ask initialized
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create MARKET TO LIMIT order with quantity of 2 which will be half filled
+    // and order half will be accepted as limit order
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut market_to_limit_order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(client_order_id)
+        .build();
+    // Make order submitted
+    let order_submitted_event =
+        TestOrderEventStubs::order_submitted(&market_to_limit_order, account_id);
+    market_to_limit_order.apply(order_submitted_event).unwrap();
+    engine_l2.process_order(&mut market_to_limit_order, account_id);
+
+    // Check sequence of events for MARKET-TO-LIMIT order being not fully filled
+    // 1. OrderUpdated - order was updated to new limix price where market order stopped filling
+    // 2. OrderFilled - market order which was filled emits filled event
+    // 3. OrderAccepted - remaining quantity of market order is accepted as limit order
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 3);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_updated = match order_event_first {
+        OrderEventAny::Updated(order) => order,
+        _ => panic!("Expected OrderUpdated event in first message"),
+    };
+    assert_eq!(order_updated.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_filled = match order_event_second {
+        OrderEventAny::Filled(order) => order,
+        _ => panic!("Expected OrderFilled event in second message"),
+    };
+    assert_eq!(order_filled.client_order_id, client_order_id);
+    let order_event_third = saved_messages.get(2).unwrap();
+    let order_accepted = match order_event_third {
+        OrderEventAny::Accepted(order) => order,
+        _ => panic!("Expected OrderFilled event in third message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    assert_eq!(order_filled.client_order_id, client_order_id);
+    assert_eq!(order_filled.last_px, Price::from("1500.00"));
+    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    // Check that we have one resting limit order in the matching core
+    let resting_orders = engine_l2.core.get_orders();
+    assert_eq!(resting_orders.len(), 1);
+    let first_order = resting_orders.first().unwrap();
+    assert_eq!(first_order.client_order_id(), client_order_id);
 }
