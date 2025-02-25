@@ -102,8 +102,15 @@ MAP_ORDER_STATUS = {
 
 
 def timestring_to_timestamp(timestring: str) -> pd.Timestamp:
-    # Support string conversion not supported directly by pd.to_datetime
-    # 20230223 00:43:36 America/New_York
-    # 20230223 00:43:36 Universal
+    """
+    Support string conversion not supported directly by pd.to_datetime
+        20230223 00:43:36 America/New_York
+        20230223 00:43:36 Universal
+    Convert IB's possible string format in case of Universal time, ie :
+        20250224-15:45:00
+        to a normal one
+    """
+    if '-' in timestring and ' ' not in timestring:
+        timestring = timestring.replace('-', ' ', 1) + " Universal"
     dt, tz = timestring.rsplit(" ", 1)
     return pd.Timestamp(dt, tz=tz)
