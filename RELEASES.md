@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
+- Improved `Controller` creation for more streamlined trader registration, and separate clock for timer namespacing (#2357), thanks @faysou
 - Improved build by adding placeholders to avoid unnecessary rebuilds (#2336), thanks @bartolootrit
 - Improved consistency of `OrderMatchingEngine` between Cython and Rust and fix issues (#2350), thanks @filipmacek
 - Removed obsolete reconnect guard for dYdX (#2334), thanks @davidsblom
@@ -78,6 +79,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
+- Added backtest portfolio example (#2362), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik
 - Added data catalog example (#2353), thanks @stefansimik
