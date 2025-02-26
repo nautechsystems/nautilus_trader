@@ -38,7 +38,7 @@ async-stream = "0.3.6"
 async-trait = "0.1.86"
 base64 = "0.22.1"
 bytes = { version = "1.10.0", features = ["serde"] }
-chrono = { version = "0.4.39", features = ["serde"] }
+chrono = { version = "=0.4.39", features = ["serde"] }  # Pinned due temporary trait ambiguity with arrow
 chrono-tz = { version = "0.10.1" }
 derive_builder = "0.20.2"
 futures = "0.3.31"
@@ -71,7 +71,7 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
 tokio = { version = "1.43.0", features = ["full"] }
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.14.0", features = ["v4", "serde"] }
+uuid = { version = "1.15.1", features = ["v4", "serde"] }
 
 # dev-dependencies
 axum = "0.8.1"

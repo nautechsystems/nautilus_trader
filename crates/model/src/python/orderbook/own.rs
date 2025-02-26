@@ -173,9 +173,9 @@ impl OwnOrderBook {
     }
 
     #[getter]
-    #[pyo3(name = "count")]
+    #[pyo3(name = "event_count")]
     fn py_count(&self) -> u64 {
-        self.count
+        self.event_count
     }
 
     #[pyo3(name = "reset")]
@@ -211,5 +211,21 @@ impl OwnOrderBook {
     #[pyo3(name = "asks_to_dict")]
     fn py_asks_to_dict(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
         self.asks_as_map()
+    }
+
+    #[pyo3(name = "bid_quantity")]
+    fn py_bid_quantity(&self) -> IndexMap<Decimal, Decimal> {
+        self.bid_quantity()
+    }
+
+    #[pyo3(name = "ask_quantity")]
+    fn py_ask_quantity(&self) -> IndexMap<Decimal, Decimal> {
+        self.ask_quantity()
+    }
+
+    #[pyo3(signature = (num_levels=3))]
+    #[pyo3(name = "pprint")]
+    fn py_pprint(&self, num_levels: usize) -> String {
+        self.pprint(num_levels)
     }
 }

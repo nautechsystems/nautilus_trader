@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
@@ -122,7 +124,7 @@ def test_own_order_book_creation():
     book = OwnOrderBook(instrument_id)
 
     assert book.instrument_id == instrument_id
-    assert book.count == 0
+    assert book.event_count == 0
     assert book.ts_last == 0
 
 
@@ -151,7 +153,7 @@ def test_own_order_book_add_update_delete():
 
     # 1) Add order
     book.add(order)
-    assert book.count == 1  # Add increments the event count
+    assert book.event_count == 1  # Add increments the event count
     bids_map = book.bids_to_dict()
     assert len(bids_map) == 1
     assert Price(100.0, 2).as_decimal() in bids_map
@@ -169,7 +171,7 @@ def test_own_order_book_add_update_delete():
         ts_init=0,
     )
     book.update(updated_order)
-    assert book.count == 2  # Update increments the event count
+    assert book.event_count == 2  # Update increments the event count
 
     # Check updated size
     bids_map = book.bids_to_dict()
@@ -181,7 +183,7 @@ def test_own_order_book_add_update_delete():
     book.delete(order)
     # Depending on how your book logic is implemented,
     # count might now be 3 (since delete is an event).
-    assert book.count == 3, "Delete should increment event count"
+    assert book.event_count == 3, "Delete should increment event count"
 
     # Confirm no bids left
     assert len(book.bids_to_dict()) == 0
@@ -208,11 +210,11 @@ def test_own_order_book_clear():
             ts_init=0,
         ),
     )
-    assert book.count == 1
+    assert book.event_count == 1
 
     # Call clear() -> typically increments event count
     book.clear()
-    assert book.count == 1
+    assert book.event_count == 1
     assert len(book.bids_to_dict()) == 0
     assert len(book.asks_to_dict()) == 0
 
@@ -361,3 +363,169 @@ def test_own_order_book_price_change():
     assert len(new_orders) == 1
     assert new_orders[0] == updated
     assert book.ts_last == 11
+
+
+def test_own_order_book_bid_ask_quantity():
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add multiple orders at the same price level (bids)
+    bid_order1 = OwnBookOrder(
+        client_order_id=ClientOrderId("O-1"),
+        side=OrderSide.BUY,
+        price=Price(100.0, 2),
+        size=Quantity(10.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
+        ts_init=0,
+    )
+    bid_order2 = OwnBookOrder(
+        client_order_id=ClientOrderId("O-2"),
+        side=OrderSide.BUY,
+        price=Price(100.0, 2),
+        size=Quantity(15.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
+        ts_init=0,
+    )
+    # Add an order at a different price level (bids)
+    bid_order3 = OwnBookOrder(
+        client_order_id=ClientOrderId("O-3"),
+        side=OrderSide.BUY,
+        price=Price(99.5, 2),
+        size=Quantity(20.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
+        ts_init=0,
+    )
+
+    # Add orders at different price levels (asks)
+    ask_order1 = OwnBookOrder(
+        client_order_id=ClientOrderId("O-4"),
+        side=OrderSide.SELL,
+        price=Price(101.0, 2),
+        size=Quantity(12.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
+        ts_init=0,
+    )
+    ask_order2 = OwnBookOrder(
+        client_order_id=ClientOrderId("O-5"),
+        side=OrderSide.SELL,
+        price=Price(101.0, 2),
+        size=Quantity(8.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=0,
+        ts_init=0,
+    )
+
+    book.add(bid_order1)
+    book.add(bid_order2)
+    book.add(bid_order3)
+    book.add(ask_order1)
+    book.add(ask_order2)
+
+    bid_quantities = book.bid_quantity()
+    assert len(bid_quantities) == 2
+    assert bid_quantities[Price(100.0, 2).as_decimal()] == Decimal("25")
+    assert bid_quantities[Price(99.5, 2).as_decimal()] == Decimal("20")
+
+    ask_quantities = book.ask_quantity()
+    assert len(ask_quantities) == 1
+    assert ask_quantities[Price(101.0, 2).as_decimal()] == Decimal("20")
+
+
+def test_own_order_book_quantity_empty_levels():
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Test on empty book
+    bid_quantities = book.bid_quantity()
+    ask_quantities = book.ask_quantity()
+
+    assert len(bid_quantities) == 0
+    assert len(ask_quantities) == 0
+
+
+@pytest.mark.parametrize(
+    "orders,expected_bid_quantities,expected_ask_quantities",
+    [
+        # Test case 1: Multiple orders at same price level
+        (
+            [
+                (OrderSide.BUY, 100.0, 10.0),
+                (OrderSide.BUY, 100.0, 15.0),
+                (OrderSide.SELL, 101.0, 20.0),
+            ],
+            {Decimal("100.00"): Decimal("25")},
+            {Decimal("101.00"): Decimal("20")},
+        ),
+        # Test case 2: Multiple price levels
+        (
+            [
+                (OrderSide.BUY, 100.0, 10.0),
+                (OrderSide.BUY, 99.0, 5.0),
+                (OrderSide.SELL, 101.0, 7.0),
+                (OrderSide.SELL, 102.0, 3.0),
+            ],
+            {Decimal("100.00"): Decimal("10"), Decimal("99.00"): Decimal("5")},
+            {Decimal("101.00"): Decimal("7"), Decimal("102.00"): Decimal("3")},
+        ),
+        # Test case 3: Only buy orders
+        (
+            [
+                (OrderSide.BUY, 100.0, 10.0),
+                (OrderSide.BUY, 99.0, 5.0),
+            ],
+            {Decimal("100.00"): Decimal("10"), Decimal("99.00"): Decimal("5")},
+            {},
+        ),
+        # Test case 4: Only sell orders
+        (
+            [
+                (OrderSide.SELL, 101.0, 7.0),
+                (OrderSide.SELL, 102.0, 3.0),
+            ],
+            {},
+            {Decimal("101.00"): Decimal("7"), Decimal("102.00"): Decimal("3")},
+        ),
+    ],
+)
+def test_own_order_book_quantities_parametrized(
+    orders,
+    expected_bid_quantities,
+    expected_ask_quantities,
+):
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders based on the test parameters
+    for i, (side, price, size) in enumerate(orders):
+        order = OwnBookOrder(
+            client_order_id=ClientOrderId(f"O-{i+1}"),
+            side=side,
+            price=Price(price, 2),
+            size=Quantity(size, 0),
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            status=OrderStatus.ACCEPTED,
+            ts_last=0,
+            ts_init=0,
+        )
+        book.add(order)
+
+    bid_quantities = book.bid_quantity()
+    ask_quantities = book.ask_quantity()
+
+    assert dict(bid_quantities) == expected_bid_quantities
+    assert dict(ask_quantities) == expected_ask_quantities

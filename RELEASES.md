@@ -3,6 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
+- Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
+- Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
 - Added `UnixNanos::to_datetime_utc()` in Rust
@@ -13,6 +16,7 @@ Released on TBD (UTC).
 - Added `use_mark_prices`, `use_mark_xrates` and `convert_to_account_base_currency` options for `PortfolioConfig`
 - Added mark price calculations and xrate handling for `Portfolio`
 - Added Rust debugging support and refined cargo nextest usage (#2335, #2339), thanks @faysou
+- Added catalog write mode options (#2365), thanks @faysou
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
@@ -33,6 +37,7 @@ Released on TBD (UTC).
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
+- Improved `Controller` creation for more streamlined trader registration, and separate clock for timer namespacing (#2357), thanks @faysou
 - Improved build by adding placeholders to avoid unnecessary rebuilds (#2336), thanks @bartolootrit
 - Improved consistency of `OrderMatchingEngine` between Cython and Rust and fix issues (#2350), thanks @filipmacek
 - Removed obsolete reconnect guard for dYdX (#2334), thanks @davidsblom
@@ -53,6 +58,7 @@ Released on TBD (UTC).
 - Ported market-if-touched order handling for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
 - Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
 - Ported market-to-limit order handling for `OrderMatchingEngine` in Rust (#2354), thanks @filipmacek
+- Ported trailing stop order handling for `OrderMatchingEngine` in Rust (#2366), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded Rust to 1.85.0 and 2024 edition
 - Upgraded `datafusion` crate to v45.0.0
@@ -78,6 +84,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
+- Added backtest portfolio example (#2362), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik
 - Added data catalog example (#2353), thanks @stefansimik
