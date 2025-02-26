@@ -26,44 +26,7 @@ jobs:
           free-disk-space: "true"
 
       - name: Run pre-commit
-        continue-on-error: true
-        run: make pre-commit || echo "PRECOMMIT_FAILED=true" >> $GITHUB_ENV
-
-      - name: Set pre-commit status
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            try {
-              const conclusion = process.env.PRECOMMIT_FAILED === 'true' ? 'failure' : 'success';
-              await github.rest.checks.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: 'pre-commit result',
-                head_sha: context.sha,
-                status: 'completed',
-                conclusion: conclusion,
-                output: {
-                  title: conclusion === 'failure' ? 'Pre-commit checks failed' : 'Pre-commit checks passed',
-                  summary: conclusion === 'failure'
-                    ? 'Please run `make pre-commit` (or `pre-commit run --all-files`) to fix formatting issues'
-                    : 'All pre-commit checks passed'
-                }
-              });
-            } catch (error) {
-              if (error.status === 403) {
-                console.log('No permissions to create check run - this is expected for PRs from forks');
-              } else {
-                throw error;
-              }
-            }
-
-      - name: Fail job if pre-commit failed
-        if: env.PRECOMMIT_FAILED == 'true'
-        run: |
-          echo "Pre-commit checks failed, exiting"
-          exit 1
+        run: make pre-commit
 
   build-linux-standard-precision:
     strategy:
