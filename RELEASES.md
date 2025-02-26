@@ -80,6 +80,7 @@ Released on TBD (UTC).
 - Fixed sub command issue in some adapters (#2343), thanks @faysou
 - Fixed `bypass_logging` fixture to keep log guard alive for entire test session
 - Fixed time parsing for IB adapter (#2360), thanks @faysou
+- Fixed bad `ts_init` value in IB weekly and monthly bar (#2355), thanks @Endura2024
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
