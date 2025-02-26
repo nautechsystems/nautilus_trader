@@ -696,8 +696,8 @@ impl OrderMatchingEngine {
             OrderType::StopLimit => self.process_stop_limit_order(order),
             OrderType::MarketIfTouched => self.process_market_if_touched_order(order),
             OrderType::LimitIfTouched => self.process_limit_if_touched_order(order),
-            OrderType::TrailingStopMarket => self.process_trailing_stop_market_order(order),
-            OrderType::TrailingStopLimit => self.process_trailing_stop_limit_order(order),
+            OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
+            OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
         }
     }
 
@@ -1017,12 +1017,33 @@ impl OrderMatchingEngine {
         self.accept_order(order);
     }
 
-    fn process_trailing_stop_market_order(&mut self, order: &OrderAny) {
-        todo!("process_trailing_stop_market_order")
-    }
+    fn process_trailing_stop_order(&mut self, order: &mut OrderAny) {
+        if let Some(trigger_price) = order.trigger_price() {
+            if self
+                .core
+                .is_stop_matched(order.order_side_specified(), trigger_price)
+            {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        trigger_price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+        }
 
-    fn process_trailing_stop_limit_order(&mut self, order: &OrderAny) {
-        todo!("process_trailing_stop_limit_order")
+        // Order is valid and accepted
+        self.accept_order(order);
     }
 
     // -- ORDER PROCESSING ----------------------------------------------------
