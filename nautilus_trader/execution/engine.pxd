@@ -102,7 +102,7 @@ cdef class ExecutionEngine(Component):
     cpdef void _deny_order(self, Order order, str reason)
     cpdef object _get_or_init_own_order_book(self, InstrumentId instrument_id)
     cpdef void _insert_own_book_order(self, Order order)
-    cdef bint _should_insert_own_book_order(self, Order order)
+    cdef bint _should_handle_own_book_order(self, Order order)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

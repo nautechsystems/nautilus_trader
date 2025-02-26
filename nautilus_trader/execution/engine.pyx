@@ -679,10 +679,12 @@ cdef class ExecutionEngine(Component):
         cdef Order order
         if self.manage_own_order_books:
             for order in self._cache.orders():
-                if order.is_closed_c():
-                    continue  # Do not add closed orders back to own books
+                if order.is_closed_c() or not self._should_handle_own_book_order(order):
+                    continue
                 own_book = self._get_or_init_own_order_book(order.instrument_id)
-                own_book.add(order.to_own_book_order())
+                own_book_order = order.to_own_book_order()
+                self._log.debug(f"Adding: {own_book_order!r}", LogColor.MAGENTA)
+                own_book.add(own_book_order)
 
         self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
 
@@ -827,12 +829,12 @@ cdef class ExecutionEngine(Component):
         return own_book
 
     cpdef void _insert_own_book_order(self, Order order):
-        if not self._should_insert_own_book_order(order):
+        if not self._should_handle_own_book_order(order):
             return
         own_book = self._get_or_init_own_order_book(order.instrument_id)
         own_book.add(order.to_own_book_order())
 
-    cdef bint _should_insert_own_book_order(self, Order order):
+    cdef bint _should_handle_own_book_order(self, Order order):
         return order.order_type != OrderType.MARKET and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
@@ -928,7 +930,7 @@ cdef class ExecutionEngine(Component):
         if self.manage_own_order_books:
             own_book = self._get_or_init_own_order_book(instrument.id)
             for order in command.order_list.orders:
-                if self._should_insert_own_book_order(order):
+                if self._should_handle_own_book_order(order):
                     own_book.add(order.to_own_book_order())
 
         # Check if converting quote quantity
@@ -1146,7 +1148,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_order(order)
 
-        if self.manage_own_order_books:
+        if self.manage_own_order_books and self._should_handle_own_book_order(order):
             own_book = self._get_or_init_own_order_book(order.instrument_id)
             if order.is_closed_c():
                 own_book.delete(order.to_own_book_order())
