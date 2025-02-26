@@ -1255,8 +1255,8 @@ cdef class DataEngine(Component):
             self._handle_request_data(client, request)
 
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request):
-        cdef bint update_catalog = request.params.get("update_catalog", False)
-        if self._catalogs and not update_catalog:
+        update_catalog_mode = request.params.get("update_catalog_mode", None)
+        if self._catalogs and update_catalog_mode is None:
             self._query_catalog(request)
             return
 
@@ -1471,7 +1471,7 @@ cdef class DataEngine(Component):
             )
 
         params = request.params.copy()
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
 
         response = DataResponse(
             client_id=request.client_id,
@@ -1513,11 +1513,11 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}")
 
-    cpdef void _handle_instrument(self, Instrument instrument, bint update_catalog = False):
+    cpdef void _handle_instrument(self, Instrument instrument, update_catalog_mode: CatalogWriteMode | None = None):
         self._cache.add_instrument(instrument)
 
-        if update_catalog:
-            self._update_catalog([instrument], is_instrument=True)
+        if update_catalog_mode is not None:
+            self._update_catalog([instrument], update_catalog_mode, is_instrument=True)
 
         self._msgbus.publish_c(
             topic=f"data.instrument"
@@ -1695,7 +1695,7 @@ cdef class DataEngine(Component):
 
         self.response_count += 1
         correlation_id = response.correlation_id
-        update_catalog = response.params.get("update_catalog", False)
+        update_catalog_mode = response.params.get("update_catalog_mode", None)
 
         if type(response.data) is list:
             response_data = response.data
@@ -1703,9 +1703,9 @@ cdef class DataEngine(Component):
             # For request_instrument case
             response_data = [response.data]
 
-        if update_catalog and response.data_type.type != Instrument:
+        if update_catalog_mode is not None and response.data_type.type != Instrument:
             # For instruments we want to handle each instrument individually
-            self._update_catalog(response_data)
+            self._update_catalog(response_data, update_catalog_mode)
 
         # We may need to join responses from a catalog and a client
         response_data = self._handle_query_group(correlation_id, response_data)
@@ -1718,9 +1718,9 @@ cdef class DataEngine(Component):
 
         if response.data_type.type == Instrument:
             if isinstance(response.data, list):
-                self._handle_instruments(response.data, update_catalog)
+                self._handle_instruments(response.data, update_catalog_mode)
             else:
-                self._handle_instrument(response.data, update_catalog)
+                self._handle_instrument(response.data, update_catalog_mode)
         elif response.data_type.type == QuoteTick:
             if response.params.get("bars_market_data_type"):
                 response.data = self._handle_aggregated_bars(response.data, response.params)
@@ -1741,7 +1741,7 @@ cdef class DataEngine(Component):
 
         self._msgbus.response(response)
 
-    cpdef void _update_catalog(self, list ticks, bint is_instrument = False):
+    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode | None, bint is_instrument = False):
         if len(ticks) == 0:
             return
 
@@ -1764,7 +1764,7 @@ cdef class DataEngine(Component):
             last_timestamp_catalog = self._catalogs[0]
 
         if last_timestamp_catalog is not None:
-            last_timestamp_catalog.write_data(ticks, mode="append")
+            last_timestamp_catalog.write_data(ticks, mode=update_catalog_mode)
         else:
             self._log.warning("No catalog available for appending data.")
 
@@ -1816,10 +1816,10 @@ cdef class DataEngine(Component):
 
         return result
 
-    cpdef void _handle_instruments(self, list instruments, bint update_catalog = False):
+    cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = None):
         cdef Instrument instrument
         for instrument in instruments:
-            self._handle_instrument(instrument, update_catalog)
+            self._handle_instrument(instrument, update_catalog_mode)
 
     cpdef void _handle_quote_ticks(self, list ticks):
         self._cache.add_quote_ticks(ticks)

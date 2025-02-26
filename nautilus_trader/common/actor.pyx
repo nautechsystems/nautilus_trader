@@ -36,6 +36,7 @@ from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.signal import generate_signal_class
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -2079,7 +2080,7 @@ cdef class Actor(Component):
         datetime end = None,
         int limit = 0,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2107,8 +2108,11 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2129,7 +2133,7 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         cdef UUID4 request_id = UUID4()
         cdef RequestData request = RequestData(
@@ -2157,7 +2161,7 @@ cdef class Actor(Component):
         datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2186,8 +2190,11 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2221,7 +2228,7 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         cdef UUID4 request_id = UUID4()
         cdef RequestInstrument request = RequestInstrument(
@@ -2248,7 +2255,7 @@ cdef class Actor(Component):
         datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2277,8 +2284,11 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2312,7 +2322,7 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         cdef UUID4 request_id = UUID4()
         cdef RequestInstruments request = RequestInstruments(
@@ -2358,8 +2368,11 @@ cdef class Actor(Component):
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2405,7 +2418,7 @@ cdef class Actor(Component):
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2436,8 +2449,11 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2471,7 +2487,7 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         cdef UUID4 request_id = UUID4()
         cdef RequestQuoteTicks request = RequestQuoteTicks(
@@ -2500,7 +2516,7 @@ cdef class Actor(Component):
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2531,8 +2547,11 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2566,7 +2585,7 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         cdef UUID4 request_id = UUID4()
         cdef RequestTradeTicks request = RequestTradeTicks(
@@ -2595,7 +2614,7 @@ cdef class Actor(Component):
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2626,8 +2645,11 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2661,7 +2683,7 @@ cdef class Actor(Component):
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         cdef UUID4 request_id = UUID4()
         cdef RequestBars request = RequestBars(
@@ -2692,7 +2714,7 @@ cdef class Actor(Component):
         callback: Callable[[UUID4], None] | None = None,
         bint include_external_data = False,
         bint update_subscriptions = False,
-        bint update_catalog = False,
+        update_catalog_mode: CatalogWriteMode | None = None,
         dict[str, object] params = None,
     ):
         """
@@ -2733,8 +2755,11 @@ cdef class Actor(Component):
             If True, includes the queried external data in the response.
         update_subscriptions : bool, default False
             If True, updates the aggregators of any existing or future subscription with the queried external data.
-        update_catalog : bool, default False
-            If True, then updates the catalog with new data received from a client.
+        update_catalog_mode : enum, optional
+            If not None, then updates the catalog with new data received from a client.
+            Recommended catalog write modes are:
+            - CatalogWriteMode.APPEND (appends new data to the catalog by concatenating it to the existing unique parquet file)
+            - CatalogWriteMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2785,7 +2810,7 @@ cdef class Actor(Component):
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = include_external_data
         params["update_subscriptions"] = update_subscriptions
-        params["update_catalog"] = update_catalog
+        params["update_catalog_mode"] = update_catalog_mode
 
         if first_bar_type.is_composite():
             params["bars_market_data_type"] = "bars"

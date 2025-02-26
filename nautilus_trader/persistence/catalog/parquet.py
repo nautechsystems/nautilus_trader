@@ -56,6 +56,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
 from nautilus_trader.persistence.funcs import urisafe_instrument_id
@@ -248,7 +249,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls: type[Data],
         instrument_id: str | None = None,
         basename_template: str = "part-{i}",
-        mode: str = "overwrite",
+        mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
         if isinstance(data[0], CustomData):
@@ -284,14 +285,23 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: str,
         fs: fsspec.AbstractFileSystem,
         basename_template: str,
-        mode: str = "overwrite",
+        mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     ) -> None:
-        name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
-        parquet_file = f"{path}/{name}.parquet"
+
+        i = 0
+        if mode == CatalogWriteMode.NEWFILE:
+            while True:
+                file_name = f"{basename_template.format(i=i)}.parquet"
+                if not Path(path, file_name).exists():
+                    break
+                i += 1
+
+        parquet_path = Path(path, f"{basename_template.format(i=i)}.parquet")
+        parquet_file = str(parquet_path)
 
         # following solution from https://stackoverflow.com/a/70817689
-        if mode != "overwrite" and Path(parquet_file).exists():
+        if mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND] and parquet_path.exists():
             existing_table = pq.read_table(source=parquet_file, pre_buffer=False, memory_map=True)
 
             with pq.ParquetWriter(
@@ -302,10 +312,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             ) as pq_writer:
                 table = table.cast(existing_table.schema)
 
-                if mode == "append":
+                if mode == CatalogWriteMode.APPEND:
                     pq_writer.write_table(existing_table)
                     pq_writer.write_table(table)
-                elif mode == "prepend":
+                elif mode == CatalogWriteMode.PREPEND:
                     pq_writer.write_table(table)
                     pq_writer.write_table(existing_table)
         else:
@@ -320,7 +330,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         data: list[Data | Event] | list[NautilusRustDataType],
         basename_template: str = "part-{i}",
-        mode: str = "overwrite",
+        mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
         """
@@ -339,13 +349,14 @@ class ParquetDataCatalog(BaseDataCatalog):
             The token '{i}' will be replaced with an automatically incremented
             integer as files are partitioned.
             If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
-        mode : str, optional
+        mode : enum, optional
             The mode to use when writing data and when not using using the "partitioning" option.
             Can be one of the following:
-            - "append": Appends the data to the existing data.
-            - "prepend": Prepends the data to the existing data.
-            - "overwrite": Overwrites the existing data.
-            If not specified, it defaults to 'overwrite'.
+            - CatalogWriteMode.APPEND: Appends the data to the existing data.
+            - CatalogWriteMode.PREPEND: Prepends the data to the existing data.
+            - CatalogWriteMode.OVERWRITE: Overwrites the existing data.
+            - CatalogWriteMode.NEWFILE: Appends the data to the existing data by creating a new file.
+            If not specified, it defaults to CatalogWriteMode.OVERWRITE.
         kwargs : Any
             Additional keyword arguments to be passed to the `write_chunk` method.
 

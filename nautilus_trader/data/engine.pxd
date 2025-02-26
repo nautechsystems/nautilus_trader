@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
@@ -193,7 +194,7 @@ cdef class DataEngine(Component):
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data)
-    cpdef void _handle_instrument(self, Instrument instrument, bint update_catalog=*)
+    cpdef void _handle_instrument(self, Instrument instrument, update_catalog_mode: CatalogWriteMode | None = *)
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
@@ -207,8 +208,8 @@ cdef class DataEngine(Component):
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
     cpdef void _handle_response(self, DataResponse response)
-    cpdef void _handle_instruments(self, list instruments, bint update_catalog=*)
-    cpdef void _update_catalog(self, list ticks, bint is_instrument=*)
+    cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = *)
+    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode | None, bint is_instrument=*)
     cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
     cpdef object _handle_query_group(self, UUID4 correlation_id, list ticks)
     cdef object _handle_query_group_aux(self, UUID4 correlation_id, list ticks)

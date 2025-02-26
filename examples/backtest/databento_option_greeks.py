@@ -21,6 +21,7 @@
 
 # %%
 # from nautilus_trader.model.data import DataType
+# from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
@@ -121,8 +122,8 @@ class OptionStrategy(Strategy):
         self.subscribe_quote_ticks(self.config.option_id)
         self.subscribe_quote_ticks(self.config.option_id2)
 
-        bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
-        self.subscribe_bars(bar_type)
+        self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
+        self.subscribe_bars(self.bar_type)
 
         if self.config.load_greeks:
             self.greeks.subscribe_greeks("ES")
@@ -154,7 +155,7 @@ class OptionStrategy(Strategy):
         portfolio_greeks = self.greeks.portfolio_greeks(
             use_cached_greeks=self.config.load_greeks,
             publish_greeks=(not self.config.load_greeks),
-            vol_shock=0.0,
+            # vol_shock=0.0,
             # percent_greeks=True,
             # index_instrument_id=self.config.future_id,
             # beta_weights={self.config.future_id: 2.}
@@ -182,6 +183,9 @@ class OptionStrategy(Strategy):
 
     def user_log(self, msg):
         self.log.warning(str(msg), color=LogColor.GREEN)
+
+    def on_stop(self):
+        self.unsubscribe_bars(self.bar_type)
 
 
 # %% [markdown]
@@ -300,6 +304,7 @@ if stream_data:
         GreeksData,
         basename_template="part-{i}.parquet",
         partitioning=["date"],
+        # mode=CatalogWriteMode.NEWFILE, # TODO comment partitioning option above to test this writing mode
         existing_data_behavior="overwrite_or_ignore",
     )
 
