@@ -18,6 +18,7 @@ import pickle
 import time
 import uuid
 from collections import deque
+from decimal import Decimal
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
@@ -2268,6 +2269,8 @@ cdef class Cache(CacheFacade):
         OrderBook or ``None``
 
         """
+        Condition.not_none(instrument_id, "instrument_id")
+
         return self._order_books.get(instrument_id)
 
     cpdef object own_order_book(self, InstrumentId instrument_id):
@@ -2277,7 +2280,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID for the order book to get.
+            The instrument ID for the own order book to get.
             Note this is the standard Cython `InstumentId`.
 
         Returns
@@ -2285,7 +2288,55 @@ cdef class Cache(CacheFacade):
         nautilus_pyo3.OwnOrderBook or ``None``
 
         """
+        Condition.not_none(instrument_id, "instrument_id")
+
         return self._own_order_books.get(instrument_id)
+
+    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id):
+        """
+        Return own bid orders for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the own orders to get.
+            Note this is the standard Cython `InstumentId`.
+
+        Returns
+        -------
+        dict[Decimal, list[Order]]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        own_order_book = self._own_order_books.get(instrument_id)
+        if own_order_book is None:
+            return {}
+
+        return process_own_order_map(own_order_book.bids_to_dict(), self._orders)
+
+    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id):
+        """
+        Return own ask orders for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the own orders to get.
+            Note this is the standard Cython `InstumentId`.
+
+        Returns
+        -------
+        dict[Decimal, list[Order]]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        own_order_book = self._own_order_books.get(instrument_id)
+        if own_order_book is None:
+            return {}
+
+        return process_own_order_map(own_order_book.asks_to_dict(), self._orders)
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
@@ -4425,3 +4476,26 @@ cdef class Cache(CacheFacade):
             return
 
         self._database.heartbeat(timestamp)
+
+
+cdef inline dict[Decimal, list[Order]] process_own_order_map(
+    dict[Decimal, list[nautilus_pyo3.OwnBookOrder]] own_order_map,
+    dict[ClientOrderId, Order] order_cache,
+):
+    cdef dict[Decimal, Order] order_map = {}
+
+    cdef:
+        list[Order] orders = []
+        ClientOrderId client_order_id
+        Order order
+    for level_price, own_orders in own_order_map.items():
+        orders = []
+        for own_order in own_orders:
+            client_order_id = ClientOrderId(own_order.client_order_id.value)
+            order = order_cache.get(ClientOrderId(own_order.client_order_id.value))
+            if order is None:
+                RuntimeError(f"{client_order_id!r} from own book not found in cache")
+            orders.append(order)
+        order_map[level_price] = orders
+
+    return order_map
