@@ -247,6 +247,7 @@ impl OrderBook {
         self.simulate_fills(order)
     }
 
+    #[pyo3(signature = (num_levels=3))]
     #[pyo3(name = "pprint")]
     fn py_pprint(&self, num_levels: usize) -> String {
         self.pprint(num_levels)

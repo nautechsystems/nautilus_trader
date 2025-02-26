@@ -35,6 +35,8 @@ use crate::{
     types::{Price, Quantity},
 };
 
+use super::display::pprint_own_book;
+
 /// Represents an own/user order for a book.
 ///
 /// This struct models an order that may be in-flight to the trading venue or actively working,
@@ -147,6 +149,22 @@ impl Debug for OwnBookOrder {
             f,
             "{}(client_order_id={}, side={}, price={}, size={}, order_type={}, time_in_force={}, ts_init={})",
             stringify!(OwnBookOrder),
+            self.client_order_id,
+            self.side,
+            self.price,
+            self.size,
+            self.order_type,
+            self.time_in_force,
+            self.ts_init,
+        )
+    }
+}
+
+impl Display for OwnBookOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{},{},{},{},{},{},{}",
             self.client_order_id,
             self.side,
             self.price,
@@ -284,21 +302,11 @@ impl OwnOrderBook {
             })
             .collect()
     }
-}
 
-impl Display for OwnBookOrder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{},{},{},{},{},{},{}",
-            self.client_order_id,
-            self.side,
-            self.price,
-            self.size,
-            self.order_type,
-            self.time_in_force,
-            self.ts_init,
-        )
+    /// Return a formatted string representation of the order book.
+    #[must_use]
+    pub fn pprint(&self, num_levels: usize) -> String {
+        pprint_own_book(&self.bids, &self.asks, num_levels)
     }
 }
 
