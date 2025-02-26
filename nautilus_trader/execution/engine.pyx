@@ -156,12 +156,6 @@ cdef class ExecutionEngine(Component):
         self.snapshot_positions_interval_secs = config.snapshot_positions_interval_secs or 0
         self.snapshot_positions_timer_name = "ExecEngine_SNAPSHOT_POSITIONS"
 
-        if self.manage_own_order_books:
-            raise RuntimeError(
-                "Cannot run with `manage_own_order_books`=True, "
-                "the own order tracking feature is still under development",
-            )
-
         self._log.info(f"{config.snapshot_orders=}", LogColor.BLUE)
         self._log.info(f"{config.snapshot_positions=}", LogColor.BLUE)
         self._log.info(f"{config.snapshot_positions_interval_secs=}", LogColor.BLUE)
@@ -681,6 +675,14 @@ cdef class ExecutionEngine(Component):
         self._cache.build_index()
         self._cache.check_integrity()
         self._set_position_id_counts()
+
+        cdef Order order
+        if self.manage_own_order_books:
+            for order in self._cache.orders():
+                if order.is_closed_c():
+                    continue  # Do not add closed orders back to own books
+                own_book = self._get_or_init_own_order_book(order.instrument_id)
+                own_book.add(order.to_own_book_order())
 
         self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
 

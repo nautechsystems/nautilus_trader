@@ -212,4 +212,10 @@ impl OwnOrderBook {
     fn py_asks_to_dict(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
         self.asks_as_map()
     }
+
+    #[pyo3(signature = (num_levels=3))]
+    #[pyo3(name = "pprint")]
+    fn py_pprint(&self, num_levels: usize) -> String {
+        self.pprint(num_levels)
+    }
 }

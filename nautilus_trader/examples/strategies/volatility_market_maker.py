@@ -219,6 +219,12 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
 
+        # own_book = self.cache.own_order_book(tick.instrument_id)
+        # if not own_book:
+        #     return
+        # self.log.info("\n" + repr(own_book), LogColor.MAGENTA)
+        # self.log.info("\n" + own_book.pprint(), LogColor.MAGENTA)
+
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a trade tick.

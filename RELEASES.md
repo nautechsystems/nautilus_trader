@@ -3,6 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
+- Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
+- Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
 - Added `UnixNanos::to_datetime_utc()` in Rust
