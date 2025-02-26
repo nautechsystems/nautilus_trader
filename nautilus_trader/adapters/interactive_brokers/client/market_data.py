@@ -543,8 +543,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         int
 
         """
-        if bar_type.spec.aggregation == 14:
-            # Day bars are always returned with bar date in YYYYMMDD format
+        if bar_type.spec.aggregation in [14, 15, 16]:
+            # Day/Week/Month bars are always returned with bar date in YYYYMMDD format
             ts = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
         else:
             ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
