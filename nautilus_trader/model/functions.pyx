@@ -337,7 +337,6 @@ cpdef order_status_to_pyo3(OrderStatus value):
     raise ValueError(f"Unsupported `OrderStatus`, was '{order_status_to_str(value)}'")
 
 
-
 cpdef time_in_force_to_pyo3(TimeInForce value):
     if value == TimeInForce.GTC:
         return nautilus_pyo3.TimeInForce.GTC
@@ -347,6 +346,8 @@ cpdef time_in_force_to_pyo3(TimeInForce value):
         return nautilus_pyo3.TimeInForce.FOK
     if value == TimeInForce.GTD:
         return nautilus_pyo3.TimeInForce.GTD
+    if value == TimeInForce.DAY:
+        return nautilus_pyo3.TimeInForce.DAY
     if value == TimeInForce.AT_THE_OPEN:
         return nautilus_pyo3.TimeInForce.AT_THE_OPEN
     if value == TimeInForce.AT_THE_CLOSE:
