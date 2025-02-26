@@ -29,7 +29,7 @@ use nautilus_model::{
     data::{BookOrder, TradeTick, stubs::OrderBookDeltaTestBuilder},
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, LiquiditySide, OmsType,
-        OrderSide, OrderType, TimeInForce,
+        OrderSide, OrderType, TimeInForce, TrailingOffsetType,
     },
     events::{
         OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
@@ -50,6 +50,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use crate::{
@@ -2563,4 +2564,89 @@ fn test_process_market_to_limit_orders_not_fully_filled(
     assert_eq!(resting_orders.len(), 1);
     let first_order = resting_orders.first().unwrap();
     assert_eq!(first_order.client_order_id(), client_order_id);
+}
+
+#[rstest]
+fn test_process_trailing_stop_orders_rejeceted_and_valid(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create two trailing stop orders
+    // 1. TrailingStopMarket BUY order with trigger price of 1498.00 which will be rejected as trigger price is below current ask
+    // 2. TrailingStopLimit BUY order with trigger price of 1502.00 which will be accepted as trigger price is above current ask
+    let client_order_id_trailing_stop_market = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut trailing_stop_market = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1498.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_trailing_stop_market)
+        .trailing_offset(dec!(0.1))
+        .limit_offset(dec!(0.1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true)
+        .build();
+    let client_order_id_trailing_stop_limit = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut trailing_stop_limit = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1502.00"))
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .trailing_offset(dec!(0.1))
+        .limit_offset(dec!(0.1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(client_order_id_trailing_stop_limit)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut trailing_stop_market, account_id);
+    engine_l2.process_order(&mut trailing_stop_limit, account_id);
+
+    // Check that we have received OrderRejected for TrailingStopMarket order
+    // and OrderAccepted for TrailingStopLimit order
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_rejected = match order_event_first {
+        OrderEventAny::Rejected(order_rejected) => order_rejected,
+        _ => panic!("Expected OrderRejected event in first message"),
+    };
+    assert_eq!(
+        order_rejected.client_order_id,
+        client_order_id_trailing_stop_market
+    );
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_accepted = match order_event_second {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in second message"),
+    };
+    assert_eq!(
+        order_accepted.client_order_id,
+        client_order_id_trailing_stop_limit
+    );
 }
