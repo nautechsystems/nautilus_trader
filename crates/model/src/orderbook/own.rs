@@ -28,14 +28,13 @@ use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
+use super::display::pprint_own_book;
 use crate::{
     enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
     orderbook::BookPrice,
     types::{Price, Quantity},
 };
-
-use super::display::pprint_own_book;
 
 /// Represents an own/user order for a book.
 ///
