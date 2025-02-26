@@ -302,6 +302,34 @@ impl OwnOrderBook {
             .collect()
     }
 
+    /// Returns the aggregated own bid quantity at each price level.
+    pub fn bid_quantity(&self) -> IndexMap<Decimal, Decimal> {
+        self.bids()
+            .map(|level| {
+                (
+                    level.price.value.as_decimal(),
+                    level.orders.values().fold(Decimal::ZERO, |total, order| {
+                        total + order.size.as_decimal()
+                    }),
+                )
+            })
+            .collect()
+    }
+
+    /// Returns the aggregated own ask quantity at each price level.
+    pub fn ask_quantity(&self) -> IndexMap<Decimal, Decimal> {
+        self.asks()
+            .map(|level| {
+                (
+                    level.price.value.as_decimal(),
+                    level.orders.values().fold(Decimal::ZERO, |total, order| {
+                        total + order.size.as_decimal()
+                    }),
+                )
+            })
+            .collect()
+    }
+
     /// Return a formatted string representation of the order book.
     #[must_use]
     pub fn pprint(&self, num_levels: usize) -> String {
@@ -587,6 +615,7 @@ impl Ord for OwnBookLevel {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -889,5 +918,98 @@ mod tests {
         let ask_orders = asks_map.get(&ask_price).unwrap();
         assert_eq!(ask_orders.len(), 1);
         assert_eq!(ask_orders[0], order2);
+    }
+
+    #[rstest]
+    fn test_own_order_book_quantity_empty_levels() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let book = OwnOrderBook::new(instrument_id);
+
+        let bid_quantities = book.bid_quantity();
+        let ask_quantities = book.ask_quantity();
+
+        assert!(bid_quantities.is_empty());
+        assert!(ask_quantities.is_empty());
+    }
+
+    #[rstest]
+    fn test_own_order_book_bid_ask_quantity() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+
+        // Add multiple orders at the same price level (bids)
+        let bid_order1 = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let bid_order2 = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        // Add an order at a different price level (bids)
+        let bid_order3 = OwnBookOrder::new(
+            ClientOrderId::from("O-3"),
+            OrderSideSpecified::Buy,
+            Price::from("99.50"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Add orders at different price levels (asks)
+        let ask_order1 = OwnBookOrder::new(
+            ClientOrderId::from("O-4"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("12"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let ask_order2 = OwnBookOrder::new(
+            ClientOrderId::from("O-5"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("8"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        book.add(bid_order1);
+        book.add(bid_order2);
+        book.add(bid_order3);
+        book.add(ask_order1);
+        book.add(ask_order2);
+
+        let bid_quantities = book.bid_quantity();
+        assert_eq!(bid_quantities.len(), 2);
+        assert_eq!(bid_quantities.get(&dec!(100.00)), Some(&dec!(25)));
+        assert_eq!(bid_quantities.get(&dec!(99.50)), Some(&dec!(20)));
+
+        let ask_quantities = book.ask_quantity();
+        assert_eq!(ask_quantities.len(), 1);
+        assert_eq!(ask_quantities.get(&dec!(101.00)), Some(&dec!(20)));
     }
 }
