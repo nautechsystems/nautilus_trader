@@ -1143,6 +1143,14 @@ cdef class ExecutionEngine(Component):
             return
 
         self._cache.update_order(order)
+
+        if self.manage_own_order_books:
+            own_book = self._get_or_init_own_order_book(order.instrument_id)
+            if order.is_closed_c():
+                own_book.delete(order.to_own_book_order())
+            else:
+                own_book.update(order.to_own_book_order())
+
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",
             msg=event,

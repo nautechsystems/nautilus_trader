@@ -169,7 +169,7 @@ pub struct OwnOrderBook {
     /// The timestamp of the last event applied to the order book.
     pub ts_last: UnixNanos,
     /// The current count of events applied to the order book.
-    pub count: u64,
+    pub event_count: u64,
     pub(crate) bids: OwnBookLadder,
     pub(crate) asks: OwnBookLadder,
 }
@@ -184,9 +184,10 @@ impl Display for OwnOrderBook {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={})",
-            stringify!(OrderBook),
+            "{}(instrument_id={}, event_count={})",
+            stringify!(OwnOrderBook),
             self.instrument_id,
+            self.event_count,
         )
     }
 }
@@ -198,7 +199,7 @@ impl OwnOrderBook {
         Self {
             instrument_id,
             ts_last: UnixNanos::default(),
-            count: 0,
+            event_count: 0,
             bids: OwnBookLadder::new(OrderSideSpecified::Buy),
             asks: OwnBookLadder::new(OrderSideSpecified::Sell),
         }
@@ -206,7 +207,7 @@ impl OwnOrderBook {
 
     fn increment(&mut self, order: &OwnBookOrder) {
         self.ts_last = order.ts_last;
-        self.count += 1;
+        self.event_count += 1;
     }
 
     /// Resets the order book to its initial empty state.
@@ -214,7 +215,7 @@ impl OwnOrderBook {
         self.bids.clear();
         self.asks.clear();
         self.ts_last = UnixNanos::default();
-        self.count = 0;
+        self.event_count = 0;
     }
 
     /// Adds an own order to the book.

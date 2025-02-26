@@ -266,7 +266,7 @@ class TestEventStubs:
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            quantity=quantity,
+            quantity=quantity or order.quantity,
             price=price,
             trigger_price=trigger_price,
             ts_init=0,
