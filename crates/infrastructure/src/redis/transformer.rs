@@ -2748,9 +2748,6 @@ impl Transformer {
                 OrderEventAny::CancelRejected(Self::order_cancel_rejected_from_value(value)?)
             }
             "OrderUpdated" => OrderEventAny::Updated(Self::order_updated_from_value(value)?),
-            "OrderPartiallyFilled" => {
-                OrderEventAny::PartiallyFilled(Self::order_filled_from_value(value)?)
-            }
             "OrderFilled" => OrderEventAny::Filled(Self::order_filled_from_value(value)?),
             _ => anyhow::bail!("Invalid event type"),
         };
