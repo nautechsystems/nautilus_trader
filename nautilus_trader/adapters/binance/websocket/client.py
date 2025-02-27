@@ -138,7 +138,7 @@ class BinanceWebSocketClient:
         Returns
         -------
         int
-            Client ID to use for the new subscription.
+            The client ID to use for the new subscription.
 
         """
         # Try to find an existing client with room for another subscription
@@ -235,11 +235,12 @@ class BinanceWebSocketClient:
         """
         Send the given raw payload to the server as a PONG message.
         """
-        if client_id not in self._clients or self._clients[client_id] is None:
+        client = self._clients.get(client_id)
+        if client is None:
             return
 
         try:
-            await self._clients[client_id].send_pong(raw)
+            await client.send_pong(raw)
         except WebSocketClientError as e:
             self._log.error(f"Client {client_id}: {e!s}")
 
@@ -287,12 +288,13 @@ class BinanceWebSocketClient:
         """
         Disconnect a specific client from the server.
         """
-        if client_id not in self._clients or self._clients[client_id] is None:
+        client = self._clients.get(client_id)
+        if client is None:
             return
 
         self._log.debug(f"Client {client_id}: Disconnecting...")
         try:
-            await self._clients[client_id].disconnect()
+            await client.disconnect()
         except WebSocketClientError as e:
             self._log.error(f"Client {client_id}: {e!s}")
 
@@ -657,13 +659,14 @@ class BinanceWebSocketClient:
         return message
 
     async def _send(self, client_id: int, msg: dict[str, Any]) -> None:
-        if client_id not in self._clients or self._clients[client_id] is None:
+        client = self._clients.get(client_id)
+        if client is None:
             self._log.error(f"Client {client_id}: Cannot send message {msg}: not connected")
             return
 
         self._log.debug(f"Client {client_id}: SENDING: {msg}")
 
         try:
-            await self._clients[client_id].send_text(msgspec.json.encode(msg))
+            await client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
             self._log.error(f"Client {client_id}: {e!s}")
