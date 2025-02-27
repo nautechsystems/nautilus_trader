@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -71,6 +72,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.data import MockMarketDataClient
 from nautilus_trader.test_kit.mocks.data import setup_catalog
@@ -2209,7 +2211,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2248,7 +2250,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2288,7 +2290,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2341,7 +2343,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": CatalogWriteMode.APPEND},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2352,7 +2354,6 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        print(handler[0].data)
         assert handler[0].data == [bar, bar2]
         assert catalog.query_last_timestamp(Bar, bar_type=bar_type) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
@@ -2383,7 +2384,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2420,7 +2421,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2469,7 +2470,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": CatalogWriteMode.APPEND},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2513,7 +2514,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": CatalogWriteMode.APPEND},
         )
 
         # Act
@@ -2552,7 +2553,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2601,7 +2602,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": CatalogWriteMode.APPEND},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2618,6 +2619,67 @@ class TestDataEngine:
             instrument_id=ETHUSDT_BINANCE.id,
         ) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
+        )
+
+    def test_request_trade_ticks_when_catalog_and_client_registered_append_with_new_file(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        trade_tick = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=pd.Timestamp("2024-3-24").value,
+            ts_init=pd.Timestamp("2024-3-24").value,
+        )
+        catalog.write_data([trade_tick])
+        self.data_engine.register_catalog(catalog)
+
+        self.data_engine.register_client(self.mock_market_data_client)
+        trade_tick2 = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=pd.Timestamp("2024-3-25").value,
+            ts_init=pd.Timestamp("2024-3-25").value,
+        )
+        self.mock_market_data_client.trade_ticks = [trade_tick2]
+
+        handler = []
+        request = RequestTradeTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=pd.Timestamp("2024-3-24"),
+            end=pd.Timestamp("2024-3-25"),
+            limit=0,
+            client_id=None,  # Will route to the Binance venue
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog_mode": CatalogWriteMode.NEWFILE},
+        )
+
+        self.clock.advance_time(pd.Timestamp("2024-3-25").value)
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        # assert handler[0].data == [trade_tick, trade_tick2]
+        assert catalog.query_last_timestamp(
+            TradeTick,
+            instrument_id=ETHUSDT_BINANCE.id,
+        ) == time_object_to_dt(
+            pd.Timestamp("2024-3-25"),
+        )
+        assert (
+            len(list((Path(catalog.path) / "data" / "trade_tick" / "ETHUSDT.BINANCE").glob("*")))
+            == 2
         )
 
     def test_request_aggregated_bars_with_bars(self):
@@ -2669,7 +2731,7 @@ class TestDataEngine:
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = True
         params["update_subscriptions"] = False
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
         params["bars_market_data_type"] = "bars"
 
         request = RequestBars(
@@ -2785,7 +2847,7 @@ class TestDataEngine:
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = False
         params["update_subscriptions"] = False
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
         params["bars_market_data_type"] = "quote_ticks"
 
         request = RequestQuoteTicks(
@@ -2877,7 +2939,7 @@ class TestDataEngine:
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = False
         params["update_subscriptions"] = False
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
         params["bars_market_data_type"] = "trade_ticks"
 
         request = RequestTradeTicks(
