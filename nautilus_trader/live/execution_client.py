@@ -315,8 +315,8 @@ class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        command: GenerateOrderStatusReport
-            The command to generate the order status report.
+        command : GenerateOrderStatusReport
+            The command to generate the report.
 
         Returns
         -------
@@ -367,7 +367,7 @@ class LiveExecutionClient(ExecutionClient):
         Parameters
         ----------
         command : GenerateFillReports
-            The command for generating the fill reports.
+            The command for generating the reports.
 
         Returns
         -------
