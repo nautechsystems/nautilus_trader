@@ -288,20 +288,21 @@ class ParquetDataCatalog(BaseDataCatalog):
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     ) -> None:
         fs.mkdirs(path, exist_ok=True)
+        name = basename_template.format(i=0)
+        parquet_file = f"{path}/{name}.parquet"
 
-        i = 0
         if mode == CatalogWriteMode.NEWFILE:
-            while True:
-                file_name = f"{basename_template.format(i=i)}.parquet"
-                if not Path(path, file_name).exists():
-                    break
+            i = 0
+            while Path(parquet_file).exists():
                 i += 1
-
-        parquet_path = Path(path, f"{basename_template.format(i=i)}.parquet")
-        parquet_file = str(parquet_path)
+                name = basename_template.format(i=i)
+                parquet_file = f"{path}/{name}.parquet"
 
         # following solution from https://stackoverflow.com/a/70817689
-        if mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND] and parquet_path.exists():
+        if (
+            mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND]
+            and Path(parquet_file).exists()
+        ):
             existing_table = pq.read_table(source=parquet_file, pre_buffer=False, memory_map=True)
 
             with pq.ParquetWriter(
