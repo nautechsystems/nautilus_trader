@@ -17,7 +17,6 @@ import asyncio
 import traceback
 from collections import defaultdict
 
-import pandas as pd
 from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
@@ -66,6 +65,10 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
@@ -82,7 +85,6 @@ from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Currency
@@ -275,37 +277,39 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        self._log.debug(f"Listing current orders for {venue_order_id=} {client_order_id=}")
+        self._log.debug(
+            f"Listing current orders for {command.venue_order_id=} {command.client_order_id=}",
+        )
         assert (
-            venue_order_id is not None or client_order_id is not None
+            command.venue_order_id is not None or command.client_order_id is not None
         ), "Require one of venue_order_id or client_order_id"
-        if venue_order_id is not None:
-            bet_id = venue_order_id.value
+        if command.venue_order_id is not None:
+            bet_id = command.venue_order_id.value
             orders = await self._client.list_current_orders(bet_ids={bet_id})
         else:
-            customer_order_ref = make_customer_order_ref(client_order_id)
+            customer_order_ref = make_customer_order_ref(command.client_order_id)
             orders = await self._client.list_current_orders(
                 customer_order_refs={customer_order_ref},
             )
 
         if not orders:
-            self._log.warning(f"Could not find order for {venue_order_id=} {client_order_id=}")
+            self._log.warning(
+                f"Could not find order for {command.venue_order_id=} {command.client_order_id=}",
+            )
             return None
         # We have a response, check list length and grab first entry
         assert (
             len(orders) == 1
-        ), f"More than one order found for {venue_order_id=} {client_order_id=}"
+        ), f"More than one order found for {command.venue_order_id=} {command.client_order_id=}"
         order: CurrentOrderSummary = orders[0]
         venue_order_id = VenueOrderId(str(order.bet_id))
 
         report: OrderStatusReport = bet_to_order_status_report(
             order=order,
             account_id=self.account_id,
-            instrument_id=instrument_id,
+            instrument_id=command.instrument_id,
             venue_order_id=venue_order_id,
             client_order_id=self._cache.client_order_id(venue_order_id),
             report_id=UUID4(),
@@ -317,14 +321,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         current_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
-            order_projection=OrderProjection.EXECUTABLE if open_only else OrderProjection.ALL,
-            date_range=TimeRange(from_=start, to=end),
+            order_projection=(
+                OrderProjection.EXECUTABLE if command.open_only else OrderProjection.ALL
+            ),
+            date_range=TimeRange(from_=command.start, to=command.end),
             market_ids=self._market_ids_filter(),
         )
 
@@ -354,14 +357,11 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         cleared_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
             order_projection=OrderProjection.ALL,
-            date_range=TimeRange(from_=start, to=end),
+            date_range=TimeRange(from_=command.start, to=command.end),
             market_ids=self._market_ids_filter(),
         )
 
@@ -395,9 +395,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         self._log.info("Skipping generate_position_status_reports; not implemented for Betfair")
 

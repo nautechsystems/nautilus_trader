@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
@@ -27,6 +29,37 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
+
+
+cdef class TradingReportCommand(Command):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID associated with the command.\n\n:returns: `InstrumentId`"""
+    cdef readonly datetime start
+    """The start datetime (UTC) of request time range (inclusive)."""
+    cdef readonly datetime end
+    """The end datetime (UTC) of request time range."""
+    cdef readonly dict[str, object] params
+    """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
+
+
+cdef class GenerateOrderStatusReport(TradingReportCommand):
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
+
+
+cdef class GenerateOrderStatusReports(TradingReportCommand):
+    cdef readonly bint open_only
+
+
+cdef class GenerateFillReports(TradingReportCommand):
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
+
+
+cdef class GeneratePositionStatusReports(TradingReportCommand):
+    pass
 
 
 cdef class TradingCommand(Command):

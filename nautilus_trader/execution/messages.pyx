@@ -15,6 +15,7 @@
 
 from typing import Any
 
+from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -23,7 +24,6 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
-from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -32,6 +32,220 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
+
+
+cdef class TradingReportCommand(Command):
+    """
+    The base class for all trading report related commands.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    command_id : UUID4
+        The commands ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+
+    Warnings
+    --------
+    This class should not be used directly, but through a concrete subclass.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id : InstrumentId | None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(command_id, ts_init)
+
+        self.instrument_id = instrument_id
+        self.start = start
+        self.end = end
+        self.params = params or {}
+
+
+cdef class GenerateOrderStatusReport(TradingReportCommand):
+    """
+    Command to generate an order status report.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    client_order_id : ClientOrderId
+        The client order ID to update.
+    venue_order_id : VenueOrderId or ``None``
+        The venue order ID (assigned by the venue) to query.
+    command_id : UUID4
+        The commands ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id : InstrumentId | None,
+        ClientOrderId client_order_id : ClientOrderId | None,
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            instrument_id,
+            None,
+            None,
+            command_id,
+            ts_init,
+            params,
+        )
+
+        self.client_order_id = client_order_id
+        self.venue_order_id = venue_order_id
+
+
+cdef class GenerateOrderStatusReports(TradingReportCommand):
+    """
+    Command to generate order status reports.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    open_only : bool
+        If True then only open orders will be returned.
+    command_id : UUID4
+        The commands ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id : InstrumentId | None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        bint open_only,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            instrument_id,
+            start,
+            end,
+            command_id,
+            ts_init,
+            params,
+        )
+
+        self.open_only = open_only
+
+
+cdef class GenerateFillReports(TradingReportCommand):
+    """
+    Command to generate fill reports.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    venue_order_id : VenueOrderId or ``None``
+        The venue order ID (assigned by the venue) to query.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    command_id : UUID4
+        The commands ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id : InstrumentId | None,
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            instrument_id,
+            start,
+            end,
+            command_id,
+            ts_init,
+            params,
+        )
+
+        self.venue_order_id = venue_order_id
+
+
+cdef class GeneratePositionStatusReports(TradingReportCommand):
+    """
+    Command to generate position status reports.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    command_id : UUID4
+        The commands ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id : InstrumentId | None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ):
+        super().__init__(
+            instrument_id,
+            start,
+            end,
+            command_id,
+            ts_init,
+            params,
+        )
 
 
 cdef class TradingCommand(Command):
@@ -76,7 +290,7 @@ cdef class TradingCommand(Command):
         self.trader_id = trader_id
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
-        self.params = params
+        self.params = params or {}
 
 
 cdef class SubmitOrder(TradingCommand):

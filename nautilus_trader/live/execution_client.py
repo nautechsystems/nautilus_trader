@@ -39,6 +39,10 @@ from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -51,10 +55,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Currency
 
 
@@ -305,9 +306,7 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         """
         Generate an `OrderStatusReport` for the given order identifier parameter(s).
@@ -316,12 +315,8 @@ class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the report.
-        client_order_id : ClientOrderId, optional
-            The client order ID for the report.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID for the report.
+        command: GenerateOrderStatusReport
+            The command to generate the order status report.
 
         Returns
         -------
@@ -339,10 +334,7 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         """
         Generate a list of `OrderStatusReport`s with optional query filters.
@@ -351,14 +343,8 @@ class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : pd.Timestamp, optional
-            The start datetime (UTC) query filter.
-        end : pd.Timestamp, optional
-            The end datetime (UTC) query filter.
-        open_only : bool, default False
-            If the query is for open orders only.
+        command : GenerateOrderStatusReports
+            The command for generating the reports.
 
         Returns
         -------
@@ -371,10 +357,7 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         """
         Generate a list of `FillReport`s with optional query filters.
@@ -383,14 +366,8 @@ class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-        start : pd.Timestamp, optional
-            The start datetime (UTC) query filter.
-        end : pd.Timestamp, optional
-            The end datetime (UTC) query filter.
+        command : GenerateFillReports
+            The command for generating the fill reports.
 
         Returns
         -------
@@ -403,9 +380,7 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         """
         Generate a list of `PositionStatusReport`s with optional query filters.
@@ -414,12 +389,8 @@ class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : pd.Timestamp, optional
-            The start datetime (UTC) query filter.
-        end : pd.Timestamp, optional
-            The end datetime (UTC) query filter.
+        command : GeneratePositionStatusReports
+            The command for generating the position status reports.
 
         Returns
         -------
@@ -463,11 +434,35 @@ class LiveExecutionClient(ExecutionClient):
         if lookback_mins is not None:
             since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 
+        order_status_command = GenerateOrderStatusReports(
+            instrument_id=None,
+            start=since,
+            end=None,
+            open_only=False,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        fill_reports_command = GenerateFillReports(
+            instrument_id=None,
+            venue_order_id=None,
+            start=since,
+            end=None,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        position_status_command = GeneratePositionStatusReports(
+            instrument_id=None,
+            start=since,
+            end=None,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
         try:
             reports = await asyncio.gather(
-                self.generate_order_status_reports(start=since),
-                self.generate_fill_reports(start=since),
-                self.generate_position_status_reports(start=since),
+                self.generate_order_status_reports(order_status_command),
+                self.generate_fill_reports(fill_reports_command),
+                self.generate_position_status_reports(position_status_command),
             )
 
             mass_status.add_order_reports(reports=reports[0])
@@ -484,10 +479,15 @@ class LiveExecutionClient(ExecutionClient):
     async def _query_order(self, command: QueryOrder) -> None:
         self._log.debug(f"Synchronizing order status {command}")
 
-        report: OrderStatusReport | None = await self.generate_order_status_report(
+        order_status_command = GenerateOrderStatusReport(
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        report: OrderStatusReport | None = await self.generate_order_status_report(
+            order_status_command,
         )
 
         if report is None:

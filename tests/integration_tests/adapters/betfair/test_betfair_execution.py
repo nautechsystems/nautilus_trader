@@ -36,6 +36,10 @@ from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_i
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.core.rust.model import OrderStatus
 from nautilus_trader.core.rust.model import TimeInForce
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import LiquiditySide
@@ -842,10 +846,15 @@ async def test_generate_order_status_report_client_id(
     instrument_provider.add(instrument)
 
     # Act
-    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
+    order_status_command = GenerateOrderStatusReport(
         instrument_id=instrument.id,
-        venue_order_id=VenueOrderId("1"),
         client_order_id=None,
+        venue_order_id=VenueOrderId("1"),
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
+        order_status_command,
     )
 
     # Assert
@@ -872,10 +881,15 @@ async def test_generate_order_status_report_venue_order_id(
     venue_order_id = VenueOrderId("323427122115")
 
     # Act
-    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
+    order_status_command = GenerateOrderStatusReport(
         instrument_id=instrument.id,
-        venue_order_id=venue_order_id,
         client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
+        order_status_command,
     )
 
     # Assert
@@ -988,7 +1002,15 @@ async def test_generate_order_status_reports_executable(exec_client):
     mock_betfair_request(exec_client._client, BetfairResponses.list_current_orders_executable())
 
     # Act
-    reports = await exec_client.generate_order_status_reports()
+    order_status_command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=False,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    reports = await exec_client.generate_order_status_reports(order_status_command)
 
     # Assert
     assert len(reports) == 2
@@ -1016,7 +1038,15 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     )
 
     # Act
-    reports = await exec_client.generate_order_status_reports()
+    order_status_command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=False,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    reports = await exec_client.generate_order_status_reports(order_status_command)
 
     # Assert
     assert len(reports) == 2
@@ -1047,7 +1077,15 @@ async def test_generate_fill_reports(exec_client):
     )
 
     # Act
-    reports = await exec_client.generate_fill_reports()
+    fill_reports_command = GenerateFillReports(
+        instrument_id=None,
+        venue_order_id=None,
+        start=None,
+        end=None,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    reports = await exec_client.generate_fill_reports(fill_reports_command)
 
     # Assert
     assert len(reports) == 2
