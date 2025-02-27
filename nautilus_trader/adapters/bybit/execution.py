@@ -82,8 +82,6 @@ from nautilus_trader.model.orders import TrailingStopMarketOrder
 if TYPE_CHECKING:
     import asyncio
 
-    import pandas as pd
-
     from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
     from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
@@ -93,6 +91,10 @@ if TYPE_CHECKING:
     from nautilus_trader.execution.messages import BatchCancelOrders
     from nautilus_trader.execution.messages import CancelAllOrders
     from nautilus_trader.execution.messages import CancelOrder
+    from nautilus_trader.execution.messages import GenerateFillReports
+    from nautilus_trader.execution.messages import GenerateOrderStatusReport
+    from nautilus_trader.execution.messages import GenerateOrderStatusReports
+    from nautilus_trader.execution.messages import GeneratePositionStatusReports
     from nautilus_trader.execution.messages import ModifyOrder
     from nautilus_trader.execution.messages import SubmitOrder
     from nautilus_trader.execution.messages import SubmitOrderList
@@ -298,16 +300,15 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
         try:
-            _symbol = instrument_id.symbol.value if instrument_id is not None else None
+            _symbol = (
+                command.instrument_id.symbol.value if command.instrument_id is not None else None
+            )
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
@@ -316,7 +317,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 bybit_orders = await self._http_account.query_order_history(
                     product_type,
                     symbol,
-                    open_only,
+                    command.open_only,
                 )
                 for bybit_order in bybit_orders:
                     # Uncomment for development
@@ -353,17 +354,15 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         PyCondition.is_false(
-            client_order_id is None and venue_order_id is None,
+            command.client_order_id is None and command.venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
-        if client_order_id:
-            order = self._cache.order(client_order_id)
+        if command.client_order_id:
+            order = self._cache.order(command.client_order_id)
             if order and order.order_type in (
                 OrderType.TRAILING_STOP_MARKET,
                 OrderType.TRAILING_STOP_LIMIT,
@@ -374,23 +373,23 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
         )
         try:
-            bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+            bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
             product_type = bybit_symbol.product_type
             bybit_orders = await self._http_account.query_order(
                 product_type=product_type,
-                symbol=instrument_id.symbol.value,
+                symbol=command.instrument_id.symbol.value,
                 client_order_id=client_order_id.value if client_order_id else None,
-                order_id=venue_order_id.value if venue_order_id else None,
+                order_id=command.venue_order_id.value if command.venue_order_id else None,
             )
             if len(bybit_orders) == 0:
-                self._log.error(f"Received no order for {venue_order_id}")
+                self._log.error(f"Received no order for {command.venue_order_id}")
                 return None
             target_order = bybit_orders[0]
             if len(bybit_orders) > 1:
-                self._log.warning(f"Received more than one order for {venue_order_id}")
+                self._log.warning(f"Received more than one order for {command.venue_order_id}")
                 target_order = bybit_orders[0]
 
             order_link_id = bybit_orders[0].orderLinkId
@@ -402,7 +401,7 @@ class BybitExecutionClient(LiveExecutionClient):
             order_report = target_order.parse_to_order_status_report(
                 client_order_id=client_order_id,
                 account_id=self.account_id,
-                instrument_id=instrument_id,
+                instrument_id=command.instrument_id,
                 report_id=UUID4(),
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
@@ -415,16 +414,15 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
         try:
-            _symbol = instrument_id.symbol.value if instrument_id is not None else None
+            _symbol = (
+                command.instrument_id.symbol.value if command.instrument_id is not None else None
+            )
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
@@ -457,16 +455,14 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
 
         try:
-            if instrument_id:
-                self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
-                bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+            if command.instrument_id:
+                self._log.debug(f"Requesting PositionStatusReport for {command.instrument_id}")
+                bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
                 positions = await self._http_account.query_position_info(
                     bybit_symbol.product_type,
                     bybit_symbol.raw_symbol,
@@ -474,7 +470,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 for position in positions:
                     position_report = position.parse_to_position_status_report(
                         account_id=self.account_id,
-                        instrument_id=instrument_id,
+                        instrument_id=command.instrument_id,
                         report_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                     )

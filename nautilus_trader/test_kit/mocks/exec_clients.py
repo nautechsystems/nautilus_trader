@@ -15,9 +15,11 @@
 
 import inspect
 
-import pandas as pd
-
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -25,7 +27,6 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 
@@ -277,22 +278,17 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         current_frame = inspect.currentframe()
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)
 
-        return self._order_status_reports.get(venue_order_id)
+        return self._order_status_reports.get(command.venue_order_id)
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         current_frame = inspect.currentframe()
         if current_frame:
@@ -302,67 +298,62 @@ class MockLiveExecutionClient(LiveExecutionClient):
         for _, report in self._order_status_reports.items():
             reports.append(report)
 
-        if instrument_id is not None:
-            reports = [r for r in reports if r.instrument_id == instrument_id]
+        if command.instrument_id is not None:
+            reports = [r for r in reports if r.instrument_id == command.instrument_id]
 
-        if start is not None:
-            reports = [r for r in reports if r.ts_accepted >= start]
+        if command.start is not None:
+            reports = [r for r in reports if r.ts_accepted >= command.start]
 
-        if end is not None:
-            reports = [r for r in reports if r.ts_accepted <= end]
+        if command.end is not None:
+            reports = [r for r in reports if r.ts_accepted <= command.end]
 
         return reports
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         current_frame = inspect.currentframe()
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)
 
-        if venue_order_id is not None:
-            trades = self._trades_reports.get(venue_order_id, [])
+        if command.venue_order_id is not None:
+            trades = self._trades_reports.get(command.venue_order_id, [])
         else:
             trades = []
             for t_list in self._trades_reports.values():
                 trades = [*trades, *t_list]
 
-        if instrument_id is not None:
-            trades = [t for t in trades if t.instrument_id == instrument_id]
+        if command.instrument_id is not None:
+            trades = [t for t in trades if t.instrument_id == command.instrument_id]
 
-        if start is not None:
-            trades = [t for t in trades if t.ts_event >= start]
+        if command.start is not None:
+            trades = [t for t in trades if t.ts_event >= command.start]
 
-        if end is not None:
-            trades = [t for t in trades if t.ts_event <= end]
+        if command.end is not None:
+            trades = [t for t in trades if t.ts_event <= command.end]
 
         return trades
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         current_frame = inspect.currentframe()
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)
 
-        if instrument_id is not None:
-            reports = self._position_status_reports.get(instrument_id, [])
+        if command.instrument_id is not None:
+            reports = self._position_status_reports.get(command.instrument_id, [])
         else:
             reports = []
             for p_list in self._position_status_reports.values():
                 reports = [*reports, *p_list]
 
-        if start is not None:
-            reports = [r for r in reports if r.ts_event >= start]
+        if command.start is not None:
+            reports = [r for r in reports if r.ts_event >= command.start]
 
-        if end is not None:
-            reports = [r for r in reports if r.ts_event <= end]
+        if command.end is not None:
+            reports = [r for r in reports if r.ts_event <= command.end]
 
         return reports
