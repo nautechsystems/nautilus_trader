@@ -128,6 +128,18 @@ class TestBacktestNode:
 
         # Assert
         assert len(results) == 1
+    
+    def test_run_parallel(self):
+        # Arrange
+        node = BacktestNode(configs=self.backtest_configs)
+        
+        # Act: Run backtests in parallel with a limited number of workers.
+        results = node.run_parallel(max_workers=2)
+        
+        # Assert: Ensure that a list of results is returned and the count is as expected.
+        assert isinstance(results, list)
+        assert len(results) == len(self.backtest_configs)
+
 
     def test_backtest_run_batch_sync(self):
         # Arrange
