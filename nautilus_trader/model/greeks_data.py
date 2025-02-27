@@ -40,6 +40,7 @@ class GreeksData(Data):
     cost_of_carry: float = 0.0
 
     vol: float = 0.0
+    pnl: float = 0.0
     price: float = 0.0
     delta: float = 0.0
     gamma: float = 0.0
@@ -53,17 +54,24 @@ class GreeksData(Data):
         return (
             f"GreeksData(instrument_id={self.instrument_id}, "
             f"expiry={self.expiry}, itm_prob={self.itm_prob * 100:.2f}%, "
-            f"vol={self.vol * 100:.2f}%, price={self.price:,.2f}, delta={self.delta:,.2f}, "
+            f"vol={self.vol * 100:.2f}%, pnl={self.pnl:,.2f}, , price={self.price:,.2f}, delta={self.delta:,.2f}, "
             f"gamma={self.gamma:,.2f}, vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"quantity={self.quantity}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     @classmethod
-    def from_delta(cls, instrument_id: InstrumentId, delta: float, ts_event: int = 0):
+    def from_delta(
+        cls,
+        instrument_id: InstrumentId,
+        delta: float,
+        multiplier: float,
+        ts_event: int = 0,
+    ):
         return GreeksData(
             ts_event,
             ts_event,
             instrument_id=instrument_id,
+            multiplier=multiplier,
             delta=delta,
             quantity=1.0,
         )
@@ -83,6 +91,7 @@ class GreeksData(Data):
             self.interest_rate,
             self.cost_of_carry,
             self.vol,
+            quantity * self.pnl,
             quantity * self.price,
             quantity * self.delta,
             quantity * self.gamma,
@@ -94,6 +103,7 @@ class GreeksData(Data):
 
 @customdataclass
 class PortfolioGreeks(Data):
+    pnl: float = 0.0
     price: float = 0.0
     delta: float = 0.0
     gamma: float = 0.0
@@ -102,7 +112,7 @@ class PortfolioGreeks(Data):
 
     def __repr__(self):
         return (
-            f"PortfolioGreeks(price={self.price:,.2f}, delta={self.delta:,.2f}, gamma={self.gamma:,.2f}, "
+            f"PortfolioGreeks(pnl={self.pnl:,.2f}, price={self.price:,.2f}, delta={self.delta:,.2f}, gamma={self.gamma:,.2f}, "
             f"vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
@@ -111,6 +121,7 @@ class PortfolioGreeks(Data):
         return PortfolioGreeks(
             self.ts_event,
             self.ts_init,
+            self.pnl + other.pnl,
             self.price + other.price,
             self.delta + other.delta,
             self.gamma + other.gamma,
