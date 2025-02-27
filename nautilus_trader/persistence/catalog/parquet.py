@@ -349,14 +349,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             The token '{i}' will be replaced with an automatically incremented
             integer as files are partitioned.
             If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
-        mode : enum, optional
+        mode : CatalogWriteMode, default 'OVERWRITE'
             The mode to use when writing data and when not using using the "partitioning" option.
             Can be one of the following:
             - CatalogWriteMode.APPEND: Appends the data to the existing data.
             - CatalogWriteMode.PREPEND: Prepends the data to the existing data.
             - CatalogWriteMode.OVERWRITE: Overwrites the existing data.
             - CatalogWriteMode.NEWFILE: Appends the data to the existing data by creating a new file.
-            If not specified, it defaults to CatalogWriteMode.OVERWRITE.
         kwargs : Any
             Additional keyword arguments to be passed to the `write_chunk` method.
 

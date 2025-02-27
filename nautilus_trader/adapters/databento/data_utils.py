@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from datetime import datetime
 from datetime import timedelta
 
@@ -227,7 +242,7 @@ def save_data_to_catalog(
     definition_file=None,
     data_file=None,
     base_path=None,
-    write_data_mode="overwrite",
+    write_data_mode=CatalogWriteMode.OVERWRITE,
     use_exchange_as_venue=False,
 ):
     """
@@ -239,17 +254,17 @@ def save_data_to_catalog(
     Parameters
     ----------
     *folders : str
-        Variable length argument list of folder names to be used in the catalog path.
+        The variable length argument list of folder names to be used in the catalog path.
     definition_file : str or Path, optional
-        Path to the Databento definition file.
+        The path to the Databento definition file.
     data_file : str or Path, optional
-        Path to the Databento data file.
+        The path to the Databento data file.
     base_path : str or Path, optional
-        Base path for the catalog.
-    write_data_mode : enum, optional
-        Mode for writing data to the catalog. defaults to CatalogWriteMode.OVERWRITE.
-    use_exchange_as_venue : bool, optional
-        Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
+        The base path for the catalog.
+    write_data_mode : CatalogWriteMode, default 'OVERWRITE'
+        The mode for writing data to the catalog.
+    use_exchange_as_venue : bool, default False
+        Whether to use actual exchanges for instrument IDs or GLBX.
 
     Returns
     -------

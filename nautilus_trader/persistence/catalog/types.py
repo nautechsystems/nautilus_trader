@@ -38,6 +38,10 @@ class CatalogDataResult:
 
 @unique
 class CatalogWriteMode(Enum):
+    """
+    Represents a catalog write mode.
+    """
+
     APPEND = 1
     PREPEND = 2
     OVERWRITE = 3
