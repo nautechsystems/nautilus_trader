@@ -450,7 +450,7 @@ cdef class Order:
             size=nautilus_pyo3.Quantity(self.leaves_qty.as_f64_c(), self.leaves_qty._mem.precision),
             order_type=order_type_to_pyo3(self.order_type),
             time_in_force=time_in_force_to_pyo3(self.time_in_force),
-            status=order_status_to_pyo3(self._fsm.state),
+            status=order_status_to_pyo3(<OrderStatus>self._fsm.state),
             ts_last=self.ts_last,
             ts_init=self.ts_init,
         )
