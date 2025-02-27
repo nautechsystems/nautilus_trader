@@ -25,6 +25,7 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -298,6 +299,7 @@ class TestEventStubs:
         position_id: PositionId | None = None,
         last_qty: Quantity | None = None,
         last_px: Price | None = None,
+        side: OrderSide | None = None,  # For linearizing: flip side & use 1/price for prob space
         liquidity_side: LiquiditySide = LiquiditySide.TAKER,
         ts_filled_ns: int = 0,
         account: Account | None = None,
@@ -307,8 +309,9 @@ class TestEventStubs:
         venue_order_id = venue_order_id or order.venue_order_id or VenueOrderId("1")
         trade_id = trade_id or TradeId(order.client_order_id.value.replace("O", "E"))
         position_id = position_id or order.position_id
-        last_px = last_px or Price.from_str(f"{1:.{instrument.price_precision}f}")
         last_qty = last_qty or order.quantity
+        last_px = last_px or Price.from_str(f"{1:.{instrument.price_precision}f}")
+        order_side = side or order.side
 
         if account is None:
             # Causes circular import if moved to the top
@@ -333,7 +336,7 @@ class TestEventStubs:
             account_id=account_id,
             trade_id=trade_id,
             position_id=position_id,
-            order_side=order.side,
+            order_side=order_side,
             order_type=order.order_type,
             last_qty=last_qty,
             last_px=last_px or order.price,
