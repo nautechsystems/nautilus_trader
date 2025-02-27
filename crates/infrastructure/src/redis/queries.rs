@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{StreamExt, future::join_all};
+use futures::future::join_all;
 use indexmap::IndexMap;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_core::{UUID4, UnixNanos};
@@ -119,11 +119,35 @@ impl DatabaseQueries {
         con: &mut ConnectionManager,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+        tracing::debug!("Starting scan for pattern: {}", pattern);
+
+        let mut keys = Vec::new();
+        let mut cursor = 0;
+
+        loop {
+            let result: (i64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(1000)
+                .query_async(con)
+                .await?;
+
+            cursor = result.0;
+            tracing::debug!(
+                "Scan batch found {} keys, next cursor: {cursor}",
+                result.1.len(),
+            );
+            keys.extend(result.1);
+
+            if cursor == 0 {
+                break;
+            }
+        }
+
+        tracing::debug!("Scan complete, found {} keys total", keys.len());
+        Ok(keys)
     }
 
     pub async fn read(
@@ -494,7 +518,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Self::deserialize_payload(encoding, &result[0])?;
+        let currency = Self::deserialize_payload::<Currency>(encoding, &result[0])?;
 
         Ok(Some(currency))
     }
@@ -511,7 +535,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let instrument = Self::deserialize_payload(encoding, &result[0])?;
+        let instrument = Self::deserialize_payload::<InstrumentAny>(encoding, &result[0])?;
 
         Ok(Some(instrument))
     }
@@ -528,7 +552,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let synthetic = Self::deserialize_payload(encoding, &result[0])?;
+        let synthetic = Self::deserialize_payload::<SyntheticInstrument>(encoding, &result[0])?;
 
         Ok(Some(synthetic))
     }
@@ -545,7 +569,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let account = Self::deserialize_payload(encoding, &result[0])?;
+        let account = Self::deserialize_payload::<AccountAny>(encoding, &result[0])?;
 
         Ok(Some(account))
     }
