@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from asyncio import TaskGroup
 from decimal import Decimal
 
 import msgspec
@@ -32,6 +33,7 @@ from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUse
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesDualSidePosition
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesLeverage
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
@@ -142,6 +144,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         if self._use_trade_lite:
             self._log.info("TRADE_LITE events will be used", LogColor.BLUE)
 
+        self._leverages = config.futures_leverages
+
         # WebSocket futures schema decoders
         self._decoder_futures_user_msg_wrapper = msgspec.json.Decoder(BinanceFuturesUserMsgWrapper)
         self._decoder_futures_order_update_wrapper = msgspec.json.Decoder(
@@ -171,6 +175,16 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         )
         while self.get_account() is None:
             await asyncio.sleep(0.1)
+
+        if self._leverages:
+            async with TaskGroup() as tg:
+                tasks = [
+                    tg.create_task(self._futures_http_account.set_leverage(symbol, leverage))
+                    for symbol, leverage in self._leverages.items()
+                ]
+            for task in tasks:
+                res: BinanceFuturesLeverage = task.result()
+                self._log.info(f"Set default leverage {res.symbol} {res.leverage}X")
 
         account: MarginAccount = self.get_account()
         position_risks = await self._futures_http_account.query_futures_position_risk()

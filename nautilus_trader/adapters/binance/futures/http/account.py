@@ -24,11 +24,13 @@ from nautilus_trader.adapters.binance.common.schemas.account import BinanceStatu
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesDualSidePosition
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesLeverage
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
@@ -336,6 +338,61 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
         return self._get_resp_decoder.decode(raw)
 
 
+class BinanceFuturesLeverageHttp(BinanceHttpEndpoint):
+    """
+    Initial leverage.
+
+    `POST /fapi/v1/leverage`
+
+    References
+    ----------
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Change-Initial-Leverage
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            HttpMethod.POST: BinanceSecurityType.TRADE,
+        }
+        url_path = base_endpoint + "leverage"
+
+        super().__init__(client, methods, url_path)
+        self._resp_decoder = msgspec.json.Decoder(BinanceFuturesLeverage)
+
+    class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        Initial leverage POST endpoint parameters.
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+        leverage : PositiveInt
+            Target initial leverage: int from 1 to 125
+        timestamp : str
+            The millisecond timestamp of the request.
+        recvWindow : str, optional
+            The response receive window in milliseconds for the request.
+
+        """
+
+        symbol: BinanceSymbol
+        leverage: PositiveInt
+        timestamp: str
+        recvWindow: str | None = None
+
+    async def post(
+        self,
+        params: PostParameters,
+    ) -> BinanceFuturesLeverage:
+        method_type = HttpMethod.POST
+        raw = await self._method(method_type, params)
+        return self._resp_decoder.decode(raw)
+
+
 class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
     """
     Provides access to the Binance Futures Account/Trade HTTP REST API.
@@ -386,6 +443,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             client,
             v2_endpoint_base,
         )
+        self._endpoint_futures_leverage = BinanceFuturesLeverageHttp(client, self.base_endpoint)
 
     async def query_futures_hedge_mode(
         self,
@@ -396,6 +454,24 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         """
         return await self._endpoint_futures_position_mode.get(
             params=self._endpoint_futures_position_mode.GetParameters(
+                timestamp=self._timestamp(),
+                recvWindow=recv_window,
+            ),
+        )
+
+    async def set_leverage(
+        self,
+        symbol: BinanceSymbol,
+        leverage: PositiveInt,
+        recv_window: str | None = None,
+    ) -> BinanceFuturesLeverage:
+        """
+        Set Binance Futures initial leverage.
+        """
+        return await self._endpoint_futures_leverage.post(
+            self._endpoint_futures_leverage.PostParameters(
+                symbol=symbol,
+                leverage=leverage,
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
