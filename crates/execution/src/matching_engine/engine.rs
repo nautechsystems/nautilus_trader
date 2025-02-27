@@ -46,10 +46,7 @@ use nautilus_model::{
     },
     instruments::{EXPIRING_INSTRUMENT_TYPES, InstrumentAny},
     orderbook::OrderBook,
-    orders::{
-        Order, OrderAny, PassiveOrderAny, StopOrderAny, TrailingStopLimitOrder,
-        TrailingStopMarketOrder,
-    },
+    orders::{Order, OrderAny, PassiveOrderAny, StopOrderAny},
     position::Position,
     types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
@@ -63,6 +60,7 @@ use crate::{
         fee::{FeeModel, FeeModelAny},
         fill::FillModel,
     },
+    trailing::trailing_stop_calculate,
 };
 
 /// An order matching engine for a single market.
@@ -1092,10 +1090,12 @@ impl OrderMatchingEngine {
 
             // Manage trailing stop
             if let PassiveOrderAny::Stop(o) = order {
-                match o {
-                    StopOrderAny::TrailingStopMarket(o) => self.update_trailing_stop_market(o),
-                    StopOrderAny::TrailingStopLimit(o) => self.update_trailing_stop_limit(o),
-                    _ => {}
+                if let PassiveOrderAny::Stop(
+                    StopOrderAny::TrailingStopMarket(_) | StopOrderAny::TrailingStopLimit(_),
+                ) = order
+                {
+                    let mut order = OrderAny::from(o.to_owned());
+                    self.update_trailing_stop_order(&mut order);
                 }
             }
 
@@ -1793,12 +1793,21 @@ impl OrderMatchingEngine {
         self.generate_order_updated(order, quantity, Some(price), Some(trigger_price));
     }
 
-    fn update_trailing_stop_market(&mut self, order: &TrailingStopMarketOrder) {
-        todo!()
-    }
+    fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
+        let (new_trigger_price, new_price) = trailing_stop_calculate(
+            self.instrument.price_increment(),
+            order,
+            self.core.bid,
+            self.core.ask,
+            self.core.last,
+        )
+        .unwrap();
 
-    fn update_trailing_stop_limit(&mut self, order: &TrailingStopLimitOrder) {
-        todo!()
+        if new_trigger_price.is_none() && new_price.is_none() {
+            return;
+        }
+
+        self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price);
     }
 
     // -- EVENT HANDLING -----------------------------------------------------
@@ -1817,13 +1826,7 @@ impl OrderMatchingEngine {
                 OrderType::TrailingStopLimit | OrderType::TrailingStopMarket
             ) && order.trigger_price().is_none()
             {
-                match order.order_type() {
-                    OrderType::TrailingStopLimit => self
-                        .update_trailing_stop_limit(&TrailingStopLimitOrder::from(order.clone())),
-                    OrderType::TrailingStopMarket => self
-                        .update_trailing_stop_market(&TrailingStopMarketOrder::from(order.clone())),
-                    _ => {}
-                }
+                self.update_trailing_stop_order(order);
             }
         }
 

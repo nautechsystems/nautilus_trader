@@ -2650,3 +2650,79 @@ fn test_process_trailing_stop_orders_rejeceted_and_valid(
         client_order_id_trailing_stop_limit
     );
 }
+
+#[rstest]
+fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        None,
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create TrailingStopMarket BUY order which is not triggered
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut trailing_stop_market = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .trigger_price(Price::from("1505.00"))
+        .trailing_offset(dec!(1))
+        .limit_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut trailing_stop_market, account_id);
+
+    // Move the market down to 1480.00 so that Trailing buy order is recalculated
+    let tick = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1480.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Seller,
+        TradeId::from("1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine_l2.process_trade_tick(&tick);
+
+    // Check that we have received OrderAccepted and then OrderUpdated
+    // with new trigger price of 1481.00 because of trailing offset of 1
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_updated = match order_event_second {
+        OrderEventAny::Updated(order_updated) => order_updated,
+        _ => panic!("Expected OrderUpdated event in second message"),
+    };
+    assert_eq!(order_updated.client_order_id, client_order_id);
+    assert_eq!(order_updated.trigger_price.unwrap(), Price::from("1481.00"));
+}
