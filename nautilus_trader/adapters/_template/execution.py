@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -26,9 +29,6 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import VenueOrderId
 
 
 # The 'pragma: no cover' comment excludes a method from test coverage.
@@ -92,9 +92,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         raise NotImplementedError(
             "method `generate_order_status_report` must be implemented in the subclass",
@@ -102,10 +100,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         raise NotImplementedError(
             "method `generate_order_status_reports` must be implemented in the subclass",
@@ -113,10 +108,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         raise NotImplementedError(
             "method `generate_fill_reports` must be implemented in the subclass",
@@ -124,9 +116,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         raise NotImplementedError(
             "method `generate_position_status_reports` must be implemented in the subclass",

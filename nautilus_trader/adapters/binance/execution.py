@@ -16,8 +16,6 @@
 import asyncio
 from decimal import Decimal
 
-import pandas as pd
-
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -49,6 +47,10 @@ from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
@@ -323,53 +325,53 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         PyCondition.is_false(
-            client_order_id is None and venue_order_id is None,
+            command.client_order_id is None and command.venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
-        retries = self._generate_order_status_retries.get(client_order_id, 0)
+        retries = self._generate_order_status_retries.get(command.client_order_id, 0)
         if retries > 3:
             self._log.error(
                 f"Reached maximum retries 3/3 for generating OrderStatusReport for "
-                f"{repr(client_order_id) if client_order_id else ''} "
-                f"{repr(venue_order_id) if venue_order_id else ''}",
+                f"{repr(command.client_order_id) if command.client_order_id else ''} "
+                f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
             )
             return None
 
         self._log.info(
             f"Generating OrderStatusReport for "
-            f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"{repr(command.client_order_id) if command.client_order_id else ''} "
+            f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
         )
 
         try:
-            if venue_order_id:
+            if command.venue_order_id:
                 binance_order = await self._http_account.query_order(
-                    symbol=instrument_id.symbol.value,
-                    order_id=int(venue_order_id.value),
+                    symbol=command.instrument_id.symbol.value,
+                    order_id=int(command.venue_order_id.value),
                 )
             else:
                 binance_order = await self._http_account.query_order(
-                    symbol=instrument_id.symbol.value,
+                    symbol=command.instrument_id.symbol.value,
                     orig_client_order_id=(
-                        client_order_id.value if client_order_id is not None else None
+                        command.client_order_id.value
+                        if command.client_order_id is not None
+                        else None
                     ),
                 )
         except BinanceError as e:
             retries += 1
             self._log.error(
-                f"Cannot generate order status report for {client_order_id!r}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/3",
             )
-            self._generate_order_status_retries[client_order_id] = retries
-            if not client_order_id:
+            self._generate_order_status_retries[command.client_order_id] = retries
+            if not command.client_order_id:
                 self._log.warning("Cannot retry without a client order ID")
             else:
-                order: Order | None = self._cache.order(client_order_id)
+                order: Order | None = self._cache.order(command.client_order_id)
                 if order is None:
                     self._log.warning("Order not found in cache")
                     return None
@@ -382,8 +384,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     # so that there are no longer subsequent retries (we don't expect many of these).
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
-                        instrument_id=instrument_id,
-                        client_order_id=client_order_id,
+                        instrument_id=command.instrument_id,
+                        client_order_id=command.client_order_id,
                         reason=str(e.message),
                         ts_event=self._clock.timestamp_ns(),
                     )
@@ -392,7 +394,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if not binance_order or (binance_order.origQty and Decimal(binance_order.origQty) == 0):
             # Cannot proceed to generating report
             self._log.error(
-                f"Cannot generate `OrderStatusReport` for {client_order_id=!r}, {venue_order_id=!r}: "
+                f"Cannot generate `OrderStatusReport` for {command.client_order_id=!r}, {command.venue_order_id=!r}: "
                 "order not found",
             )
             return None
@@ -436,16 +438,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         self._log.debug("Requesting OrderStatusReports...")
 
         try:
             # Check Binance for all order active symbols
-            symbol = instrument_id.symbol.value if instrument_id is not None else None
+            symbol = (
+                command.instrument_id.symbol.value if command.instrument_id is not None else None
+            )
             active_symbols = self._get_cache_active_symbols()
             active_symbols.update(await self._get_binance_active_position_symbols(symbol))
             binance_open_orders = await self._http_account.query_open_orders(symbol)
@@ -453,7 +454,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 active_symbols.add(order.symbol)
             # Get all orders for those active symbols
             binance_orders: list[BinanceOrder] = []
-            if open_only:
+            if command.open_only:
                 binance_orders = binance_open_orders
             else:
                 for symbol in active_symbols:
@@ -467,8 +468,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._log.exception(f"Cannot generate OrderStatusReport: {e.message}", e)
             return []
 
-        start_ms = secs_to_millis(start.timestamp()) if start is not None else None
-        end_ms = secs_to_millis(end.timestamp()) if end is not None else None
+        start_ms = secs_to_millis(command.start.timestamp()) if command.start is not None else None
+        end_ms = secs_to_millis(command.end.timestamp()) if command.end is not None else None
 
         reports: list[OrderStatusReport] = []
         for order in binance_orders:
@@ -497,24 +498,29 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.debug("Requesting FillReports...")
 
         try:
             # Check Binance for all trades on active symbols
-            symbol = instrument_id.symbol.value if instrument_id is not None else None
+            symbol = (
+                command.instrument_id.symbol.value if command.instrument_id is not None else None
+            )
             active_symbols = self._get_cache_active_symbols()
             active_symbols.update(await self._get_binance_active_position_symbols(symbol))
             binance_trades: list[BinanceUserTrade] = []
             for symbol in active_symbols:
                 response = await self._http_account.query_user_trades(
                     symbol=symbol,
-                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
-                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
+                    start_time=(
+                        secs_to_millis(command.start.timestamp())
+                        if command.start is not None
+                        else None
+                    ),
+                    end_time=(
+                        secs_to_millis(command.end.timestamp()) if command.end is not None else None
+                    ),
                 )
                 binance_trades.extend(response)
         except BinanceError as e:
@@ -548,20 +554,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         try:
-            if instrument_id:
-                self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
-                symbol = instrument_id.symbol.value
+            if command.instrument_id:
+                self._log.info(f"Requesting PositionStatusReport for {command.instrument_id}")
+                symbol = command.instrument_id.symbol.value
                 reports = await self._get_binance_position_status_reports(symbol)
                 if not reports:
                     now = self._clock.timestamp_ns()
                     report = PositionStatusReport(
                         account_id=self.account_id,
-                        instrument_id=instrument_id,
+                        instrument_id=command.instrument_id,
                         position_side=PositionSide.FLAT,
                         quantity=Quantity.zero(),
                         report_id=UUID4(),

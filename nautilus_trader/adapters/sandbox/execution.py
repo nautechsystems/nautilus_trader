@@ -15,8 +15,6 @@
 
 import asyncio
 
-import pandas as pd
-
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -29,6 +27,10 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -42,10 +44,7 @@ from nautilus_trader.model.enums import account_type_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.portfolio.base import PortfolioFacade
@@ -162,35 +161,25 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         return None
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         return []
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         return []
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         return []
 

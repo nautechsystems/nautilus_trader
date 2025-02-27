@@ -33,6 +33,8 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.execution.reports import ExecutionMassStatus
@@ -489,7 +491,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 clients = self.get_clients_for_orders(open_orders)
 
             tasks = [
-                c.generate_order_status_reports(open_only=self.open_check_open_only)
+                c.generate_order_status_reports(
+                    GenerateOrderStatusReports(
+                        instrument_id=None,
+                        start=None,
+                        end=None,
+                        open_only=self.open_check_open_only,
+                        command_id=UUID4(),
+                        ts_init=self._clock.timestamp_ns(),
+                    ),
+                )
                 for c in clients
             ]
             order_reports_all = await asyncio.gather(*tasks)
@@ -582,7 +593,16 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.debug(f"Position {instrument_id} for {client_id} already reconciled")
                     continue  # Already reconciled
                 self._log.info(f"{position} pending reconciliation")
-                report_tasks.append(client.generate_position_status_reports(instrument_id))
+                position_status_command = GeneratePositionStatusReports(
+                    instrument_id=instrument_id,
+                    start=None,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                report_tasks.append(
+                    client.generate_position_status_reports(position_status_command),
+                )
 
             if report_tasks:
                 # Reconcile specific internal open positions
