@@ -100,7 +100,7 @@ cdef class GreeksCalculator:
         beta_weights: dict[InstrumentId, float] | None = None,
     ) -> GreeksData:
         """
-        Calculate option greeks for a given instrument.
+        Calculate option or underlying greeks for a given instrument and a quantity of 1.
 
         Additional features:
         - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
@@ -162,11 +162,11 @@ cdef class GreeksCalculator:
 
             delta = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
                                        percent_greeks, index_instrument_id, beta_weights)[0]
-            greeks_data = GreeksData.from_delta(instrument_id, delta, ts_event)
+            greeks_data = GreeksData.from_delta(instrument_id, delta, multiplier, ts_event)
 
             if position is not None:
-                # we set as price the pnl of a unit position so we can see how the price of a portfolio evolves with shocks
-                greeks_data.price = float(position.unrealized_pnl(Price.from_str(str(underlying_price + spot_shock)))) / float(position.signed_qty)
+                greeks_data.pnl = multiplier * ((underlying_price + spot_shock) - position.avg_px_open)
+                greeks_data.price = greeks_data.pnl
 
             return greeks_data
 
@@ -212,7 +212,7 @@ cdef class GreeksCalculator:
                                                percent_greeks, index_instrument_id, beta_weights)
 
             greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_years, multiplier, 1.0,
-                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, greeks.price, delta, gamma, greeks.vega, greeks.theta,
+                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, 0., greeks.price, delta, gamma, greeks.vega, greeks.theta,
                                      abs(greeks.delta / multiplier))
 
             # adding greeks to cache
@@ -238,8 +238,11 @@ cdef class GreeksCalculator:
             greeks_data = GreeksData(greeks_data.ts_event, greeks_data.ts_event,
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
                                      shocked_time_to_expiry, greeks_data.multiplier, greeks_data.quantity, shocked_underlying_price,
-                                     greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, greeks.price, delta, gamma, greeks.vega,
+                                     greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, 0., greeks.price, delta, gamma, greeks.vega,
                                      greeks.theta, abs(greeks.delta / greeks_data.multiplier))
+
+        if position is not None:
+            greeks_data.pnl = greeks_data.price - greeks_data.multiplier * position.avg_px_open
 
         return greeks_data
 
@@ -438,7 +441,6 @@ cdef class GreeksCalculator:
                 index_instrument_id,
                 beta_weights,
             )
-
             position_greeks = quantity * instrument_greeks
             portfolio_greeks += position_greeks
 
