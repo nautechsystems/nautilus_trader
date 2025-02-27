@@ -19,7 +19,8 @@ import hashlib
 import importlib
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -28,6 +29,7 @@ from msgspec import Meta
 from nautilus_trader.common import Environment
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
@@ -85,6 +87,8 @@ def msgspec_encoding_hook(obj: Any) -> Any:
         return obj.value
     if isinstance(obj, Identifier):
         return obj.value
+    if isinstance(obj, BarSpecification):
+        return str(obj)
     if isinstance(obj, BarType):
         return str(obj)
     if isinstance(obj, (Price | Quantity)):
@@ -111,6 +115,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return InstrumentId.from_str(obj)
     if issubclass(obj_type, Identifier):
         return obj_type(obj)
+    if obj_type == BarSpecification:
+        return BarSpecification.from_str(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
     if obj_type == Price:
