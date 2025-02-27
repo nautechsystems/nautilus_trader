@@ -18,7 +18,7 @@ use nautilus_model::{
     data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol},
-    types::{ERROR_PRICE, PRICE_MAX, PRICE_MIN, Price},
+    types::{PRICE_MAX, PRICE_MIN, Price},
 };
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
@@ -126,12 +126,13 @@ pub fn normalize_amount(amount: f64, precision: u8) -> f64 {
 
 /// Parses a Nautilus price from the given `value`.
 ///
-/// If `value` is outside the valid range, then will return an [`ERROR_PRICE`].
+/// Values outside the representable range are capped to min/max price.
 #[must_use]
 pub fn parse_price(value: f64, precision: u8) -> Price {
     match value {
-        PRICE_MIN..=PRICE_MAX => Price::new(value, precision),
-        _ => ERROR_PRICE,
+        v if (PRICE_MIN..=PRICE_MAX).contains(&v) => Price::new(value, precision),
+        v if v < PRICE_MIN => Price::min(precision),
+        _ => Price::max(precision),
     }
 }
 
