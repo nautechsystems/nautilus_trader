@@ -16,7 +16,7 @@
 import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import msgspec
 
@@ -74,9 +74,9 @@ class BinanceWebSocketClient:
         self._loop = loop
 
         self._streams: list[str] = []
-        self._clients: Dict[int, Optional[WebSocketClient]] = {}  # Client ID -> WebSocket client
-        self._client_streams: Dict[int, List[str]] = {}  # Client ID -> streams
-        self._is_connecting: Dict[int, bool] = {}  # Client ID -> is_connecting flag
+        self._clients: dict[int, WebSocketClient | None] = {}  # Client ID -> WebSocket client
+        self._client_streams: dict[int, list[str]] = {}  # Client ID -> streams
+        self._is_connecting: dict[int, bool] = {}  # Client ID -> is_connecting flag
         self._msg_id: int = 0
         self._next_client_id: int = 0
 
@@ -124,6 +124,7 @@ class BinanceWebSocketClient:
         -------
         int
             The client ID handling the stream, or -1 if not found.
+
         """
         for client_id, streams in self._client_streams.items():
             if stream in streams:
@@ -138,6 +139,7 @@ class BinanceWebSocketClient:
         -------
         int
             Client ID to use for the new subscription.
+
         """
         # Try to find an existing client with room for another subscription
         for client_id, streams in self._client_streams.items():
@@ -162,7 +164,7 @@ class BinanceWebSocketClient:
             return
 
         # Group streams by client (using existing assignments or creating new ones)
-        client_streams: Dict[int, List[str]] = {}
+        client_streams: dict[int, list[str]] = {}
         for stream in self._streams:
             client_id = self._get_client_for_stream(stream)
             if client_id == -1:
@@ -176,7 +178,7 @@ class BinanceWebSocketClient:
         for client_id, streams in client_streams.items():
             await self._connect_client(client_id, streams)
 
-    async def _connect_client(self, client_id: int, streams: List[str]) -> None:
+    async def _connect_client(self, client_id: int, streams: list[str]) -> None:
         """
         Connect a single websocket client to the server.
 
@@ -186,6 +188,7 @@ class BinanceWebSocketClient:
             ID of the client to connect
         streams : List[str]
             List of streams for this client
+
         """
         if not streams:
             self._log.error(f"Cannot connect client {client_id}: no streams provided")
@@ -221,7 +224,9 @@ class BinanceWebSocketClient:
         if len(streams) > 1:
             msg = self._create_subscribe_msg(streams=streams[1:])
             await self._send(client_id, msg)
-            self._log.debug(f"Client {client_id}: Subscribed to additional {len(streams)-1} streams")
+            self._log.debug(
+                f"Client {client_id}: Subscribed to additional {len(streams)-1} streams",
+            )
 
     def _handle_ping(self, client_id: int, raw: bytes) -> None:
         self._loop.create_task(self.send_pong(client_id, raw))
@@ -236,7 +241,7 @@ class BinanceWebSocketClient:
         try:
             await self._clients[client_id].send_pong(raw)
         except WebSocketClientError as e:
-            self._log.error(f"Client {client_id}: {str(e)}")
+            self._log.error(f"Client {client_id}: {e!s}")
 
     def _handle_reconnect(self, client_id: int) -> None:
         """
@@ -255,7 +260,7 @@ class BinanceWebSocketClient:
         if self._handler_reconnect:
             self._loop.create_task(self._handler_reconnect())  # type: ignore
 
-    async def _resubscribe_client(self, client_id: int, streams: List[str]) -> None:
+    async def _resubscribe_client(self, client_id: int, streams: list[str]) -> None:
         """
         Resubscribe all streams for a given client.
         """
@@ -289,7 +294,7 @@ class BinanceWebSocketClient:
         try:
             await self._clients[client_id].disconnect()
         except WebSocketClientError as e:
-            self._log.error(f"Client {client_id}: {str(e)}")
+            self._log.error(f"Client {client_id}: {e!s}")
 
         self._clients[client_id] = None  # Dispose (will go out of scope)
         self._log.debug(f"Client {client_id}: Disconnected from {self._base_url}")
@@ -590,7 +595,7 @@ class BinanceWebSocketClient:
         self._client_streams[client_id].append(stream)
 
         # Wait for client to finish connecting if it's in progress
-        while client_id in self._is_connecting and self._is_connecting[client_id]:
+        while self._is_connecting.get(client_id):
             await asyncio.sleep(0.01)
 
         # If client doesn't exist yet, connect it
@@ -661,4 +666,4 @@ class BinanceWebSocketClient:
         try:
             await self._clients[client_id].send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
-            self._log.error(f"Client {client_id}: {str(e)}")
+            self._log.error(f"Client {client_id}: {e!s}")
