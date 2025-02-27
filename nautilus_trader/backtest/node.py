@@ -50,6 +50,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.types import CatalogDataResult
+import concurrent.futures
 
 
 class BacktestNode:
@@ -179,6 +180,21 @@ class BacktestNode:
                 if raise_exception:
                     raise e
 
+        return results
+    
+    def run_parallel(self, raise_exception: bool = False, max_workers: int = 4) -> list[BacktestResult]:
+        """
+        Run each backtest configuration in parallel using ProcessPoolExecutor.
+        Limits the number of concurrently running processes to 'max_workers'.
+        """
+        results = []
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(BacktestNode._run_config_worker, config, raise_exception)
+                for config in self._configs
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
         return results
 
     def _validate_configs(self, configs: list[BacktestRunConfig]) -> None:  # noqa: C901
@@ -489,3 +505,17 @@ class BacktestNode:
         for engine in self.get_engines():
             if not engine.trader.is_disposed:
                 engine.dispose()
+    
+    @staticmethod
+    def _run_config_worker(config, raise_exception):
+        """
+        Worker function to run a single configuration.
+        Creates a new BacktestNode instance for the given config
+        and returns the first (and only) result.
+        """
+        try:
+            node = BacktestNode([config])
+            result = node.run(raise_exception=raise_exception)[0]
+            return result
+        except Exception as e:
+            return e
