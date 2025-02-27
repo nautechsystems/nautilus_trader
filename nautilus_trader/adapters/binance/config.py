@@ -16,6 +16,7 @@
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
@@ -123,6 +124,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+    futures_leverages : dict[BinanceSymbol, PositiveInt], optional
+        The initial leverage to be used for each symbol. It's applicable to futures only.
 
     Warnings
     --------
@@ -147,3 +150,4 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     recv_window_ms: PositiveInt = 5_000
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
+    futures_leverages: dict[BinanceSymbol, PositiveInt] | None = None
