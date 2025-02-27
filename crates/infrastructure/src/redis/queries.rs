@@ -18,25 +18,29 @@ use std::{collections::HashMap, str::FromStr};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, future::join_all};
+use indexmap::IndexMap;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     events::{OrderEventAny, OrderFilled, OrderInitialized},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TraderId,
+    },
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::{LimitOrder, MarketOrder, OrderAny},
     position::Position,
-    types::Currency,
+    types::{Currency, Price, Quantity},
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
+use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
 
-use super::transformer::Transformer;
 // Collection keys
 const INDEX: &str = "index";
 const GENERAL: &str = "general";
@@ -73,28 +77,42 @@ impl DatabaseQueries {
         let mut value = serde_json::to_value(payload)?;
         convert_timestamps(&mut value);
         match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
-            SerializationEncoding::Json => serde_json::to_vec(&value)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to serialize msgpack `payload` for {}: {e}",
+                    std::any::type_name::<T>()
+                )
+            }),
+            SerializationEncoding::Json => serde_json::to_vec(&value).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to serialize json `payload` for {}: {e}",
+                    std::any::type_name::<T>()
+                )
+            }),
         }
     }
 
-    pub fn deserialize_payload(
+    pub fn deserialize_payload<T>(
         encoding: SerializationEncoding,
         payload: &[u8],
-    ) -> anyhow::Result<Value> {
-        let mut value = match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
-            SerializationEncoding::Json => serde_json::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
-        };
-
-        convert_timestamp_strings(&mut value);
-        tracing::debug!("{}", value);
-
-        Ok(value)
+    ) -> anyhow::Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to deserialize msgpack `payload` for {}: {e}",
+                    std::any::type_name::<T>()
+                )
+            }),
+            SerializationEncoding::Json => serde_json::from_slice(payload).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to deserialize json `payload` for {}: {e}",
+                    std::any::type_name::<T>()
+                )
+            }),
+        }
     }
 
     pub async fn scan_keys(
@@ -137,16 +155,13 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let currencies = Self::load_currencies(con, trader_key, encoding)
-            .await
-            .map_err(|e| anyhow::anyhow!("Error loading currencies: {e}"))?;
-
-        let (instruments, synthetics, accounts, orders, positions) = try_join!(
+        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
+            Self::load_currencies(con, trader_key, encoding),
             Self::load_instruments(con, trader_key, encoding),
             Self::load_synthetics(con, trader_key, encoding),
             Self::load_accounts(con, trader_key, encoding),
             Self::load_orders(con, trader_key, encoding),
-            Self::load_positions(con, trader_key, encoding)
+            Self::load_positions(con, trader_key, encoding),
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
@@ -200,7 +215,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values.
+        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values
         currencies.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} currencies(s)", currencies.len());
 
@@ -259,7 +274,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
+        // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values
         instruments.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} instruments(s)", instruments.len());
 
@@ -318,7 +333,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values.
+        // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values
         synthetics.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} synthetics(s)", synthetics.len());
 
@@ -365,7 +380,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values.
+        // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values
         accounts.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} accounts(s)", accounts.len());
 
@@ -412,7 +427,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values.
+        // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values
         orders.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} order(s)", orders.len());
 
@@ -459,7 +474,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values.
+        // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values
         positions.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} position(s)", positions.len());
 
@@ -479,10 +494,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Transformer::currency_from_value(
-            Self::deserialize_payload(encoding, &result[0])?,
-            code,
-        )?;
+        let currency = Self::deserialize_payload(encoding, &result[0])?;
 
         Ok(Some(currency))
     }
@@ -499,8 +511,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let instrument =
-            Transformer::instrument_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        let instrument = Self::deserialize_payload(encoding, &result[0])?;
 
         Ok(Some(instrument))
     }
@@ -517,8 +528,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let synthetic =
-            Transformer::synthetic_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        let synthetic = Self::deserialize_payload(encoding, &result[0])?;
 
         Ok(Some(synthetic))
     }
@@ -535,8 +545,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let account =
-            Transformer::account_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        let account = Self::deserialize_payload(encoding, &result[0])?;
 
         Ok(Some(account))
     }
@@ -553,15 +562,25 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let order_initialized: OrderInitialized = Transformer::order_initialized_from_value(
-            Self::deserialize_payload(encoding, &result[0])?,
-        )?;
+        let bytes = result
+            .iter()
+            .flat_map(|b| b.iter().copied())
+            .collect::<Vec<u8>>();
+
+        let order_initialized_value = match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(&bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
+            SerializationEncoding::Json => serde_json::from_slice(&bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
+        };
+
+        let order_initialized: OrderInitialized =
+            order_initialized_from_value(order_initialized_value)?;
         let mut order = OrderAny::from_events(vec![OrderEventAny::Initialized(order_initialized)])?;
 
+        // Skip first initialized event
         for (event_count, event) in result.iter().skip(1).enumerate() {
-            let event: OrderEventAny = Transformer::order_event_any_from_value(
-                Self::deserialize_payload(encoding, event)?,
-            )?;
+            let event: OrderEventAny = Self::deserialize_payload(encoding, event)?;
 
             if order.events().contains(&&event) {
                 anyhow::bail!("Corrupt cache with duplicate event for order {event}");
@@ -690,8 +709,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let initial_fill: OrderFilled =
-            Transformer::order_filled_from_value(Self::deserialize_payload(encoding, &result[0])?)?;
+        let initial_fill: OrderFilled = Self::deserialize_payload(encoding, &result[0])?;
 
         let instrument = if let Some(instrument) =
             Self::load_instrument(con, trader_key, &initial_fill.instrument_id, encoding).await?
@@ -705,8 +723,7 @@ impl DatabaseQueries {
         let mut position = Position::new(&instrument, initial_fill);
         // then loop through rest of the events(orderfill) present in reult expect first one
         for event in result.iter().skip(1) {
-            let order_filled: OrderFilled =
-                Transformer::order_filled_from_value(Self::deserialize_payload(encoding, event)?)?;
+            let order_filled: OrderFilled = Self::deserialize_payload(encoding, event)?;
 
             if position.events.contains(&order_filled) {
                 anyhow::bail!("Corrupt cache with duplicate event for position {order_filled}");
@@ -780,9 +797,7 @@ impl DatabaseQueries {
 }
 
 fn is_timestamp_field(key: &str) -> bool {
-    let expire_match = key == "expire_time_ns";
-    let ts_match = key.starts_with("ts_");
-    expire_match || ts_match
+    key == "expire_time_ns" || key.starts_with("ts_")
 }
 
 fn convert_timestamps(value: &mut Value) {
@@ -811,31 +826,505 @@ fn convert_timestamps(value: &mut Value) {
     }
 }
 
-fn convert_timestamp_strings(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::String(s) = v {
-                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-                            *v = Value::Number(
-                                (dt.with_timezone(&Utc)
-                                    .timestamp_nanos_opt()
-                                    .expect("Invalid DateTime")
-                                    as u64)
-                                    .into(),
-                            );
-                        }
-                    }
+fn order_initialized_from_value(value: Value) -> anyhow::Result<OrderInitialized> {
+    let o_map = match value {
+        Value::Object(map) => map,
+        _ => anyhow::bail!("Invalid order initialized map"),
+    };
+
+    let trader_id = TraderId::new_checked(
+        o_map
+            .get("trader_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing trader_id field"))?,
+    )?;
+
+    let strategy_id = StrategyId::new_checked(
+        o_map
+            .get("strategy_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing strategy_id field"))?,
+    )?;
+
+    let instrument_id = InstrumentId::from_str(
+        o_map
+            .get("instrument_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing instrument_id field"))?,
+    )?;
+
+    let client_order_id = ClientOrderId::new_checked(
+        o_map
+            .get("client_order_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing client_order_id field"))?,
+    )?;
+
+    let order_side = OrderSide::from_str(
+        o_map
+            .get("order_side")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing order_side field"))?,
+    )?;
+
+    let order_type = OrderType::from_str(
+        o_map
+            .get("order_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing order_type field"))?,
+    )?;
+
+    let quantity = Quantity::from_str(
+        o_map
+            .get("quantity")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing quantity field"))?,
+    )
+    .map_err(|e| anyhow::anyhow!("Invalid quantity: {}", e))?;
+
+    let time_in_force = TimeInForce::from_str(
+        o_map
+            .get("time_in_force")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing time_in_force field"))?,
+    )?;
+
+    let post_only = o_map
+        .get("post_only")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| anyhow::anyhow!("Missing post_only field"))?;
+
+    let reduce_only = o_map
+        .get("reduce_only")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| anyhow::anyhow!("Missing reduce_only field"))?;
+
+    let quote_quantity = o_map
+        .get("quote_quantity")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| anyhow::anyhow!("Missing quote_quantity field"))?;
+
+    let reconciliation = o_map
+        .get("reconciliation")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| anyhow::anyhow!("Missing reconciliation field"))?;
+
+    let event_id = UUID4::from_str(
+        o_map
+            .get("event_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event_id field"))?,
+    )?;
+
+    let ts_event = UnixNanos::from_str(
+        &o_map
+            .get("ts_event")
+            .and_then(|v| v.as_i64())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "0".to_string()),
+    )
+    .map_err(|e| anyhow::anyhow!("Invalid ts_event: {}", e))?;
+
+    let ts_init = UnixNanos::from_str(
+        &o_map
+            .get("ts_init")
+            .and_then(|v| v.as_i64())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "0".to_string()),
+    )
+    .map_err(|e| anyhow::anyhow!("Invalid ts_init: {}", e))?;
+
+    let options = o_map.get("options").and_then(|v| v.as_object());
+
+    let price = options
+        .and_then(|opts| opts.get("price"))
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing price in options");
+                None
+            },
+            |value| match Price::from_str(value) {
+                Ok(price) => Some(price),
+                Err(e) => {
+                    tracing::error!("Invalid price: {}", e);
+                    None
                 }
-                convert_timestamp_strings(v);
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr {
-                convert_timestamp_strings(item);
-            }
-        }
-        _ => {}
-    }
+            },
+        );
+
+    let expire_time = options
+        .and_then(|opts| opts.get("expire_time_ns"))
+        .and_then(|v| v.as_i64())
+        .map_or_else(
+            || {
+                tracing::error!("Missing expire_time_ns in options");
+                None
+            },
+            |ns| match UnixNanos::from_str(&ns.to_string()) {
+                Ok(time) => Some(time),
+                Err(e) => {
+                    tracing::error!("Invalid expire_time: {}", e);
+                    None
+                }
+            },
+        );
+
+    let display_qty = options
+        .and_then(|opts| opts.get("display_qty"))
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing display_qty in options");
+                None
+            },
+            |value| match Quantity::from_str(value) {
+                Ok(qty) => Some(qty),
+                Err(e) => {
+                    tracing::error!("Invalid display_qty: {}", e);
+                    None
+                }
+            },
+        );
+
+    let trigger_price = o_map
+        .get("trigger_price")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing trigger_price field");
+                None
+            },
+            |value| {
+                Price::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid trigger_price: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let trigger_type = o_map
+        .get("trigger_type")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing trigger_type field");
+                None
+            },
+            |value| {
+                TriggerType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid trigger_type: {}", e);
+                    })
+                    .ok()
+            },
+        );
+
+    let limit_offset = o_map
+        .get("limit_offset")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing limit_offset field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid limit_offset: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let trailing_offset = o_map
+        .get("trailing_offset")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing trailing_offset field");
+                None
+            },
+            |value| {
+                Decimal::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid trailing_offset: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let trailing_offset_type = o_map
+        .get("trailing_offset_type")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing trailing_offset_type field");
+                None
+            },
+            |value| {
+                TrailingOffsetType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid trailing_offset_type: {}", e);
+                    })
+                    .ok()
+            },
+        );
+
+    let emulation_trigger = o_map
+        .get("emulation_trigger")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing emulation_trigger field");
+                None
+            },
+            |value| {
+                TriggerType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid emulation_trigger: {}", e);
+                    })
+                    .ok()
+            },
+        );
+
+    let trigger_instrument_id = o_map
+        .get("trigger_instrument_id")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing trigger_instrument_id field");
+                None
+            },
+            |value| {
+                InstrumentId::from_str(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid trigger_instrument_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let contingency_type = o_map
+        .get("contingency_type")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing contingency_type field");
+                None
+            },
+            |value| {
+                ContingencyType::from_str(value)
+                    .inspect_err(|e| {
+                        tracing::error!("Invalid contingency_type: {}", e);
+                    })
+                    .ok()
+            },
+        );
+
+    let order_list_id = o_map
+        .get("order_list_id")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing order_list_id field");
+                None
+            },
+            |value| {
+                OrderListId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid order_list_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let linked_order_ids = o_map
+        .get("linked_order_ids")
+        .and_then(|v| v.as_array())
+        .map(|array| {
+            array
+                .iter()
+                .filter_map(|v| match v.as_str() {
+                    None => {
+                        tracing::error!("Linked order ID is not a string");
+                        None
+                    }
+                    Some(str_val) => match ClientOrderId::new_checked(str_val) {
+                        Ok(order_id) => Some(order_id),
+                        Err(e) => {
+                            tracing::error!("Invalid linked order ID format: {}", e);
+                            None
+                        }
+                    },
+                })
+                .collect::<Vec<_>>()
+        });
+
+    let parent_order_id = o_map
+        .get("parent_order_id")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing parent_order_id field");
+                None
+            },
+            |value| {
+                ClientOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid parent_order_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let exec_algorithm_id = o_map
+        .get("exec_algorithm_id")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing exec_algorithm_id field");
+                None
+            },
+            |value| {
+                ExecAlgorithmId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid exec_algorithm_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let exec_algorithm_params = o_map
+        .get("exec_algorithm_params")
+        .and_then(|v| v.as_object())
+        .map_or_else(
+            || {
+                tracing::error!("Missing or invalid exec_algorithm_params field");
+                None
+            },
+            |obj| {
+                let params: Option<IndexMap<Ustr, Ustr>> = Some(
+                    obj.iter()
+                        .filter_map(|(k, v)| {
+                            let key = match Ustr::from_str(k) {
+                                Ok(key) => key,
+                                Err(e) => {
+                                    tracing::error!("Invalid exec_algorithm_params key: {}", e);
+                                    return None;
+                                }
+                            };
+
+                            let value = match v.as_str() {
+                                Some(str_val) => match Ustr::from_str(str_val) {
+                                    Ok(val) => val,
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Invalid exec_algorithm_params value: {}",
+                                            e
+                                        );
+                                        return None;
+                                    }
+                                },
+                                None => {
+                                    tracing::error!("exec_algorithm_params value is not a string");
+                                    return None;
+                                }
+                            };
+
+                            Some((key, value))
+                        })
+                        .collect(),
+                );
+
+                if params.as_ref().is_none_or(|p| p.is_empty()) {
+                    None
+                } else {
+                    params
+                }
+            },
+        );
+
+    let exec_spawn_id = o_map
+        .get("exec_spawn_id")
+        .and_then(|v| v.as_str())
+        .map_or_else(
+            || {
+                tracing::error!("Missing exec_spawn_id field");
+                None
+            },
+            |value| {
+                ClientOrderId::new_checked(value)
+                    .map_err(|e| {
+                        tracing::error!("Invalid exec_spawn_id: {}", e);
+                        e
+                    })
+                    .ok()
+            },
+        );
+
+    let tags = o_map.get("tags").and_then(|v| v.as_array()).map(|array| {
+        array
+            .iter()
+            .filter_map(|v| match v.as_str() {
+                None => {
+                    tracing::error!("Tag is not a string");
+                    None
+                }
+                Some(str_val) => match Ustr::from_str(str_val) {
+                    Ok(tag) => Some(tag),
+                    Err(e) => {
+                        tracing::error!("Invalid tag: {}", e);
+                        None
+                    }
+                },
+            })
+            .collect::<Vec<_>>()
+    });
+
+    let order_initialized = OrderInitialized::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force,
+        post_only,
+        reduce_only,
+        quote_quantity,
+        reconciliation,
+        event_id,
+        ts_event,
+        ts_init,
+        price,
+        trigger_price,
+        trigger_type,
+        limit_offset,
+        trailing_offset,
+        trailing_offset_type,
+        expire_time,
+        display_qty,
+        emulation_trigger,
+        trigger_instrument_id,
+        contingency_type,
+        order_list_id,
+        linked_order_ids,
+        parent_order_id,
+        exec_algorithm_id,
+        exec_algorithm_params,
+        exec_spawn_id,
+        tags,
+    );
+
+    Ok(order_initialized)
 }
