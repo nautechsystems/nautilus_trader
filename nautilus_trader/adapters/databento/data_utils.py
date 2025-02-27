@@ -4,6 +4,7 @@ from datetime import timedelta
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 
 
 # Note: when using the functions below, change the variable below to a folder path
@@ -106,7 +107,7 @@ def databento_data(
     dataset="GLBX.MDP3",
     to_catalog=True,
     base_path=None,
-    write_data_mode="overwrite",
+    write_data_mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     use_exchange_as_venue=False,
     **kwargs,
 ):
@@ -134,8 +135,8 @@ def databento_data(
         Whether to save the data to a catalog, defaults to True.
     base_path : str, optional
         The base path to use for the data folder, defaults to None.
-    write_data_mode : str, optional
-        Whether to "append", "prepend" or "overwrite" data to an existing catalog, defaults to "overwrite".
+    write_data_mode : enum, optional
+        How to add or overwrite data to an existing catalog, defaults to CatalogWriteMode.OVERWRITE.
     use_exchange_as_venue : bool, optional
         Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
     **kwargs
@@ -159,7 +160,7 @@ def databento_data(
     definition_file = used_path / definition_file_name
 
     if not definition_file.exists():
-        definition = client.timeseries.get_range(
+        definition = client.timeseries.get_range(  # type: ignore[union-attr]
             schema="definition",
             dataset=dataset,
             symbols=symbols,
@@ -177,7 +178,7 @@ def databento_data(
 
     if schema != "definition":
         if not data_file.exists():
-            data = client.timeseries.get_range(
+            data = client.timeseries.get_range(  # type: ignore[union-attr]
                 schema=schema,
                 dataset=dataset,
                 symbols=symbols,
@@ -245,8 +246,8 @@ def save_data_to_catalog(
         Path to the Databento data file.
     base_path : str or Path, optional
         Base path for the catalog.
-    write_data_mode : str, optional
-        Mode for writing data to the catalog. Default is "overwrite".
+    write_data_mode : enum, optional
+        Mode for writing data to the catalog. defaults to CatalogWriteMode.OVERWRITE.
     use_exchange_as_venue : bool, optional
         Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
 

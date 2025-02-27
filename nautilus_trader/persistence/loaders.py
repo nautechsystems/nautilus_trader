@@ -251,6 +251,9 @@ class InterestRateProvider(Actor):
             override=True,
         )
 
+    def on_stop(self):
+        self.clock.cancel_timers()
+
 
 # example file usd_short_term_rate.xml in the current repo
 # Can be downloaded from below link
