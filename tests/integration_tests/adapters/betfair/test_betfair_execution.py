@@ -846,16 +846,14 @@ async def test_generate_order_status_report_client_id(
     instrument_provider.add(instrument)
 
     # Act
-    order_status_command = GenerateOrderStatusReport(
+    command = GenerateOrderStatusReport(
         instrument_id=instrument.id,
         client_order_id=None,
         venue_order_id=VenueOrderId("1"),
         command_id=UUID4(),
         ts_init=0,
     )
-    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
-        order_status_command,
-    )
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(command)
 
     # Assert
     assert report
@@ -881,16 +879,14 @@ async def test_generate_order_status_report_venue_order_id(
     venue_order_id = VenueOrderId("323427122115")
 
     # Act
-    order_status_command = GenerateOrderStatusReport(
+    command = GenerateOrderStatusReport(
         instrument_id=instrument.id,
         client_order_id=client_order_id,
         venue_order_id=venue_order_id,
         command_id=UUID4(),
         ts_init=0,
     )
-    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
-        order_status_command,
-    )
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(command)
 
     # Assert
     assert report
@@ -1002,7 +998,7 @@ async def test_generate_order_status_reports_executable(exec_client):
     mock_betfair_request(exec_client._client, BetfairResponses.list_current_orders_executable())
 
     # Act
-    order_status_command = GenerateOrderStatusReports(
+    command = GenerateOrderStatusReports(
         instrument_id=None,
         start=None,
         end=None,
@@ -1010,7 +1006,7 @@ async def test_generate_order_status_reports_executable(exec_client):
         command_id=UUID4(),
         ts_init=0,
     )
-    reports = await exec_client.generate_order_status_reports(order_status_command)
+    reports = await exec_client.generate_order_status_reports(command)
 
     # Assert
     assert len(reports) == 2
@@ -1038,7 +1034,7 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     )
 
     # Act
-    order_status_command = GenerateOrderStatusReports(
+    command = GenerateOrderStatusReports(
         instrument_id=None,
         start=None,
         end=None,
@@ -1046,7 +1042,7 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
         command_id=UUID4(),
         ts_init=0,
     )
-    reports = await exec_client.generate_order_status_reports(order_status_command)
+    reports = await exec_client.generate_order_status_reports(command)
 
     # Assert
     assert len(reports) == 2
@@ -1077,7 +1073,7 @@ async def test_generate_fill_reports(exec_client):
     )
 
     # Act
-    fill_reports_command = GenerateFillReports(
+    command = GenerateFillReports(
         instrument_id=None,
         venue_order_id=None,
         start=None,
@@ -1085,7 +1081,7 @@ async def test_generate_fill_reports(exec_client):
         command_id=UUID4(),
         ts_init=0,
     )
-    reports = await exec_client.generate_fill_reports(fill_reports_command)
+    reports = await exec_client.generate_fill_reports(command)
 
     # Assert
     assert len(reports) == 2
