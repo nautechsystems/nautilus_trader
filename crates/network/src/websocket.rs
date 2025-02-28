@@ -661,7 +661,7 @@ impl WebSocketClient {
         post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Starting task 'controller'");
+            tracing::debug!("Started task 'controller'");
 
             let check_interval = Duration::from_millis(10);
 
