@@ -56,7 +56,11 @@ if __name__ == "__main__":
     )
 
     # Step 3: Create instrument definition and add it to the engine
-    EURUSD_FUTURES_INSTRUMENT = TestInstrumentProvider.eurusd_future(2024, 3)
+    EURUSD_FUTURES_INSTRUMENT = TestInstrumentProvider.eurusd_future(
+        expiry_year=2024,
+        expiry_month=3,
+        venue_name="XCME",
+    )
     engine.add_instrument(EURUSD_FUTURES_INSTRUMENT)
 
     # ==========================================================================================
