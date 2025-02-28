@@ -334,7 +334,8 @@ cdef class GreeksCalculator:
         return delta, gamma
 
     def portfolio_greeks(
-        self, str underlying = "",
+        self,
+        underlyings : list[str] = None,
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
@@ -363,9 +364,11 @@ cdef class GreeksCalculator:
 
         Parameters
         ----------
-        underlying : str, default ""
-            The underlying asset symbol to filter positions.
-            Only positions with instruments starting with this symbol will be included.
+        underlyings : list, optional
+            A list of underlying asset symbol prefixes as strings to filter positions.
+            For example, ["AAPL", "MSFT"] would include positions for AAPL and MSFT stocks and options.
+            Only positions with instruments starting with one of these symbols will be included.
+            If more than one underlying is provided, using beta-weighted greeks is recommended.
         venue : Venue, optional
             The venue to filter positions.
             Only positions from this venue will be included.
@@ -421,8 +424,16 @@ cdef class GreeksCalculator:
         for position in open_positions:
             position_instrument_id = position.instrument_id
 
-            if underlying != "" and not position_instrument_id.value.startswith(underlying):
-                continue
+            if underlyings is not None:
+                skip_position = True
+
+                for underlying in underlyings:
+                    if position_instrument_id.value.startswith(underlying):
+                        skip_position = False
+                        break
+
+                if skip_position:
+                    continue
 
             quantity = position.signed_qty
             instrument_greeks = self.instrument_greeks(
