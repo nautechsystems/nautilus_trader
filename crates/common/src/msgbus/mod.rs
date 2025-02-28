@@ -16,27 +16,51 @@
 //! A common in-memory `MessageBus` for loosely coupled message passing patterns.
 
 pub mod database;
-pub mod handler;
-pub mod stubs;
+pub mod runner;
 pub mod switchboard;
 
+use core::ops::Coroutine;
 use std::{
     any::Any,
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
+    pin::Pin,
+    rc::Rc,
 };
 
-use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
-use nautilus_model::{data::Data, identifiers::TraderId};
+use nautilus_model::identifiers::TraderId;
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
-use crate::messages::data::DataResponse;
-
 pub const CLOSE_TOPIC: &str = "CLOSE";
+
+/// Commands for the message bus runner.
+pub enum Command {
+    /// Send a message to an endpoint.
+    Send {
+        topic: Ustr,
+        // Boxed dynamic message.
+        msg: Rc<dyn Any>,
+    },
+    /// Publish a message to a topic.
+    Publish { pattern: String, msg: Rc<dyn Any> },
+    /// Register an endpoint subscription
+    Register(Subscription),
+    /// Deregister an endpoint subscription
+    Deregister(Ustr),
+    /// Subscribe to a topic
+    Subscribe(Subscription),
+    /// Unsubscribe from a topic
+    Unsubscribe((Ustr, Ustr)),
+}
+
+/// A coroutine for the message bus can receive any message and yield message bus commands.
+pub type HandlerCoroutine = Pin<Box<dyn Coroutine<Rc<dyn Any>, Yield = Command, Return = ()>>>;
+/// A wrapper function that creates a new coroutine each time it is called.
+pub type HandlerFn = Rc<dyn Fn() -> HandlerCoroutine>;
 
 /// Represents a subscription to a particular topic.
 ///
@@ -53,8 +77,8 @@ pub const CLOSE_TOPIC: &str = "CLOSE";
 /// produce potential side effects for logically sound behavior.
 #[derive(Clone)]
 pub struct Subscription {
-    /// The shareable message handler for the subscription.
-    pub handler: ShareableMessageHandler,
+    /// A function to create handler coroutines to handle messages.
+    pub handler_fn: HandlerFn,
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
     /// The topic for the subscription.
@@ -70,17 +94,34 @@ impl Subscription {
     #[must_use]
     pub fn new<T: AsRef<str>>(
         topic: T,
-        handler: ShareableMessageHandler,
+        handler: HandlerFn,
+        handler_id: Ustr,
         priority: Option<u8>,
     ) -> Self {
-        let handler_id = handler.0.id();
-
         Self {
             handler_id,
             topic: Ustr::from(topic.as_ref()),
-            handler,
+            handler_fn: handler,
             priority: priority.unwrap_or(0),
         }
+    }
+
+    /// Creates a new dummy [`Subscription`] instance.
+    ///
+    /// It is useful for equating keys in the mapping as it only needs
+    /// the topic and handler ID to be equal.
+    pub fn dummy<T: AsRef<str>>(topic: T, handler_id: Ustr) -> Self {
+        Self::new(
+            Ustr::from(topic.as_ref()),
+            Rc::new(move || {
+                Box::pin(
+                    #[coroutine]
+                    move |_msg: Rc<dyn Any>| {},
+                )
+            }),
+            handler_id,
+            None,
+        )
     }
 }
 
@@ -165,7 +206,7 @@ pub struct MessageBus {
     /// this is updated whenever a new subscription is created.
     patterns: IndexMap<Ustr, Vec<Subscription>>,
     /// Handles a message or a request destined for a specific endpoint.
-    endpoints: IndexMap<Ustr, ShareableMessageHandler>,
+    endpoints: IndexMap<Ustr, Subscription>,
 }
 
 // SAFETY: Message bus is not meant to be passed between threads
@@ -252,8 +293,8 @@ impl MessageBus {
 
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
-    pub fn is_subscribed<T: AsRef<str>>(&self, topic: T, handler: ShareableMessageHandler) -> bool {
-        let sub = Subscription::new(topic, handler, None);
+    pub fn is_subscribed<T: AsRef<str>>(&self, topic: T, handler_id: Ustr) -> bool {
+        let sub = Subscription::dummy(topic.as_ref(), handler_id);
         self.subscriptions.contains_key(&sub)
     }
 
@@ -264,16 +305,15 @@ impl MessageBus {
     }
 
     /// Registers the given `handler` for the `endpoint` address.
-    pub fn register<T: AsRef<str>>(&mut self, endpoint: T, handler: ShareableMessageHandler) {
+    pub fn register(&mut self, subscription: Subscription) {
         log::debug!(
             "Registering endpoint '{}' with handler ID {} at {}",
-            endpoint.as_ref(),
-            handler.0.id(),
+            subscription.topic,
+            subscription.handler_id,
             self.memory_address(),
         );
         // Updates value if key already exists
-        self.endpoints
-            .insert(Ustr::from(endpoint.as_ref()), handler);
+        self.endpoints.insert(subscription.handler_id, subscription);
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
@@ -287,28 +327,22 @@ impl MessageBus {
     }
 
     /// Subscribes the given `handler` to the `topic`.
-    pub fn subscribe<T: AsRef<str>>(
-        &mut self,
-        topic: T,
-        handler: ShareableMessageHandler,
-        priority: Option<u8>,
-    ) {
+    pub fn subscribe(&mut self, subscription: Subscription) {
         log::debug!(
             "Subscribing for topic '{}' at {}",
-            topic.as_ref(),
+            subscription.topic,
             self.memory_address(),
         );
-        let sub = Subscription::new(topic.as_ref(), handler, priority);
-        if self.subscriptions.contains_key(&sub) {
-            log::error!("{sub:?} already exists.");
+        if self.subscriptions.contains_key(&subscription) {
+            log::error!("{subscription:?} already exists.");
             return;
         }
 
         // Find existing patterns which match this topic
         let mut matches = Vec::new();
         for (pattern, subs) in &mut self.patterns {
-            if is_matching(&Ustr::from(topic.as_ref()), pattern) {
-                subs.push(sub.clone());
+            if is_matching(&subscription.topic, pattern) {
+                subs.push(subscription.clone());
                 subs.sort();
                 // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
                 matches.push(*pattern);
@@ -317,23 +351,23 @@ impl MessageBus {
 
         matches.sort();
 
-        self.subscriptions.insert(sub, matches);
+        self.subscriptions.insert(subscription, matches);
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe<T: AsRef<str>>(&mut self, topic: T, handler: ShareableMessageHandler) {
+    pub fn unsubscribe<T: AsRef<str>>(&mut self, topic: T, handler_id: Ustr) {
         log::debug!(
             "Unsubscribing for topic '{}' at {}",
             topic.as_ref(),
             self.memory_address(),
         );
-        let sub = Subscription::new(topic, handler, None);
+        let sub = Subscription::dummy(topic.as_ref().to_string(), handler_id);
         self.subscriptions.shift_remove(&sub);
     }
 
     /// Returns the handler for the given `endpoint`.
     #[must_use]
-    pub fn get_endpoint<T: AsRef<str>>(&self, endpoint: T) -> Option<&ShareableMessageHandler> {
+    pub fn get_endpoint<T: AsRef<str>>(&self, endpoint: T) -> Option<&Subscription> {
         self.endpoints.get(&Ustr::from(endpoint.as_ref()))
     }
 
@@ -370,71 +404,14 @@ impl MessageBus {
     fn matching_handlers<'a>(
         &'a self,
         pattern: &'a Ustr,
-    ) -> impl Iterator<Item = &'a ShareableMessageHandler> {
+    ) -> impl Iterator<Item = &'a Subscription> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
             if is_matching(&sub.topic, pattern) {
-                Some(&sub.handler)
+                Some(sub)
             } else {
                 None
             }
         })
-    }
-
-    /// Sends a message to an endpoint.
-    pub fn send(&self, endpoint: &Ustr, message: &dyn Any) {
-        if let Some(handler) = self.get_endpoint(endpoint) {
-            handler.0.handle(message);
-        }
-    }
-
-    /// Publish a message to a topic.
-    pub fn publish(&self, topic: &Ustr, message: &dyn Any) {
-        log::trace!(
-            "Publishing topic '{topic}' {message:?} {}",
-            self.memory_address()
-        );
-        let matching_subs = self.matching_subscriptions(topic);
-
-        log::trace!("Matched {} subscriptions", matching_subs.len());
-
-        for sub in matching_subs {
-            log::trace!("Matched {sub:?}");
-            sub.handler.0.handle(message);
-        }
-    }
-}
-
-/// Data specific functions.
-impl MessageBus {
-    // /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
-    // pub fn send_data_request(&self, message: DataRequest) {
-    //     // TODO: log error
-    //     if let Some(client) = self.get_client(&message.client_id, message.venue) {
-    //         let _ = client.request(message);
-    //     }
-    // }
-    //
-    // /// Send a [`SubscriptionCommand`] to an endpoint that must be a data client implementation.
-    // pub fn send_subscription_command(&self, message: SubscriptionCommand) {
-    //     if let Some(client) = self.get_client(&message.client_id, message.venue) {
-    //         client.through_execute(message);
-    //     }
-    // }
-
-    /// Send a [`DataResponse`] to an endpoint that must be an actor.
-    pub fn send_response(&self, message: DataResponse) {
-        if let Some(handler) = self.get_endpoint(message.client_id.inner()) {
-            handler.0.handle_response(message);
-        }
-    }
-
-    /// Publish [`Data`] to a topic.
-    pub fn publish_data(&self, topic: &Ustr, message: Data) {
-        let matching_subs = self.matching_subscriptions(topic);
-
-        for sub in matching_subs {
-            sub.handler.0.handle_data(message.clone());
-        }
     }
 }
 
@@ -482,16 +459,36 @@ impl Default for MessageBus {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     use nautilus_core::UUID4;
     use rstest::*;
-    use stubs::check_handler_was_called;
 
     use super::*;
-    use crate::msgbus::stubs::{get_call_check_shareable_handler, get_stub_shareable_handler};
 
     fn stub_msgbus() -> MessageBus {
         MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
+    }
+
+    // Create a coroutine that sets a flag when called
+    fn create_call_check_coroutine() -> (HandlerFn, Arc<AtomicBool>) {
+        let called = Arc::new(AtomicBool::new(false));
+        let called_clone = called.clone();
+
+        let handler_fn = Rc::new(move || {
+            let called = called_clone.clone();
+            Box::pin(
+                #[coroutine]
+                move |_msg: Rc<dyn Any>| {
+                    called.store(true, Ordering::SeqCst);
+                },
+            ) as HandlerCoroutine
+        });
+
+        (handler_fn, called)
     }
 
     #[rstest]
@@ -506,14 +503,12 @@ mod tests {
     #[rstest]
     fn test_endpoints_when_no_endpoints() {
         let msgbus = stub_msgbus();
-
         assert!(msgbus.endpoints().is_empty());
     }
 
     #[rstest]
     fn test_topics_when_no_subscriptions() {
         let msgbus = stub_msgbus();
-
         assert!(msgbus.topics().is_empty());
         assert!(!msgbus.has_subscribers("my-topic"));
     }
@@ -521,54 +516,41 @@ mod tests {
     #[rstest]
     fn test_is_subscribed_when_no_subscriptions() {
         let msgbus = stub_msgbus();
-        let handler = get_stub_shareable_handler(None);
+        let handler_id = Ustr::from("test-handler");
 
-        assert!(!msgbus.is_subscribed("my-topic", handler));
+        assert!(!msgbus.is_subscribed("my-topic", handler_id));
     }
 
     #[rstest]
     fn test_is_registered_when_no_registrations() {
         let msgbus = stub_msgbus();
-
         assert!(!msgbus.is_registered("MyEndpoint"));
     }
 
     #[rstest]
-    fn test_regsiter_endpoint() {
+    fn test_register_endpoint() {
         let mut msgbus = stub_msgbus();
         let endpoint = "MyEndpoint";
-        let handler = get_stub_shareable_handler(None);
+        let handler_id = Ustr::from(endpoint);
 
-        msgbus.register(endpoint, handler);
+        // Use Subscription::dummy to create a subscription
+        let subscription = Subscription::dummy(endpoint, handler_id);
 
-        assert_eq!(msgbus.endpoints(), vec![endpoint.to_string()]);
+        msgbus.register(subscription);
+        assert_eq!(msgbus.endpoints(), vec![endpoint]);
         assert!(msgbus.get_endpoint(endpoint).is_some());
     }
 
     #[rstest]
-    fn test_endpoint_send() {
+    fn test_deregister_endpoint() {
         let mut msgbus = stub_msgbus();
         let endpoint = Ustr::from("MyEndpoint");
-        let handler = get_call_check_shareable_handler(None);
 
-        msgbus.register(endpoint, handler.clone());
-        assert!(msgbus.get_endpoint(endpoint).is_some());
-        assert!(!check_handler_was_called(handler.clone()));
+        // Use Subscription::dummy to create a subscription
+        let subscription = Subscription::dummy(endpoint.as_str(), endpoint);
 
-        // Send a message to the endpoint
-        msgbus.send(&endpoint, &"Test Message");
-        assert!(check_handler_was_called(handler));
-    }
-
-    #[rstest]
-    fn test_deregsiter_endpoint() {
-        let mut msgbus = stub_msgbus();
-        let endpoint = Ustr::from("MyEndpoint");
-        let handler = get_stub_shareable_handler(None);
-
-        msgbus.register(endpoint, handler);
+        msgbus.register(subscription);
         msgbus.deregister(&endpoint);
-
         assert!(msgbus.endpoints().is_empty());
     }
 
@@ -576,10 +558,13 @@ mod tests {
     fn test_subscribe() {
         let mut msgbus = stub_msgbus();
         let topic = "my-topic";
-        let handler = get_stub_shareable_handler(None);
+        let handler_id = Ustr::from("test-handler");
 
-        msgbus.subscribe(topic, handler, Some(1));
+        // Use Subscription::dummy to create a subscription with priority
+        let mut subscription = Subscription::dummy(topic, handler_id);
+        subscription.priority = 1;
 
+        msgbus.subscribe(subscription);
         assert!(msgbus.has_subscribers(topic));
         assert_eq!(msgbus.topics(), vec![topic]);
     }
@@ -588,11 +573,13 @@ mod tests {
     fn test_unsubscribe() {
         let mut msgbus = stub_msgbus();
         let topic = "my-topic";
-        let handler = get_stub_shareable_handler(None);
+        let handler_id = Ustr::from("test-handler");
 
-        msgbus.subscribe(topic, handler.clone(), None);
-        msgbus.unsubscribe(topic, handler);
+        // Use Subscription::dummy to create a subscription
+        let subscription = Subscription::dummy(topic, handler_id);
 
+        msgbus.subscribe(subscription);
+        msgbus.unsubscribe(topic, handler_id);
         assert!(!msgbus.has_subscribers(topic));
         assert!(msgbus.topics().is_empty());
     }
@@ -603,21 +590,23 @@ mod tests {
         let topic = "my-topic";
 
         let handler_id1 = Ustr::from("1");
-        let handler1 = get_stub_shareable_handler(Some(handler_id1));
-
         let handler_id2 = Ustr::from("2");
-        let handler2 = get_stub_shareable_handler(Some(handler_id2));
-
         let handler_id3 = Ustr::from("3");
-        let handler3 = get_stub_shareable_handler(Some(handler_id3));
-
         let handler_id4 = Ustr::from("4");
-        let handler4 = get_stub_shareable_handler(Some(handler_id4));
 
-        msgbus.subscribe(topic, handler1, None);
-        msgbus.subscribe(topic, handler2, None);
-        msgbus.subscribe(topic, handler3, Some(1));
-        msgbus.subscribe(topic, handler4, Some(2));
+        // Use Subscription::dummy to create subscriptions with different priorities
+        let subscription1 = Subscription::dummy(topic, handler_id1);
+        let subscription2 = Subscription::dummy(topic, handler_id2);
+        let mut subscription3 = Subscription::dummy(topic, handler_id3);
+        subscription3.priority = 1;
+        let mut subscription4 = Subscription::dummy(topic, handler_id4);
+        subscription4.priority = 2;
+
+        msgbus.subscribe(subscription1);
+        msgbus.subscribe(subscription2);
+        msgbus.subscribe(subscription3);
+        msgbus.subscribe(subscription4);
+
         let topic = Ustr::from(topic);
         let subs = msgbus.matching_subscriptions(&topic);
 

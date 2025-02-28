@@ -53,7 +53,7 @@ impl MessageBus {
         let matching_subs = self.matching_subscriptions(&topic);
 
         for sub in matching_subs {
-            sub.handler.0.handle(&message);
+            sub.handler_fn.0.handle(&message);
         }
     }
 
