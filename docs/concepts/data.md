@@ -50,12 +50,29 @@ The following instrument definitions are available:
 
 ## Bars and aggregation
 
-A *bar*—also known as a candle, candlestick, or kline—is a data structure that represents price and
-volume information over a specific period, including the opening price, highest price, lowest price, closing price,
-and traded volume (or ticks as a volume proxy). These values are generated using an *aggregation method*,
-which groups data based on specific criteria to create the bar.
+### Introduction to Bars
 
-The implemented aggregation methods are:
+A *bar* (also known as a candle, candlestick or kline) is a data structure that represents
+price and volume information over a specific period, including:
+
+- Opening price
+- Highest price
+- Lowest price
+- Closing price
+- Traded volume (or ticks as a volume proxy)
+
+These bars are generated using an *aggregation method*, which groups data based on specific criteria.
+
+### Purpose of data aggregation
+
+Data aggregation in NautilusTrader transforms granular market data into structured bars or candles for several reasons:
+- To provide data for technical indicators and strategy development
+- Because time-aggregated data (like minute bars) are often sufficient for many strategies
+- To reduce costs compared to high-frequency L1/L2/L3 market data
+
+### Aggregation methods
+
+The platform implements various aggregation methods:
 
 | Name               | Description                                                                | Category     |
 |:-------------------|:---------------------------------------------------------------------------|:-------------|
@@ -76,42 +93,69 @@ The implemented aggregation methods are:
 | `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
 
-### Bar types
+### Types of aggregation
 
-NautilusTrader defines a unique *bar type* (`BarType`) based on the following components:
+NautilusTrader implements three distinct data aggregation methods:
+
+1. **Tick-to-bar aggregation**: Creates bars from `TradeTick` objects (executed trades)
+   - Use case: For strategies analyzing execution prices or when working directly with trade data
+   - Always uses the `LAST` price type in the bar specification
+
+2. **Quote-to-bar aggregation**: Creates bars from `QuoteTick` objects (bid/ask prices)
+   - Use case: For strategies focusing on bid/ask spreads or market depth analysis
+   - Uses `BID`, `ASK`, or `MID` price types in the bar specification
+
+3. **Bar-to-bar aggregation**: Creates larger-timeframe `Bar` objects from smaller-timeframe `Bar` objects
+   - Use case: For resampling existing smaller timeframe bars (1-minute) into larger timeframes (5-minute, hourly)
+   - Always requires the `@` symbol in the specification
+
+### Bar types and Components
+
+NautilusTrader defines a unique *bar type* (`BarType` class) based on the following components:
 
 - **Instrument ID** (`InstrumentId`): Specifies the particular instrument for the bar.
 - **Bar Specification** (`BarSpecification`):
   - `step`: Defines the interval or frequency of each bar.
   - `aggregation`: Specifies the method used for data aggregation (see the above table).
   - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
-- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus) or externally (by a trading venue or data provider).
+- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus)
+- or externally (by a trading venue or data provider).
+
+Bar types can also be classified as either *standard* or *composite*:
+
+- **Standard**: Generated from granular market data, such as quote-ticks or trade-ticks.
+- **Composite**: Derived from a higher-granularity bar type through subsampling (like 5-MINUTE bars aggregate from 1-MINUTE bars).
+
+### Aggregation sources
 
 Bar data aggregation can be either *internal* or *external*:
 
 - `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
 - `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
 
-Bar types can also be classified as either *standard* or *composite*:
+For bar-to-bar aggregation, the target bar type is always `INTERNAL` (since you're doing the aggregation within NautilusTrader),
+but the source bars can be either `INTERNAL` or `EXTERNAL`, i.e., you can aggregate externally provided bars or already
+aggregated internal bars.
 
-- **Standard**: Generated from granular market data, such as quotes or trades.
-- **Composite**: Derived from a higher-granularity bar type through subsampling.
+### Defining Bar Types with String Syntax
 
-### Defining standard bars
+#### Standard bars
 
-You can define bar types from strings using the following convention:
+You can define standard bar types from strings using the following convention:
 
 `{instrument_id}-{step}-{aggregation}-{price_type}-{INTERNAL | EXTERNAL}`
 
-For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval, aggregated from trades locally by Nautilus:
+For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval
+aggregated from trades locally by Nautilus:
+
 ```python
 bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL")
 ```
 
-### Defining composite bars
+#### Composite bars
 
-Composite bars are derived by aggregating higher-granularity bars into the desired bar type.
-To define a composite bar, use a similar convention to standard bars:
+Composite bars are derived by aggregating higher-granularity bars into the desired bar type. To define a composite bar,
+use this convention:
 
 `{instrument_id}-{step}-{aggregation}-{price_type}-INTERNAL@{step}-{aggregation}-{INTERNAL | EXTERNAL}`
 
@@ -121,9 +165,171 @@ To define a composite bar, use a similar convention to standard bars:
 - The sampled instrument ID is inferred to match that of the derived bar type.
 - Composite bars can be aggregated *from* `INTERNAL` or `EXTERNAL` aggregation sources.
 
-For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval, aggregated locally by Nautilus, from 1-minute interval bars aggregated externally:
+For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval
+aggregated locally by Nautilus, from 1-minute interval bars aggregated externally:
+
 ```python
 bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+```
+
+### Aggregation syntax examples
+
+The `BarType` string format encodes both the target bar type and, optionally, the source data type:
+
+```
+{instrument_id}-{step}-{aggregation}-{price_type}-{source}@{step}-{aggregation}-{source}
+```
+
+The part after the `@` symbol is optional and only used for bar-to-bar aggregation:
+
+- **Without `@`**: Aggregates from `TradeTick` objects (when price_type is `LAST`) or `QuoteTick` objects (when price_type is `BID`, `ASK`, or `MID`)
+- **With `@`**: Aggregates from existing `Bar` objects (specifying the source bar type)
+
+#### Tick-to-bar example
+
+```python
+def on_start(self) -> None:
+    # Define a bar type for aggregating from TradeTick objects
+    # Uses price_type=LAST which indicates TradeTick data as source
+    bar_type = BarType.from_str("6EH4.XCME-50-VOLUME-LAST-INTERNAL")
+
+    # Request historical data (will receive bars in on_historical_data handler)
+    self.request_bars(bar_type)
+
+    # Subscribe to live data (will receive bars in on_bar handler)
+    self.subscribe_bars(bar_type)
+```
+
+#### Quote-to-bar example
+
+```python
+def on_start(self) -> None:
+    # Create 1-minute bars from ASK prices (in QuoteTick objects)
+    bar_type_ask = BarType.from_str("6EH4.XCME-1-MINUTE-ASK-INTERNAL")
+
+    # Create 1-minute bars from BID prices (in QuoteTick objects)
+    bar_type_bid = BarType.from_str("6EH4.XCME-1-MINUTE-BID-INTERNAL")
+
+    # Create 1-minute bars from MID prices (middle between ASK and BID prices in QuoteTick objects)
+    bar_type_mid = BarType.from_str("6EH4.XCME-1-MINUTE-MID-INTERNAL")
+
+    # Request historical data and subscribe to live data
+    self.request_bars(bar_type_ask)    # Historical bars processed in on_historical_data
+    self.subscribe_bars(bar_type_ask)  # Live bars processed in on_bar
+```
+
+#### Bar-to-bar example
+
+```python
+def on_start(self) -> None:
+    # Create 5-minute bars from 1-minute bars (Bar objects)
+    # Format: target_bar_type@source_bar_type
+    # Note: price type (LAST) is only needed on the left target side, not on the source side
+    bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+
+    # Request historical data (processed in on_historical_data(...) handler)
+    self.request_bars(bar_type)
+
+    # Subscribe to live updates (processed in on_bar(...) handler)
+    self.subscribe_bars(bar_type)
+```
+
+#### Advanced bar-to-bar example
+
+You can create complex aggregation chains where you aggregate from already aggregated bars:
+
+```python
+# First create 1-minute bars from TradeTick objects (LAST indicates TradeTick source)
+primary_bar_type = BarType.from_str("6EH4.XCME-1-MINUTE-LAST-INTERNAL")
+
+# Then create 5-minute bars from 1-minute bars
+# Note the @1-MINUTE-INTERNAL part identifying the source bars
+intermediate_bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
+
+# Then create hourly bars from 5-minute bars
+# Note the @5-MINUTE-INTERNAL part identifying the source bars
+hourly_bar_type = BarType.from_str("6EH4.XCME-1-HOUR-LAST-INTERNAL@5-MINUTE-INTERNAL")
+```
+
+### Working with Bars: Request vs. Subscribe
+
+NautilusTrader provides two distinct operations for working with bars:
+
+- **`request_bars()`**: Fetches historical data processed by the `on_historical_data()` handler
+- **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler
+
+These methods work together in a typical workflow:
+1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior
+2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time
+
+Example usage in `on_start()`:
+
+```python
+def on_start(self) -> None:
+    # Define bar type
+    bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL")
+
+    # Request historical data to initialize indicators
+    # These bars will be delivered to the on_historical_data(...) handler in strategy
+    self.request_bars(bar_type)
+
+    # Subscribe to real-time updates
+    # New bars will be delivered to the on_bar(...) handler in strategy
+    self.subscribe_bars(bar_type)
+
+    # Register indicators to receive bar updates (they will be automatically updated)
+    self.register_indicator_for_bars(bar_type, self.my_indicator)
+```
+
+Required handlers in your strategy to receive the data:
+
+```python
+def on_historical_data(self, data):
+    # Processes batches of historical bars from request_bars()
+    # Note: indicators registered with register_indicator_for_bars
+    # are updated automatically with historical data
+    pass
+
+def on_bar(self, bar):
+    # Processes individual bars in real-time from subscribe_bars()
+    # Indicators registered with this bar type will update automatically and they will be updated before this handler is called
+    pass
+```
+
+### Historical data requests with aggregation
+
+When requesting historical bars for backtesting or initializing indicators, you can use the `request_bars()` method, which supports both direct requests and aggregation:
+
+```python
+# Request raw 1-minute bars (aggregated from TradeTick objects as indicated by LAST price type)
+self.request_bars(BarType.from_str("6EH4.XCME-1-MINUTE-LAST-EXTERNAL"))
+
+# Request 5-minute bars aggregated from 1-minute bars
+self.request_bars(BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"))
+```
+
+If historical aggregated bars are needed, you can use specialized request `request_aggregated_bars()` method:
+
+```python
+# Request bars that are aggregated from historical trade ticks
+self.request_aggregated_bars(BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL"))
+
+# Request bars that are aggregated from other bars
+self.request_aggregated_bars(BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"))
+```
+
+### Common Pitfalls
+
+**Register indicators before requesting data**: Ensure indicators are registered before requesting historical data so they get updated properly.
+
+```python
+# Correct order
+self.register_indicator_for_bars(bar_type, self.ema)
+self.request_bars(bar_type)
+
+# Incorrect order
+self.request_bars(bar_type)  # Indicator won't receive historical data
+self.register_indicator_for_bars(bar_type, self.ema)
 ```
 
 ## Timestamps
@@ -194,9 +400,11 @@ The `ts_init` field indicates when the message was originally received.
 ## Data flow
 
 The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
-(e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine` and then distributed to subscribed or registered handlers.
+(e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine`
+and then distributed to subscribed or registered handlers.
 
-For users who need more flexibility, the platform also supports the creation of custom data types. For details on how to implement user-defined data types, refer to the advanced [Custom data guide](advanced/custom_data.md).
+For users who need more flexibility, the platform also supports the creation of custom data types.
+For details on how to implement user-defined data types, refer to the advanced [Custom data guide](advanced/custom_data.md).
 
 ## Loading data
 
