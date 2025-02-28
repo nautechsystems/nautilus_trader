@@ -4,9 +4,7 @@ The following code examples are organized by system environment context:
 - **Backtest**: Historical data with simulated venues.
 - **Sandbox**: Real-time data with simulated venues.
 - **Live**: Real-time data with live venues (paper trading or real accounts).
-
-In addition to these, there is an **other** directory containing examples that cover various aspects of the framework
-beyond strategies.
+- **Other**: Various examples beyond strategies.
 
 Scripts within each environment context directory are organized by integration.
 
