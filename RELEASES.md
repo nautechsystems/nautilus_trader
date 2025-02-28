@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added mark price calculations and xrate handling for `Portfolio`
 - Added Rust debugging support and refined cargo nextest usage (#2335, #2339), thanks @faysou
 - Added catalog write mode options (#2365), thanks @faysou
+- Added `BarSpecification` to msgspec encoding and decoding hooks (#2373), thanks @pierianeagle
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
@@ -31,6 +32,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added initial `Cache` benchmarking for orders (#2341), thanks @filipmacek
+- Added support for `CARGO_BUILD_TARGET` environment variable in `build.py` (#2385), thanks @sunlei
 - Implemented exchange rate calculations in Rust
 - Improved Binance websocket connections management to allow more than 200 streams (#2369), thanks @lidarbtc
 - Improved log event timestamping to avoid clock or time misalignments when events cross to the logging thread
@@ -50,6 +52,7 @@ Released on TBD (UTC).
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
+- Refined underlying filtering in portfolio_greeks (#2382), thanks @faysou
 - Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
 - Refined Rust date functions (#2356), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
@@ -84,6 +87,7 @@ Released on TBD (UTC).
 - Fixed `bypass_logging` fixture to keep log guard alive for entire test session
 - Fixed time parsing for IB adapter (#2360), thanks @faysou
 - Fixed bad `ts_init` value in IB weekly and monthly bar (#2355), thanks @Endura2024
+- Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
@@ -93,6 +97,7 @@ Released on TBD (UTC).
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik
 - Added data catalog example (#2353), thanks @stefansimik
+- Improved and expandd bar aggregation docs (#2384), thanks @stefansimik
 - Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
 - Improved docs for emulated orders (#2316), thanks @stefansimik
 - Improved getting started doc for backtesting API levels (#2324), thanks @faysou
