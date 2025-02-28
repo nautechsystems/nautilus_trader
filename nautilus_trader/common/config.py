@@ -28,6 +28,7 @@ from msgspec import Meta
 from nautilus_trader.common import Environment
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
@@ -78,13 +79,15 @@ def resolve_config_path(path: str) -> type[NautilusConfig]:
     return config
 
 
-def msgspec_encoding_hook(obj: Any) -> Any:
+def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
         return obj.value
     if isinstance(obj, Identifier):
         return obj.value
+    if isinstance(obj, BarSpecification):
+        return str(obj)
     if isinstance(obj, BarType):
         return str(obj)
     if isinstance(obj, (Price | Quantity)):
@@ -102,7 +105,7 @@ def msgspec_encoding_hook(obj: Any) -> Any:
     raise TypeError(f"Encoding objects of type {obj.__class__} is unsupported")
 
 
-def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
+def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too complex)
     if obj_type in (Decimal, pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
     if obj_type == UUID4:
@@ -111,6 +114,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return InstrumentId.from_str(obj)
     if issubclass(obj_type, Identifier):
         return obj_type(obj)
+    if obj_type == BarSpecification:
+        return BarSpecification.from_str(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
     if obj_type == Price:
