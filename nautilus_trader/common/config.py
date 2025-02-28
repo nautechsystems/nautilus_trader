@@ -19,8 +19,7 @@ import hashlib
 import importlib
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Annotated
-from typing import Any
+from typing import Annotated, Any
 
 import msgspec
 import pandas as pd
@@ -80,7 +79,7 @@ def resolve_config_path(path: str) -> type[NautilusConfig]:
     return config
 
 
-def msgspec_encoding_hook(obj: Any) -> Any:
+def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
@@ -106,7 +105,7 @@ def msgspec_encoding_hook(obj: Any) -> Any:
     raise TypeError(f"Encoding objects of type {obj.__class__} is unsupported")
 
 
-def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
+def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too complex)
     if obj_type in (Decimal, pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
     if obj_type == UUID4:
