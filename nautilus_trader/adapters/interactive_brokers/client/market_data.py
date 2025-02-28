@@ -527,7 +527,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Convert the date from BarData to unix nanoseconds.
 
-        If the bar type's aggregation is 14, the bar date is always returned in the
+        If the bar type's aggregation is 14 - 16, the bar date is always returned in the
         YYYYMMDD format from IB. For all other aggregations, the bar date is returned
         in system time.
 
@@ -551,6 +551,42 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         return ts.value
 
+    async def _ib_bar_to_ts_event(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Calculate the ts_event timestamp for a bar.
+
+        This method computes the timestamp at which data event occurred, by adjusting
+        the provided bar's timestamp based on the bar type's duration. ts_event is set
+        to the start of the bar period.
+
+        Week/Month bars's date returned from IB represents ending date,
+        the start of bar period should be start of the week and month respectively
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be used for the calculation.
+        bar_type : BarType
+            The type of the bar, which includes information about the bar's duration.
+
+        Returns
+        -------
+        int
+
+        """
+        ts_event = 0
+        if bar_type.spec.aggregation in [15, 16]:
+            date_obj = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
+            if bar_type.spec.aggregation == 15:
+                first_day_of_week = date_obj - pd.Timedelta(days=date_obj.weekday())
+                ts_event = first_day_of_week.value
+            else:
+                first_day_of_month = date_obj.replace(day=1)
+                ts_event = first_day_of_month.value
+        else:
+            ts_event = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
+        return ts_event
+
     async def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
         """
         Calculate the initialization timestamp for a bar.
@@ -572,7 +608,14 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         """
         ts = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
-        return ts + pd.Timedelta(bar_type.spec.timedelta).value
+        if bar_type.spec.aggregation in [15, 16]:
+            # Week/Month bars's date represents ending date
+            return ts
+        elif bar_type.spec.aggregation == 14:
+            # -1 to make day's bar ts_event and ts_init on the same day
+            return ts + pd.Timedelta(bar_type.spec.timedelta).value - 1
+        else:
+            return ts + pd.Timedelta(bar_type.spec.timedelta).value
 
     async def _ib_bar_to_nautilus_bar(
         self,
@@ -604,7 +647,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if not instrument:
             raise ValueError(f"No cached instrument for {bar_type.instrument_id}")
 
-        ts_event = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
+        ts_event = await self._ib_bar_to_ts_event(bar, bar_type)
+        # used to be _convert_ib_bar_date_to_unix_nanos
+
         return Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
