@@ -2257,7 +2257,7 @@ cdef class Cache(CacheFacade):
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
-        Return the order book for the given instrument ID.
+        Return the order book for the given instrument ID (if found).
 
         Parameters
         ----------
@@ -2267,6 +2267,7 @@ cdef class Cache(CacheFacade):
         Returns
         -------
         OrderBook or ``None``
+            If book not found for the instrument ID then returns ``None``.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -2275,7 +2276,7 @@ cdef class Cache(CacheFacade):
 
     cpdef object own_order_book(self, InstrumentId instrument_id):
         """
-        Return the own order book for the given instrument ID.
+        Return the own order book for the given instrument ID (if found).
 
         Parameters
         ----------
@@ -2286,6 +2287,7 @@ cdef class Cache(CacheFacade):
         Returns
         -------
         nautilus_pyo3.OwnOrderBook or ``None``
+            If own book not found for the instrument ID then returns ``None``.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -2294,7 +2296,7 @@ cdef class Cache(CacheFacade):
 
     cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id):
         """
-        Return own bid orders for the given instrument ID.
+        Return own bid orders for the given instrument ID (if found).
 
         Parameters
         ----------
@@ -2304,20 +2306,21 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        dict[Decimal, list[Order]]
+        dict[Decimal, list[Order]] or ``None``
+            If own book not found for the instrument ID then returns ``None``.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
 
         own_order_book = self._own_order_books.get(instrument_id)
         if own_order_book is None:
-            return {}
+            return None
 
         return process_own_order_map(own_order_book.bids_to_dict(), self._orders)
 
     cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id):
         """
-        Return own ask orders for the given instrument ID.
+        Return own ask orders for the given instrument ID (if found).
 
         Parameters
         ----------
@@ -2327,20 +2330,21 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        dict[Decimal, list[Order]]
+        dict[Decimal, list[Order]] or ``None``
+            If own book not found for the instrument ID then returns ``None``.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
 
         own_order_book = self._own_order_books.get(instrument_id)
         if own_order_book is None:
-            return {}
+            return None
 
         return process_own_order_map(own_order_book.asks_to_dict(), self._orders)
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
-        Return the quote tick for the given instrument ID at the given index.
+        Return the quote tick for the given instrument ID at the given index (if found).
 
         Last quote tick if no index specified.
 
@@ -2374,7 +2378,7 @@ cdef class Cache(CacheFacade):
 
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index = 0):
         """
-        Return the trade tick for the given instrument ID at the given index
+        Return the trade tick for the given instrument ID at the given index (if found).
 
         Last trade tick if no index specified.
 
@@ -2408,7 +2412,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
-        Return the bar for the given bar type at the given index.
+        Return the bar for the given bar type at the given index (if found).
 
         Last bar if no index specified.
 
