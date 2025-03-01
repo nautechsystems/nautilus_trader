@@ -84,11 +84,11 @@ class TestDataClient:
         # Act
         self.client.subscribe(
             SubscribeData(
-                data_type,
-                ClientId("TEST_PROVIDER"),
-                None,
-                UUID4(),
-                0,
+                data_type=data_type,
+                client_id=ClientId("TEST_PROVIDER"),
+                venue=None,
+                command_id=UUID4(),
+                ts_init=0,
             ),
         )
 
@@ -102,11 +102,11 @@ class TestDataClient:
         # Act
         self.client.unsubscribe(
             UnsubscribeData(
-                data_type,
-                ClientId("TEST_PROVIDER"),
-                None,
-                UUID4(),
-                0,
+                data_type=data_type,
+                client_id=ClientId("TEST_PROVIDER"),
+                venue=None,
+                command_id=UUID4(),
+                ts_init=0,
             ),
         )
 

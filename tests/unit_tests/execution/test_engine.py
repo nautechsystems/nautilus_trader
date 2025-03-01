@@ -357,12 +357,12 @@ class TestExecutionEngine:
     def test_given_random_command_logs_and_continues(self) -> None:
         # Arrange
         random = TradingCommand(
-            None,
-            self.trader_id,
-            self.strategy_id,
-            AUDUSD_SIM.id,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            client_id=None,
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=AUDUSD_SIM.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(random)

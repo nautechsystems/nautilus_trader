@@ -375,14 +375,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if order.client_order_id in reported_client_order_ids:
                     continue  # Already reported
 
-                order_status_command = GenerateOrderStatusReport(
+                command = GenerateOrderStatusReport(
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                     command_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
-                maybe_report = await self.generate_order_status_report(order_status_command)
+                maybe_report = await self.generate_order_status_report(command)
                 if maybe_report:
                     reports.append(maybe_report)
 
@@ -392,7 +392,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             known_venue_order_ids.update({r.venue_order_id for r in reports})
 
             # Check fills to generate order reports
-            fill_reports_command = GenerateFillReports(
+            command = GenerateFillReports(
                 instrument_id=instrument_id,
                 venue_order_id=None,
                 start=None,
@@ -400,7 +400,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 command_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            fill_reports = await self.generate_fill_reports(fill_reports_command)
+            fill_reports = await self.generate_fill_reports(command)
             if fill_reports and not known_venue_order_ids:
                 self._log.warning(
                     "No previously known venue order IDs found in cache or from active orders",
