@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from strategy import SimpleTimerStrategy
 
-from examples.utils.demo_data_provider import prepare_demo_data_eurusd_futures_1min
+from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
