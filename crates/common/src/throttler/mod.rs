@@ -21,7 +21,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use callbacks::{ThrottlerProcess, ThrottlerResume};
 use inner::InnerThrottler;
 
-use crate::clock::Clock;
+use crate::{clock::Clock, msgbus::HandlerFn};
 
 /// Represents a throttling limit per interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,11 +43,11 @@ impl RateLimit {
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
 #[derive(Clone)]
-pub struct Throttler<T, F> {
-    inner: Rc<RefCell<InnerThrottler<T, F>>>,
+pub struct Throttler<T> {
+    inner: Rc<RefCell<InnerThrottler<T>>>,
 }
 
-impl<T, F> Debug for Throttler<T, F>
+impl<T> Debug for Throttler<T>
 where
     T: Debug,
 {
@@ -58,14 +58,14 @@ where
     }
 }
 
-impl<T, F> Throttler<T, F> {
+impl<T> Throttler<T> {
     /// Creates a new [`Throttler`] instance.
     pub fn new(
         rate_limit: RateLimit,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
-        output_send: F,
-        output_drop: Option<F>,
+        output_send: HandlerFn,
+        output_drop: Option<HandlerFn>,
     ) -> Self {
         let inner = InnerThrottler::new(
             rate_limit.limit,
@@ -99,10 +99,9 @@ impl<T, F> Throttler<T, F> {
     }
 }
 
-impl<T, F> Throttler<T, F>
+impl<T> Throttler<T>
 where
     T: 'static,
-    F: Fn(T) + 'static,
 {
     pub fn send(&self, msg: T) {
         let throttler_clone = Self {
@@ -118,11 +117,11 @@ where
         }
     }
 
-    fn get_process_callback(&self) -> ThrottlerProcess<T, F> {
+    fn get_process_callback(&self) -> ThrottlerProcess<T> {
         ThrottlerProcess::new(self.inner.clone())
     }
 
-    fn get_resume_callback(&self) -> ThrottlerResume<T, F> {
+    fn get_resume_callback(&self) -> ThrottlerResume<T> {
         ThrottlerResume::new(self.inner.clone())
     }
 }
@@ -132,28 +131,35 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{any::Any, cell::RefCell, rc::Rc};
 
     use rstest::{fixture, rstest};
 
     use super::{RateLimit, Throttler};
-    use crate::clock::TestClock;
+    use crate::{clock::TestClock, msgbus::HandlerFn};
 
     /// Test throttler with default values for testing
     ///
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
     struct TestThrottler {
-        throttler: Throttler<u64, Box<dyn Fn(u64)>>,
+        throttler: Throttler<u64>,
         clock: Rc<RefCell<TestClock>>,
         interval: u64,
     }
 
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
-        let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
-            log::debug!("Sent: {msg}");
+        let output_send: HandlerFn = Rc::new(move || {
+            Box::pin(
+                #[coroutine]
+                static move |_msg: Rc<dyn Any>| {
+                    let msg = _msg.downcast_ref::<u64>().unwrap();
+                    log::debug!("Sent: {msg}");
+                },
+            )
         });
+
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
@@ -174,12 +180,26 @@ mod tests {
 
     #[fixture]
     pub fn test_throttler_unbuffered() -> TestThrottler {
-        let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
-            log::debug!("Sent: {msg}");
+        let output_send: HandlerFn = Rc::new(move || {
+            Box::pin(
+                #[coroutine]
+                static move |_msg: Rc<dyn Any>| {
+                    let msg = _msg.downcast_ref::<u64>().unwrap();
+                    log::debug!("Sent: {msg}");
+                },
+            )
         });
-        let output_drop: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
-            log::debug!("Dropped: {msg}");
+
+        let output_drop: HandlerFn = Rc::new(move || {
+            Box::pin(
+                #[coroutine]
+                static move |_msg: Rc<dyn Any>| {
+                    let msg = _msg.downcast_ref::<u64>().unwrap();
+                    log::debug!("Dropped: {msg}");
+                },
+            )
         });
+
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
