@@ -274,14 +274,6 @@ cdef class SubscribeOrderBook(SubscribeData):
         The instrument ID for the subscription.
     book_type : BookType
         The order book type.
-    depth : int
-        The maximum depth for the subscription.
-    managed: bool
-        If an order book should be managed by the data engine based on the subscribed feed.
-    interval_ms : int
-        The interval (milliseconds) between snapshots.
-    only_deltas : bool
-        If the subscription is for OrderBookDeltas or OrderBook snapshots.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
@@ -290,6 +282,14 @@ cdef class SubscribeOrderBook(SubscribeData):
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    depth : int, optional, default 0
+        The maximum depth for the subscription.
+    managed: bool, optional, default True
+        If an order book should be managed by the data engine based on the subscribed feed.
+    interval_ms : int, optional, default 1000
+        The interval (milliseconds) between snapshots.
+    only_deltas : bool, optional, default True
+        If the subscription is for OrderBookDeltas or OrderBook snapshots.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
@@ -493,8 +493,6 @@ cdef class SubscribeBars(SubscribeData):
     ----------
     bar_type : BarType
         The bar type for the subscription.
-    await_partial : bool
-        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
@@ -503,6 +501,8 @@ cdef class SubscribeBars(SubscribeData):
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    await_partial : bool
+        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
