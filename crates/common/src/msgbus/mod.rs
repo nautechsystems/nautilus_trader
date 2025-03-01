@@ -81,8 +81,8 @@ pub struct Subscription {
     pub handler_fn: HandlerFn,
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
-    /// The pattern for the subscription used for both endpoints and topics.
-    pub pattern: Ustr,
+    /// The subscription endpoint for receiving direct messages and subscribing to topics.
+    pub endpoint: Ustr,
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
     /// lower priority handlers.
@@ -99,8 +99,8 @@ impl Subscription {
         priority: Option<u8>,
     ) -> Self {
         Self {
-            handler_id: Ustr::from(topic.as_ref()),
-            pattern: Ustr::from(topic.as_ref()),
+            handler_id: Ustr::from(handler_id.as_ref()),
+            endpoint: Ustr::from(topic.as_ref()),
             handler_fn: handler,
             priority: priority.unwrap_or(0),
         }
@@ -130,14 +130,14 @@ impl Debug for Subscription {
         write!(
             f,
             "Subscription {{ topic: {}, handler: {}, priority: {} }}",
-            self.pattern, self.handler_id, self.priority
+            self.endpoint, self.handler_id, self.priority
         )
     }
 }
 
 impl PartialEq<Self> for Subscription {
     fn eq(&self, other: &Self) -> bool {
-        self.pattern == other.pattern && self.handler_id == other.handler_id
+        self.endpoint == other.endpoint && self.handler_id == other.handler_id
     }
 }
 
@@ -157,7 +157,7 @@ impl Ord for Subscription {
 
 impl Hash for Subscription {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.pattern.hash(state);
+        self.endpoint.hash(state);
         self.handler_id.hash(state);
     }
 }
@@ -251,7 +251,7 @@ impl MessageBus {
     pub fn topics(&self) -> Vec<&str> {
         self.subscriptions
             .keys()
-            .map(|s| s.pattern.as_str())
+            .map(|s| s.endpoint.as_str())
             .collect()
     }
 
@@ -308,12 +308,12 @@ impl MessageBus {
     pub fn register(&mut self, subscription: Subscription) {
         log::debug!(
             "Registering endpoint '{}' with handler ID {} at {}",
-            subscription.pattern,
+            subscription.endpoint,
             subscription.handler_id,
             self.memory_address(),
         );
         // Updates value if key already exists
-        self.endpoints.insert(subscription.handler_id, subscription);
+        self.endpoints.insert(subscription.endpoint, subscription);
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
@@ -330,7 +330,7 @@ impl MessageBus {
     pub fn subscribe(&mut self, subscription: Subscription) {
         log::debug!(
             "Subscribing for topic '{}' at {}",
-            subscription.pattern,
+            subscription.endpoint,
             self.memory_address(),
         );
         if self.subscriptions.contains_key(&subscription) {
@@ -341,7 +341,7 @@ impl MessageBus {
         // Find existing patterns which match this topic
         let mut matches = Vec::new();
         for (pattern, subs) in &mut self.patterns {
-            if is_matching(&subscription.pattern, pattern) {
+            if is_matching(&subscription.endpoint, pattern) {
                 subs.push(subscription.clone());
                 subs.sort();
                 // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
@@ -377,7 +377,7 @@ impl MessageBus {
 
         // Collect matching subscriptions from direct subscriptions
         matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching(&sub.pattern, pattern) {
+            if is_matching(&sub.endpoint, pattern) {
                 Some(sub)
             } else {
                 None
@@ -406,7 +406,7 @@ impl MessageBus {
         pattern: &'a Ustr,
     ) -> impl Iterator<Item = &'a Subscription> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching(&sub.pattern, pattern) {
+            if is_matching(&sub.endpoint, pattern) {
                 Some(sub)
             } else {
                 None
