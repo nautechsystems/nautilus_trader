@@ -776,14 +776,22 @@ class BetfairExecutionClient(LiveExecutionClient):
         else:
             raise RuntimeError
 
-    async def _handle_order_stream_update(self, order_change_message: OCM) -> None:
+    async def _handle_order_stream_update(self, order_change_message: OCM) -> None:  # noqa: C901
         for market in order_change_message.oc or []:
             if market.orc is not None:
                 for selection in market.orc:
                     if selection.uo is not None:
                         for unmatched_order in selection.uo:
                             if not await self._check_order_update(unmatched_order=unmatched_order):
-                                self._log.warning(f"Unknown order for this node: {unmatched_order}")
+                                if not self.config.ignore_external_orders:
+                                    venue_order_id = VenueOrderId(str(unmatched_order.id))
+                                    self._log.warning(
+                                        f"Failed to find ClientOrderId for {venue_order_id!r} "
+                                        f"after {self.check_order_timeout_secs} seconds",
+                                    )
+                                    self._log.warning(
+                                        f"Unknown order for this node: {unmatched_order}",
+                                    )
                                 return
                             if unmatched_order.status == "E":
                                 self._handle_stream_executable_order_update(
@@ -797,7 +805,6 @@ class BetfairExecutionClient(LiveExecutionClient):
                                 self._log.warning(f"Unknown order state: {unmatched_order}")
                     if selection.full_image:
                         self.check_cache_against_order_image(order_change_message)
-                        continue
 
     def check_cache_against_order_image(self, order_change_message: OCM) -> None:
         for market in order_change_message.oc or []:
@@ -812,10 +819,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 for unmatched_order in selection.uo or []:
                     # We can match on venue_order_id here
                     order = venue_orders.get(VenueOrderId(str(unmatched_order.id)))
-                    if order is not None:
-                        continue  # Order exists
-                    self._log.error(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=} ")
-                    raise RuntimeError(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=}")
+                    if order is None and not self.config.ignore_external_orders:
+                        self._log.error(f"Unknown order not in cache: {unmatched_order=} ")
                 matched_orders = [(OrderSide.SELL, lay) for lay in (selection.ml or [])] + [
                     (OrderSide.BUY, back) for back in (selection.mb or [])
                 ]
@@ -832,9 +837,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                                 and quantity <= order.quantity
                             ):
                                 matched = True
-                    if not matched:
-                        self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
-                        raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
+                    if not matched and not self.config.ignore_external_orders:
+                        self._log.error(f"Unknown fill: {instrument_id=}, {matched_order=}")
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> bool:
         # We may get an order update from the socket before our submit_order response has
@@ -845,10 +849,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = await self._wait_for_order(venue_order_id, self.check_order_timeout_secs)
         if client_order_id is None:
-            self._log.warning(
-                f"Failed to find ClientOrderId for {venue_order_id!r} "
-                f"after {self.check_order_timeout_secs} seconds",
-            )
             return False
 
         self._log.debug(f"Found {client_order_id!r} for {venue_order_id!r}")
