@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Added Rust debugging support and refined cargo nextest usage (#2335, #2339), thanks @faysou
 - Added catalog write mode options (#2365), thanks @faysou
 - Added `BarSpecification` to msgspec encoding and decoding hooks (#2373), thanks @pierianeagle
+- Added `ignore_external_orders` config option for `BetfairExecClientConfig`, default `False` to retain current behavior
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
