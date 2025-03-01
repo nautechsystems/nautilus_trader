@@ -128,27 +128,32 @@ VENUES_CFD = [
 ]
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 
-RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")
-RE_CFD_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\.(?P<currency>[A-Z]{3})$")
+RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")  # "EUR/USD"
+RE_CFD_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\.(?P<currency>[A-Z]{3})$")  # "EUR.USD"
 RE_OPT = re.compile(
     r"^(?P<symbol>^[A-Z. ]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
-)
-RE_FUT_UNDERLYING = re.compile(r"^(?P<symbol>\w{1,3})$")
-RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
-RE_FUT_ORIGINAL = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)$")
+)  # "AAPL220617C00155000"
+RE_FUT_UNDERLYING = re.compile(r"^(?P<symbol>\w{1,3})$")  # "ES"
+RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")  # "ESM23"
+RE_FUT_ORIGINAL = re.compile(
+    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)$",
+)  # "ESM3"
 RE_FUT2 = re.compile(
     r"^(?P<symbol>\w{1,4})(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))(?P<year>\d{2})$",
-)
+)  # "ESMAR23"
 RE_FUT2_ORIGINAL = re.compile(
     r"^(?P<symbol>\w{1,4}) *(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)) (?P<year>\d{2})$",
-)
+)  # "ES MAR 23"
+RE_FUT3_ORIGINAL = re.compile(
+    r"^(?P<symbol>[A-Z]+)(?P<year>\d{2})(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))FUT$",
+)  # "NIFTY25MARFUT"
 RE_FOP = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,5})$",
-)
+)  # "ESM23C4200"
 RE_FOP_ORIGINAL = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)\s(?P<right>[CP])(?P<strike>\d{1,4}(?:\.\d)?)$",
-)
-RE_CRYPTO = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
+)  # "ESM3 C4420"
+RE_CRYPTO = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")  # "BTC/USD"
 
 
 def _extract_isin(details: IBContractDetails) -> int:
@@ -559,6 +564,9 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'], contract)}{m['year']}"
         venue = contract.exchange
     elif security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol)):
+        symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year']}"
+        venue = contract.exchange
+    elif security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year']}"
         venue = contract.exchange
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
