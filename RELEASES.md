@@ -50,12 +50,14 @@ Released on TBD (UTC).
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored reconciliation interface into messages (#2375), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
+- Refactored repetitive code in backtest examples (#2387), thanks @stefansimik
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
 - Refined underlying filtering in portfolio_greeks (#2382), thanks @faysou
 - Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
 - Refined Rust date functions (#2356), thanks @faysou
+- Refined parsing of IB symbols (#2388), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -88,7 +90,9 @@ Released on TBD (UTC).
 - Fixed `bypass_logging` fixture to keep log guard alive for entire test session
 - Fixed time parsing for IB adapter (#2360), thanks @faysou
 - Fixed bad `ts_init` value in IB weekly and monthly bar (#2355), thanks @Endura2024
+- Fixed bar timestamps for IB (#2380), thanks @Endura2024
 - Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
+- Fixed subscribe composite bars (#2390), thanks @faysou
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
