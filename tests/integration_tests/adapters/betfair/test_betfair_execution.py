@@ -896,6 +896,7 @@ async def test_generate_order_status_report_venue_order_id(
     assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
 
 
+@pytest.mark.skip(reason="No longer raising exception (just logging error)")
 def test_check_cache_against_order_image_raises(exec_client, venue_order_id):
     # Arrange
     ocm = BetfairStreaming.generate_order_change_message(

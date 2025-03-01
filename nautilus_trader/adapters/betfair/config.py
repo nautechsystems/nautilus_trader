@@ -83,6 +83,10 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     reconcile_market_ids_only : bool, default False
         If True, reconciliation only requests orders matching the market IDs listed
         in the `instrument_config`. If False, all orders are reconciled.
+    ignore_external_orders : bool, default False
+        If True, orders received over the stream that aren't found in the cache
+        will be silently ignored. This is useful when multiple trading nodes
+        share the same Betfair account across different markets.
 
     """
 
@@ -94,3 +98,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     instrument_config: BetfairInstrumentProviderConfig | None = None
     request_account_state_secs: PositiveInt = 300
     reconcile_market_ids_only: bool = False
+    ignore_external_orders: bool = False
