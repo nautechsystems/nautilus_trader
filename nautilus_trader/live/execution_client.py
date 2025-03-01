@@ -479,16 +479,14 @@ class LiveExecutionClient(ExecutionClient):
     async def _query_order(self, command: QueryOrder) -> None:
         self._log.debug(f"Synchronizing order status {command}")
 
-        order_status_command = GenerateOrderStatusReport(
+        command = GenerateOrderStatusReport(
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        report: OrderStatusReport | None = await self.generate_order_status_report(
-            order_status_command,
-        )
+        report: OrderStatusReport | None = await self.generate_order_status_report(command)
 
         if report is None:
             self._log.warning("Did not receive `OrderStatusReport` from request")

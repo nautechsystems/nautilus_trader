@@ -113,7 +113,7 @@ async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(
         SubscribeTradeTicks(
-            instrument.id,
+            instrument_id=instrument.id,
             client_id=None,
             venue=instrument.id.venue,
             command_id=UUID4(),
@@ -123,7 +123,7 @@ async def test_subscriptions(data_client, instrument):
     await asyncio.sleep(0)
     data_client.subscribe_instrument_status(
         SubscribeInstrumentStatus(
-            instrument.id,
+            instrument_id=instrument.id,
             client_id=None,
             venue=instrument.id.venue,
             command_id=UUID4(),
@@ -133,7 +133,7 @@ async def test_subscriptions(data_client, instrument):
     await asyncio.sleep(0)
     data_client.subscribe_instrument_close(
         SubscribeInstrumentClose(
-            instrument.id,
+            instrument_id=instrument.id,
             client_id=None,
             venue=instrument.id.venue,
             command_id=UUID4(),

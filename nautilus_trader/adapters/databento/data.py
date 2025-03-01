@@ -333,7 +333,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._instrument_ids[dataset].add(instrument_id)
 
             subscribe = SubscribeInstrument(
-                instrument_id,
+                instrument_id=instrument_id,
                 client_id=None,
                 venue=instrument_id.venue,
                 command_id=UUID4(),
