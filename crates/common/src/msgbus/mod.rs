@@ -81,8 +81,8 @@ pub struct Subscription {
     pub handler_fn: HandlerFn,
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
-    /// The topic for the subscription.
-    pub topic: Ustr,
+    /// The pattern for the subscription used for both endpoints and topics.
+    pub pattern: Ustr,
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
     /// lower priority handlers.
@@ -95,12 +95,12 @@ impl Subscription {
     pub fn new<T: AsRef<str>>(
         topic: T,
         handler: HandlerFn,
-        handler_id: Ustr,
+        handler_id: T,
         priority: Option<u8>,
     ) -> Self {
         Self {
-            handler_id,
-            topic: Ustr::from(topic.as_ref()),
+            handler_id: Ustr::from(topic.as_ref()),
+            pattern: Ustr::from(topic.as_ref()),
             handler_fn: handler,
             priority: priority.unwrap_or(0),
         }
@@ -110,9 +110,9 @@ impl Subscription {
     ///
     /// It is useful for equating keys in the mapping as it only needs
     /// the topic and handler ID to be equal.
-    pub fn dummy<T: AsRef<str>>(topic: T, handler_id: Ustr) -> Self {
+    pub fn dummy<T: AsRef<str>>(topic: T, handler_id: T) -> Self {
         Self::new(
-            Ustr::from(topic.as_ref()),
+            topic,
             Rc::new(move || {
                 Box::pin(
                     #[coroutine]
@@ -130,14 +130,14 @@ impl Debug for Subscription {
         write!(
             f,
             "Subscription {{ topic: {}, handler: {}, priority: {} }}",
-            self.topic, self.handler_id, self.priority
+            self.pattern, self.handler_id, self.priority
         )
     }
 }
 
 impl PartialEq<Self> for Subscription {
     fn eq(&self, other: &Self) -> bool {
-        self.topic == other.topic && self.handler_id == other.handler_id
+        self.pattern == other.pattern && self.handler_id == other.handler_id
     }
 }
 
@@ -157,7 +157,7 @@ impl Ord for Subscription {
 
 impl Hash for Subscription {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.topic.hash(state);
+        self.pattern.hash(state);
         self.handler_id.hash(state);
     }
 }
@@ -251,7 +251,7 @@ impl MessageBus {
     pub fn topics(&self) -> Vec<&str> {
         self.subscriptions
             .keys()
-            .map(|s| s.topic.as_str())
+            .map(|s| s.pattern.as_str())
             .collect()
     }
 
@@ -293,8 +293,8 @@ impl MessageBus {
 
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
-    pub fn is_subscribed<T: AsRef<str>>(&self, topic: T, handler_id: Ustr) -> bool {
-        let sub = Subscription::dummy(topic.as_ref(), handler_id);
+    pub fn is_subscribed<T: AsRef<str>>(&self, topic: T, handler_id: T) -> bool {
+        let sub = Subscription::dummy(topic, handler_id);
         self.subscriptions.contains_key(&sub)
     }
 
@@ -308,7 +308,7 @@ impl MessageBus {
     pub fn register(&mut self, subscription: Subscription) {
         log::debug!(
             "Registering endpoint '{}' with handler ID {} at {}",
-            subscription.topic,
+            subscription.pattern,
             subscription.handler_id,
             self.memory_address(),
         );
@@ -330,7 +330,7 @@ impl MessageBus {
     pub fn subscribe(&mut self, subscription: Subscription) {
         log::debug!(
             "Subscribing for topic '{}' at {}",
-            subscription.topic,
+            subscription.pattern,
             self.memory_address(),
         );
         if self.subscriptions.contains_key(&subscription) {
@@ -341,7 +341,7 @@ impl MessageBus {
         // Find existing patterns which match this topic
         let mut matches = Vec::new();
         for (pattern, subs) in &mut self.patterns {
-            if is_matching(&subscription.topic, pattern) {
+            if is_matching(&subscription.pattern, pattern) {
                 subs.push(subscription.clone());
                 subs.sort();
                 // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
@@ -355,13 +355,13 @@ impl MessageBus {
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe<T: AsRef<str>>(&mut self, topic: T, handler_id: Ustr) {
+    pub fn unsubscribe<T: AsRef<str>>(&mut self, topic: T, handler_id: T) {
         log::debug!(
             "Unsubscribing for topic '{}' at {}",
             topic.as_ref(),
             self.memory_address(),
         );
-        let sub = Subscription::dummy(topic.as_ref().to_string(), handler_id);
+        let sub = Subscription::dummy(topic, handler_id);
         self.subscriptions.shift_remove(&sub);
     }
 
@@ -377,7 +377,7 @@ impl MessageBus {
 
         // Collect matching subscriptions from direct subscriptions
         matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching(&sub.pattern, pattern) {
                 Some(sub)
             } else {
                 None
@@ -406,7 +406,7 @@ impl MessageBus {
         pattern: &'a Ustr,
     ) -> impl Iterator<Item = &'a Subscription> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching(&sub.pattern, pattern) {
                 Some(sub)
             } else {
                 None
@@ -518,7 +518,7 @@ mod tests {
         let msgbus = stub_msgbus();
         let handler_id = Ustr::from("test-handler");
 
-        assert!(!msgbus.is_subscribed("my-topic", handler_id));
+        assert!(!msgbus.is_subscribed("my-topic", &handler_id));
     }
 
     #[rstest]
@@ -534,7 +534,7 @@ mod tests {
         let handler_id = Ustr::from(endpoint);
 
         // Use Subscription::dummy to create a subscription
-        let subscription = Subscription::dummy(endpoint, handler_id);
+        let subscription = Subscription::dummy(endpoint, &handler_id);
 
         msgbus.register(subscription);
         assert_eq!(msgbus.endpoints(), vec![endpoint]);
@@ -547,7 +547,7 @@ mod tests {
         let endpoint = Ustr::from("MyEndpoint");
 
         // Use Subscription::dummy to create a subscription
-        let subscription = Subscription::dummy(endpoint.as_str(), endpoint);
+        let subscription = Subscription::dummy(endpoint.as_str(), &endpoint);
 
         msgbus.register(subscription);
         msgbus.deregister(&endpoint);
@@ -561,7 +561,7 @@ mod tests {
         let handler_id = Ustr::from("test-handler");
 
         // Use Subscription::dummy to create a subscription with priority
-        let mut subscription = Subscription::dummy(topic, handler_id);
+        let mut subscription = Subscription::dummy(topic, &handler_id);
         subscription.priority = 1;
 
         msgbus.subscribe(subscription);
@@ -576,10 +576,10 @@ mod tests {
         let handler_id = Ustr::from("test-handler");
 
         // Use Subscription::dummy to create a subscription
-        let subscription = Subscription::dummy(topic, handler_id);
+        let subscription = Subscription::dummy(topic, &handler_id);
 
         msgbus.subscribe(subscription);
-        msgbus.unsubscribe(topic, handler_id);
+        msgbus.unsubscribe(topic, &handler_id);
         assert!(!msgbus.has_subscribers(topic));
         assert!(msgbus.topics().is_empty());
     }
@@ -595,11 +595,11 @@ mod tests {
         let handler_id4 = Ustr::from("4");
 
         // Use Subscription::dummy to create subscriptions with different priorities
-        let subscription1 = Subscription::dummy(topic, handler_id1);
-        let subscription2 = Subscription::dummy(topic, handler_id2);
-        let mut subscription3 = Subscription::dummy(topic, handler_id3);
+        let subscription1 = Subscription::dummy(topic, &handler_id1);
+        let subscription2 = Subscription::dummy(topic, &handler_id2);
+        let mut subscription3 = Subscription::dummy(topic, &handler_id3);
         subscription3.priority = 1;
-        let mut subscription4 = Subscription::dummy(topic, handler_id4);
+        let mut subscription4 = Subscription::dummy(topic, &handler_id4);
         subscription4.priority = 2;
 
         msgbus.subscribe(subscription1);

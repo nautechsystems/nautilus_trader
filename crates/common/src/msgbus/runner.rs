@@ -171,7 +171,7 @@ impl TaskRunner {
                                 self.msg_bus.subscribe(subscription);
                             }
                             Command::Unsubscribe((topic, handler_id)) => {
-                                self.msg_bus.unsubscribe(&topic, handler_id.into());
+                                self.msg_bus.unsubscribe(&topic, &handler_id);
                             }
                             Command::Publish { pattern, msg } => {
                                 self.push(Task::Publish(PublishTask::new(pattern, msg)));
