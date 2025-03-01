@@ -304,7 +304,7 @@ if stream_data:
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
-        basename_template="part-{i}.parquet",
+        basename_template="part-{i}",
         partitioning=["date"],
         # mode=CatalogWriteMode.NEWFILE, # TODO comment partitioning option above to test this writing mode
         existing_data_behavior="overwrite_or_ignore",
