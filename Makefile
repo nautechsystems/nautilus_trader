@@ -70,7 +70,7 @@ update: cargo-update
 docs: docs-python docs-rust
 
 .PHONY: docs-python
-docs-python: install-docs
+docs-python:
 	uv run sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
