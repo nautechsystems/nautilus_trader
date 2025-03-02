@@ -22,6 +22,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Added catalog write mode options (#2365), thanks @faysou
 - Added `BarSpecification` to msgspec encoding and decoding hooks (#2373), thanks @pierianeagle
 - Added `ignore_external_orders` config option for `BetfairExecClientConfig`, default `False` to retain current behavior
+- Added requests for order book snapshots with HTTP for dYdX (#2393), thanks @davidsblom
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
@@ -54,7 +55,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored reconciliation interface into messages (#2375), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
-- Refactored repetitive code in backtest examples (#2387), thanks @stefansimik
+- Refactored repetitive code in backtest examples (#2387, #2395), thanks @stefansimik
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
