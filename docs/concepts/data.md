@@ -66,9 +66,10 @@ These bars are generated using an *aggregation method*, which groups data based 
 ### Purpose of data aggregation
 
 Data aggregation in NautilusTrader transforms granular market data into structured bars or candles for several reasons:
-- To provide data for technical indicators and strategy development
-- Because time-aggregated data (like minute bars) are often sufficient for many strategies
-- To reduce costs compared to high-frequency L1/L2/L3 market data
+
+- To provide data for technical indicators and strategy development.
+- Because time-aggregated data (like minute bars) are often sufficient for many strategies.
+- To reduce costs compared to high-frequency L1/L2/L3 market data.
 
 ### Aggregation methods
 
@@ -97,17 +98,17 @@ The platform implements various aggregation methods:
 
 NautilusTrader implements three distinct data aggregation methods:
 
-1. **Tick-to-bar aggregation**: Creates bars from `TradeTick` objects (executed trades)
-   - Use case: For strategies analyzing execution prices or when working directly with trade data
-   - Always uses the `LAST` price type in the bar specification
+1. **Trade-to-bar aggregation**: Creates bars from `TradeTick` objects (executed trades)
+   - Use case: For strategies analyzing execution prices or when working directly with trade data.
+   - Always uses the `LAST` price type in the bar specification.
 
 2. **Quote-to-bar aggregation**: Creates bars from `QuoteTick` objects (bid/ask prices)
-   - Use case: For strategies focusing on bid/ask spreads or market depth analysis
-   - Uses `BID`, `ASK`, or `MID` price types in the bar specification
+   - Use case: For strategies focusing on bid/ask spreads or market depth analysis.
+   - Uses `BID`, `ASK`, or `MID` price types in the bar specification.
 
 3. **Bar-to-bar aggregation**: Creates larger-timeframe `Bar` objects from smaller-timeframe `Bar` objects
-   - Use case: For resampling existing smaller timeframe bars (1-minute) into larger timeframes (5-minute, hourly)
-   - Always requires the `@` symbol in the specification
+   - Use case: For resampling existing smaller timeframe bars (1-minute) into larger timeframes (5-minute, hourly).
+   - Always requires the `@` symbol in the specification.
 
 ### Bar types and Components
 
@@ -182,10 +183,10 @@ The `BarType` string format encodes both the target bar type and, optionally, th
 
 The part after the `@` symbol is optional and only used for bar-to-bar aggregation:
 
-- **Without `@`**: Aggregates from `TradeTick` objects (when price_type is `LAST`) or `QuoteTick` objects (when price_type is `BID`, `ASK`, or `MID`)
-- **With `@`**: Aggregates from existing `Bar` objects (specifying the source bar type)
+- **Without `@`**: Aggregates from `TradeTick` objects (when price_type is `LAST`) or `QuoteTick` objects (when price_type is `BID`, `ASK`, or `MID`).
+- **With `@`**: Aggregates from existing `Bar` objects (specifying the source bar type).
 
-#### Tick-to-bar example
+#### Trade-to-bar example
 
 ```python
 def on_start(self) -> None:
@@ -255,12 +256,12 @@ hourly_bar_type = BarType.from_str("6EH4.XCME-1-HOUR-LAST-INTERNAL@5-MINUTE-INTE
 
 NautilusTrader provides two distinct operations for working with bars:
 
-- **`request_bars()`**: Fetches historical data processed by the `on_historical_data()` handler
-- **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler
+- **`request_bars()`**: Fetches historical data processed by the `on_historical_data()` handler.
+- **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
 
 These methods work together in a typical workflow:
-1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior
-2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time
+1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior.
+2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time.
 
 Example usage in `on_start()`:
 
@@ -345,7 +346,7 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 | **Event Type**   | **`ts_event`**                                        | **`ts_init`** |
 | -----------------| ------------------------------------------------------| --------------|
 | `TradeTick`      | Time when trade occurred at the exchange.             | Time when Nautilus received the trade data. |
-| `QuoteTick`      | Time when quote was created at the exchange.          | Time when Nautilus received the quote data. |
+| `QuoteTick`      | Time when quote occurred at the exchange.             | Time when Nautilus received the quote data. |
 | `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update. |
 | `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
 | `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation. |
