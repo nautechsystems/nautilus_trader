@@ -13,10 +13,10 @@ To install the latest `nautilus_trader` package along with the `binance` depende
 pip install -U "nautilus_trader[binance]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras binance
+uv sync --extra binance
 ```
 
 ## Examples

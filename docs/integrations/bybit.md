@@ -17,10 +17,10 @@ To install the latest `nautilus_trader` package along with the `bybit` dependenc
 pip install -U "nautilus_trader[bybit]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras bybit
+uv sync --extra bybit
 ```
 
 ## Examples

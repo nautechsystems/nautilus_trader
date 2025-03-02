@@ -18,10 +18,10 @@ To install the latest `nautilus_trader` package along with the `ibapi` and optio
 pip install -U "nautilus_trader[ib,docker]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras ib --extras docker
+uv sync --extra ib --extra docker
 ```
 
 :::note

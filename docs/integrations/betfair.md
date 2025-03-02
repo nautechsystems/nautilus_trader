@@ -14,10 +14,10 @@ To install the latest `nautilus_trader` package along with the `betfair` depende
 pip install -U "nautilus_trader[betfair]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras betfair
+uv sync --extra betfair
 ```
 
 ## Examples

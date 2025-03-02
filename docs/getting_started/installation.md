@@ -106,7 +106,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 See the [PyO3 user guide](https://pyo3.rs/latest/getting-started#virtualenvs) for more details.
 
 It's possible to install from source using pip if you first install the build dependencies
-as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
+as specified in the `pyproject.toml`. We highly recommend installing using [uv](https://docs.astral.sh/uv) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
@@ -142,15 +142,15 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
    - Verify (any system):
        from a terminal session run: `clang --version`
 
-4. Install poetry (or follow the installation guide on their site):
+4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
-       curl -sSL https://install.python-poetry.org | python3 -
+       curl -LsSf https://astral.sh/uv/install.sh | sh
 
 5. Clone the source with `git`, and install from the projects root directory:
 
        git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
-       poetry install --only main --all-extras
+       uv sync --all-extras
 
 :::note
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
