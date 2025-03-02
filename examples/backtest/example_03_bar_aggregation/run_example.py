@@ -19,20 +19,16 @@ from decimal import Decimal
 import pandas as pd
 from strategy import DemoStrategy
 
-from nautilus_trader import TEST_DATA_DIR
+from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model import TraderId
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
@@ -48,7 +44,7 @@ if __name__ == "__main__":
     # Step 2: Define exchange and add it to the engine
     XCME = Venue("XCME")
     engine.add_venue(
-        venue=XCME,
+        venue=Venue(venue_name),
         oms_type=OmsType.NETTING,  # Order Management System type
         account_type=AccountType.MARGIN,  # Type of trading account
         starting_balances=[Money(1_000_000, USD)],  # Initial account balance
@@ -56,55 +52,20 @@ if __name__ == "__main__":
         default_leverage=Decimal(1),  # No leverage used for account
     )
 
-    # Step 3: Create instrument definition and add it to the engine
-    EURUSD_INSTRUMENT = TestInstrumentProvider.eurusd_future(
-        expiry_year=2024,
-        expiry_month=3,
-        venue_name="XCME",
-    )
-    engine.add_instrument(EURUSD_INSTRUMENT)
-
-    # Loading bars from CSV
-
-    # Step 4a: Load bar data from CSV file -> into pandas DataFrame
-    csv_file_path = rf"{TEST_DATA_DIR}/xcme/6EH4.XCME_1min_bars_20240101_20240131.csv.gz"
-    df = pd.read_csv(csv_file_path, header=0, index_col=False)
-
-    # Step 4b: Restructure DataFrame into required structure, that can be passed `BarDataWrangler`
-    #   - 5 required columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
-    #   - column 'timestamp': should be in index of the DataFrame
-    df = (
-        # Reorder columns to match required format
-        df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])
-        # Convert timestamp strings to datetime objects
-        .assign(
-            timestamp_utc=lambda dft: pd.to_datetime(
-                dft["timestamp_utc"],
-                format="%Y-%m-%d %H:%M:%S",
-            ),
-        )
-        # Rename timestamp column and set as index
-        .rename(columns={"timestamp_utc": "timestamp"}).set_index("timestamp")
-    )
-
-    # Step 4c: Define type of loaded bars
-    EURUSD_1MIN_BARTYPE = BarType.from_str(f"{EURUSD_INSTRUMENT.id}-1-MINUTE-LAST-EXTERNAL")
-
-    # Step 4d: `BarDataWrangler` converts each row into objects of type `Bar`
-    wrangler = BarDataWrangler(EURUSD_1MIN_BARTYPE, EURUSD_INSTRUMENT)
-    eurusd_1min_bars_list: list[Bar] = wrangler.process(df)
-
-    # Step 4e: Add loaded data to the engine
+    # Add instrument and market data to the engine
+    engine.add_instrument(eurusd_instrument)
     engine.add_data(eurusd_1min_bars_list)
 
-    # ------------------------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------
+    # 4. Configure and run strategy
+    # ----------------------------------------------------------------------------------
 
-    # Step 5: Create strategy and add it to the engine
-    strategy = DemoStrategy(bar_type_1min=EURUSD_1MIN_BARTYPE)
+    # Create and register the bar aggregation strategy
+    strategy = DemoStrategy(bar_type_1min=eurusd_1min_bartype)
     engine.add_strategy(strategy)
 
-    # Step 6: Run engine = Run backtest
+    # Execute the backtest
     engine.run()
 
-    # Step 7: Release system resources
+    # Clean up resources
     engine.dispose()

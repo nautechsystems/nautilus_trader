@@ -19,25 +19,24 @@ from decimal import Decimal
 import pandas as pd
 from strategy import CacheDemoStrategy
 
-from nautilus_trader import TEST_DATA_DIR
+from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model import TraderId
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
-    # Configure backtest engine with Cache settings
+    # ----------------------------------------------------------------------------------
+    # 1. Configure and create backtest engine
+    # ----------------------------------------------------------------------------------
+
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTEST-001"),
         logging=LoggingConfig(
@@ -55,17 +54,11 @@ if __name__ == "__main__":
     # Set up a simple trading environment
     venue = Venue("SIM")
 
-    # Add a trading venue
-    engine.add_venue(
-        venue=venue,
-        oms_type=OmsType.NETTING,
-        account_type=AccountType.MARGIN,
-        base_currency=USD,
-        starting_balances=[Money(1_000_000, USD)],
-    )
+    # ----------------------------------------------------------------------------------
+    # 3. Configure trading environment
+    # ----------------------------------------------------------------------------------
 
-    # Step 2: Define exchange and add it to the engine
-    venue_name = "XCME"
+    # Set up the trading venue with a margin account
     engine.add_venue(
         venue=Venue(venue_name),
         oms_type=OmsType.NETTING,  # Order Management System type
@@ -81,40 +74,21 @@ if __name__ == "__main__":
         expiry_month=3,
         venue_name=venue_name,
     )
-    engine.add_instrument(EURUSD_FUTURES)
 
-    # Loading bars from CSV
+    # Add instrument and market data to the engine
+    engine.add_instrument(eurusd_instrument)
+    engine.add_data(eurusd_1min_bars_list)
 
-    # Step 4a: Load bar data from CSV file -> into pandas DataFrame
-    csv_file_path = rf"{TEST_DATA_DIR}/xcme/6EH4.XCME_1min_bars_20240101_20240131.csv.gz"
-    df = pd.read_csv(csv_file_path, header=0, index_col=False)
+    # ----------------------------------------------------------------------------------
+    # 4. Configure and run strategy
+    # ----------------------------------------------------------------------------------
 
-    # Step 4b: Restructure DataFrame into required structure for BarDataWrangler
-    #   - 5 required columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
-    #   - column 'timestamp': should be in index of the DataFrame
-    df = df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])
-    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], format="%Y-%m-%d %H:%M:%S")
-    df = df.rename(columns={"timestamp_utc": "timestamp"})
-    df = df.set_index("timestamp")
-
-    # Step 4c: Define type of loaded bars
-    bar_type = BarType.from_str(f"{EURUSD_FUTURES.id}-1-MINUTE-LAST-EXTERNAL")
-
-    # Step 4d: Convert DataFrame rows into Bar objects
-    wrangler = BarDataWrangler(bar_type, EURUSD_FUTURES)
-    bars: list[Bar] = wrangler.process(df)
-
-    # Step 4e: Add loaded data to the engine
-    engine.add_data(bars)
-
-    # ------------------------------------------------------------------------------------------
-
-    # Step 5: Create strategy and add it to the engine
-    strategy = CacheDemoStrategy(bar_type=bar_type)
+    # Create and register the cache demonstration strategy
+    strategy = CacheDemoStrategy(bar_type=eurusd_1min_bartype)
     engine.add_strategy(strategy)
 
-    # Step 6: Run engine = Run backtest
+    # Execute the backtest
     engine.run()
 
-    # Step 7: Release system resources
+    # Clean up resources
     engine.dispose()

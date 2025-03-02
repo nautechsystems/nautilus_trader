@@ -33,22 +33,28 @@ from nautilus_trader.model.objects import Money
 if __name__ == "__main__":
     # Configure and create backtest engine
     engine_config = BacktestEngineConfig(
-        trader_id=TraderId("BACKTEST_TRADER-001"),
+        trader_id=TraderId("BACKTEST-TIMER-001"),  # Unique identifier for this backtest
         logging=LoggingConfig(
-            log_level="DEBUG",  # set DEBUG log level for console to see loaded bars in logs
+            log_level="DEBUG",  # Set to DEBUG to see detailed timer and bar processing logs
         ),
     )
     engine = BacktestEngine(config=engine_config)
 
-    # REUSABLE DATA
-    # This code is often the same in all examples, so it is moved to a separate reusable function
-    prepared_data = prepare_demo_data_eurusd_futures_1min()
-    VENUE_NAME = prepared_data["venue_name"]  # Exchange name
-    EURUSD_INSTRUMENT = prepared_data["instrument"]  # Instrument object
-    EURUSD_1MIN_BARTYPE = prepared_data["bar_type"]  # BarType object
-    eurusd_1min_bars_list = prepared_data["bars_list"]  # List of Bar objects
+    # ----------------------------------------------------------------------------------
+    # 2. Prepare market data
+    # ----------------------------------------------------------------------------------
 
-    # Define exchange and add it to the engine
+    prepared_data: dict = prepare_demo_data_eurusd_futures_1min()
+    venue_name: str = prepared_data["venue_name"]
+    eurusd_instrument: Instrument = prepared_data["instrument"]
+    eurusd_1min_bartype: BarType = prepared_data["bar_type"]
+    eurusd_1min_bars: list[Bar] = prepared_data["bars_list"]
+
+    # ----------------------------------------------------------------------------------
+    # 3. Configure trading environment
+    # ----------------------------------------------------------------------------------
+
+    # Set up the trading venue with a margin account
     engine.add_venue(
         venue=Venue(VENUE_NAME),
         oms_type=OmsType.NETTING,  # Order Management System type
@@ -58,18 +64,22 @@ if __name__ == "__main__":
         default_leverage=Decimal(1),  # No leverage used for account
     )
 
-    # Add instrument to the engine
-    engine.add_instrument(EURUSD_INSTRUMENT)
+    # Register the trading instrument
+    engine.add_instrument(eurusd_instrument)
 
-    # Add bars to the engine
-    engine.add_data(eurusd_1min_bars_list)
+    # Load historical market data
+    engine.add_data(eurusd_1min_bars)
 
-    # Create strategy and add it to the engine
-    strategy = SimpleTimerStrategy(primary_bar_type=EURUSD_1MIN_BARTYPE)
+    # ----------------------------------------------------------------------------------
+    # 4. Configure and run strategy
+    # ----------------------------------------------------------------------------------
+
+    # Create and register the timer strategy
+    strategy = SimpleTimerStrategy(primary_bar_type=eurusd_1min_bartype)
     engine.add_strategy(strategy)
 
-    # Run engine = Run backtest
+    # Execute the backtest
     engine.run()
 
-    # Release system resources
+    # Clean up resources
     engine.dispose()
