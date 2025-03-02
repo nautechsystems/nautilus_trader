@@ -71,7 +71,7 @@ docs: docs-python docs-rust
 
 .PHONY: docs-python
 docs-python:
-	uv run sphinx-build -M markdown ./docs/api_reference ./api_reference
+	BUILD_MODE=debug uv run sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust:
