@@ -12,6 +12,10 @@ install:
 install-debug:
 	BUILD_MODE=debug uv sync --all-groups --all-extras
 
+.PHONY: install-just-deps
+install-just-deps:
+	uv sync --all-groups --all-extras --no-install-package nautilus_trader
+
 .PHONY: build
 build:
 	BUILD_MODE=release uv run --no-sync build.py
