@@ -176,19 +176,11 @@ stop-services:
 
 .PHONY: pytest
 pytest:
-	bash scripts/test.sh
-
-.PHONY: pytest-coverage
-pytest-coverage:
-	bash scripts/test-coverage.sh
+	uv run --no-sync pytest --new-first --failed-first
 
 .PHONY: test-performance
 test-performance:
-	bash scripts/test-performance.sh
-
-.PHONY: test-examples
-test-examples:
-	bash scripts/test-examples.sh
+	uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
 .PHONY: install-cli
 install-cli:
