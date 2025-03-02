@@ -19,7 +19,7 @@
 
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
 };
@@ -279,54 +279,80 @@ impl OwnOrderBook {
     }
 
     /// Returns bid price levels as a map of level price to order list at that level.
-    pub fn bids_as_map(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+    ///
+    /// If `status` filter is provided, includes only orders with matching status values.
+    /// Empty price levels after filtering are excluded from the result.
+    pub fn bids_as_map(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+    ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
         self.bids()
             .map(|level| {
-                (
-                    level.price.value.as_decimal(),
-                    level.orders.values().cloned().collect(),
-                )
+                let orders = match &status {
+                    Some(filter) => filter_orders_by_status(&level.orders, filter),
+                    None => level.orders.values().cloned().collect(),
+                };
+                (level.price.value.as_decimal(), orders)
             })
+            .filter(|(_, orders)| !orders.is_empty())
             .collect()
     }
 
     /// Returns ask price levels as a map of level price to order list at that level.
-    pub fn asks_as_map(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+    ///
+    /// If `status` filter is provided, includes only orders with matching status values.
+    /// Empty price levels after filtering are excluded from the result.
+    pub fn asks_as_map(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+    ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
         self.asks()
             .map(|level| {
-                (
-                    level.price.value.as_decimal(),
-                    level.orders.values().cloned().collect(),
-                )
+                let orders = match &status {
+                    Some(filter) => filter_orders_by_status(&level.orders, filter),
+                    None => level.orders.values().cloned().collect(),
+                };
+                (level.price.value.as_decimal(), orders)
             })
+            .filter(|(_, orders)| !orders.is_empty())
             .collect()
     }
 
     /// Returns the aggregated own bid quantity at each price level.
-    pub fn bid_quantity(&self) -> IndexMap<Decimal, Decimal> {
+    ///
+    /// If `status` filter is provided, includes only orders with matching status values.
+    /// Empty price levels after filtering are excluded from the result.
+    pub fn bid_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
         self.bids()
             .map(|level| {
-                (
-                    level.price.value.as_decimal(),
-                    level.orders.values().fold(Decimal::ZERO, |total, order| {
-                        total + order.size.as_decimal()
-                    }),
-                )
+                let quantity = match &status {
+                    Some(filter) => {
+                        sum_order_sizes(filter_orders_by_status(&level.orders, filter).iter())
+                    }
+                    None => sum_order_sizes(level.orders.values()),
+                };
+                (level.price.value.as_decimal(), quantity)
             })
+            .filter(|(_, quantity)| *quantity > Decimal::ZERO)
             .collect()
     }
 
     /// Returns the aggregated own ask quantity at each price level.
-    pub fn ask_quantity(&self) -> IndexMap<Decimal, Decimal> {
+    ///
+    /// If `status` filter is provided, includes only orders with matching status values.
+    /// Empty price levels after filtering are excluded from the result.
+    pub fn ask_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
         self.asks()
             .map(|level| {
-                (
-                    level.price.value.as_decimal(),
-                    level.orders.values().fold(Decimal::ZERO, |total, order| {
-                        total + order.size.as_decimal()
-                    }),
-                )
+                let quantity = match &status {
+                    Some(filter) => {
+                        sum_order_sizes(filter_orders_by_status(&level.orders, filter).iter())
+                    }
+                    None => sum_order_sizes(level.orders.values()),
+                };
+                (level.price.value.as_decimal(), quantity)
             })
+            .filter(|(_, quantity)| *quantity > Decimal::ZERO)
             .collect()
     }
 
@@ -335,6 +361,26 @@ impl OwnOrderBook {
     pub fn pprint(&self, num_levels: usize) -> String {
         pprint_own_book(&self.bids, &self.asks, num_levels)
     }
+}
+
+fn filter_orders_by_status(
+    orders: &IndexMap<ClientOrderId, OwnBookOrder>,
+    filter: &HashSet<OrderStatus>,
+) -> Vec<OwnBookOrder> {
+    orders
+        .values()
+        .filter(|order| filter.contains(&order.status))
+        .cloned()
+        .collect()
+}
+
+fn sum_order_sizes<'a, I>(orders: I) -> Decimal
+where
+    I: Iterator<Item = &'a OwnBookOrder>,
+{
+    orders.fold(Decimal::ZERO, |total, order| {
+        total + order.size.as_decimal()
+    })
 }
 
 /// Represents a ladder of price levels for one side of an order book.
@@ -904,8 +950,8 @@ mod tests {
         );
         book.add(order1);
         book.add(order2);
-        let bids_map = book.bids_as_map();
-        let asks_map = book.asks_as_map();
+        let bids_map = book.bids_as_map(None);
+        let asks_map = book.asks_as_map(None);
 
         assert_eq!(bids_map.len(), 1);
         let bid_price = Price::from("100.00").as_decimal();
@@ -925,8 +971,8 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let book = OwnOrderBook::new(instrument_id);
 
-        let bid_quantities = book.bid_quantity();
-        let ask_quantities = book.ask_quantity();
+        let bid_quantities = book.bid_quantity(None);
+        let ask_quantities = book.ask_quantity(None);
 
         assert!(bid_quantities.is_empty());
         assert!(ask_quantities.is_empty());
@@ -1003,13 +1049,298 @@ mod tests {
         book.add(ask_order1);
         book.add(ask_order2);
 
-        let bid_quantities = book.bid_quantity();
+        let bid_quantities = book.bid_quantity(None);
         assert_eq!(bid_quantities.len(), 2);
         assert_eq!(bid_quantities.get(&dec!(100.00)), Some(&dec!(25)));
         assert_eq!(bid_quantities.get(&dec!(99.50)), Some(&dec!(20)));
 
-        let ask_quantities = book.ask_quantity();
+        let ask_quantities = book.ask_quantity(None);
         assert_eq!(ask_quantities.len(), 1);
         assert_eq!(ask_quantities.get(&dec!(101.00)), Some(&dec!(20)));
+    }
+
+    #[rstest]
+    fn test_status_filtering_bids_as_map() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+
+        // Create orders with different statuses
+        let order_submitted = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_accepted = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_canceled = OwnBookOrder::new(
+            ClientOrderId::from("O-3"),
+            OrderSideSpecified::Buy,
+            Price::from("99.50"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Canceled,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        book.add(order_submitted);
+        book.add(order_accepted);
+        book.add(order_canceled);
+
+        // Test with no filter (should include all orders)
+        let all_orders = book.bids_as_map(None);
+        assert_eq!(all_orders.len(), 2); // Two price levels
+        assert_eq!(all_orders.get(&dec!(100.00)).unwrap().len(), 2); // Two orders at 100.00
+        assert_eq!(all_orders.get(&dec!(99.50)).unwrap().len(), 1); // One order at 99.50
+
+        // Filter for just SUBMITTED status
+        let mut filter_submitted = HashSet::new();
+        filter_submitted.insert(OrderStatus::Submitted);
+        let submitted_orders = book.bids_as_map(Some(filter_submitted));
+        assert_eq!(submitted_orders.len(), 1); // One price level
+        assert_eq!(submitted_orders.get(&dec!(100.00)).unwrap().len(), 1); // One order at 100.00
+        assert_eq!(
+            submitted_orders.get(&dec!(100.00)).unwrap()[0].status,
+            OrderStatus::Submitted
+        );
+        assert!(submitted_orders.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
+
+        // Filter for ACCEPTED and CANCELED statuses
+        let mut filter_accepted_canceled = HashSet::new();
+        filter_accepted_canceled.insert(OrderStatus::Accepted);
+        filter_accepted_canceled.insert(OrderStatus::Canceled);
+        let accepted_canceled_orders = book.bids_as_map(Some(filter_accepted_canceled));
+        assert_eq!(accepted_canceled_orders.len(), 2); // Two price levels
+        assert_eq!(
+            accepted_canceled_orders.get(&dec!(100.00)).unwrap().len(),
+            1
+        ); // One ACCEPTED at 100.00
+        assert_eq!(accepted_canceled_orders.get(&dec!(99.50)).unwrap().len(), 1); // One CANCELED at 99.50
+
+        // Filter for non-existent status
+        let mut filter_filled = HashSet::new();
+        filter_filled.insert(OrderStatus::Filled);
+        let filled_orders = book.bids_as_map(Some(filter_filled));
+        assert_eq!(filled_orders.len(), 0); // No orders match
+    }
+
+    #[rstest]
+    fn test_status_filtering_asks_as_map() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+
+        // Create orders with different statuses
+        let order_submitted = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_accepted = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        book.add(order_submitted);
+        book.add(order_accepted);
+
+        // Test with no filter (should include all orders)
+        let all_orders = book.asks_as_map(None);
+        assert_eq!(all_orders.len(), 1); // One price level
+        assert_eq!(all_orders.get(&dec!(101.00)).unwrap().len(), 2); // Two orders at 101.00
+
+        // Filter for just SUBMITTED status
+        let mut filter_submitted = HashSet::new();
+        filter_submitted.insert(OrderStatus::Submitted);
+        let submitted_orders = book.asks_as_map(Some(filter_submitted));
+        assert_eq!(submitted_orders.len(), 1); // One price level
+        assert_eq!(submitted_orders.get(&dec!(101.00)).unwrap().len(), 1); // One order at 101.00
+        assert_eq!(
+            submitted_orders.get(&dec!(101.00)).unwrap()[0].status,
+            OrderStatus::Submitted
+        );
+    }
+
+    #[rstest]
+    fn test_status_filtering_bid_quantity() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+
+        // Create orders with different statuses at same price
+        let order_submitted = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_accepted = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_canceled = OwnBookOrder::new(
+            ClientOrderId::from("O-3"),
+            OrderSideSpecified::Buy,
+            Price::from("99.50"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Canceled,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        book.add(order_submitted);
+        book.add(order_accepted);
+        book.add(order_canceled);
+
+        // Test with no filter (should include all orders)
+        let all_quantities = book.bid_quantity(None);
+        assert_eq!(all_quantities.len(), 2); // Two price levels
+        assert_eq!(all_quantities.get(&dec!(100.00)), Some(&dec!(25))); // 10 + 15 = 25
+        assert_eq!(all_quantities.get(&dec!(99.50)), Some(&dec!(20))); // 20
+
+        // Filter for just SUBMITTED status
+        let mut filter_submitted = HashSet::new();
+        filter_submitted.insert(OrderStatus::Submitted);
+        let submitted_quantities = book.bid_quantity(Some(filter_submitted));
+        assert_eq!(submitted_quantities.len(), 1); // One price level
+        assert_eq!(submitted_quantities.get(&dec!(100.00)), Some(&dec!(10))); // 10
+        assert!(submitted_quantities.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
+
+        // Filter for ACCEPTED and CANCELED statuses
+        let mut filter_accepted_canceled = HashSet::new();
+        filter_accepted_canceled.insert(OrderStatus::Accepted);
+        filter_accepted_canceled.insert(OrderStatus::Canceled);
+        let accepted_canceled_quantities = book.bid_quantity(Some(filter_accepted_canceled));
+        assert_eq!(accepted_canceled_quantities.len(), 2); // Two price levels
+        assert_eq!(
+            accepted_canceled_quantities.get(&dec!(100.00)),
+            Some(&dec!(15))
+        ); // 15
+        assert_eq!(
+            accepted_canceled_quantities.get(&dec!(99.50)),
+            Some(&dec!(20))
+        ); // 20
+    }
+
+    #[rstest]
+    fn test_status_filtering_ask_quantity() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OwnOrderBook::new(instrument_id);
+
+        // Create orders with different statuses
+        let order_submitted = OwnBookOrder::new(
+            ClientOrderId::from("O-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_accepted = OwnBookOrder::new(
+            ClientOrderId::from("O-2"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("15"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let order_canceled = OwnBookOrder::new(
+            ClientOrderId::from("O-3"),
+            OrderSideSpecified::Sell,
+            Price::from("102.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Canceled,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        book.add(order_submitted);
+        book.add(order_accepted);
+        book.add(order_canceled);
+
+        // Test with no filter (should include all orders)
+        let all_quantities = book.ask_quantity(None);
+        assert_eq!(all_quantities.len(), 2); // Two price levels
+        assert_eq!(all_quantities.get(&dec!(101.00)), Some(&dec!(25))); // 10 + 15 = 25
+        assert_eq!(all_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20
+
+        // Filter for just SUBMITTED status
+        let mut filter_submitted = HashSet::new();
+        filter_submitted.insert(OrderStatus::Submitted);
+        let submitted_quantities = book.ask_quantity(Some(filter_submitted));
+        assert_eq!(submitted_quantities.len(), 1); // One price level
+        assert_eq!(submitted_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10
+        assert!(submitted_quantities.get(&dec!(102.00)).is_none()); // No SUBMITTED orders at 102.00
+
+        // Filter for multiple statuses
+        let mut filter_multiple = HashSet::new();
+        filter_multiple.insert(OrderStatus::Submitted);
+        filter_multiple.insert(OrderStatus::Canceled);
+        let multiple_quantities = book.ask_quantity(Some(filter_multiple));
+        assert_eq!(multiple_quantities.len(), 2); // Two price levels
+        assert_eq!(multiple_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10 (Submitted only)
+        assert_eq!(multiple_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20 (Canceled only)
+
+        // Check empty price levels are filtered out
+        let mut filter_filled = HashSet::new();
+        filter_filled.insert(OrderStatus::Filled);
+        let filled_quantities = book.ask_quantity(Some(filter_filled));
+        assert_eq!(filled_quantities.len(), 0); // No orders match
     }
 }

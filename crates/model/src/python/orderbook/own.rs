@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{HashSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
 };
 
@@ -203,24 +203,34 @@ impl OwnOrderBook {
         self.clear();
     }
 
+    #[pyo3(signature = (status=None))]
     #[pyo3(name = "bids_to_dict")]
-    fn py_bids_to_dict(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.bids_as_map()
+    fn py_bids_to_dict(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+    ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+        self.bids_as_map(status)
     }
 
+    #[pyo3(signature = (status=None))]
     #[pyo3(name = "asks_to_dict")]
-    fn py_asks_to_dict(&self) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.asks_as_map()
+    fn py_asks_to_dict(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+    ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+        self.asks_as_map(status)
     }
 
+    #[pyo3(signature = (status=None))]
     #[pyo3(name = "bid_quantity")]
-    fn py_bid_quantity(&self) -> IndexMap<Decimal, Decimal> {
-        self.bid_quantity()
+    fn py_bid_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
+        self.bid_quantity(status)
     }
 
+    #[pyo3(signature = (status=None))]
     #[pyo3(name = "ask_quantity")]
-    fn py_ask_quantity(&self) -> IndexMap<Decimal, Decimal> {
-        self.ask_quantity()
+    fn py_ask_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
+        self.ask_quantity(status)
     }
 
     #[pyo3(signature = (num_levels=3))]

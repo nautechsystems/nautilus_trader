@@ -2294,7 +2294,7 @@ cdef class Cache(CacheFacade):
 
         return self._own_order_books.get(instrument_id)
 
-    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id):
+    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
         """
         Return own bid orders for the given instrument ID (if found).
 
@@ -2303,6 +2303,8 @@ cdef class Cache(CacheFacade):
         instrument_id : InstrumentId
             The instrument ID for the own orders to get.
             Note this is the standard Cython `InstumentId`.
+        status : set[OrderStatus], optional
+            The order status to filter for. Empty price levels after filtering are excluded from the result.
 
         Returns
         -------
@@ -2316,9 +2318,9 @@ cdef class Cache(CacheFacade):
         if own_order_book is None:
             return None
 
-        return process_own_order_map(own_order_book.bids_to_dict(), self._orders)
+        return process_own_order_map(own_order_book.bids_to_dict(status), self._orders)
 
-    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id):
+    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
         """
         Return own ask orders for the given instrument ID (if found).
 
@@ -2327,6 +2329,8 @@ cdef class Cache(CacheFacade):
         instrument_id : InstrumentId
             The instrument ID for the own orders to get.
             Note this is the standard Cython `InstumentId`.
+        status : set[OrderStatus], optional
+            The order status to filter for. Empty price levels after filtering are excluded from the result.
 
         Returns
         -------
@@ -2340,7 +2344,7 @@ cdef class Cache(CacheFacade):
         if own_order_book is None:
             return None
 
-        return process_own_order_map(own_order_book.asks_to_dict(), self._orders)
+        return process_own_order_map(own_order_book.asks_to_dict(status), self._orders)
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
