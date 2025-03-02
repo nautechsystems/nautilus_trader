@@ -74,19 +74,15 @@ if __name__ == "__main__":
     # Step 4b: Restructure DataFrame into required structure, that can be passed `BarDataWrangler`
     #   - 5 columns: 'open', 'high', 'low', 'close', 'volume' (volume is optional)
     #   - 'timestamp' as index
-    df = (
-        # Change order of columns
-        df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])
-        # Convert string timestamps into datetime
-        .assign(
-            timestamp_utc=lambda dft: pd.to_datetime(
-                dft["timestamp_utc"],
-                format="%Y-%m-%d %H:%M:%S",
-            ),
-        )
-        # Rename column to required name
-        .rename(columns={"timestamp_utc": "timestamp"}).set_index("timestamp")
-    )
+
+    # Change order of columns
+    df = df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])
+    # Convert string timestamps into datetime
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], format="%Y-%m-%d %H:%M:%S")
+    # Rename column to required name
+    df = df.rename(columns={"timestamp_utc": "timestamp"})
+    # Seet column `timestamp` as index
+    df = df.set_index("timestamp")
 
     # Step 4c: Define type of loaded bars
     EURUSD_FUTURES_1MIN_BARTYPE = BarType.from_str(
