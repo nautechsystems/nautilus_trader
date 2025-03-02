@@ -132,14 +132,7 @@ repos:
     hooks:
       - id: nbstripout
 
-  ##############################################################################
-  #  Custom hooks
-  ##############################################################################
-  - repo: local
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.6.3  # uv version
     hooks:
-      - id: poetry-lock-check
-        name: poetry-lock-check
-        entry: poetry check --lock
-        language: system
-        types: [python]
-        pass_filenames: false
+      - id: uv-lock

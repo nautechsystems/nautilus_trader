@@ -29,19 +29,19 @@ jobs:
           python-version: "3.11"
           free-disk-space: "true"
 
-      - name: Install
-        run: poetry install
+      - name: Ensure script is executable
+        run: chmod +x scripts/package-version.sh
 
       - name: Create git tag
         uses: salsify/action-detect-and-tag-new-version@v2
         with:
-          version-command: poetry version --short
+          version-command: ./scripts/package-version.sh
 
       - name: Set output
         id: vars
         run: |
-          echo "TAG_NAME=v$(poetry version --short)" >> $GITHUB_ENV
-          echo "RELEASE_NAME=NautilusTrader $(poetry version --short) Beta" >> $GITHUB_ENV
+          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> $GITHUB_ENV
+          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> $GITHUB_ENV
           sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
 
       - name: Create GitHub release
@@ -75,8 +75,7 @@ jobs:
 
       - name: Install / Build
         run: |
-          poetry install
-          poetry build --format sdist
+          uv build --sdist
 
       - name: Set release output
         id: vars
@@ -98,9 +97,9 @@ jobs:
 
       - name: Publish to PyPI
         env:
-          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
 
   publish-wheels:
     if: github.event.workflow_run.conclusion == 'success'
@@ -129,8 +128,7 @@ jobs:
 
       - name: Install / Build
         run: |
-          poetry install
-          poetry build --format wheel
+          uv build --wheel
 
       - name: Set release output
         id: vars
@@ -152,6 +150,6 @@ jobs:
 
       - name: Publish to PyPI
         env:
-          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish

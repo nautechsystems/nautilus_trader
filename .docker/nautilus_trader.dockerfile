@@ -5,15 +5,12 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
     PIP_DEFAULT_TIMEOUT=100 \
     PYO3_PYTHON="/usr/local/bin/python3" \
-    POETRY_VERSION=1.8.5 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1 \
+    UV_VERSION=0.6.3 \
     PYSETUP_PATH="/opt/pysetup" \
     RUST_TOOLCHAIN="stable" \
     BUILD_MODE="release" \
     CC="clang"
-ENV PATH="/root/.cargo/bin:$POETRY_HOME/bin:$PATH"
+ENV PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
 WORKDIR $PYSETUP_PATH
 
 FROM base AS builder
@@ -27,12 +24,12 @@ RUN apt-get update && \
 # Install Rust
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
+# Install UV
+RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
 
 # Install package requirements (split step and with --no-root to enable caching)
-COPY poetry.lock pyproject.toml build.py ./
-RUN poetry install --no-root --only main
+COPY uv.lock pyproject.toml build.py ./
+RUN uv sync --no-install-package nautilus_trader
 
 # Build nautilus_trader
 COPY Cargo.toml ./
@@ -42,9 +39,8 @@ RUN cargo build --release --all-features
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
-RUN poetry install --only main --all-extras
-RUN poetry build -f wheel
-RUN python -m pip install ./dist/*whl --force --no-deps
+RUN uv build --wheel
+RUN uv pip install dist/*.whl
 RUN find /usr/local/lib/python3.12/site-packages -name "*.pyc" -exec rm -f {} \;
 
 # Final application image

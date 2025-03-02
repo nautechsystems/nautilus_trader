@@ -39,7 +39,7 @@ fn main() {
     let data = fs::read_to_string(filepath).expect("Unable to read pyproject.toml");
     let parsed_toml: Value = toml::from_str(&data).expect("Unable to parse pyproject.toml");
 
-    let nautilus_version = parsed_toml["tool"]["poetry"]["version"]
+    let nautilus_version = parsed_toml["project"]["version"]
         .as_str()
         .expect("Unable to find version in pyproject.toml")
         .to_string();
