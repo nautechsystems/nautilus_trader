@@ -16,29 +16,29 @@
 
 from decimal import Decimal
 
-import pandas as pd
 from strategy import DemoStrategy
 from strategy import DemoStrategyConfig
 
-from nautilus_trader import TEST_DATA_DIR
+from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.core.nautilus_pyo3 import BarType
+from nautilus_trader.model import Bar
 from nautilus_trader.model import TraderId
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
+    # ----------------------------------------------------------------------------------
+    # 1. Configure and create backtest engine
+    # ----------------------------------------------------------------------------------
 
-    # Step 1: Configure and create backtest engine
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTEST_TRADER-001"),
         logging=LoggingConfig(
@@ -47,11 +47,23 @@ if __name__ == "__main__":
     )
     engine = BacktestEngine(config=engine_config)
 
-    # Step 2: Define exchange venue and add it to the engine
-    # We use XCME (CME Exchange) and configure it with margin account
-    XCME = Venue("XCME")
+    # ----------------------------------------------------------------------------------
+    # 2. Prepare market data
+    # ----------------------------------------------------------------------------------
+
+    prepared_data: dict = prepare_demo_data_eurusd_futures_1min()
+    venue_name: str = prepared_data["venue_name"]
+    eurusd_instrument: Instrument = prepared_data["instrument"]
+    eurusd_1min_bartype: BarType = prepared_data["bar_type"]
+    eurusd_1min_bars_list: list[Bar] = prepared_data["bars_list"]
+
+    # ----------------------------------------------------------------------------------
+    # 3. Configure trading environment
+    # ----------------------------------------------------------------------------------
+
+    # Set up the trading venue with a margin account
     engine.add_venue(
-        venue=XCME,
+        venue=Venue(venue_name),
         oms_type=OmsType.NETTING,  # Order Management System type
         account_type=AccountType.MARGIN,  # Type of trading account
         starting_balances=[Money(1_000_000, USD)],  # Initial account balance
@@ -59,57 +71,24 @@ if __name__ == "__main__":
         default_leverage=Decimal(1),  # No leverage used for account
     )
 
-    # Step 3: Create instrument definition and add it to the engine
-    # We use EURUSD futures contract for this example
-    EURUSD_INSTRUMENT = TestInstrumentProvider.eurusd_future(
-        expiry_year=2024,
-        expiry_month=3,
-        venue_name="XCME",
-    )
-    engine.add_instrument(EURUSD_INSTRUMENT)
-
-    # Step 4: Load and prepare market data
-
-    # Step 4a: Load bar data from CSV file -> into pandas DataFrame
-    csv_file_path = rf"{TEST_DATA_DIR}/xcme/6EH4.XCME_1min_bars_20240101_20240131.csv.gz"
-    df = pd.read_csv(csv_file_path, header=0, index_col=False)
-
-    # Step 4b: Restructure DataFrame into required format
-    # Restructure DataFrame into required format
-    df = (
-        # Reorder columns to match required format
-        df.reindex(columns=["timestamp_utc", "open", "high", "low", "close", "volume"])
-        # Convert timestamp strings to datetime objects
-        .assign(
-            timestamp_utc=lambda dft: pd.to_datetime(
-                dft["timestamp_utc"],
-                format="%Y-%m-%d %H:%M:%S",
-            ),
-        )
-        # Rename timestamp column and set as index
-        .rename(columns={"timestamp_utc": "timestamp"}).set_index("timestamp")
-    )
-
-    # Step 4c: Define bar type for our data
-    EURUSD_1MIN_BARTYPE = BarType.from_str(f"{EURUSD_INSTRUMENT.id}-1-MINUTE-LAST-EXTERNAL")
-
-    # Step 4d: Convert DataFrame rows into Bar objects
-    wrangler = BarDataWrangler(EURUSD_1MIN_BARTYPE, EURUSD_INSTRUMENT)
-    eurusd_1min_bars_list: list[Bar] = wrangler.process(df)
-
-    # Step 4e: Add the prepared data to the engine
+    # Add instrument and market data to the engine
+    engine.add_instrument(eurusd_instrument)
     engine.add_data(eurusd_1min_bars_list)
 
-    # Step 5: Create and add our portfolio demonstration strategy
+    # ----------------------------------------------------------------------------------
+    # 4. Configure and run strategy
+    # ----------------------------------------------------------------------------------
+
+    # Create and register the portfolio strategy with configuration
     strategy_config = DemoStrategyConfig(
-        bar_type=EURUSD_1MIN_BARTYPE,
-        instrument=EURUSD_INSTRUMENT,
+        bar_type=eurusd_1min_bartype,
+        instrument=eurusd_instrument,
     )
     strategy = DemoStrategy(config=strategy_config)
     engine.add_strategy(strategy)
 
-    # Step 6: Run the backtest
+    # Execute the backtest
     engine.run()
 
-    # Step 7: Release system resources
+    # Clean up resources
     engine.dispose()
