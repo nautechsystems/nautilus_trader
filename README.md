@@ -191,7 +191,7 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ### From PyPI
 
-We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies
+We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies.
 
 To install the latest binary wheel (or sdist package) from PyPI using Pythons pip package manager:
 
@@ -340,8 +340,8 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
 - `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
-- `make pytest`: Runs all tests with `pytest` (except performance tests).
-- `make pytest-coverage`: Same as `make pytest` and additionally runs with test coverage and produces a report.
+- `make pytest`: Runs all tests with `pytest`.
+- `make test-performance`: Runs performance tests with [codspeed](https://codspeed.io).
 
 > [!TIP]
 >
