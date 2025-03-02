@@ -27,7 +27,9 @@ from nautilus_trader.adapters.dydx.endpoints.market.candles import DYDXCandlesRe
 from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDXListPerpetualMarketsEndpoint
 from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDXListPerpetualMarketsResponse
 from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import ListPerpetualMarketsGetParams
+from nautilus_trader.adapters.dydx.endpoints.market.orderbook import DYDXOrderBookSnapshotEndpoint
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookMessageSnapshotContents
 
 # fmt: on
 from nautilus_trader.common.component import LiveClock
@@ -53,6 +55,7 @@ class DYDXMarketHttpAPI:
 
         self._endpoint_instruments = DYDXListPerpetualMarketsEndpoint(client)
         self._endpoint_candles = DYDXCandlesEndpoint(client)
+        self._endpoint_orderbook = DYDXOrderBookSnapshotEndpoint(client)
 
     async def fetch_instruments(
         self,
@@ -65,6 +68,23 @@ class DYDXMarketHttpAPI:
         return await self._endpoint_instruments.get(
             ListPerpetualMarketsGetParams(ticker=symbol, limit=limit),
         )
+
+    async def get_orderbook(self, symbol: str) -> DYDXWsOrderbookMessageSnapshotContents | None:
+        """
+        Request an orderbook snapshot.
+
+        Parameters
+        ----------
+        symbol : str
+            The ticker or symbol to request the order book snapshot for.
+
+        Returns
+        -------
+        DYDXWsOrderbookMessageSnapshotContents | None
+            The order book snapshot message.
+
+        """
+        return await self._endpoint_orderbook.get(symbol=symbol)
 
     async def get_candles(
         self,
