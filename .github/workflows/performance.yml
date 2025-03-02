@@ -70,4 +70,4 @@ jobs:
         uses: CodSpeedHQ/action@v3.2.0
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
+          run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed

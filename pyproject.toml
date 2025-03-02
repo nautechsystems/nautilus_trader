@@ -1,12 +1,10 @@
-[tool.poetry]
+[project]
 name = "nautilus_trader"
 version = "1.212.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
-authors = ["Nautech Systems <info@nautechsystems.io>"]
-license = "LGPL-3.0-or-later"
-readme = "README.md"
-homepage = "https://nautilustrader.io"
-repository = "https://github.com/nautechsystems/nautilus_trader"
+authors = [
+    {name = "Nautech Systems", email = "info@nautechsystems.io"},
+]
 classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
     "Operating System :: OS Independent",
@@ -20,10 +18,40 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Science/Research",
 ]
+license = {text = "LGPL-3.0-or-later"}
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "click>=8.1.8,<9.0.0",
+    "fsspec>=2025.2.0,<2026.0.0",
+    "msgspec>=0.19.0,<1.0.0",
+    "numpy>=1.26.4",
+    "pandas>=2.2.3,<3.0.0",
+    "pyarrow>=19.0.1",
+    "pytz>=2025.1.0",
+    "tqdm>=4.67.1,<5.0.0",
+    "uvloop>=0.21.0,<1.0.0; sys_platform != \"win32\"",
+]
+
+[project.urls]
+homepage = "https://nautilustrader.io"
+repository = "https://github.com/nautechsystems/nautilus_trader"
+docs = "https://nautilustrader.io/docs"
+
+# For now we use the poetry build backend until uv supports custom build scripts
+[build-system]
+requires = [
+    "setuptools>=75",
+    "poetry-core>=2.0.1",
+    "numpy>=1.26.4",
+    "cython==3.1.0a1",
+]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
 include = [
     # Rust source must be included in the source distributions
-    { path = "nautilus_core/*", format = "sdist" },
-    { path = "nautilus_core/*[!target]*/*", format = "sdist" },
+    { path = "crates/*", format = "sdist" },
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
     { path = "nautilus_trader/**/*.pyd", format = "wheel" },
@@ -35,91 +63,67 @@ include = [
     { path = "nautilus_trader/**/*.pyi", format = "wheel" },
 ]
 
-[build-system]
-requires = [
-    "setuptools>=75",
-    "poetry-core>=2.0.1",
-    "numpy>=1.26.4",
-    "Cython==3.1.0a1",
-]
-build-backend = "poetry.core.masonry.api"
-
 [tool.poetry.build]
 script = "build.py"
 generate-setup-file = false
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.13"
-click = "^8.1.8"
-fsspec = "^2025.2.0"
-msgspec = "^0.19.0"
-numpy = ">=1.26.4"
-pandas = "^2.2.3"
-pyarrow = ">=19.0.1"
-pytz = ">=2025.1.0"
-tqdm = "^4.67.1"
-uvloop = {version = "^0.21.0", markers = "sys_platform != 'win32'"}
+[project.optional-dependencies]
+betfair = [
+    "betfair-parser==0.14.4",
+]
+ib = [
+    "defusedxml>=0.7.1,<1.0.0",
+    "nautilus-ibapi==10.19.4",
+]
+docker = [
+    "docker>=7.1.0,<8.0.0",
+]
+dydx = [
+    "v4-proto==7.0.5",
+    "grpcio==1.68.1",
+    "protobuf==5.29.1",
+    "bech32>=1.2.0,<2.0.0",
+    "ecdsa>=0.19.0,<1.0.0",
+    "bip-utils>=2.9.3,<3.0.0",
+    "pycryptodome>=3.20.0,<4.0.0",
+]
+polymarket = [
+    "py-clob-client>=0.20.0,<1.0.0",
+]
 
-betfair_parser = {version = "==0.14.4", optional = true}  # Pinned for stability
-defusedxml = {version = "^0.7.1", optional = true}
-docker = {version = "^7.1.0", optional = true}
-nautilus_ibapi = {version = "==10.19.4", optional = true}  # Pinned for stability
-v4-proto = {version = "==7.0.5", optional = true}  # Pinned due breaking protobuf issue
-grpcio = {version = "==1.68.1", optional = true}  # Pinned due breaking protobuf issue
-protobuf = {version = "==5.29.1", optional = true}  # Pinned due breaking protobuf issue
-bech32 = {version = "^1.2.0", optional = true}
-ecdsa = {version = "^0.19.0", optional = true}
-bip-utils = {version = "^2.9.3", optional = true}
-pycryptodome = {version = "^3.20.0", optional = true}
-py-clob-client = {version = "^0.20.0", optional = true}
-
-[tool.poetry.extras]
-betfair = ["betfair_parser"]
-docker = ["docker"]
-dydx = ["v4-proto", "bech32", "ecdsa", "bip-utils", "pycryptodome", "grpcio", "protobuf"]
-ib = ["nautilus_ibapi", "defusedxml"]
-polymarket = ["py-clob-client"]
-
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
-cython = "==3.1.0a1"  # Build dependency (pinned for stability)
-setuptools = ">=75" # Build dependency
-black = "^25.1.0"
-docformatter = "^1.7.5"
-mypy = "^1.15.0"
-pandas-stubs = "^2.2.2"
-pre-commit = "^4.1.0"
-requests = "^2.32.3"  # Required for fsspec github FS
-ruff = "^0.9.9"
-types-pytz = "^2024.2"
-types-requests = "^2.32"
-types-toml = "^0.10.2"
-
-[tool.poetry.group.test]
-optional = true
-
-[tool.poetry.group.test.dependencies]
-coverage = "^7.6.12"
-pytest = "^7.4.4"
-pytest-aiohttp = "^1.1.0"
-pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
-pytest-benchmark = "^4.0.0"
-pytest-codspeed = "^3.2.0"
-pytest-cov = "^4.1.0"
-pytest-mock = "^3.14.0"
-pytest-xdist = {version = "^3.6.1", extras = ["psutil"]}
-
-[tool.poetry.group.docs]
-optional = true
-
-[tool.poetry.group.docs.dependencies]
-numpydoc = "^1.8.0"
-linkify-it-py = "^2.0.3"
-myst-parser = "^4.0.0"
-sphinx_comments = "^0.0.3"
-sphinx_markdown_builder = "^0.6.8"
+[dependency-groups]
+dev = [
+    "cython==3.1.0a1",
+    "setuptools>=75",
+    "black>=25.1.0,<26.0.0",
+    "docformatter>=1.7.5,<2.0.0",
+    "mypy>=1.15.0,<2.0.0",
+    "pandas-stubs>=2.2.2,<3.0.0",
+    "pre-commit>=4.1.0,<5.0.0",
+    "requests>=2.32.3,<3.0.0",
+    "ruff>=0.9.5,<1.0.0",
+    "types-pytz>=2024.2,<2025.0",
+    "types-requests>=2.32,<3.0",
+    "types-toml>=0.10.2,<1.0.0",
+]
+test = [
+    "coverage>=7.6.11,<8.0.0",
+    "pytest>=7.4.4,<8.0.0",
+    "pytest-aiohttp>=1.1.0,<2.0.0",
+    "pytest-asyncio==0.21.1",
+    "pytest-benchmark>=4.0.0,<5.0.0",
+    "pytest-codspeed>=3.2.0,<4.0.0",
+    "pytest-cov>=4.1.0,<5.0.0",
+    "pytest-mock>=3.14.0,<4.0.0",
+    "pytest-xdist[psutil]>=3.6.1,<4.0.0",
+]
+docs = [
+    "numpydoc>=1.8.0,<2.0.0",
+    "linkify-it-py>=2.0.3,<3.0.0",
+    "myst-parser>=4.0.0,<5.0.0",
+    "sphinx-comments>=0.0.3,<1.0.0",
+    "sphinx-markdown-builder>=0.6.8,<1.0.0",
+]
 
 [tool.isort]  # Used by legacy isort for Cython modules
 py_version = "311"

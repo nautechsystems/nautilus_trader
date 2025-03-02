@@ -16,13 +16,13 @@ runs:
 
     - name: Generate updated lock file
       shell: bash
-      run: poetry lock --no-update
+      run: uv lock --no-upgrade
 
     - name: Build Python wheel (Linux & Windows)
       if: runner.os != 'macOS'
       shell: bash
       run: |
-        poetry build --format wheel --verbose
+        uv build --wheel
         ls -lh dist/
 
     - name: Build Python wheel (macOS)
@@ -33,13 +33,11 @@ runs:
         export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
         export RUSTFLAGS="-C link-args=-L$pythonLocation/lib -lpython${{ inputs.python-version }}"
         $PYO3_PYTHON --version
-        poetry build --format wheel --verbose
+        uv build --wheel
         ls -lh dist/
 
     - name: Install Python wheel
       shell: bash
       run: |
-        python -m pip install --upgrade poetry-plugin-export
-        poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-        python -m pip install -r requirements-test.txt
-        pip install "$(ls dist/*.whl)"
+        uv sync --all-groups --all-extras --no-install-package nautilus_trader
+        uv pip install dist/*.whl

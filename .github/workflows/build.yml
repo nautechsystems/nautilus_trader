@@ -10,11 +10,6 @@ jobs:
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-      checks: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,7 +21,7 @@ jobs:
           free-disk-space: "true"
 
       - name: Run pre-commit
-        run: make pre-commit
+        run: pre-commit run --all-files
 
   build-linux-standard-precision:
     strategy:
@@ -101,7 +96,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
   build-linux:
     strategy:
@@ -176,7 +171,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -226,7 +221,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -276,7 +271,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
