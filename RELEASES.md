@@ -36,7 +36,9 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 ### Internal Improvements
 - Added initial `Cache` benchmarking for orders (#2341), thanks @filipmacek
 - Added support for `CARGO_BUILD_TARGET` environment variable in `build.py` (#2385), thanks @sunlei
+- Added test for time-bar aggregation (#2391), thanks @stefansimik and @faysou
 - Implemented exchange rate calculations in Rust
+- Improved handling of `oms_type` for `StrategyConfig` which now correctly handles the `OmsType` enum
 - Improved Binance websocket connections management to allow more than 200 streams (#2369), thanks @lidarbtc
 - Improved log event timestamping to avoid clock or time misalignments when events cross to the logging thread
 - Improved error logging for live engines to now include stacktrace for easier debugging

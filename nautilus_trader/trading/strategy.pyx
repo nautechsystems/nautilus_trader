@@ -144,11 +144,15 @@ cdef class Strategy(Actor):
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
 
+        oms_type = config.oms_type or OmsType.UNSPECIFIED
+        if isinstance(oms_type, str):
+            oms_type = oms_type_from_str(config.oms_type.upper())
+
         # Configuration
         self._log_events = config.log_events
         self._log_commands = config.log_commands
         self.config = config
-        self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
+        self.oms_type = <OmsType>oms_type
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
