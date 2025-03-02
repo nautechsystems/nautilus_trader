@@ -51,7 +51,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run tests with coverage
-        run: bash scripts/pytest-coverage.sh
+        run: bash scripts/test-coverage.sh
 
       # TODO: Temporarily pause coverage report due pending test data repair
       # - name: Upload coverage report
