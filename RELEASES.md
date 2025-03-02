@@ -2,6 +2,8 @@
 
 Released on TBD (UTC).
 
+This release introduces [uv](https://docs.astral.sh/uv) as the project and dependency management tool.
+
 ### Enhancements
 - Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
 - Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking

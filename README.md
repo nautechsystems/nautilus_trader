@@ -267,7 +267,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 See the [PyO3 user guide](https://pyo3.rs/latest/getting-started#virtualenvs) for more details.
 
 It's possible to install from source using pip if you first install the build dependencies
-as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
+as specified in the `pyproject.toml`. We highly recommend installing using [uv](https://docs.astral.sh/uv) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
@@ -303,15 +303,15 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
    - Verify (any system):
        from a terminal session run: `clang --version`
 
-4. Install poetry (or follow the installation guide on their site):
+4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
-       curl -sSL https://install.python-poetry.org | python3 -
+       curl -LsSf https://astral.sh/uv/install.sh | sh
 
 5. Clone the source with `git`, and install from the projects root directory:
 
        git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
-       poetry install --only main --all-extras
+       uv sync --all-extras
 
 > [!NOTE]
 >
@@ -328,13 +328,13 @@ See the **Redis** section of the [Installation Guide](https://nautilustrader.io/
 
 A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
 
-- `make install`: Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default).
+- `make install`: Installs in `release` build mode with all dependency groups and extras.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
 - `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package).
 - `make build`: Runs the build script in `release` build mode (default).
 - `make build-debug`: Runs the build script in `debug` build mode.
-- `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
-- `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode.
+- `make build-wheel`: Runs uv build with a wheel format in `release` mode.
+- `make build-wheel-debug`: Runs uv build with a wheel format in `debug` mode.
 - `make clean`: Deletes all build results, such as `.so` or `.dll` files.
 - `make distclean`: **CAUTION** Removes all artifacts not in the git index from the repository. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
