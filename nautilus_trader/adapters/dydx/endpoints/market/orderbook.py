@@ -13,67 +13,61 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Define the candles / bars endpoint.
+Define the orderbook snapshot endpoint.
 """
 
-# ruff: noqa: N815
-
-import datetime
 
 import msgspec
 
-from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
 from nautilus_trader.adapters.dydx.common.enums import DYDXEndpointType
 from nautilus_trader.adapters.dydx.endpoints.endpoint import DYDXHttpEndpoint
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
-from nautilus_trader.adapters.dydx.schemas.ws import DYDXCandle
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookMessageSnapshotContents
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class DYDXCandlesGetParams(msgspec.Struct, omit_defaults=True):
+class DYDXOrderBookSnapshotEndpoint(DYDXHttpEndpoint):
     """
-    Represent the dYdX list perpetual markets parameters.
-    """
-
-    resolution: DYDXCandlesResolution
-    limit: int | None = None
-    fromISO: datetime.datetime | None = None
-    toISO: datetime.datetime | None = None
-
-
-class DYDXCandlesResponse(msgspec.Struct, forbid_unknown_fields=True):
-    """
-    Represent the dYdX candles response object.
-    """
-
-    candles: list[DYDXCandle]
-
-
-class DYDXCandlesEndpoint(DYDXHttpEndpoint):
-    """
-    Define the bars endpoint.
+    Define the order book snapshot endpoint.
     """
 
     def __init__(self, client: DYDXHttpClient) -> None:
         """
-        Define the bars endpoint.
+        Define the order book snapshot endpoint.
+
+        Parameters
+        ----------
+        client : DYDXHttpClient
+            The HTTP client.
+
         """
-        url_path = "/candles/perpetualMarkets/"
+        url_path = "/orderbooks/perpetualMarket/"
         super().__init__(
             client=client,
             url_path=url_path,
             endpoint_type=DYDXEndpointType.NONE,
-            name="DYDXCandlesEndpoint",
+            name="DYDXOrderBookSnapshotEndpoint",
         )
         self.method_type = HttpMethod.GET
-        self._decoder = msgspec.json.Decoder(DYDXCandlesResponse)
+        self._decoder = msgspec.json.Decoder(DYDXWsOrderbookMessageSnapshotContents)
 
-    async def get(self, symbol: str, params: DYDXCandlesGetParams) -> DYDXCandlesResponse | None:
+    async def get(self, symbol: str) -> DYDXWsOrderbookMessageSnapshotContents | None:
         """
-        Call the bars endpoint.
+        Call the endpoint to request an order book snapshot.
+
+        Parameters
+        ----------
+        symbol : str
+            The ticker or symbol to request the order book snapshot for.
+
+        Returns
+        -------
+        DYDXWsOrderbookMessageSnapshotContents | None
+            The order book snapshot message.
+
         """
-        url_path = f"/candles/perpetualMarkets/{symbol}"
-        raw = await self._method(self.method_type, params=params, url_path=url_path)
+        url_path = f"/orderbooks/perpetualMarket/{symbol}"
+        raw = await self._method(self.method_type, url_path=url_path)
 
         if raw is not None:
             return self._decoder.decode(raw)

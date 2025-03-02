@@ -339,20 +339,6 @@ class DYDXWsOrderbookMessageSnapshotContents(msgspec.Struct, forbid_unknown_fiel
     bids: list[PriceLevel] | None = None
     asks: list[PriceLevel] | None = None
 
-
-class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=True):
-    """
-    Define the order book snapshot messages.
-    """
-
-    type: str
-    connection_id: str
-    message_id: int
-    channel: str
-    id: str
-    contents: DYDXWsOrderbookMessageSnapshotContents
-    version: str | None = None
-
     def parse_to_snapshot(
         self,
         instrument_id: InstrumentId,
@@ -375,16 +361,16 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
         )
         deltas.append(clear)
 
-        if self.contents.bids is None:
-            self.contents.bids = []
+        if self.bids is None:
+            self.bids = []
 
-        if self.contents.asks is None:
-            self.contents.asks = []
+        if self.asks is None:
+            self.asks = []
 
-        bids_len = len(self.contents.bids)
-        asks_len = len(self.contents.asks)
+        bids_len = len(self.bids)
+        asks_len = len(self.asks)
 
-        for idx, bid in enumerate(self.contents.bids):
+        for idx, bid in enumerate(self.bids):
             flags = 0
             if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
@@ -410,7 +396,7 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
 
             deltas.append(delta)
 
-        for idx, ask in enumerate(self.contents.asks):
+        for idx, ask in enumerate(self.asks):
             flags = 0
             if idx == asks_len - 1:
                 # F_LAST, 1 << 7
@@ -434,6 +420,39 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
             deltas.append(delta)
 
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
+
+
+class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the order book snapshot messages.
+    """
+
+    type: str
+    connection_id: str
+    message_id: int
+    channel: str
+    id: str
+    contents: DYDXWsOrderbookMessageSnapshotContents
+    version: str | None = None
+
+    def parse_to_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        price_precision: int,
+        size_precision: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> OrderBookDeltas:
+        """
+        Parse the order book message into OrderBookDeltas.
+        """
+        return self.contents.parse_to_snapshot(
+            instrument_id,
+            price_precision,
+            size_precision,
+            ts_event,
+            ts_init,
+        )
 
 
 class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):

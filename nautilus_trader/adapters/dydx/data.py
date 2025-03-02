@@ -164,10 +164,9 @@ class DYDXDataClient(LiveMarketDataClient):
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_orderbook_interval_secs: int = 60  # Once every 60 seconds (hard-coded for now)
         self._update_instruments_task: asyncio.Task | None = None
-        self._resubscribe_orderbook_task: asyncio.Task | None = None
+        self._fetch_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._orderbook_subscriptions: set[str] = set()
-        self._resubscribe_orderbook_lock = asyncio.Lock()
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -180,8 +179,8 @@ class DYDXDataClient(LiveMarketDataClient):
             self._update_instruments_task = self.create_task(
                 self._update_instruments(self._update_instruments_interval_mins),
             )
-        self._resubscribe_orderbook_task = self.create_task(
-            self._resubscribe_orderbooks_on_interval(),
+        self._fetch_orderbook_task = self.create_task(
+            self._fetch_orderbooks_on_interval(),
         )
 
         self._log.info("Initializing websocket connection")
@@ -195,10 +194,10 @@ class DYDXDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
-        if self._resubscribe_orderbook_task:
-            self._log.debug("Cancelling 'resubscribe_orderbook' task")
-            self._resubscribe_orderbook_task.cancel()
-            self._resubscribe_orderbook_task = None
+        if self._fetch_orderbook_task:
+            self._log.debug("Cancelling 'fetch_orderbook' task")
+            self._fetch_orderbook_task.cancel()
+            self._fetch_orderbook_task = None
 
         await self._ws_client.unsubscribe_markets()
         await self._ws_client.disconnect()
@@ -215,10 +214,10 @@ class DYDXDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
 
-    async def _resubscribe_orderbooks_on_interval(self) -> None:
+    async def _fetch_orderbooks_on_interval(self) -> None:
         """
-        Resubscribe to the orderbook on a fixed interval `update_orderbook_interval` to
-        ensure it does not become outdated.
+        Fetch the orderbook on a fixed interval `update_orderbook_interval` to ensure it
+        does not become outdated.
         """
         try:
             while True:
@@ -226,21 +225,47 @@ class DYDXDataClient(LiveMarketDataClient):
                     f"Scheduled `resubscribe_order_book` to run in {self._update_orderbook_interval_secs}s",
                 )
                 await asyncio.sleep(self._update_orderbook_interval_secs)
-                await self._resubscribe_orderbooks()
+                await self._fetch_orderbooks()
         except asyncio.CancelledError:
-            self._log.debug("Canceled task 'resubscribe_orderbook'")
+            self._log.debug("Canceled task 'fetch_orderbook'")
 
-    async def _resubscribe_orderbooks(self) -> None:
+    async def _fetch_orderbooks(self) -> None:
         """
-        Resubscribe to the orderbook.
+        Request a new orderbook snapshot for all order book subscriptions.
         """
-        async with self._resubscribe_orderbook_lock:
-            for symbol in self._orderbook_subscriptions:
-                await self._ws_client.unsubscribe_order_book(symbol, remove_subscription=False)
-                await self._ws_client.subscribe_order_book(
-                    symbol,
-                    bypass_subscription_validation=True,
+        tasks = []
+
+        for symbol in self._orderbook_subscriptions:
+            tasks.append(self._fetch_orderbook(symbol))
+
+        await asyncio.gather(*tasks)
+
+    async def _fetch_orderbook(self, symbol: str) -> None:
+        """
+        Request a new orderbook snapshot.
+        """
+        msg = await self._http_market.get_orderbook(symbol=symbol)
+
+        if msg is not None:
+            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+            instrument = self._cache.instrument(instrument_id)
+
+            if instrument is None:
+                self._log.error(
+                    f"Cannot parse orderbook snapshot: no instrument for {instrument_id}",
                 )
+                return
+
+            ts_init = self._clock.timestamp_ns()
+            deltas = msg.parse_to_snapshot(
+                instrument_id=instrument_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+                ts_event=ts_init,
+                ts_init=ts_init,
+            )
+
+            self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
