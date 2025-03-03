@@ -33,7 +33,7 @@ documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.97"
-arrow = "54.2.0"  # Keep major version in line with datafusion
+arrow = "54.2.1"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.87"
 base64 = "0.22.1"
@@ -47,9 +47,9 @@ heck = "0.5.0"
 hex = "0.4.3"
 indexmap = { version = "2.7.1", features = ["serde"] }
 itertools = "0.13.0"
-itoa = "1.0.14"
+itoa = "1.0.15"
 log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-parquet = "54.2.0"  # Keep major version in line with datafusion
+parquet = "54.2.1"  # Keep major version in line with datafusion
 pyo3 = { version = "0.23.5", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
 pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
@@ -80,7 +80,7 @@ criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
 proptest = "1.6.0"
-rstest = "0.24.0"
+rstest = "0.25.0"
 tempfile = "3.17.1"
 tracing-test = "0.2.5"
 
