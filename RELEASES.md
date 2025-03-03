@@ -105,6 +105,8 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
 - Added backtest portfolio example (#2362), thanks @stefansimik
 - Added backtest cache example (#2370), thanks @stefansimik
+- Added backtest cascaded indicators example (#2398), thanks @stefansimik
+- Added backtest custom event with msgbus example (#2400), thanks @stefansimik
 - Added indicators example (#2396), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik

@@ -32,10 +32,10 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.96"
+anyhow = "1.0.97"
 arrow = "54.2.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
-async-trait = "0.1.86"
+async-trait = "0.1.87"
 base64 = "0.22.1"
 bytes = { version = "1.10.0", features = ["serde"] }
 chrono = { version = "=0.4.39", features = ["serde"] }  # Pinned due temporary trait ambiguity with arrow
@@ -60,9 +60,10 @@ rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.25"
 serde = { version = "1.0.218", features = ["derive"] }
-serde_json = "1.0.139"
+serde_json = "1.0.140"
+serde_urlencoded = "0.7.1"
 strum = { version = "0.27.1", features = ["derive"] }
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 thousands = "0.2.0"
 toml = "0.8.20"
 tracing = "0.1.41"
