@@ -18,7 +18,6 @@
 pub mod clock;
 pub mod custom;
 pub mod enums;
-pub mod handler;
 pub mod logging;
 pub mod msgbus;
 pub mod signal;
@@ -39,9 +38,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::python::clock::TestClock_Py>()?;
     m.add_class::<crate::python::clock::LiveClock_Py>()?;
     m.add_class::<crate::msgbus::MessageBus>()?;
-    m.add_class::<crate::msgbus::MessageBus>()?;
     m.add_class::<crate::msgbus::database::BusMessage>()?;
-    m.add_class::<crate::python::handler::PythonMessageHandler>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;
     m.add_class::<crate::enums::LogColor>()?;

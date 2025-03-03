@@ -18,13 +18,17 @@ use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 use nautilus_core::{UnixNanos, correctness::FAILED};
 
 use super::Throttler;
-use crate::{clock::Clock, timer::TimeEventCallback};
+use crate::{
+    clock::Clock,
+    msgbus::{HandlerFn, runner::Actor},
+    timer::TimeEventCallback,
+};
 
 /// Throttler rate limits messages by dropping or buffering them.
 ///
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
-pub struct InnerThrottler<T, F> {
+pub struct InnerThrottler<T> {
     /// The number of messages received.
     pub recv_count: usize,
     /// The number of messages sent.
@@ -44,12 +48,18 @@ pub struct InnerThrottler<T, F> {
     /// The name of the timer.
     timer_name: String,
     /// The callback to send a message.
-    output_send: F,
+    output_send: HandlerFn,
     /// The callback to drop a message.
-    output_drop: Option<F>,
+    output_drop: Option<HandlerFn>,
 }
 
-impl<T, F> Debug for InnerThrottler<T, F>
+impl<T> Actor for InnerThrottler<T> {
+    fn id(&self) -> String {
+        return self.timer_name.to_string();
+    }
+}
+
+impl<T> Debug for InnerThrottler<T>
 where
     T: Debug,
 {
@@ -67,7 +77,7 @@ where
     }
 }
 
-impl<T, F> InnerThrottler<T, F> {
+impl<T> InnerThrottler<T> {
     /// Creates a new [`InnerThrottler`] instance.
     #[inline]
     pub fn new(
@@ -75,8 +85,8 @@ impl<T, F> InnerThrottler<T, F> {
         interval: u64,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
-        output_send: F,
-        output_drop: Option<F>,
+        output_send: HandlerFn,
+        output_drop: Option<HandlerFn>,
     ) -> Self {
         Self {
             recv_count: 0,
@@ -160,10 +170,9 @@ impl<T, F> InnerThrottler<T, F> {
     }
 }
 
-impl<T, F> InnerThrottler<T, F>
+impl<T> InnerThrottler<T>
 where
     T: 'static,
-    F: Fn(T) + 'static,
 {
     #[inline]
     pub fn send_msg(&mut self, msg: T) {
@@ -179,7 +188,7 @@ where
     }
 
     #[inline]
-    pub fn limit_msg(&mut self, msg: T, throttler: Throttler<T, F>) {
+    pub fn limit_msg(&mut self, msg: T, throttler: Throttler<T>) {
         let callback = if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());
