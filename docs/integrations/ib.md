@@ -334,7 +334,7 @@ to accommodate IB-specific requirements. A `TradingNode` is then instantiated fr
 and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added.
 Finally, the node is built and run.
 
-For a comprehensive example, refer to this [script](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/interactive_brokers_example.py).
+You can find additional examples here: https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers
 
 
 ```python
