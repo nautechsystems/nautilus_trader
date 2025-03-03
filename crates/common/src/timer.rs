@@ -38,7 +38,6 @@ use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_valid_string},
     datetime::floor_to_nearest_microsecond,
-    python::IntoPyObjectNautilusExt,
     time::get_atomic_clock_realtime,
 };
 #[cfg(feature = "python")]

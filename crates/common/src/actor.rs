@@ -16,9 +16,57 @@
 use nautilus_core::UUID4;
 
 use crate::messages::data::DataResponse;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::OnceLock;
 
 /// TODO: deprecate for `MessageHandler` trait which has all the relevant functions
 pub trait Actor {
     fn handle(&self, resp: DataResponse); // TODO: Draft
     fn id(&self) -> UUID4;
+}
+
+pub struct ActorRegistry {
+    actors: RefCell<HashMap<UUID4, Rc<dyn Actor>>>,
+}
+
+impl Default for ActorRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ActorRegistry {
+    pub fn new() -> Self {
+        Self {
+            actors: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub fn insert(&self, id: UUID4, actor: Rc<dyn Actor>) {
+        self.actors.borrow_mut().insert(id, actor);
+    }
+
+    pub fn get(&self, id: &UUID4) -> Option<Rc<dyn Actor>> {
+        self.actors.borrow().get(id).cloned()
+    }
+}
+
+// SAFETY: Actor registry is not meant to be passed between threads
+unsafe impl Sync for ActorRegistry {}
+unsafe impl Send for ActorRegistry {}
+
+pub static ACTOR_REGISTRY: OnceLock<ActorRegistry> = OnceLock::new();
+
+pub fn get_actor_registry() -> &'static ActorRegistry {
+    ACTOR_REGISTRY.get_or_init(ActorRegistry::new)
+}
+
+pub fn register_actor(actor: Rc<dyn Actor>) {
+    get_actor_registry().insert(actor.id(), actor);
+}
+
+pub fn get_actor(id: &UUID4) -> Option<Rc<dyn Actor>> {
+    get_actor_registry().get(id)
 }
