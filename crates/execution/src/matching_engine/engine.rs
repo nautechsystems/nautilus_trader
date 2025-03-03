@@ -766,10 +766,6 @@ impl OrderMatchingEngine {
         }
     }
 
-    pub fn process_query_order(&self, command: &QueryOrder, account_id: AccountId) {
-        todo!("implement process_query_order")
-    }
-
     fn process_market_order(&mut self, order: &mut OrderAny) {
         if order.time_in_force() == TimeInForce::AtTheOpen
             || order.time_in_force() == TimeInForce::AtTheClose
