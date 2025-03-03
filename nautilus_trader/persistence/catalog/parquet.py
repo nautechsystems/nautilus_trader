@@ -271,7 +271,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             pds.write_dataset(
                 data=table,
                 base_dir=path,
-                basename_template=basename_template,
+                basename_template=f"{basename_template}.parquet",
                 format="parquet",
                 filesystem=self.fs,
                 min_rows_per_group=self.min_rows_per_group,
