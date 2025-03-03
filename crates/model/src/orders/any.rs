@@ -1009,6 +1009,21 @@ impl OrderAny {
         }
     }
 
+    #[must_use]
+    pub fn previous_status(&self) -> Option<OrderStatus> {
+        match self {
+            Self::Limit(order) => order.previous_status,
+            Self::LimitIfTouched(order) => order.previous_status,
+            Self::Market(order) => order.previous_status,
+            Self::MarketIfTouched(order) => order.previous_status,
+            Self::MarketToLimit(order) => order.previous_status,
+            Self::StopLimit(order) => order.previous_status,
+            Self::StopMarket(order) => order.previous_status,
+            Self::TrailingStopLimit(order) => order.previous_status,
+            Self::TrailingStopMarket(order) => order.previous_status,
+        }
+    }
+
     pub fn set_position_id(&mut self, position_id: Option<PositionId>) {
         match self {
             Self::Limit(order) => order.position_id = position_id,
