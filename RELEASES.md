@@ -99,6 +99,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Fixed bar timestamps for IB (#2380), thanks @Endura2024
 - Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
 - Fixed subscribe composite bars (#2390), thanks @faysou
+- Fixed invalid link in IB docs (#2401), thanks @stefansimik
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
