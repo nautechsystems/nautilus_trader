@@ -2726,3 +2726,127 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
     assert_eq!(order_updated.client_order_id, client_order_id);
     assert_eq!(order_updated.trigger_price.unwrap(), Price::from("1481.00"));
 }
+
+#[rstest]
+fn test_updating_of_contingent_orders(
+    instrument_eth_usdt: InstrumentAny,
+    mut msgbus: MessageBus,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus.register(
+        msgbus.switchboard.exec_engine_process,
+        order_event_handler.clone(),
+    );
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    // Create order matching engine which supports contingent orders
+    let mut engine_config = OrderMatchingEngineConfig::default();
+    engine_config.support_contingent_orders = true;
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Rc::new(RefCell::new(msgbus)),
+        Some(cache.clone()),
+        None,
+        Some(engine_config),
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&orderbook_delta_sell);
+
+    // Create primary limit order and StopMarket OUO orders
+    // and link them together
+    let client_order_id_primary = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let client_order_id_contingent = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_primary)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![client_order_id_contingent])
+        .submit(true)
+        .build();
+    let mut contingent_stop_market_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_contingent)
+        .linked_order_ids(vec![client_order_id_primary])
+        .contingency_type(ContingencyType::Ouo)
+        .submit(true)
+        .build();
+
+    // Save orders to cache and process it by engine
+    cache
+        .borrow_mut()
+        .add_order(primary_order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(contingent_stop_market_order.clone(), None, None, false)
+        .unwrap();
+    engine_l2.process_order(&mut primary_order, account_id);
+
+    engine_l2.process_order(&mut contingent_stop_market_order, account_id);
+
+    // Modify primary order quantity to 2.000 which will trigger the contingent order
+    // update of the same quantity
+    let modify_order_command = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("CLIENT-001"),
+        StrategyId::from("STRATEGY-001"),
+        instrument_eth_usdt.id(),
+        client_order_id_primary,
+        VenueOrderId::from("V1"),
+        Some(Quantity::from("2.000")),
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+
+    // Check that we have received following sequence of events
+    // 1. OrderAccepted for primary limit order
+    // 2. OrderAccepted for contingent stop market order
+    // 3. OrderUpdated for primary limit order with new quantity of 2.000
+    // 4. OrderUpdated for contingent stop market order with new quantity of 2.000
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert_eq!(saved_messages.len(), 4);
+    let order_event_first = saved_messages.first().unwrap();
+    let order_accepted = match order_event_first {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_primary);
+    let order_event_second = saved_messages.get(1).unwrap();
+    let order_accepted = match order_event_second {
+        OrderEventAny::Accepted(order_accepted) => order_accepted,
+        _ => panic!("Expected OrderAccepted event in second message"),
+    };
+    assert_eq!(order_accepted.client_order_id, client_order_id_contingent);
+    let order_event_third = saved_messages.get(2).unwrap();
+    let order_updated = match order_event_third {
+        OrderEventAny::Updated(order_updated) => order_updated,
+        _ => panic!("Expected OrderUpdated event in third message"),
+    };
+    assert_eq!(order_updated.client_order_id, client_order_id_primary);
+    assert_eq!(order_updated.quantity, Quantity::from("2.000"));
+    let order_event_fourth = saved_messages.get(3).unwrap();
+    let order_updated = match order_event_fourth {
+        OrderEventAny::Updated(order_updated) => order_updated,
+        _ => panic!("Expected OrderUpdated event in fourth message"),
+    };
+    assert_eq!(order_updated.client_order_id, client_order_id_contingent);
+    assert_eq!(order_updated.quantity, Quantity::from("2.000"));
+}

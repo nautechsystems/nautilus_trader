@@ -1568,15 +1568,12 @@ impl OrderMatchingEngine {
                                         .is_some_and(|s| matches!(s, OrderStatus::Submitted)))
                             {
                                 let account_id = order.account_id().unwrap_or_else(|| {
-                                    self.account_ids
-                                        .get(&order.trader_id())
-                                        .unwrap_or_else(|| {
-                                            panic!(
-                                                "Account ID not found for trader {}",
-                                                order.trader_id()
-                                            )
-                                        })
-                                        .clone()
+                                    *self.account_ids.get(&order.trader_id()).unwrap_or_else(|| {
+                                        panic!(
+                                            "Account ID not found for trader {}",
+                                            order.trader_id()
+                                        )
+                                    })
                                 });
                                 self.process_order(&mut child_order, account_id);
                             }
@@ -1586,13 +1583,12 @@ impl OrderMatchingEngine {
                             "OTO order {} does not have linked orders",
                             order.client_order_id()
                         );
-                        return;
                     }
                 }
                 ContingencyType::Oco => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
                         for client_order_id in &linked_orders_ids {
-                            let mut child_order = match self.cache.borrow().order(client_order_id) {
+                            let child_order = match self.cache.borrow().order(client_order_id) {
                                 Some(child_order) => child_order.clone(),
                                 None => panic!("Order {client_order_id} not found in cache"),
                             };
@@ -1603,6 +1599,11 @@ impl OrderMatchingEngine {
 
                             self.cancel_order(&child_order, None);
                         }
+                    } else {
+                        log::error!(
+                            "OCO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
                     }
                 }
                 ContingencyType::Ouo => {
@@ -1633,6 +1634,11 @@ impl OrderMatchingEngine {
                                 )
                             }
                         }
+                    } else {
+                        log::error!(
+                            "OUO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
                     }
                 }
                 _ => {}
