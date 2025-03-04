@@ -102,6 +102,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
 - Fixed subscribe composite bars (#2390), thanks @faysou
 - Fixed invalid link in IB docs (#2401), thanks @stefansimik
+- Fixed cache index loading to ensure persisted data remains available after startup
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
