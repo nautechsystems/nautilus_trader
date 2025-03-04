@@ -38,6 +38,7 @@ pub struct UnixNanos(u64);
 
 impl UnixNanos {
     /// Creates a new [`UnixNanos`] instance.
+    #[must_use]
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
@@ -516,7 +517,7 @@ mod tests {
         let later_nanos = UnixNanos::from(later);
 
         // Calculate expected duration in nanoseconds
-        let expected_duration = 1 * 60 * 60 * 1_000_000_000 + // 1 hour
+        let expected_duration = 60 * 60 * 1_000_000_000 + // 1 hour
         30 * 60 * 1_000_000_000 + // 30 minutes
         45 * 1_000_000_000 + // 45 seconds
         500_000_000; // 500 million nanoseconds

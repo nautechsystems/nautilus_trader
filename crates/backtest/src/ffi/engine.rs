@@ -42,7 +42,7 @@ impl DerefMut for TimeEventAccumulatorAPI {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn time_event_accumulator_new() -> TimeEventAccumulatorAPI {
-    TimeEventAccumulatorAPI(Box::new(TimeEventAccumulator::new()))
+    TimeEventAccumulatorAPI(Box::default())
 }
 
 #[unsafe(no_mangle)]
