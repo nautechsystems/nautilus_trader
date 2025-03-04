@@ -573,14 +573,12 @@ impl SimulatedExchange {
                 TradingCommand::BatchCancelOrders(ref command) => {
                     matching_engine.process_batch_cancel(command, account_id);
                 }
-                TradingCommand::QueryOrder(ref command) => {
-                    matching_engine.process_query_order(command, account_id);
-                }
                 TradingCommand::SubmitOrderList(mut command) => {
                     for order in &mut command.order_list.orders {
                         matching_engine.process_order(order, account_id);
                     }
                 }
+                _ => {}
             }
         } else {
             panic!("Matching engine should be initialized");

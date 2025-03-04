@@ -1229,7 +1229,7 @@ impl Cache {
     pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
-        _venue: &Venue,
+        venue: &Venue,
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
@@ -1258,6 +1258,13 @@ impl Cache {
         self.index
             .strategy_positions
             .entry(*strategy_id)
+            .or_default()
+            .insert(*position_id);
+
+        // Index: Venue -> set[PositionId]
+        self.index
+            .venue_positions
+            .entry(*venue)
             .or_default()
             .insert(*position_id);
 

@@ -55,7 +55,7 @@ use ustr::Ustr;
 use crate::{
     matching_core::OrderMatchingCore,
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
-    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder},
+    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     models::{
         fee::{FeeModel, FeeModelAny},
         fill::FillModel,
@@ -764,10 +764,6 @@ impl OrderMatchingEngine {
         for order in &command.cancels {
             self.process_cancel(order, account_id);
         }
-    }
-
-    pub fn process_query_order(&self, command: &QueryOrder, account_id: AccountId) {
-        todo!("implement process_query_order")
     }
 
     fn process_market_order(&mut self, order: &mut OrderAny) {
@@ -1531,7 +1527,123 @@ impl OrderMatchingEngine {
             return;
         }
 
-        todo!("Check for contingent orders")
+        if let Some(contingency_type) = order.contingency_type() {
+            match contingency_type {
+                ContingencyType::Oto => {
+                    if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        for client_order_id in &linked_orders_ids {
+                            let mut child_order = match self.cache.borrow().order(client_order_id) {
+                                Some(child_order) => child_order.clone(),
+                                None => panic!("Order {client_order_id} not found in cache"),
+                            };
+
+                            if child_order.is_closed() || child_order.is_active_local() {
+                                continue;
+                            }
+
+                            // Check if we need to index position id
+                            if let (None, Some(position_id)) =
+                                (child_order.position_id(), order.position_id())
+                            {
+                                self.cache
+                                    .borrow_mut()
+                                    .add_position_id(
+                                        &position_id,
+                                        &self.venue,
+                                        client_order_id,
+                                        &child_order.strategy_id(),
+                                    )
+                                    .unwrap();
+                                log::debug!(
+                                    "Added position id {} to cache for order {}",
+                                    position_id,
+                                    client_order_id
+                                )
+                            }
+
+                            if (!child_order.is_open())
+                                || (matches!(child_order.status(), OrderStatus::PendingUpdate)
+                                    && child_order
+                                        .previous_status()
+                                        .is_some_and(|s| matches!(s, OrderStatus::Submitted)))
+                            {
+                                let account_id = order.account_id().unwrap_or_else(|| {
+                                    *self.account_ids.get(&order.trader_id()).unwrap_or_else(|| {
+                                        panic!(
+                                            "Account ID not found for trader {}",
+                                            order.trader_id()
+                                        )
+                                    })
+                                });
+                                self.process_order(&mut child_order, account_id);
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "OTO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
+                    }
+                }
+                ContingencyType::Oco => {
+                    if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        for client_order_id in &linked_orders_ids {
+                            let child_order = match self.cache.borrow().order(client_order_id) {
+                                Some(child_order) => child_order.clone(),
+                                None => panic!("Order {client_order_id} not found in cache"),
+                            };
+
+                            if child_order.is_closed() || child_order.is_active_local() {
+                                continue;
+                            }
+
+                            self.cancel_order(&child_order, None);
+                        }
+                    } else {
+                        log::error!(
+                            "OCO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
+                    }
+                }
+                ContingencyType::Ouo => {
+                    if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        for client_order_id in &linked_orders_ids {
+                            let mut child_order = match self.cache.borrow().order(client_order_id) {
+                                Some(child_order) => child_order.clone(),
+                                None => panic!("Order {client_order_id} not found in cache"),
+                            };
+
+                            if child_order.is_active_local() {
+                                continue;
+                            }
+
+                            if order.is_closed() && child_order.is_open() {
+                                self.cancel_order(&child_order, None);
+                            } else if !order.leaves_qty().is_zero()
+                                && order.leaves_qty() != child_order.leaves_qty()
+                            {
+                                let price = child_order.price();
+                                let trigger_price = child_order.trigger_price();
+                                self.update_order(
+                                    &mut child_order,
+                                    Some(order.leaves_qty()),
+                                    price,
+                                    trigger_price,
+                                    Some(false),
+                                )
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "OUO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     fn update_limit_order(&mut self, order: &mut OrderAny, quantity: Quantity, price: Price) {
@@ -1942,7 +2054,33 @@ impl OrderMatchingEngine {
     }
 
     fn update_contingent_order(&mut self, order: &OrderAny) {
-        todo!("update_contingent_order")
+        log::debug!("Updating OUO orders from {}", order.client_order_id());
+        if let Some(linked_order_ids) = order.linked_order_ids() {
+            for client_order_id in &linked_order_ids {
+                let mut child_order = match self.cache.borrow().order(client_order_id) {
+                    Some(order) => order.clone(),
+                    None => panic!("Order {client_order_id} not found in cache."),
+                };
+
+                if child_order.is_active_local() {
+                    continue;
+                }
+
+                if order.leaves_qty().is_zero() {
+                    self.cancel_order(&child_order, None);
+                } else if child_order.leaves_qty() != order.leaves_qty() {
+                    let price = child_order.price();
+                    let trigger_price = child_order.trigger_price();
+                    self.update_order(
+                        &mut child_order,
+                        Some(order.leaves_qty()),
+                        price,
+                        trigger_price,
+                        Some(false),
+                    )
+                }
+            }
+        }
     }
 
     fn cancel_contingent_orders(&mut self, order: &OrderAny) {
