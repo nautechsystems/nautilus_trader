@@ -663,6 +663,8 @@ cdef class ExecutionEngine(Component):
         # Manually measuring timestamps in case the engine is using a test clock
         cdef uint64_t ts = int(time.time() * 1000)
 
+        self._cache.clear_index()
+
         self._cache.cache_general()
         self._cache.cache_currencies()
         self._cache.cache_instruments()

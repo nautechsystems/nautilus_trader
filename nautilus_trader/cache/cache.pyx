@@ -414,10 +414,8 @@ cdef class Cache(CacheFacade):
 
     cpdef void build_index(self):
         """
-        Clear the current cache index and re-build.
+        Build the cache index from objects currently held in memory.
         """
-        self.clear_index()
-
         self._log.debug(f"Building index")
         cdef double ts = time.time()
 

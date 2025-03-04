@@ -228,7 +228,6 @@ impl Cache {
 
     /// Clears the current cache index and re-build.
     pub fn build_index(&mut self) {
-        self.index.clear();
         log::debug!("Building index");
 
         // Index accounts
