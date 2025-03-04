@@ -2483,7 +2483,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count == 8
+        assert own_book.event_count == 10
         assert len(own_book.asks_to_dict()) == 0
         assert len(own_book.bids_to_dict()) == 0
         assert self.cache.own_bid_orders(instrument.id) == {}
@@ -2530,8 +2530,6 @@ class TestExecutionEngine:
         # Act
         strategy.cancel_order(order_bid)
         strategy.cancel_order(order_ask)
-        self.exec_engine.process(TestEventStubs.order_pending_cancel(order_bid))
-        self.exec_engine.process(TestEventStubs.order_pending_cancel(order_ask))
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
