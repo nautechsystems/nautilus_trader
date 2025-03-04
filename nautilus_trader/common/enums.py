@@ -37,6 +37,7 @@ __all__ = [
     "ComponentTrigger",
     "LogColor",
     "LogLevel",
+    "UpdateCatalogMode",
     "component_state_from_str",
     "component_state_to_str",
     "component_trigger_from_str",
@@ -46,6 +47,18 @@ __all__ = [
 ]
 
 # mypy: disable-error-code=no-redef
+
+
+@unique
+class UpdateCatalogMode(Enum):
+    """
+    Represents a catalog update mode.
+    """
+
+    MODIFY = 0
+    NEWFILE = 1
+    OVERWRITE = 2
+
 
 if TYPE_CHECKING:
 

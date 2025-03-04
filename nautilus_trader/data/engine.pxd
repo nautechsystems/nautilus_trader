@@ -180,11 +180,13 @@ cdef class DataEngine(Component):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef tuple[datetime, object] _catalogs_last_timestamp(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*)
+    cpdef tuple[datetime, object] _catalogs_timestamp_bound(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*, bint is_last=*)
     cpdef void _handle_request(self, RequestData request)
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
+    cpdef void _date_range_client_request(self, DataClient client, RequestData request)
+    cpdef void _handle_date_range_request(self, DataClient client, RequestData request, datetime start_catalog, datetime end_catalog)
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
@@ -209,7 +211,7 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_response(self, DataResponse response)
     cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = *)
-    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode | None, bint is_instrument=*)
+    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode, bint is_instrument=*)
     cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
     cpdef object _handle_query_group(self, UUID4 correlation_id, list ticks)
     cdef object _handle_query_group_aux(self, UUID4 correlation_id, list ticks)

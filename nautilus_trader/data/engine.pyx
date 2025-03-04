@@ -32,11 +32,14 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 from typing import Callable
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import UpdateCatalogMode
 from nautilus_trader.core.datetime import max_date
+from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -885,9 +888,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if "start" not in command.params:
-            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+            last_timestamp: datetime | None = self._catalogs_timestamp_bound(
                 data_cls=QuoteTick,
                 instrument_id=command.instrument_id,
+                is_last=True,
             )[0]
 
             # Time in nanoseconds from pd.Timestamp
@@ -929,9 +933,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if "start" not in command.params:
-            last_timestamp: datetime | None = self._catalogs_last_timestamp(
+            last_timestamp: datetime | None = self._catalogs_timestamp_bound(
                 data_cls=TradeTick,
                 instrument_id=command.instrument_id,
+                is_last=True,
             )[0]
 
             # Time in nanoseconds from pd.Timestamp
@@ -982,9 +987,10 @@ cdef class DataEngine(Component):
                 return
 
             if "start" not in command.params:
-                last_timestamp: datetime | None = self._catalogs_last_timestamp(
+                last_timestamp: datetime | None = self._catalogs_timestamp_bound(
                     data_cls=Bar,
                     bar_type=command.bar_type,
+                    is_last=True,
                 )[0]
 
                 # Time in nanoseconds from pd.Timestamp
@@ -999,7 +1005,7 @@ cdef class DataEngine(Component):
         try:
             if command.data_type not in client.subscribed_custom_data():
                 if "start" not in command.params:
-                    last_timestamp: datetime | None = self._catalogs_last_timestamp(data_cls=command.data_type.type)[0]
+                    last_timestamp: datetime | None = self._catalogs_timestamp_bound(data_cls=command.data_type.type, is_last=True)[0]
                     command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
 
                 client.subscribe(command)
@@ -1197,29 +1203,33 @@ cdef class DataEngine(Component):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef tuple[datetime, object] _catalogs_last_timestamp(
+    cpdef tuple[datetime, object] _catalogs_timestamp_bound(
         self,
         type data_cls,
         InstrumentId instrument_id = None,
         BarType bar_type = None,
         str ts_column = "ts_init",
+        bint is_last = True,
     ):
-        cdef datetime last_timestamp = None
-        cdef datetime prev_last_timestamp = None
-
-        last_timestamp_catalog = None
+        cdef datetime timestamp_bound = None
+        cdef datetime prev_timestamp_bound = None
+        timestamp_bound_catalog = None
 
         for catalog in self._catalogs.values():
-            prev_last_timestamp = last_timestamp
-            last_timestamp = max_date(
-                last_timestamp,
-                catalog.query_last_timestamp(data_cls, instrument_id, bar_type, ts_column)
+            prev_timestamp_bound = timestamp_bound
+
+            timestamp_bound = (max_date if is_last else min_date)(
+                timestamp_bound,
+                catalog.query_timestamp_bound(data_cls, instrument_id, bar_type, ts_column, is_last)
             )
 
-            if last_timestamp is not None and (prev_last_timestamp is None or last_timestamp > prev_last_timestamp):
-                last_timestamp_catalog = catalog
+            if (timestamp_bound is not None and
+                (prev_timestamp_bound is None or
+                 (is_last and timestamp_bound > prev_timestamp_bound)
+                  or (timestamp_bound < prev_timestamp_bound))):
+                timestamp_bound_catalog = catalog
 
-        return last_timestamp, last_timestamp_catalog
+        return timestamp_bound, timestamp_bound_catalog
 
     cpdef void _handle_request(self, RequestData request):
         if self.debug:
@@ -1254,6 +1264,10 @@ cdef class DataEngine(Component):
         else:
             self._handle_request_data(client, request)
 
+    def _log_request_error(self, RequestData request):
+        self._log.error(f"Cannot handle request: no client registered "
+                        f"for '{request.client_id}', {request}")
+
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request):
         update_catalog_mode = request.params.get("update_catalog_mode", None)
         if self._catalogs and update_catalog_mode is None:
@@ -1261,17 +1275,16 @@ cdef class DataEngine(Component):
             return
 
         if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
+            self._log_request_error(request)
             return  # No client to handle request
 
         client.request_instruments(request)
 
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request):
-        last_timestamp = self._catalogs_last_timestamp(
+        last_timestamp = self._catalogs_timestamp_bound(
             data_cls=Instrument,
             instrument_id=request.instrument_id,
+            is_last=True,
         )[0]
 
         if last_timestamp:
@@ -1279,127 +1292,188 @@ cdef class DataEngine(Component):
             return
 
         if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
+            self._log_request_error(request)
             return  # No client to handle request
 
         client.request_instrument(request)
 
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request):
         if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
+            self._log_request_error(request)
             return  # No client to handle request
 
         client.request_order_book_snapshot(request)
 
+    cpdef void _date_range_client_request(self, DataClient client, RequestData request):
+        if client is None:
+            self._log_request_error(request)
+            return # No client to handle request
+
+        if isinstance(request, RequestBars):
+            client.request_bars(request)
+        elif isinstance(request, RequestQuoteTicks):
+            client.request_quote_ticks(request)
+        elif isinstance(request, RequestTradeTicks):
+            client.request_trade_ticks(request)
+        else:
+            try:
+                client.request(request)
+            except:
+                self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}, {request}")
+
+    def _convert_update_catalog_mode(self, update_catalog_mode: UpdateCatalogMode, catalog_write_mode: CatalogWriteMode) -> CatalogWriteMode | None:
+        if update_catalog_mode is None:
+            return None
+        elif update_catalog_mode is UpdateCatalogMode.MODIFY:
+            return catalog_write_mode
+        elif update_catalog_mode is UpdateCatalogMode.OVERWRITE:
+            return CatalogWriteMode.OVERWRITE
+        elif update_catalog_mode is UpdateCatalogMode.NEWFILE:
+            return CatalogWriteMode.NEWFILE
+
+    cpdef void _handle_date_range_request(
+        self,
+        DataClient client,
+        RequestData request,
+        datetime start_catalog,
+        datetime end_catalog,
+    ):
+        # no catalog to use
+        if start_catalog is None:
+            self._date_range_client_request(client, request)
+            return
+
+        # caping dates to the now datetime
+        cdef datetime now = self._clock.utc_now()
+        cdef datetime used_start_catalog = min_date(start_catalog, now)
+        cdef datetime used_end_catalog = min_date(end_catalog, now)
+        cdef datetime used_start_request = min_date(request.start, now) if request.start is not None else time_object_to_dt(0)
+        cdef datetime used_end_request = min_date(request.end, now) if request.start is not None else now
+
+        if used_start_request > used_end_request:
+            self._log.error(f"Cannot handle request: incompatible request dates for {request}")
+            return
+
+        # if the request dates are fully outside the catalog dates
+        if used_end_request < used_start_catalog:
+            self._date_range_client_request(client, request)
+            return
+
+        if used_start_request > used_end_catalog:
+            self._date_range_client_request(client, request)
+            return
+
+        # from here the request dates have an intersection with the catalog
+        # number of requests for the request group that will wait for all requests to be completed
+        n_requests = 1 # one request at least for the catalog
+
+        if used_start_request < used_start_catalog and client is not None:
+            n_requests += 1
+
+        if used_end_request > used_end_catalog and client is not None:
+            n_requests += 1
+
+        self._new_query_group(request.id, n_requests)
+
+        # client query before the catalog
+        if used_start_request < used_start_catalog and client is not None:
+            new_request = request.with_dates(used_start_request, used_start_catalog)
+            new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
+                new_request.params.get("update_catalog_mode", None),
+                CatalogWriteMode.PREPEND
+            )
+            self._date_range_client_request(client, new_request)
+
+        # catalog query
+        new_request = request.with_dates(max_date(used_start_request, used_start_catalog), min_date(used_end_request, used_end_catalog))
+        new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
+            new_request.params.get("update_catalog_mode", None),
+            None
+        )
+        self._query_catalog(new_request)
+
+        # client query after the catalog
+        if used_end_request > used_end_catalog and client is not None:
+            new_request = request.with_dates(used_end_catalog, used_end_request)
+            new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
+                new_request.params.get("update_catalog_mode", None),
+                CatalogWriteMode.APPEND
+            )
+            self._date_range_client_request(client, new_request)
+
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
-        last_timestamp = self._catalogs_last_timestamp(
+        start_catalog = self._catalogs_timestamp_bound(
             data_cls=QuoteTick,
             instrument_id=request.instrument_id,
+            is_last=False,
+        )[0]
+        end_catalog = self._catalogs_timestamp_bound(
+            data_cls=QuoteTick,
+            instrument_id=request.instrument_id,
+            is_last=True,
         )[0]
 
-        if last_timestamp:
-            now = self._clock.utc_now()
-            if (now <= last_timestamp) or (request.end and request.end <= last_timestamp):
-                self._query_catalog(request)
-                return
-
-        if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
-            return  # No client to handle request
-
-        if last_timestamp and request.start and request.start <= last_timestamp:
-            self._new_query_group(request.id, 2)
-            self._query_catalog(request)
-
-        request.start = max_date(request.start, last_timestamp)
-
-        client.request_quote_ticks(request)
+        self._handle_date_range_request(
+            client,
+            request,
+            start_catalog,
+            end_catalog,
+        )
 
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request):
-        last_timestamp = self._catalogs_last_timestamp(
+        start_catalog = self._catalogs_timestamp_bound(
             data_cls=TradeTick,
             instrument_id=request.instrument_id,
+            is_last=False,
+        )[0]
+        end_catalog = self._catalogs_timestamp_bound(
+            data_cls=TradeTick,
+            instrument_id=request.instrument_id,
+            is_last=True,
         )[0]
 
-        if last_timestamp:
-            now = self._clock.utc_now()
-            if (now <= last_timestamp) or (request.end and request.end <= last_timestamp):
-                self._query_catalog(request)
-                return
-
-        if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
-            return  # No client to handle request
-
-        if last_timestamp and request.start and request.start <= last_timestamp:
-            self._new_query_group(request.id, 2)
-            self._query_catalog(request)
-
-        request.start = max_date(request.start, last_timestamp)
-
-        client.request_trade_ticks(request)
+        self._handle_date_range_request(
+            client,
+            request,
+            start_catalog,
+            end_catalog,
+        )
 
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request):
-        last_timestamp = self._catalogs_last_timestamp(
+        start_catalog = self._catalogs_timestamp_bound(
             data_cls=Bar,
             bar_type=request.bar_type,
+            is_last=False,
+        )[0]
+        end_catalog = self._catalogs_timestamp_bound(
+            data_cls=Bar,
+            bar_type=request.bar_type,
+            is_last=True,
         )[0]
 
-        if last_timestamp:
-            now = self._clock.utc_now()
-            if (now <= last_timestamp) or (request.end and request.end <= last_timestamp):
-                self._query_catalog(request)
-                return
-
-        if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
-            return  # No client to handle request
-
-        if last_timestamp and request.start and request.start <= last_timestamp:
-            self._new_query_group(request.id, 2)
-            self._query_catalog(request)
-
-        request.start = max_date(request.start, last_timestamp)
-
-        client.request_bars(request)
+        self._handle_date_range_request(
+            client,
+            request,
+            start_catalog,
+            end_catalog,
+        )
 
     cpdef void _handle_request_data(self, DataClient client, RequestData request):
-        last_timestamp = self._catalogs_last_timestamp(
+        start_catalog = self._catalogs_timestamp_bound(
             data_cls=request.data_type.type,
+            is_last=False,
+        )[0]
+        end_catalog = self._catalogs_timestamp_bound(
+            data_cls=request.data_type.type,
+            is_last=True,
         )[0]
 
-        if last_timestamp:
-            now = self._clock.utc_now()
-            if (now <= last_timestamp) or (request.end and request.end <= last_timestamp):
-                self._query_catalog(request)
-                return
-
-        if client is None:
-            self._log.error(
-                f"Cannot handle request: "
-                f"no client registered for '{request.client_id}', {request}")
-            return  # No client to handle request
-
-        if last_timestamp and request.start and request.start <= last_timestamp:
-            self._new_query_group(request.id, 2)
-            self._query_catalog(request)
-
-        request.start = max_date(request.start, last_timestamp)
-
-        try:
-            client.request(request)
-        except NotImplementedError:
-            self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}")
+        self._handle_date_range_request(
+            client,
+            request,
+            start_catalog,
+            end_catalog,
+        )
 
     cpdef void _query_catalog(self, RequestData request):
         cdef datetime start = request.start
@@ -1741,30 +1815,32 @@ cdef class DataEngine(Component):
 
         self._msgbus.response(response)
 
-    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode | None, bint is_instrument = False):
+    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode, bint is_instrument = False):
         if len(ticks) == 0:
             return
 
         if type(ticks[0]) is Bar:
-            last_timestamp, last_timestamp_catalog = self._catalogs_last_timestamp(
+            timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=Bar,
                 bar_type=ticks[0].bar_type,
-            )
+                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+            )[1]
         else:
-            last_timestamp, last_timestamp_catalog = self._catalogs_last_timestamp(
+            timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=type(ticks[0]),
                 instrument_id=ticks[0].instrument_id,
-            )
+                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+            )[1]
 
         # We don't want to write in the catalog several times the same instrument
-        if last_timestamp_catalog and is_instrument:
+        if timestamp_bound_catalog and is_instrument:
             return
 
-        if last_timestamp_catalog is None and len(self._catalogs) > 0:
+        if timestamp_bound_catalog is None and len(self._catalogs) > 0:
             last_timestamp_catalog = self._catalogs[0]
 
-        if last_timestamp_catalog is not None:
-            last_timestamp_catalog.write_data(ticks, mode=update_catalog_mode)
+        if timestamp_bound_catalog is not None:
+            timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)
         else:
             self._log.warning("No catalog available for appending data.")
 
