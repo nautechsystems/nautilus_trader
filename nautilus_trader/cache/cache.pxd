@@ -198,4 +198,5 @@ cdef class Cache(CacheFacade):
 cdef dict[Decimal, list[Order]] process_own_order_map(
     dict[Decimal, list[nautilus_pyo3.OwnBookOrder]] own_order_map,
     dict[ClientOrderId, Order] order_cache,
+    set[OrderStatus] status,
 )
