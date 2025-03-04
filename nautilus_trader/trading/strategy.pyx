@@ -1188,15 +1188,10 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
+                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 continue
-
-            # Update own book
-            own_book = self.cache.own_order_book(order.instrument_id)
-            if own_book is not None:
-                own_book.update(order.to_own_book_order())
 
         cdef CancelAllOrders command = CancelAllOrders(
             trader_id=self.trader_id,
@@ -1426,15 +1421,10 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
+                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return None  # Cannot send command
-
-            # Update own book
-            own_book = self.cache.own_order_book(order.instrument_id)
-            if own_book is not None:
-                own_book.update(order.to_own_book_order())
 
             # Publish event
             self._msgbus.publish_c(
@@ -1472,15 +1462,10 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
+                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return None  # Cannot send command
-
-            # Update own book
-            own_book = self.cache.own_order_book(order.instrument_id)
-            if own_book is not None:
-                own_book.update(order.to_own_book_order())
 
             # Publish event
             self._msgbus.publish_c(

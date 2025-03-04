@@ -21,6 +21,9 @@ from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
@@ -74,3 +77,7 @@ cdef class BookLevel:
 
     @staticmethod
     cdef BookLevel from_mem_c(BookLevel_API mem)
+
+
+cdef inline bint should_handle_own_book_order(Order order):
+    return order.order_type != OrderType.MARKET and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK
