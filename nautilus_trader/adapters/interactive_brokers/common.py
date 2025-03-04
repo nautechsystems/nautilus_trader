@@ -16,7 +16,9 @@
 from decimal import Decimal
 from typing import Final, Literal
 
-from ibapi.common import UNSET_DECIMAL
+from ibapi.const import UNSET_DECIMAL
+from ibapi.contract import FundAssetType
+from ibapi.contract import FundDistributionPolicyIndicator
 from ibapi.tag_value import TagValue
 
 from nautilus_trader.config import NautilusConfig
@@ -101,6 +103,8 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         Filters the options_chain and futures_chain which are expiring before number of days specified.
     lastTradeDateOrContractMonth: str (%Y%m%d or %Y%m) (default: '')
         Filters the options_chain and futures_chain specific for this expiry date
+    lastTradeDate: str (default: '')
+        The contract last trading day.
 
     """
 
@@ -127,6 +131,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
     # options and futures
     lastTradeDateOrContractMonth: str = ""
+    lastTradeDate: str = ""
     multiplier: str = ""
 
     # options
@@ -240,3 +245,25 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     nextOptionType: str = ""
     nextOptionPartial: bool = False
     notes: str = ""
+
+    # FUND values
+    fundName: str = ""
+    fundFamily: str = ""
+    fundType: str = ""
+    fundFrontLoad: str = ""
+    fundBackLoad: str = ""
+    fundBackLoadTimeInterval: str = ""
+    fundManagementFee: str = ""
+    fundClosed: bool = False
+    fundClosedForNewInvestors: bool = False
+    fundClosedForNewMoney: bool = False
+    fundNotifyAmount: str = ""
+    fundMinimumInitialPurchase: str = ""
+    fundSubsequentMinimumPurchase: str = ""
+    fundBlueSkyStates: str = ""
+    fundBlueSkyTerritories: str = ""
+    fundDistributionPolicyIndicator: FundDistributionPolicyIndicator = (
+        FundDistributionPolicyIndicator.NoneItem
+    )
+    fundAssetType: FundAssetType = FundAssetType.NoneItem
+    ineligibilityReasonList: list = None
