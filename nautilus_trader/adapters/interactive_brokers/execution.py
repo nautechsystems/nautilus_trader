@@ -19,8 +19,8 @@ from decimal import Decimal
 from typing import Any
 
 from ibapi.commission_report import CommissionReport
-from ibapi.common import UNSET_DECIMAL
-from ibapi.common import UNSET_DOUBLE
+from ibapi.const import UNSET_DECIMAL
+from ibapi.const import UNSET_DOUBLE
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState

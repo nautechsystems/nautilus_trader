@@ -72,7 +72,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The market data type to be set
 
         """
-        self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.to_str(market_data_type)}")
+        self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.toStr(market_data_type)}")
         self._eclient.reqMarketDataType(market_data_type)
 
     async def _subscribe(
