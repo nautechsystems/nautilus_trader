@@ -1292,6 +1292,20 @@ cdef class RequestData(Request):
         self.venue = venue
         self.params = params or {}
 
+    def with_dates(self, datetime start, datetime end):
+        return RequestData(
+            data_type=self.data_type,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -1619,6 +1633,20 @@ cdef class RequestQuoteTicks(RequestData):
 
         self.instrument_id = instrument_id
 
+    def with_dates(self, datetime start, datetime end):
+        return RequestQuoteTicks(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -1706,6 +1734,20 @@ cdef class RequestTradeTicks(RequestData):
         )
 
         self.instrument_id = instrument_id
+
+    def with_dates(self, datetime start, datetime end):
+        return RequestTradeTicks(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
 
     def __str__(self) -> str:
         return (
@@ -1795,6 +1837,20 @@ cdef class RequestBars(RequestData):
         )
 
         self.bar_type = bar_type
+
+    def with_dates(self, datetime start, datetime end):
+        return RequestBars(
+            bar_type=self.bar_type,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
 
     def __str__(self) -> str:
         return (
