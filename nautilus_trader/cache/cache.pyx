@@ -48,6 +48,7 @@ from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport order_status_to_pyo3
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -2318,7 +2319,10 @@ cdef class Cache(CacheFacade):
         if own_order_book is None:
             return None
 
-        return process_own_order_map(own_order_book.bids_to_dict(status), self._orders)
+        return process_own_order_map(
+            own_order_book.bids_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
+            self._orders,
+        )
 
     cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
         """
@@ -2344,7 +2348,10 @@ cdef class Cache(CacheFacade):
         if own_order_book is None:
             return None
 
-        return process_own_order_map(own_order_book.asks_to_dict(status), self._orders)
+        return process_own_order_map(
+            own_order_book.asks_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
+            self._orders,
+        )
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
