@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
+from nautilus_trader.common.enums import UpdateCatalogMode
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
@@ -187,7 +187,7 @@ cdef class Actor(Component):
         datetime end=*,
         int limit=*,
         callback=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_instrument(
@@ -197,7 +197,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_instruments(
@@ -207,7 +207,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_order_book_snapshot(
@@ -226,7 +226,7 @@ cdef class Actor(Component):
         int limit=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_trade_ticks(
@@ -237,7 +237,7 @@ cdef class Actor(Component):
         int limit=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_bars(
@@ -248,7 +248,7 @@ cdef class Actor(Component):
         int limit=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_aggregated_bars(
@@ -261,7 +261,7 @@ cdef class Actor(Component):
         callback=*,
         bint include_external_data=*,
         bint update_subscriptions=*,
-        update_catalog_mode: CatalogWriteMode | None = *,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)
