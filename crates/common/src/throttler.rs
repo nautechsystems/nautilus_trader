@@ -114,7 +114,6 @@ where
 }
 
 impl<T, F> Throttler<T, F> {
-    /// Creates a new [`InnerThrottler`] instance.
     #[inline]
     pub fn new(
         limit: usize,
@@ -144,8 +143,8 @@ impl<T, F> Throttler<T, F> {
     /// Set timer with a callback to be triggered on next interval.
     ///
     /// Typically used to register callbacks:
-    /// - [`super::callbacks::ThrottlerProcess`] to process buffered messages
-    /// - [`super::callbacks::ThrottlerResume`] to stop buffering
+    /// - to process buffered messages
+    /// - to stop buffering
     #[inline]
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();

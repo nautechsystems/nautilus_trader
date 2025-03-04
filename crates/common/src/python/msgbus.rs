@@ -15,13 +15,13 @@
 
 use std::rc::Rc;
 
-use pyo3::{PyObject, PyRefMut, pymethods};
+use pyo3::{PyObject, pymethods};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
-    MessageBus, database::BusMessage, deregister, handler::ShareableMessageHandler, publish,
-    register, send, subscribe, unsubscribe,
+    MessageBus, database::BusMessage, deregister, handler::ShareableMessageHandler, register,
+    subscribe, unsubscribe,
 };
 
 #[pymethods]
@@ -62,7 +62,8 @@ impl MessageBus {
 
     /// Registers the given `handler` for the `endpoint` address.
     #[pyo3(name = "register")]
-    pub fn register_py(&mut self, endpoint: &str, handler: PythonMessageHandler) {
+    #[staticmethod]
+    pub fn register_py(endpoint: &str, handler: PythonMessageHandler) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
         register(endpoint, handler);
@@ -86,12 +87,8 @@ impl MessageBus {
     /// produce potential side effects for logically sound behavior.
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (topic, handler, priority=None))]
-    pub fn subscribe_py(
-        mut slf: PyRefMut<'_, Self>,
-        topic: &str,
-        handler: PythonMessageHandler,
-        priority: Option<u8>,
-    ) {
+    #[staticmethod]
+    pub fn subscribe_py(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
         subscribe(topic, handler, priority);
@@ -107,7 +104,8 @@ impl MessageBus {
 
     /// Unsubscribes the given `handler` from the `topic`.
     #[pyo3(name = "unsubscribe")]
-    pub fn unsubscribe_py(&mut self, topic: &str, handler: PythonMessageHandler) {
+    #[staticmethod]
+    pub fn unsubscribe_py(topic: &str, handler: PythonMessageHandler) {
         let handler = ShareableMessageHandler(Rc::new(handler));
         unsubscribe(topic, handler);
     }
@@ -121,7 +119,8 @@ impl MessageBus {
 
     /// Deregisters the given `handler` for the `endpoint` address.
     #[pyo3(name = "deregister")]
-    pub fn deregister_py(&mut self, endpoint: &str) {
+    #[staticmethod]
+    pub fn deregister_py(endpoint: &str) {
         // Removes entry if it exists for endpoint
         deregister(&Ustr::from(endpoint));
     }
