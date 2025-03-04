@@ -24,6 +24,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.enums import UpdateCatalogMode
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.uuid import UUID4
@@ -72,7 +73,6 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.data import MockMarketDataClient
 from nautilus_trader.test_kit.mocks.data import setup_catalog
@@ -2343,7 +2343,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog_mode": CatalogWriteMode.APPEND},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2355,7 +2355,7 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         assert handler[0].data == [bar, bar2]
-        assert catalog.query_last_timestamp(Bar, bar_type=bar_type) == time_object_to_dt(
+        assert catalog.query_timestamp_bound(Bar, bar_type=bar_type) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
         )
 
@@ -2470,7 +2470,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog_mode": CatalogWriteMode.APPEND},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2482,7 +2482,7 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         # assert handler[0].data == [quote_tick, quote_tick2]
-        assert catalog.query_last_timestamp(
+        assert catalog.query_timestamp_bound(
             QuoteTick,
             instrument_id=ETHUSDT_BINANCE.id,
         ) == time_object_to_dt(
@@ -2514,7 +2514,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog_mode": CatalogWriteMode.APPEND},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         # Act
@@ -2602,7 +2602,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog_mode": CatalogWriteMode.APPEND},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2614,7 +2614,7 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         # assert handler[0].data == [trade_tick, trade_tick2]
-        assert catalog.query_last_timestamp(
+        assert catalog.query_timestamp_bound(
             TradeTick,
             instrument_id=ETHUSDT_BINANCE.id,
         ) == time_object_to_dt(
@@ -2659,7 +2659,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog_mode": CatalogWriteMode.NEWFILE},
+            params={"update_catalog_mode": UpdateCatalogMode.NEWFILE},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2671,7 +2671,7 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         # assert handler[0].data == [trade_tick, trade_tick2]
-        assert catalog.query_last_timestamp(
+        assert catalog.query_timestamp_bound(
             TradeTick,
             instrument_id=ETHUSDT_BINANCE.id,
         ) == time_object_to_dt(

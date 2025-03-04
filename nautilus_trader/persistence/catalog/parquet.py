@@ -671,20 +671,22 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         return dataset.to_table(filter=filter_)
 
-    def query_last_timestamp(
+    def query_timestamp_bound(
         self,
         data_cls: type,
         instrument_id: str | None = None,
         bar_type: str | None = None,
         ts_column: str = "ts_init",
+        is_last: bool = True,
     ) -> pd.Timestamp | None:
         if data_cls == Instrument:
             for instrument_type in Instrument.__subclasses__():
-                last_timestamp = self._query_last_timestamp(
+                last_timestamp = self._query_timestamp_bound(
                     data_cls=instrument_type,
                     instrument_id=instrument_id,
                     bar_type=bar_type,
                     ts_column=ts_column,
+                    is_last=is_last,
                 )
 
                 if last_timestamp is not None:
@@ -692,19 +694,21 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             return None
 
-        return self._query_last_timestamp(
+        return self._query_timestamp_bound(
             data_cls=data_cls,
             instrument_id=instrument_id,
             bar_type=bar_type,
             ts_column=ts_column,
+            is_last=is_last,
         )
 
-    def _query_last_timestamp(
+    def _query_timestamp_bound(
         self,
         data_cls: type,
         instrument_id: str | None = None,
         bar_type: str | None = None,
         ts_column: str = "ts_init",
+        is_last: bool = True,
     ) -> pd.Timestamp | None:
         file_prefix = class_to_filename(data_cls)
         dataset_path = f"{self.path}/data/{file_prefix}"
@@ -722,8 +726,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         if dataset is None:
             return None
 
+        query_sort = "descending" if is_last else "ascending"
+
         return time_object_to_dt(
-            dataset.sort_by([(ts_column, "descending")]).head(1)[ts_column].to_pylist()[0],
+            dataset.sort_by([(ts_column, query_sort)]).head(1)[ts_column].to_pylist()[0],
         )
 
     def _build_query(
