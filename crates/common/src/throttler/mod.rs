@@ -13,15 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod callbacks;
 pub mod inner;
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{
+    cell::{RefCell, UnsafeCell},
+    fmt::Debug,
+    rc::Rc,
+};
 
-use callbacks::{ThrottlerProcess, ThrottlerResume};
-use inner::InnerThrottler;
+use inner::Throttler;
+use nautilus_core::UUID4;
 
-use crate::clock::Clock;
+use crate::{
+    actor::{Actor, register_actor},
+    clock::Clock,
+};
 
 /// Represents a throttling limit per interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,105 +44,20 @@ impl RateLimit {
     }
 }
 
-/// Shareable reference to an [`InnerThrottler`]
-///
-/// Throttler takes messages of type T and callback of type F for dropping
-/// or processing messages.
-#[derive(Clone)]
-pub struct Throttler<T, F> {
-    inner: Rc<RefCell<InnerThrottler<T, F>>>,
-}
-
-impl<T, F> Debug for Throttler<T, F>
-where
-    T: Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(Throttler))
-            .field("inner", &self.inner)
-            .finish()
-    }
-}
-
-impl<T, F> Throttler<T, F> {
-    /// Creates a new [`Throttler`] instance.
-    pub fn new(
-        rate_limit: RateLimit,
-        clock: Rc<RefCell<dyn Clock>>,
-        timer_name: String,
-        output_send: F,
-        output_drop: Option<F>,
-    ) -> Self {
-        let inner = InnerThrottler::new(
-            rate_limit.limit,
-            rate_limit.interval_ns,
-            clock,
-            timer_name,
-            output_send,
-            output_drop,
-        );
-
-        Self {
-            inner: Rc::new(RefCell::new(inner)),
-        }
-    }
-
-    #[must_use]
-    pub fn qsize(&self) -> usize {
-        let inner = self.inner.borrow();
-        inner.buffer.len()
-    }
-
-    pub fn reset(&self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.reset();
-    }
-
-    #[must_use]
-    pub fn used(&self) -> f64 {
-        let inner = self.inner.borrow();
-        inner.used()
-    }
-}
-
-impl<T, F> Throttler<T, F>
-where
-    T: 'static,
-    F: Fn(T) + 'static,
-{
-    pub fn send(&self, msg: T) {
-        let throttler_clone = Self {
-            inner: self.inner.clone(),
-        };
-        let mut inner = self.inner.borrow_mut();
-        inner.recv_count += 1;
-
-        if inner.is_limiting || inner.delta_next() > 0 {
-            inner.limit_msg(msg, throttler_clone);
-        } else {
-            inner.send_msg(msg);
-        }
-    }
-
-    fn get_process_callback(&self) -> ThrottlerProcess<T, F> {
-        ThrottlerProcess::new(self.inner.clone())
-    }
-
-    fn get_resume_callback(&self) -> ThrottlerResume<T, F> {
-        ThrottlerResume::new(self.inner.clone())
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{RefCell, UnsafeCell},
+        rc::Rc,
+    };
 
+    use nautilus_core::UUID4;
     use rstest::{fixture, rstest};
 
-    use super::{RateLimit, Throttler};
+    use super::{RateLimit, inner::Throttler};
     use crate::clock::TestClock;
 
     /// Test throttler with default values for testing
@@ -144,9 +65,15 @@ mod tests {
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
     struct TestThrottler {
-        throttler: Throttler<u64, Box<dyn Fn(u64)>>,
+        throttler: Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>,
         clock: Rc<RefCell<TestClock>>,
         interval: u64,
+    }
+
+    impl TestThrottler {
+        pub fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
+            unsafe { &mut *self.throttler.get() }
+        }
     }
 
     #[fixture]
@@ -158,15 +85,19 @@ mod tests {
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
         let interval = rate_limit.interval_ns;
+        let actor_id = UUID4::new();
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit,
+                rate_limit.limit,
+                rate_limit.interval_ns,
                 clock,
                 "buffer_timer".to_string(),
                 output_send,
                 None,
-            ),
+                actor_id,
+            )
+            .to_actor(),
             clock: inner_clock,
             interval,
         }
@@ -184,56 +115,58 @@ mod tests {
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
         let interval = rate_limit.interval_ns;
+        let actor_id = UUID4::new();
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit,
+                rate_limit.limit,
+                rate_limit.interval_ns,
                 clock,
                 "dropper_timer".to_string(),
                 output_send,
                 Some(output_drop),
-            ),
+                actor_id,
+            )
+            .to_actor(),
             clock: inner_clock,
             interval,
         }
     }
 
     #[rstest]
-    fn test_buffering_send_to_limit_becomes_throttled(mut test_throttler_buffered: TestThrottler) {
-        let throttler = &mut test_throttler_buffered.throttler;
+    fn test_buffering_send_to_limit_becomes_throttled(test_throttler_buffered: TestThrottler) {
+        let throttler = test_throttler_buffered.get_throttler();
         for _ in 0..6 {
             throttler.send(42);
         }
         assert_eq!(throttler.qsize(), 1);
 
-        let inner = throttler.inner.borrow();
-        assert!(inner.is_limiting);
-        assert_eq!(inner.recv_count, 6);
-        assert_eq!(inner.sent_count, 5);
-        assert_eq!(inner.clock.borrow().timer_names(), vec!["buffer_timer"]);
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 5);
+        assert_eq!(throttler.clock.borrow().timer_names(), vec!["buffer_timer"]);
     }
 
     #[rstest]
     fn test_buffering_used_when_sent_to_limit_returns_one(
         mut test_throttler_buffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_buffered.throttler;
+        let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..5 {
             throttler.send(42);
         }
 
-        let inner = throttler.inner.borrow();
-        assert_eq!(inner.used(), 1.0);
-        assert_eq!(inner.recv_count, 5);
-        assert_eq!(inner.sent_count, 5);
+        assert_eq!(throttler.used(), 1.0);
+        assert_eq!(throttler.recv_count, 5);
+        assert_eq!(throttler.sent_count, 5);
     }
 
     #[rstest]
     fn test_buffering_used_when_half_interval_from_limit_returns_one(
         mut test_throttler_buffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_buffered.throttler;
+        let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..5 {
             throttler.send(42);
@@ -246,33 +179,31 @@ mod tests {
             clock.advance_time(half_interval.into(), true);
         }
 
-        let inner = throttler.inner.borrow();
-        assert_eq!(inner.used(), 1.0);
-        assert_eq!(inner.recv_count, 5);
-        assert_eq!(inner.sent_count, 5);
+        assert_eq!(throttler.used(), 1.0);
+        assert_eq!(throttler.recv_count, 5);
+        assert_eq!(throttler.sent_count, 5);
     }
 
     #[rstest]
     fn test_buffering_used_before_limit_when_halfway_returns_half(
         mut test_throttler_buffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_buffered.throttler;
+        let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..3 {
             throttler.send(42);
         }
 
-        let inner = throttler.inner.borrow();
-        assert_eq!(inner.used(), 0.6);
-        assert_eq!(inner.recv_count, 3);
-        assert_eq!(inner.sent_count, 3);
+        assert_eq!(throttler.used(), 0.6);
+        assert_eq!(throttler.recv_count, 3);
+        assert_eq!(throttler.sent_count, 3);
     }
 
     #[rstest]
     fn test_buffering_refresh_when_at_limit_sends_remaining_items(
         mut test_throttler_buffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_buffered.throttler;
+        let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..6 {
             throttler.send(42);
@@ -293,23 +224,20 @@ mod tests {
         }
 
         // Assert final state
-        {
-            let inner = throttler.inner.borrow();
-            assert_eq!(inner.used(), 0.2);
-            assert_eq!(inner.recv_count, 6);
-            assert_eq!(inner.sent_count, 6);
-            assert_eq!(inner.qsize(), 0);
-        }
+        assert_eq!(throttler.used(), 0.2);
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 6);
+        assert_eq!(throttler.qsize(), 0);
     }
 
     #[rstest]
     fn test_buffering_send_message_after_buffering_message(
         mut test_throttler_buffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_buffered.throttler;
+        let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..6 {
-            throttler.send(42);
+            throttler.send(43);
         }
 
         // Advance time and process events
@@ -331,20 +259,17 @@ mod tests {
         }
 
         // Assert final state
-        {
-            let inner = throttler.inner.borrow();
-            assert_eq!(inner.used(), 1.0);
-            assert_eq!(inner.recv_count, 12);
-            assert_eq!(inner.sent_count, 10);
-            assert_eq!(inner.qsize(), 2);
-        }
+        assert_eq!(throttler.used(), 1.0);
+        assert_eq!(throttler.recv_count, 12);
+        assert_eq!(throttler.sent_count, 10);
+        assert_eq!(throttler.qsize(), 2);
     }
 
     #[rstest]
     fn test_buffering_send_message_after_halfway_after_buffering_message(
         mut test_throttler_buffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_buffered.throttler;
+        let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..6 {
             throttler.send(42);
@@ -369,48 +294,46 @@ mod tests {
         }
 
         // Assert final state
-        {
-            let inner = throttler.inner.borrow();
-            assert_eq!(inner.used(), 0.8);
-            assert_eq!(inner.recv_count, 9);
-            assert_eq!(inner.sent_count, 9);
-            assert_eq!(inner.qsize(), 0);
-        }
+        assert_eq!(throttler.used(), 0.8);
+        assert_eq!(throttler.recv_count, 9);
+        assert_eq!(throttler.sent_count, 9);
+        assert_eq!(throttler.qsize(), 0);
     }
 
     #[rstest]
     fn test_dropping_send_sends_message_to_handler(mut test_throttler_unbuffered: TestThrottler) {
-        let throttler = &mut test_throttler_unbuffered.throttler;
+        let throttler = test_throttler_unbuffered.get_throttler();
         throttler.send(42);
-        let inner = throttler.inner.borrow();
 
-        assert!(!inner.is_limiting);
-        assert_eq!(inner.recv_count, 1);
-        assert_eq!(inner.sent_count, 1);
+        assert!(!throttler.is_limiting);
+        assert_eq!(throttler.recv_count, 1);
+        assert_eq!(throttler.sent_count, 1);
     }
 
     #[rstest]
     fn test_dropping_send_to_limit_drops_message(mut test_throttler_unbuffered: TestThrottler) {
-        let throttler = &mut test_throttler_unbuffered.throttler;
+        let throttler = test_throttler_unbuffered.get_throttler();
         for _ in 0..6 {
             throttler.send(42);
         }
         assert_eq!(throttler.qsize(), 0);
 
-        let inner = throttler.inner.borrow();
-        assert!(inner.is_limiting);
-        assert_eq!(inner.used(), 1.0);
-        assert_eq!(inner.clock.borrow().timer_count(), 1);
-        assert_eq!(inner.clock.borrow().timer_names(), vec!["dropper_timer"]);
-        assert_eq!(inner.recv_count, 6);
-        assert_eq!(inner.sent_count, 5);
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.used(), 1.0);
+        assert_eq!(throttler.clock.borrow().timer_count(), 1);
+        assert_eq!(
+            throttler.clock.borrow().timer_names(),
+            vec!["dropper_timer"]
+        );
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 5);
     }
 
     #[rstest]
     fn test_dropping_advance_time_when_at_limit_dropped_message(
         mut test_throttler_unbuffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_unbuffered.throttler;
+        let throttler = test_throttler_unbuffered.get_throttler();
         for _ in 0..6 {
             throttler.send(42);
         }
@@ -429,19 +352,18 @@ mod tests {
             }
         }
 
-        let inner = throttler.inner.borrow();
-        assert_eq!(inner.clock.borrow().timer_count(), 0);
-        assert!(!inner.is_limiting);
-        assert_eq!(inner.used(), 0.0);
-        assert_eq!(inner.recv_count, 6);
-        assert_eq!(inner.sent_count, 5);
+        assert_eq!(throttler.clock.borrow().timer_count(), 0);
+        assert!(!throttler.is_limiting);
+        assert_eq!(throttler.used(), 0.0);
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 5);
     }
 
     #[rstest]
     fn test_dropping_send_message_after_dropping_message(
         mut test_throttler_unbuffered: TestThrottler,
     ) {
-        let throttler = &mut test_throttler_unbuffered.throttler;
+        let throttler = test_throttler_unbuffered.get_throttler();
         for _ in 0..6 {
             throttler.send(42);
         }
@@ -462,12 +384,11 @@ mod tests {
 
         throttler.send(42);
 
-        let inner = throttler.inner.borrow();
-        assert_eq!(inner.used(), 0.2);
-        assert_eq!(inner.clock.borrow().timer_count(), 0);
-        assert!(!inner.is_limiting);
-        assert_eq!(inner.recv_count, 7);
-        assert_eq!(inner.sent_count, 6);
+        assert_eq!(throttler.used(), 0.2);
+        assert_eq!(throttler.clock.borrow().timer_count(), 0);
+        assert!(!throttler.is_limiting);
+        assert_eq!(throttler.recv_count, 7);
+        assert_eq!(throttler.sent_count, 6);
     }
 
     use proptest::prelude::*;
@@ -492,11 +413,10 @@ mod tests {
     }
 
     fn test_throttler_with_inputs(inputs: Vec<ThrottlerInput>) {
-        let TestThrottler {
-            throttler,
-            clock: test_clock,
-            interval,
-        } = test_throttler_buffered();
+        let test_throttler = test_throttler_buffered();
+        let test_clock = test_throttler.clock.clone();
+        let interval = test_throttler.interval;
+        let throttler = test_throttler.get_throttler();
         let mut sent_count = 0;
 
         for input in inputs {
@@ -522,19 +442,17 @@ mod tests {
             // * Atleast one message is buffered
             // * Timestamp queue is filled upto limit
             // * Least recent timestamp in queue exceeds interval
-            let inner = throttler.inner.borrow();
-            let buffered_messages = inner.qsize() > 0;
-            let now = inner.clock.borrow().timestamp_ns().as_u64();
-            let limit_filled_within_interval = inner
+            let buffered_messages = throttler.qsize() > 0;
+            let now = throttler.clock.borrow().timestamp_ns().as_u64();
+            let limit_filled_within_interval = throttler
                 .timestamps
-                .get(inner.limit - 1)
+                .get(throttler.limit - 1)
                 .is_some_and(|&ts| (now - ts.as_u64()) < interval);
             let expected_limiting = buffered_messages && limit_filled_within_interval;
-            assert_eq!(inner.is_limiting, expected_limiting);
+            assert_eq!(throttler.is_limiting, expected_limiting);
 
             // Message conservation
-            let inner = throttler.inner.borrow();
-            assert_eq!(sent_count, inner.sent_count + inner.qsize());
+            assert_eq!(sent_count, throttler.sent_count + throttler.qsize());
         }
 
         // Advance clock by a large amount to process all messages

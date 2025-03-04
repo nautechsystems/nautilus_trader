@@ -13,18 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
+use std::{
+    any::Any,
+    cell::{RefCell, UnsafeCell},
+    collections::VecDeque,
+    fmt::Debug,
+    marker::PhantomData,
+    rc::Rc,
+};
 
-use nautilus_core::{UnixNanos, correctness::FAILED};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 
-use super::Throttler;
-use crate::{clock::Clock, timer::TimeEventCallback};
+use crate::{
+    actor::{Actor, get_actor, get_actor_unchecked, register_actor},
+    clock::Clock,
+    messages::data::DataResponse,
+    timer::{TimeEvent, TimeEventCallback},
+};
 
 /// Throttler rate limits messages by dropping or buffering them.
 ///
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
-pub struct InnerThrottler<T, F> {
+pub struct Throttler<T, F> {
     /// The number of messages received.
     pub recv_count: usize,
     /// The number of messages sent.
@@ -39,6 +50,8 @@ pub struct InnerThrottler<T, F> {
     pub timestamps: VecDeque<UnixNanos>,
     /// The clock used to keep track of time.
     pub clock: Rc<RefCell<dyn Clock>>,
+    /// The actor ID of the throttler.
+    pub actor_id: UUID4,
     /// The interval between messages in nanoseconds.
     interval: u64,
     /// The name of the timer.
@@ -49,7 +62,25 @@ pub struct InnerThrottler<T, F> {
     output_drop: Option<F>,
 }
 
-impl<T, F> Debug for InnerThrottler<T, F>
+impl<T, F> Actor for Throttler<T, F>
+where
+    T: 'static,
+    F: Fn(T) + 'static,
+{
+    fn id(&self) -> UUID4 {
+        self.actor_id
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn handle(&self, _resp: DataResponse) {
+        // TODO: Implement
+    }
+}
+
+impl<T, F> Debug for Throttler<T, F>
 where
     T: Debug,
 {
@@ -67,7 +98,7 @@ where
     }
 }
 
-impl<T, F> InnerThrottler<T, F> {
+impl<T, F> Throttler<T, F> {
     /// Creates a new [`InnerThrottler`] instance.
     #[inline]
     pub fn new(
@@ -77,6 +108,7 @@ impl<T, F> InnerThrottler<T, F> {
         timer_name: String,
         output_send: F,
         output_drop: Option<F>,
+        actor_id: UUID4,
     ) -> Self {
         Self {
             recv_count: 0,
@@ -90,6 +122,7 @@ impl<T, F> InnerThrottler<T, F> {
             timer_name,
             output_send,
             output_drop,
+            actor_id,
         }
     }
 
@@ -160,11 +193,17 @@ impl<T, F> InnerThrottler<T, F> {
     }
 }
 
-impl<T, F> InnerThrottler<T, F>
+impl<T, F> Throttler<T, F>
 where
     T: 'static,
     F: Fn(T) + 'static,
 {
+    pub fn to_actor(self) -> Rc<UnsafeCell<Self>> {
+        let actor = Rc::new(UnsafeCell::new(self));
+        register_actor(actor.clone());
+        actor
+    }
+
     #[inline]
     pub fn send_msg(&mut self, msg: T) {
         let now = self.clock.borrow().timestamp_ns();
@@ -174,22 +213,24 @@ where
         }
         self.timestamps.push_front(now);
 
-        (self.output_send)(msg);
         self.sent_count += 1;
+        (self.output_send)(msg);
     }
 
     #[inline]
-    pub fn limit_msg(&mut self, msg: T, throttler: Throttler<T, F>) {
+    pub fn limit_msg(&mut self, msg: T) {
         let callback = if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());
-            Some(throttler.get_process_callback().into())
+            Some(TimeEventCallback::Rust(Rc::new(
+                ThrottlerProcess::<T, F>::new(self.actor_id),
+            )))
         } else {
             log::debug!("Dropping");
             if let Some(drop) = &self.output_drop {
                 drop(msg);
             }
-            Some(throttler.get_resume_callback().into())
+            Some(throttler_resume::<T, F>(self.actor_id))
         };
         if !self.is_limiting {
             log::debug!("Limiting");
@@ -197,4 +238,91 @@ where
             self.is_limiting = true;
         }
     }
+
+    #[inline]
+    pub fn send(&mut self, msg: T)
+    where
+        T: 'static,
+        F: Fn(T) + 'static,
+    {
+        self.recv_count += 1;
+
+        if self.is_limiting || self.delta_next() > 0 {
+            self.limit_msg(msg);
+        } else {
+            self.send_msg(msg);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ThrottlerProcess<T, F> {
+    actor_id: UUID4,
+    phantom_1: PhantomData<T>,
+    phantom_2: PhantomData<F>,
+}
+
+impl<T, F> ThrottlerProcess<T, F> {
+    pub fn new(actor_id: UUID4) -> Self {
+        Self {
+            actor_id,
+            phantom_1: PhantomData,
+            phantom_2: PhantomData,
+        }
+    }
+}
+
+// Dummy impls to satisfy the compiler
+impl<T, F> FnOnce<(TimeEvent,)> for ThrottlerProcess<T, F> {
+    type Output = ();
+    extern "rust-call" fn call_once(self, args: (TimeEvent,)) -> Self::Output {
+        return;
+    }
+}
+
+// Dummy impls to satisfy the compiler
+impl<T, F> FnMut<(TimeEvent,)> for ThrottlerProcess<T, F> {
+    extern "rust-call" fn call_mut(&mut self, args: (TimeEvent,)) -> Self::Output {
+        return;
+    }
+}
+
+impl<T, F> Fn<(TimeEvent,)> for ThrottlerProcess<T, F>
+where
+    T: 'static,
+    F: Fn(T) + 'static,
+{
+    extern "rust-call" fn call(&self, args: (TimeEvent,)) -> Self::Output {
+        let throttler = get_actor_unchecked::<Throttler<T, F>>(&self.actor_id);
+        while let Some(msg) = throttler.buffer.pop_back() {
+            throttler.send_msg(msg);
+
+            // Set timer to process more buffered messages
+            // if interval limit reached and there are more
+            // buffered messages to process
+            if !throttler.buffer.is_empty() && throttler.delta_next() > 0 {
+                throttler.is_limiting = true;
+
+                let process_callback =
+                    TimeEventCallback::Rust(Rc::new(ThrottlerProcess::<T, F>::new(self.actor_id)));
+                throttler.set_timer(Some(process_callback));
+                return;
+            }
+        }
+
+        throttler.is_limiting = false;
+    }
+}
+
+pub fn throttler_resume<T, F>(actor_id: UUID4) -> TimeEventCallback
+where
+    T: 'static,
+    F: Fn(T) + 'static,
+{
+    let callback = Rc::new(move |_event: TimeEvent| {
+        let throttler = get_actor_unchecked::<Throttler<T, F>>(&actor_id);
+        throttler.is_limiting = false;
+    });
+
+    TimeEventCallback::Rust(callback)
 }

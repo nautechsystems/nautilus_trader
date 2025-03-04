@@ -13,22 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{
+    any::Any,
+    cell::{RefCell, UnsafeCell},
+    collections::HashMap,
+    rc::Rc,
+    sync::OnceLock,
+};
+
 use nautilus_core::UUID4;
 
 use crate::messages::data::DataResponse;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::OnceLock;
 
 /// TODO: deprecate for `MessageHandler` trait which has all the relevant functions
-pub trait Actor {
+pub trait Actor: Any {
     fn handle(&self, resp: DataResponse); // TODO: Draft
     fn id(&self) -> UUID4;
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub struct ActorRegistry {
-    actors: RefCell<HashMap<UUID4, Rc<dyn Actor>>>,
+    actors: RefCell<HashMap<UUID4, Rc<UnsafeCell<dyn Actor>>>>,
 }
 
 impl Default for ActorRegistry {
@@ -44,11 +49,11 @@ impl ActorRegistry {
         }
     }
 
-    pub fn insert(&self, id: UUID4, actor: Rc<dyn Actor>) {
+    pub fn insert(&self, id: UUID4, actor: Rc<UnsafeCell<dyn Actor>>) {
         self.actors.borrow_mut().insert(id, actor);
     }
 
-    pub fn get(&self, id: &UUID4) -> Option<Rc<dyn Actor>> {
+    pub fn get(&self, id: &UUID4) -> Option<Rc<UnsafeCell<dyn Actor>>> {
         self.actors.borrow().get(id).cloned()
     }
 }
@@ -63,10 +68,16 @@ pub fn get_actor_registry() -> &'static ActorRegistry {
     ACTOR_REGISTRY.get_or_init(ActorRegistry::new)
 }
 
-pub fn register_actor(actor: Rc<dyn Actor>) {
-    get_actor_registry().insert(actor.id(), actor);
+pub fn register_actor(actor: Rc<UnsafeCell<dyn Actor>>) {
+    let actor_id = unsafe { &mut *actor.get() }.id();
+    get_actor_registry().insert(actor_id, actor);
 }
 
-pub fn get_actor(id: &UUID4) -> Option<Rc<dyn Actor>> {
+pub fn get_actor(id: &UUID4) -> Option<Rc<UnsafeCell<dyn Actor>>> {
     get_actor_registry().get(id)
+}
+
+pub fn get_actor_unchecked<T: Actor>(id: &UUID4) -> &mut T {
+    let actor = get_actor(id).unwrap_or_else(|| panic!("Actor for {} not found", id));
+    unsafe { &mut *(actor.get() as *mut _ as *mut T) }
 }

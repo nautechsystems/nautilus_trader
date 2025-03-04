@@ -27,13 +27,13 @@ use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
     rc::Rc,
+    sync::OnceLock,
 };
 
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
 use nautilus_model::{data::Data, identifiers::TraderId};
-use std::sync::OnceLock;
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
