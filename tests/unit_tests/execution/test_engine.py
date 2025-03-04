@@ -2470,16 +2470,16 @@ class TestExecutionEngine:
         strategy.submit_order(order_bid)
         self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
         self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
-        self.exec_engine.process(TestEventStubs.order_canceled(order_bid))
 
         strategy.submit_order(order_ask)
         self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
         self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
-        self.exec_engine.process(TestEventStubs.order_canceled(order_ask))
 
         # Act
         strategy.cancel_order(order_bid)
         strategy.cancel_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_canceled(order_bid))
+        self.exec_engine.process(TestEventStubs.order_canceled(order_ask))
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
@@ -2488,6 +2488,70 @@ class TestExecutionEngine:
         assert len(own_book.bids_to_dict()) == 0
         assert self.cache.own_bid_orders(instrument.id) == {}
         assert self.cache.own_ask_orders(instrument.id) == {}
+
+    def test_own_book_status_filtering(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        strategy.cancel_order(order_bid)
+        strategy.cancel_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order_bid))
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order_ask))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.event_count == 8
+        assert len(own_book.asks_to_dict()) == 1  # Order is there with no filtering
+        assert len(own_book.bids_to_dict()) == 1  # Order is there with no filtering
+        assert (
+            self.cache.own_bid_orders(
+                instrument.id,
+                status={OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED},
+            )
+            == {}
+        )
+        assert (
+            self.cache.own_ask_orders(
+                instrument.id,
+                status={OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED},
+            )
+            == {}
+        )
 
     def test_filled_order_removes_from_own_book(self) -> None:
         # Arrange
@@ -2601,5 +2665,9 @@ class TestExecutionEngine:
         assert own_order_ask.price == new_ask_price
         assert own_order_ask.status == nautilus_pyo3.OrderStatus.ACCEPTED
 
-        assert self.cache.own_bid_orders(instrument.id) == {Decimal("9.0"): [order_bid]}
-        assert self.cache.own_ask_orders(instrument.id) == {Decimal("12.0"): [order_ask]}
+        assert self.cache.own_bid_orders(instrument.id, status={OrderStatus.ACCEPTED}) == {
+            Decimal("9.0"): [order_bid],
+        }
+        assert self.cache.own_ask_orders(instrument.id, status={OrderStatus.ACCEPTED}) == {
+            Decimal("12.0"): [order_ask],
+        }
