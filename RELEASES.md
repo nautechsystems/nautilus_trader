@@ -63,7 +63,8 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
 - Refined Rust date functions (#2356), thanks @faysou
 - Refined parsing of IB symbols (#2388), thanks @faysou
-- Refined base_template behaviour in parquet write_data (#2389), thanks @faysou
+- Refined `base_template` behaviour in parquet write_data (#2389), thanks @faysou
+- Refined mixed catalog client requests (#2405), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
