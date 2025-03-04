@@ -63,6 +63,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
 - Refined Rust date functions (#2356), thanks @faysou
 - Refined parsing of IB symbols (#2388), thanks @faysou
+- Refined base_template behaviour in parquet write_data (#2389), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -98,12 +99,15 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Fixed bar timestamps for IB (#2380), thanks @Endura2024
 - Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
 - Fixed subscribe composite bars (#2390), thanks @faysou
+- Fixed invalid link in IB docs (#2401), thanks @stefansimik
 
 ### Documentation Updates
 - Added backtest clock and timers example (#2327), thanks @stefansimik
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
 - Added backtest portfolio example (#2362), thanks @stefansimik
 - Added backtest cache example (#2370), thanks @stefansimik
+- Added backtest cascaded indicators example (#2398), thanks @stefansimik
+- Added backtest custom event with msgbus example (#2400), thanks @stefansimik
 - Added indicators example (#2396), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik

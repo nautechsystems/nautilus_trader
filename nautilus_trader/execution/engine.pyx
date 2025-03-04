@@ -893,9 +893,6 @@ cdef class ExecutionEngine(Component):
             )
             return
 
-        if self.manage_own_order_books:
-            self._insert_own_book_order(order)
-
         # Check if converting quote quantity
         cdef Price last_px = None
         cdef Quantity base_qty = None
@@ -906,6 +903,9 @@ cdef class ExecutionEngine(Component):
                 return  # Denied
             base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
             self._set_order_base_qty(order, base_qty)
+
+        if self.manage_own_order_books:
+            self._insert_own_book_order(order)
 
         # Send to execution client
         client.submit_order(command)
@@ -927,12 +927,6 @@ cdef class ExecutionEngine(Component):
             )
             return
 
-        if self.manage_own_order_books:
-            own_book = self._get_or_init_own_order_book(instrument.id)
-            for order in command.order_list.orders:
-                if self._should_handle_own_book_order(order):
-                    own_book.add(order.to_own_book_order())
-
         # Check if converting quote quantity
         cdef Price last_px = None
         cdef Quantity quote_qty = None
@@ -950,6 +944,12 @@ cdef class ExecutionEngine(Component):
                     return  # Denied
                 base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
                 self._set_order_base_qty(order, base_qty)
+
+        if self.manage_own_order_books:
+            own_book = self._get_or_init_own_order_book(instrument.id)
+            for order in command.order_list.orders:
+                if self._should_handle_own_book_order(order):
+                    own_book.add(order.to_own_book_order())
 
         # Send to execution client
         client.submit_order_list(command)

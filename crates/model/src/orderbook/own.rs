@@ -146,7 +146,7 @@ impl Debug for OwnBookOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(client_order_id={}, side={}, price={}, size={}, order_type={}, time_in_force={}, ts_init={})",
+            "{}(client_order_id={}, side={}, price={}, size={}, order_type={}, time_in_force={}, status={}, ts_init={})",
             stringify!(OwnBookOrder),
             self.client_order_id,
             self.side,
@@ -154,6 +154,7 @@ impl Debug for OwnBookOrder {
             self.size,
             self.order_type,
             self.time_in_force,
+            self.status,
             self.ts_init,
         )
     }
@@ -163,13 +164,14 @@ impl Display for OwnBookOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{}",
             self.client_order_id,
             self.side,
             self.price,
             self.size,
             self.order_type,
             self.time_in_force,
+            self.status,
             self.ts_init,
         )
     }
@@ -726,7 +728,7 @@ mod tests {
     fn test_debug(own_order: OwnBookOrder) {
         assert_eq!(
             format!("{own_order:?}"),
-            "OwnBookOrder(client_order_id=O-123456789, side=BUY, price=100.00, size=10, order_type=LIMIT, time_in_force=GTC, ts_init=0)"
+            "OwnBookOrder(client_order_id=O-123456789, side=BUY, price=100.00, size=10, order_type=LIMIT, time_in_force=GTC, status=SUBMITTED, ts_init=0)"
         );
     }
 
@@ -734,7 +736,7 @@ mod tests {
     fn test_display(own_order: OwnBookOrder) {
         assert_eq!(
             own_order.to_string(),
-            "O-123456789,BUY,100.00,10,LIMIT,GTC,0".to_string()
+            "O-123456789,BUY,100.00,10,LIMIT,GTC,SUBMITTED,0".to_string()
         );
     }
 

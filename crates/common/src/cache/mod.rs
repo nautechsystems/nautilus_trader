@@ -2318,7 +2318,7 @@ impl Cache {
             PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
                 quotes.front().map(|quote| {
                     Price::new(
-                        (quote.ask_price.as_f64() + quote.bid_price.as_f64()) / 2.0,
+                        f64::midpoint(quote.ask_price.as_f64(), quote.bid_price.as_f64()),
                         quote.bid_price.precision + 1,
                     )
                 })

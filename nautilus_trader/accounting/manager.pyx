@@ -205,9 +205,9 @@ cdef class AccountsManager:
             Order order
         for order in orders_open:
             assert order.instrument_id == instrument.id
-            assert order.is_open_c()
 
-            if not order.has_price_c() and not order.has_trigger_price_c():
+            if not order.is_open_c() or (not order.has_price_c() and not order.has_trigger_price_c()):
+                # Does not contribute to locked balance
                 continue
 
             # Calculate balance locked

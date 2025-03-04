@@ -41,7 +41,7 @@ pub struct TestClock_Py(Box<TestClock>);
 impl TestClock_Py {
     #[new]
     fn py_new() -> Self {
-        Self(Box::new(TestClock::new()))
+        Self(Box::default())
     }
 
     fn advance_time(&mut self, to_time_ns: u64, set_time: bool) -> Vec<TimeEvent> {
@@ -129,7 +129,7 @@ pub struct LiveClock_Py(Box<LiveClock>);
 impl LiveClock_Py {
     #[new]
     fn py_new() -> Self {
-        Self(Box::new(LiveClock::new()))
+        Self(Box::default())
     }
 
     fn register_default_handler(&mut self, callback: PyObject) {

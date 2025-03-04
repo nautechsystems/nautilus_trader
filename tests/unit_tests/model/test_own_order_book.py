@@ -107,10 +107,10 @@ def test_own_book_order_repr():
 
     expected_repr = (
         "OwnBookOrder(client_order_id=O-12345, side=BUY, price=100.00, size=10, "
-        "order_type=LIMIT, time_in_force=GTC, ts_init=0)"
+        "order_type=LIMIT, time_in_force=GTC, status=ACCEPTED, ts_init=0)"
     )
     assert repr(order) == expected_repr
-    assert str(order) == "O-12345,BUY,100.00,10,LIMIT,GTC,0"
+    assert str(order) == "O-12345,BUY,100.00,10,LIMIT,GTC,ACCEPTED,0"
 
 
 # ------------------------------------------------------------------------------

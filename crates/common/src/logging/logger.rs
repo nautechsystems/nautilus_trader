@@ -122,13 +122,13 @@ impl LoggerConfig {
                     _ => {
                         config.component_level.insert(Ustr::from(k), lvl);
                     }
-                };
+                }
             }
         }
         Ok(config)
     }
 
-    /// Retrieves the logger configuration from the "NAUTILUS_LOG" environment variable.
+    /// Retrieves the logger configuration from the "`NAUTILUS_LOG`" environment variable.
     ///
     /// # Errors
     ///

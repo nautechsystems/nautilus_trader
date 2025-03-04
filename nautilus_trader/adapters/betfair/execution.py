@@ -770,11 +770,11 @@ class BetfairExecutionClient(LiveExecutionClient):
         if isinstance(update, OCM):
             self.create_task(self._handle_order_stream_update(update))
         elif isinstance(update, Connection):
-            pass
+            self._log.info(f"Connection opened, connection_id={update.connection_id}")
         elif isinstance(update, Status):
             self._handle_status_message(update=update)
         else:
-            raise RuntimeError
+            raise RuntimeError(f"Cannot handle order stream update: {update}")
 
     async def _handle_order_stream_update(self, order_change_message: OCM) -> None:  # noqa: C901
         for market in order_change_message.oc or []:
@@ -871,12 +871,25 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Handle update containing 'E' (executable) order update
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
-        PyCondition.not_none(client_order_id, "client_order_id")
+        if client_order_id is None:
+            self._log.error(
+                f"Cannot handle update: ClientOrderId not found for {venue_order_id!r}",
+            )
+            return
 
         order = self._cache.order(client_order_id=client_order_id)
+        order = self._cache.order(client_order_id=client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot handle update: order not found for {client_order_id!r}",
+            )
+            return
+
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot handle update: no instrument found for {order.instrument_id}")
+            self._log.error(
+                f"Cannot handle update: no instrument found for {order.instrument_id}",
+            )
             return
 
         # Check for any portion executed
@@ -930,7 +943,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     new_size / total_size
                 )
                 self._log.debug(
-                    f"Calculating fill price {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}",
+                    f"Calculating fill price: {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}",
                 )
                 return price
 
@@ -941,19 +954,32 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle 'EC' (execution complete) order updates.
         """
-        venue_order_id = VenueOrderId(str(unmatched_order.id))
-        client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
-        PyCondition.not_none(client_order_id, "client_order_id")
-
-        order = self._cache.order(client_order_id=client_order_id)
-        instrument = self._cache.instrument(order.instrument_id)
-        if instrument is None:
-            self._log.error(f"Cannot handle update: no instrument found for {order.instrument_id}")
-            return
-
         # TODO: Uncomment for development
         # self._log.info(f"Received {unmatched_order}", LogColor.MAGENTA)
 
+        venue_order_id = VenueOrderId(str(unmatched_order.id))
+        client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
+        if client_order_id is None:
+            self._log.error(
+                f"Cannot handle update: ClientOrderId not found for {venue_order_id!r}",
+            )
+            return
+
+        order = self._cache.order(client_order_id=client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot handle update: order not found for {client_order_id!r}",
+            )
+            return
+
+        instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle update: no instrument found for {order.instrument_id}",
+            )
+            return
+
+        # Check for fill
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
@@ -982,6 +1008,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 self._published_executions[client_order_id].append(trade_id)
 
+        # Check for cancel
         cancel_qty = unmatched_order.sc + unmatched_order.sl + unmatched_order.sv
         if cancel_qty > 0 and not order.is_closed:
             # TODO: Occasionally this assert fails during normal trading,
@@ -997,24 +1024,42 @@ class BetfairExecutionClient(LiveExecutionClient):
             # If this is the result of a ModifyOrder, we don't want to emit a cancel
             if key not in self._pending_update_order_client_ids:
                 # The remainder of this order has been canceled
-                cancelled_ts = unmatched_order.cd or unmatched_order.ld or unmatched_order.md
-                cancelled_ts = (
-                    millis_to_nanos(cancelled_ts)
-                    if cancelled_ts is not None
-                    else self._clock.timestamp_ns()
-                )
+                canceled_ts = self._get_canceled_timestamp(unmatched_order)
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=instrument.id,
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
-                    ts_event=cancelled_ts,
+                    ts_event=canceled_ts,
                 )
+        # Check for lapse
+        elif unmatched_order.lapse_status_reason_code is not None:
+            # This order has lapsed. No lapsed size was found in the above check for cancel,
+            # so we assume size lapsed None implies the entire order.
+            self._log.info(
+                f"{client_order_id!r}, {venue_order_id!r} lapsed: "
+                f"lapse_status={unmatched_order.lapse_status_reason_code}, "
+                f"size_lapsed={unmatched_order.sl}",
+            )
+            canceled_ts = self._get_canceled_timestamp(unmatched_order)
+            self.generate_order_canceled(
+                strategy_id=order.strategy_id,
+                instrument_id=instrument.id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=canceled_ts,
+            )
 
         # Market order will not be in self.published_executions
-        if client_order_id in self._published_executions:
-            # This execution is complete - no need to track this anymore
-            del self._published_executions[client_order_id]
+        # This execution is complete - no need to track this anymore
+        self._published_executions.pop(client_order_id, None)
+
+    def _get_canceled_timestamp(self, unmatched_order: UnmatchedOrder):
+        canceled_ts = unmatched_order.cd or unmatched_order.ld or unmatched_order.md
+        canceled_ts = (
+            millis_to_nanos(canceled_ts) if canceled_ts is not None else self._clock.timestamp_ns()
+        )
+        return canceled_ts
 
     async def _wait_for_order(
         self,

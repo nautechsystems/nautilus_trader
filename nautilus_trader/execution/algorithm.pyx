@@ -235,6 +235,11 @@ cdef class ExecAlgorithm(Actor):
         primary.apply(updated)
         self.cache.update_order(primary)
 
+        # Update own book
+        own_book = self.cache.own_order_book(primary.instrument_id)
+        if own_book is not None:
+            own_book.update(primary.to_own_book_order())
+
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, TradingCommand command):
@@ -1398,6 +1403,11 @@ cdef class ExecAlgorithm(Actor):
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            # Update own book
+            own_book = self.cache.own_order_book(order.instrument_id)
+            if own_book is not None:
+                own_book.update(order.to_own_book_order())
 
             # Publish event
             self._msgbus.publish_c(

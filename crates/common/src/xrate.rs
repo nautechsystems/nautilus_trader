@@ -162,7 +162,7 @@ mod tests {
         )
         .unwrap();
 
-        let expected = (1.1000 + 1.1002) / 2.0;
+        let expected = f64::midpoint(1.1000, 1.1002);
         assert!((rate.unwrap() - expected).abs() < 0.0001);
     }
 
@@ -181,10 +181,11 @@ mod tests {
     }
 
     #[rstest(
-        price_type, expected,
+        price_type,
+        expected,
         case(PriceType::Bid, 1.1000),
         case(PriceType::Ask, 1.1002),
-        case(PriceType::Mid, (1.1000 + 1.1002) / 2.0)
+        case(PriceType::Mid, f64::midpoint(1.1000, 1.1002))
     )]
     fn test_direct_pair(price_type: PriceType, expected: f64) {
         let (quotes_bid, quotes_ask) = setup_test_quotes();
@@ -241,8 +242,8 @@ mod tests {
         )
         .unwrap();
         // Expected rate: (EUR/USD mid) * (USD/JPY mid)
-        let mid_eur_usd = (1.1000 + 1.1002) / 2.0;
-        let mid_usd_jpy = (110.00 + 110.02) / 2.0;
+        let mid_eur_usd = f64::midpoint(1.1000, 1.1002);
+        let mid_usd_jpy = f64::midpoint(110.00, 110.02);
         let expected = mid_eur_usd * mid_usd_jpy;
         if let Some(val) = rate {
             assert!((val - expected).abs() < 0.1);
@@ -340,7 +341,7 @@ mod tests {
         .unwrap();
 
         // Expect the direct EUR/USD mid rate
-        let expected = (1.1 + 1.1002) / 2.0;
+        let expected = f64::midpoint(1.1, 1.1002);
         assert!((rate.unwrap() - expected).abs() < 0.0001);
     }
 
@@ -367,8 +368,9 @@ mod tests {
         .unwrap();
 
         // Both paths should be consistent:
-        let direct: f64 = (1.1000_f64 + 1.1002_f64) / 2.0;
-        let indirect: f64 = ((0.8461_f64 + 0.8463_f64) / 2.0) * ((1.3000_f64 + 1.3002_f64) / 2.0);
+        let direct: f64 = f64::midpoint(1.1000_f64, 1.1002_f64);
+        let indirect: f64 =
+            f64::midpoint(0.8461_f64, 0.8463_f64) * f64::midpoint(1.3000_f64, 1.3002_f64);
         assert!((direct - indirect).abs() < 0.0001_f64);
         assert!((rate.unwrap() - direct).abs() < 0.0001_f64);
     }

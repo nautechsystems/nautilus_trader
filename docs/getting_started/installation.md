@@ -96,15 +96,6 @@ To programmatically request and list available versions:
 
 ## From Source
 
-Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
-You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
-
-For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured with --enable-shared:
-
-    PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
-
-See the [PyO3 user guide](https://pyo3.rs/latest/getting-started#virtualenvs) for more details.
-
 It's possible to install from source using pip if you first install the build dependencies
 as specified in the `pyproject.toml`. We highly recommend installing using [uv](https://docs.astral.sh/uv) as below.
 

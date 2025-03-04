@@ -63,7 +63,7 @@ impl DerefMut for TestClock_API {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn test_clock_new() -> TestClock_API {
-    TestClock_API(Box::new(TestClock::new()))
+    TestClock_API(Box::default())
 }
 
 #[unsafe(no_mangle)]
@@ -280,7 +280,7 @@ impl DerefMut for LiveClock_API {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn live_clock_new() -> LiveClock_API {
-    LiveClock_API(Box::new(LiveClock::new()))
+    LiveClock_API(Box::default())
 }
 
 #[unsafe(no_mangle)]
