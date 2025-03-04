@@ -535,6 +535,7 @@ fn call_python_with_time_event(
     ts_init: UnixNanos,
     callback: &PyObject,
 ) {
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::types::PyCapsule;
 
     Python::with_gil(|py| {

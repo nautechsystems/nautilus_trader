@@ -49,7 +49,7 @@ unsafe impl Sync for MessageBusWrapper {}
 pub static MESSAGE_BUS: OnceLock<MessageBusWrapper> = OnceLock::new();
 
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
-    if let Err(_) = MESSAGE_BUS.set(MessageBusWrapper(msgbus)) {
+    if MESSAGE_BUS.set(MessageBusWrapper(msgbus)).is_err() {
         panic!("Failed to set MessageBus");
     }
 }

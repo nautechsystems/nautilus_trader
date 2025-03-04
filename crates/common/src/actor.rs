@@ -77,6 +77,7 @@ pub fn get_actor(id: &UUID4) -> Option<Rc<UnsafeCell<dyn Actor>>> {
     get_actor_registry().get(id)
 }
 
+#[allow(clippy::mut_from_ref)]
 pub fn get_actor_unchecked<T: Actor>(id: &UUID4) -> &mut T {
     let actor = get_actor(id).unwrap_or_else(|| panic!("Actor for {} not found", id));
     unsafe { &mut *(actor.get() as *mut _ as *mut T) }

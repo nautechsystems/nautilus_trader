@@ -290,16 +290,12 @@ impl<T, F> ThrottlerProcess<T, F> {
 // Dummy impls to satisfy the compiler
 impl<T, F> FnOnce<(TimeEvent,)> for ThrottlerProcess<T, F> {
     type Output = ();
-    extern "rust-call" fn call_once(self, args: (TimeEvent,)) -> Self::Output {
-        return;
-    }
+    extern "rust-call" fn call_once(self, _args: (TimeEvent,)) -> Self::Output {}
 }
 
 // Dummy impls to satisfy the compiler
 impl<T, F> FnMut<(TimeEvent,)> for ThrottlerProcess<T, F> {
-    extern "rust-call" fn call_mut(&mut self, args: (TimeEvent,)) -> Self::Output {
-        return;
-    }
+    extern "rust-call" fn call_mut(&mut self, _args: (TimeEvent,)) -> Self::Output {}
 }
 
 impl<T, F> Fn<(TimeEvent,)> for ThrottlerProcess<T, F>
@@ -307,7 +303,7 @@ where
     T: 'static,
     F: Fn(T) + 'static,
 {
-    extern "rust-call" fn call(&self, args: (TimeEvent,)) -> Self::Output {
+    extern "rust-call" fn call(&self, _args: (TimeEvent,)) -> Self::Output {
         let throttler = get_actor_unchecked::<Throttler<T, F>>(&self.actor_id);
         while let Some(msg) = throttler.buffer.pop_back() {
             throttler.send_msg(msg);
@@ -358,17 +354,20 @@ mod tests {
     use super::{RateLimit, Throttler};
     use crate::clock::TestClock;
 
+    type SharedThrottler = Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>;
+
     /// Test throttler with default values for testing
     ///
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
     struct TestThrottler {
-        throttler: Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>,
+        throttler: SharedThrottler,
         clock: Rc<RefCell<TestClock>>,
         interval: u64,
     }
 
     impl TestThrottler {
+        #[allow(clippy::mut_from_ref)]
         pub fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
             unsafe { &mut *self.throttler.get() }
         }
@@ -446,9 +445,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_buffering_used_when_sent_to_limit_returns_one(
-        mut test_throttler_buffered: TestThrottler,
-    ) {
+    fn test_buffering_used_when_sent_to_limit_returns_one(test_throttler_buffered: TestThrottler) {
         let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..5 {
@@ -462,7 +459,7 @@ mod tests {
 
     #[rstest]
     fn test_buffering_used_when_half_interval_from_limit_returns_one(
-        mut test_throttler_buffered: TestThrottler,
+        test_throttler_buffered: TestThrottler,
     ) {
         let throttler = test_throttler_buffered.get_throttler();
 
@@ -484,7 +481,7 @@ mod tests {
 
     #[rstest]
     fn test_buffering_used_before_limit_when_halfway_returns_half(
-        mut test_throttler_buffered: TestThrottler,
+        test_throttler_buffered: TestThrottler,
     ) {
         let throttler = test_throttler_buffered.get_throttler();
 
@@ -499,7 +496,7 @@ mod tests {
 
     #[rstest]
     fn test_buffering_refresh_when_at_limit_sends_remaining_items(
-        mut test_throttler_buffered: TestThrottler,
+        test_throttler_buffered: TestThrottler,
     ) {
         let throttler = test_throttler_buffered.get_throttler();
 
@@ -529,9 +526,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_buffering_send_message_after_buffering_message(
-        mut test_throttler_buffered: TestThrottler,
-    ) {
+    fn test_buffering_send_message_after_buffering_message(test_throttler_buffered: TestThrottler) {
         let throttler = test_throttler_buffered.get_throttler();
 
         for _ in 0..6 {
@@ -565,7 +560,7 @@ mod tests {
 
     #[rstest]
     fn test_buffering_send_message_after_halfway_after_buffering_message(
-        mut test_throttler_buffered: TestThrottler,
+        test_throttler_buffered: TestThrottler,
     ) {
         let throttler = test_throttler_buffered.get_throttler();
 
@@ -599,7 +594,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dropping_send_sends_message_to_handler(mut test_throttler_unbuffered: TestThrottler) {
+    fn test_dropping_send_sends_message_to_handler(test_throttler_unbuffered: TestThrottler) {
         let throttler = test_throttler_unbuffered.get_throttler();
         throttler.send(42);
 
@@ -609,7 +604,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dropping_send_to_limit_drops_message(mut test_throttler_unbuffered: TestThrottler) {
+    fn test_dropping_send_to_limit_drops_message(test_throttler_unbuffered: TestThrottler) {
         let throttler = test_throttler_unbuffered.get_throttler();
         for _ in 0..6 {
             throttler.send(42);
@@ -629,7 +624,7 @@ mod tests {
 
     #[rstest]
     fn test_dropping_advance_time_when_at_limit_dropped_message(
-        mut test_throttler_unbuffered: TestThrottler,
+        test_throttler_unbuffered: TestThrottler,
     ) {
         let throttler = test_throttler_unbuffered.get_throttler();
         for _ in 0..6 {
@@ -658,9 +653,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dropping_send_message_after_dropping_message(
-        mut test_throttler_unbuffered: TestThrottler,
-    ) {
+    fn test_dropping_send_message_after_dropping_message(test_throttler_unbuffered: TestThrottler) {
         let throttler = test_throttler_unbuffered.get_throttler();
         for _ in 0..6 {
             throttler.send(42);
