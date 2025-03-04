@@ -74,6 +74,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
 - Ported market-to-limit order handling for `OrderMatchingEngine` in Rust (#2354), thanks @filipmacek
 - Ported trailing stop order handling for `OrderMatchingEngine` in Rust (#2366, #2376), thanks @filipmacek
+- Ported contingent orders handling for `OrderMatchingEngine` in Rust (#2404), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded Rust to 1.85.0 and 2024 edition
 - Upgraded `datafusion` crate to v45.0.0
