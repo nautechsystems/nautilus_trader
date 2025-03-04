@@ -70,6 +70,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderDenied
@@ -679,7 +680,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order
         if self.manage_own_order_books:
             for order in self._cache.orders():
-                if order.is_closed_c() or not self._should_handle_own_book_order(order):
+                if order.is_closed_c() or not should_handle_own_book_order(order):
                     continue
                 own_book = self._get_or_init_own_order_book(order.instrument_id)
                 own_book_order = order.to_own_book_order()
@@ -812,7 +813,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(denied)
 
-        self._cache.update_order(order)
+        self._cache.update_order(order)  # Order not yet added to own book
         self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
@@ -827,15 +828,6 @@ cdef class ExecutionEngine(Component):
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._cache.add_own_order_book(own_book)
         return own_book
-
-    cpdef void _insert_own_book_order(self, Order order):
-        if not self._should_handle_own_book_order(order):
-            return
-        own_book = self._get_or_init_own_order_book(order.instrument_id)
-        own_book.add(order.to_own_book_order())
-
-    cdef bint _should_handle_own_book_order(self, Order order):
-        return order.order_type != OrderType.MARKET and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
@@ -904,8 +896,9 @@ cdef class ExecutionEngine(Component):
             base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
             self._set_order_base_qty(order, base_qty)
 
-        if self.manage_own_order_books:
-            self._insert_own_book_order(order)
+        if self.manage_own_order_books and should_handle_own_book_order(order):
+            own_book = self._get_or_init_own_order_book(order.instrument_id)
+            own_book.add(order.to_own_book_order())
 
         # Send to execution client
         client.submit_order(command)
@@ -948,7 +941,7 @@ cdef class ExecutionEngine(Component):
         if self.manage_own_order_books:
             own_book = self._get_or_init_own_order_book(instrument.id)
             for order in command.order_list.orders:
-                if self._should_handle_own_book_order(order):
+                if should_handle_own_book_order(order):
                     own_book.add(order.to_own_book_order())
 
         # Send to execution client
@@ -1146,14 +1139,7 @@ cdef class ExecutionEngine(Component):
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
             return
 
-        self._cache.update_order(order)
-
-        if self.manage_own_order_books and self._should_handle_own_book_order(order):
-            own_book = self._get_or_init_own_order_book(order.instrument_id)
-            if order.is_closed_c():
-                own_book.delete(order.to_own_book_order())
-            else:
-                own_book.update(order.to_own_book_order())
+        self._cache.update_order(order, update_own_book=self.manage_own_order_books)
 
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",

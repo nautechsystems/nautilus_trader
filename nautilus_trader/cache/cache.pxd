@@ -175,7 +175,7 @@ cdef class Cache(CacheFacade):
     cpdef void snapshot_order_state(self, Order order)
 
     cpdef void update_account(self, Account account)
-    cpdef void update_order(self, Order order)
+    cpdef void update_order(self, Order order, bint update_own_book=*)
     cpdef void update_order_pending_cancel_local(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)

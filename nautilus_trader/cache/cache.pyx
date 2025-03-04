@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
@@ -1962,7 +1963,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_account(account)
 
-    cpdef void update_order(self, Order order):
+    cpdef void update_order(self, Order order, bint update_own_book=False):
         """
         Update the given order in the cache.
 
@@ -1970,6 +1971,8 @@ cdef class Cache(CacheFacade):
         ----------
         order : Order
             The order to update (from last event).
+        update_own_book : bool, default False
+            If any corresponding own order book should also be updated.
 
         """
         Condition.not_none(order, "order")
@@ -2010,6 +2013,16 @@ cdef class Cache(CacheFacade):
 
         # Update database
         self._database.update_order(order)
+
+        if update_own_book and should_handle_own_book_order(order):
+            own_book = self._own_order_books.get(order.instrument_id)
+            if own_book is None:
+                return
+
+            if order.is_closed_c():
+                own_book.delete(order.to_own_book_order())
+            else:
+                own_book.update(order.to_own_book_order())
 
     cpdef void update_order_pending_cancel_local(self, Order order):
         """
