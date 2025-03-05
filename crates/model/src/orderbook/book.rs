@@ -15,16 +15,22 @@
 
 //! A performant, generic, multi-purpose order book.
 
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
 
-use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel};
+use super::{
+    aggregation::pre_process_order,
+    analysis,
+    display::pprint_book,
+    level::BookLevel,
+    own::{OwnBookLevel, OwnOrderBook},
+};
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
+    enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus},
     identifiers::InstrumentId,
     orderbook::{InvalidBookOperation, ladder::BookLadder},
     types::{Price, Quantity},
@@ -210,6 +216,142 @@ impl OrderBook {
         self.asks(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect()
+    }
+
+    /// Returns bid price levels as a map of price to size with own order size filtered out.
+    pub fn bids_filtered_as_map(
+        &self,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        let mut public_map = self
+            .bids(depth)
+            .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
+            .collect::<IndexMap<Decimal, Decimal>>();
+
+        if let Some(own_book) = own_book {
+            self.filter_quantities(
+                &mut public_map,
+                own_book.bids(),
+                status.as_ref(),
+                accepted_buffer_ns,
+                now,
+            );
+        }
+
+        public_map
+    }
+
+    /// Returns ask price levels as a map of price to size with own order size filtered out.
+    pub fn asks_filtered_as_map(
+        &self,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        let mut public_map = self
+            .asks(depth)
+            .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
+            .collect::<IndexMap<Decimal, Decimal>>();
+
+        if let Some(own_book) = own_book {
+            self.filter_quantities(
+                &mut public_map,
+                own_book.asks(),
+                status.as_ref(),
+                accepted_buffer_ns,
+                now,
+            );
+        }
+
+        public_map
+    }
+
+    fn filter_quantities<'a>(
+        &self,
+        public_map: &mut IndexMap<Decimal, Decimal>,
+        own_orders: impl Iterator<Item = &'a OwnBookLevel>,
+        status_filter: Option<&HashSet<OrderStatus>>,
+        accepted_buffer: Option<u64>,
+        ts_now: Option<u64>,
+    ) {
+        let ts_now = ts_now.unwrap_or_else(nanos_since_unix_epoch);
+
+        for level in own_orders {
+            let price = level.price.value.as_decimal();
+
+            if let Some(public_size) = public_map.get_mut(&price) {
+                let own_size = match (status_filter, accepted_buffer) {
+                    // If both status filter and accepted_buffer are provided
+                    (Some(filter), Some(buffer)) => level
+                        .orders
+                        .values()
+                        .filter(|order| {
+                            // Filter by status
+                            if !filter.contains(&order.status) {
+                                return false;
+                            }
+
+                            // For ACCEPTED status, check the buffer period
+                            if order.status == OrderStatus::Accepted {
+                                return order.ts_last + buffer <= ts_now;
+                            }
+
+                            true
+                        })
+                        .map(|order| order.size.as_decimal())
+                        .sum::<Decimal>(),
+
+                    // If only status filter is provided (no buffer check)
+                    (Some(filter), None) => level
+                        .orders
+                        .values()
+                        .filter(|order| filter.contains(&order.status))
+                        .map(|order| order.size.as_decimal())
+                        .sum::<Decimal>(),
+
+                    // If only accepted_buffer is provided (apply to all ACCEPTED orders)
+                    (None, Some(buffer)) => level
+                        .orders
+                        .values()
+                        .filter(|order| {
+                            // For non-ACCEPTED orders, always include
+                            if order.status != OrderStatus::Accepted {
+                                return true;
+                            }
+
+                            // For ACCEPTED status, check the buffer period
+                            order.ts_last + buffer <= ts_now
+                        })
+                        .map(|order| order.size.as_decimal())
+                        .sum::<Decimal>(),
+
+                    // If neither is provided, include all orders
+                    (None, None) => level
+                        .orders
+                        .values()
+                        .map(|order| order.size.as_decimal())
+                        .sum::<Decimal>(),
+                };
+
+                // Subtract own size, ensuring we don't go below zero
+                *public_size = if *public_size > own_size {
+                    *public_size - own_size
+                } else {
+                    Decimal::ZERO
+                };
+
+                // Remove the price level if size becomes zero
+                if *public_size == Decimal::ZERO {
+                    public_map.shift_remove(&price);
+                }
+            }
+        }
     }
 
     /// Groups bid levels by price, up to specified depth.
@@ -455,14 +597,23 @@ impl OrderBook {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use crate::{
         data::{QuoteTick, TradeTick, depth::OrderBookDepth10, order::BookOrder, stubs::*},
-        enums::{AggressorSide, BookType, OrderSide, OrderSideSpecified},
-        identifiers::{InstrumentId, TradeId},
-        orderbook::{BookIntegrityError, BookPrice, OrderBook, analysis::book_check_integrity},
+        enums::{
+            AggressorSide, BookType, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
+            TimeInForce,
+        },
+        identifiers::{ClientOrderId, InstrumentId, TradeId},
+        orderbook::{
+            BookIntegrityError, BookPrice, OrderBook, OwnBookOrder, analysis::book_check_integrity,
+            own::OwnOrderBook,
+        },
         types::{Price, Quantity},
     };
 
@@ -1099,5 +1250,768 @@ mod tests {
         assert_eq!(grouped_bids.get(&dec!(98.0)), Some(&dec!(5000))); // 2000 + 3000 grouped
         assert_eq!(grouped_asks.get(&dec!(102.0)), Some(&dec!(3000))); // 1000 + 2000 grouped
         assert_eq!(grouped_asks.get(&dec!(104.0)), Some(&dec!(3000)));
+    }
+
+    #[rstest]
+    fn test_filtered_book_empty_own_book() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        // Add some orders to the public book
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let ask_order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            2,
+        );
+        book.add(bid_order, 0, 1, 1.into());
+        book.add(ask_order, 0, 2, 2.into());
+
+        // No own book provided, filtered map should be identical to regular map
+        let bids_filtered = book.bids_filtered_as_map(None, None, None, None, None);
+        let asks_filtered = book.asks_filtered_as_map(None, None, None, None, None);
+
+        let bids_regular = book.bids_as_map(None);
+        let asks_regular = book.asks_as_map(None);
+
+        assert_eq!(bids_filtered, bids_regular);
+        assert_eq!(asks_filtered, asks_regular);
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_own_orders() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book
+        let bid_order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let bid_order2 =
+            BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(200), 2);
+        let ask_order1 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            3,
+        );
+        let ask_order2 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("102.00"),
+            Quantity::from(200),
+            4,
+        );
+
+        book.add(bid_order1, 0, 1, 1.into());
+        book.add(bid_order2, 0, 2, 2.into());
+        book.add(ask_order1, 0, 3, 3.into());
+        book.add(ask_order2, 0, 4, 4.into());
+
+        // Add own orders - half the size of public orders at the same levels
+        let own_bid_order = OwnBookOrder::new(
+            ClientOrderId::from("BID-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(50),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            1.into(),
+            1.into(),
+        );
+
+        let own_ask_order = OwnBookOrder::new(
+            ClientOrderId::from("ASK-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(50),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            2.into(),
+            2.into(),
+        );
+
+        own_book.add(own_bid_order);
+        own_book.add(own_ask_order);
+
+        // Get filtered maps
+        let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
+        let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+
+        // Check that own order sizes are subtracted
+        assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(50))); // 100 - 50 = 50
+        assert_eq!(bids_filtered.get(&dec!(99.00)), Some(&dec!(200))); // unchanged
+        assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(50))); // 100 - 50 = 50
+        assert_eq!(asks_filtered.get(&dec!(102.00)), Some(&dec!(200))); // unchanged
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_own_orders_exact_size() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let ask_order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            2,
+        );
+
+        book.add(bid_order, 0, 1, 1.into());
+        book.add(ask_order, 0, 2, 2.into());
+
+        // Add own orders with exact same size as public orders
+        let own_bid_order = OwnBookOrder::new(
+            ClientOrderId::from("BID-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            1.into(),
+            1.into(),
+        );
+
+        let own_ask_order = OwnBookOrder::new(
+            ClientOrderId::from("ASK-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            2.into(),
+            2.into(),
+        );
+
+        own_book.add(own_bid_order);
+        own_book.add(own_ask_order);
+
+        // Get filtered maps
+        let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
+        let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+
+        // Price levels should be removed as resulting size is zero
+        assert!(!bids_filtered.contains_key(&dec!(100.00)));
+        assert!(!asks_filtered.contains_key(&dec!(101.00)));
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_own_orders_larger_size() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let ask_order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            2,
+        );
+
+        book.add(bid_order, 0, 1, 1.into());
+        book.add(ask_order, 0, 2, 2.into());
+
+        // Add own orders with larger size than public orders
+        let own_bid_order = OwnBookOrder::new(
+            ClientOrderId::from("BID-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(150),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            1.into(),
+            1.into(),
+        );
+
+        let own_ask_order = OwnBookOrder::new(
+            ClientOrderId::from("ASK-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(150),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            2.into(),
+            2.into(),
+        );
+
+        own_book.add(own_bid_order);
+        own_book.add(own_ask_order);
+
+        // Get filtered maps
+        let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
+        let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+
+        // Price levels should be removed as resulting size is zero or negative
+        assert!(!bids_filtered.contains_key(&dec!(100.00)));
+        assert!(!asks_filtered.contains_key(&dec!(101.00)));
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_own_orders_different_level() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book at certain levels
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let ask_order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            2,
+        );
+
+        book.add(bid_order, 0, 1, 1.into());
+        book.add(ask_order, 0, 2, 2.into());
+
+        // Add own orders at different price levels
+        let own_bid_order = OwnBookOrder::new(
+            ClientOrderId::from("BID-1"),
+            OrderSideSpecified::Buy,
+            Price::from("99.00"),
+            Quantity::from(50),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            1.into(),
+            1.into(),
+        );
+
+        let own_ask_order = OwnBookOrder::new(
+            ClientOrderId::from("ASK-1"),
+            OrderSideSpecified::Sell,
+            Price::from("102.00"),
+            Quantity::from(50),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            2.into(),
+            2.into(),
+        );
+
+        own_book.add(own_bid_order);
+        own_book.add(own_ask_order);
+
+        // Get filtered maps
+        let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
+        let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+
+        // Public book levels should be unchanged as own orders are at different levels
+        assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(100)));
+        assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(100)));
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_status_filter() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let ask_order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            2,
+        );
+
+        book.add(bid_order, 0, 1, 1.into());
+        book.add(ask_order, 0, 2, 2.into());
+
+        // Add multiple own orders with different statuses at same price
+        let own_bid_accepted = OwnBookOrder::new(
+            ClientOrderId::from("BID-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(30),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            1.into(),
+            1.into(),
+        );
+
+        let own_bid_submitted = OwnBookOrder::new(
+            ClientOrderId::from("BID-2"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(40),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            2.into(),
+            2.into(),
+        );
+
+        let own_ask_accepted = OwnBookOrder::new(
+            ClientOrderId::from("ASK-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(30),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            3.into(),
+            3.into(),
+        );
+
+        let own_ask_submitted = OwnBookOrder::new(
+            ClientOrderId::from("ASK-2"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(40),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            4.into(),
+            4.into(),
+        );
+
+        own_book.add(own_bid_accepted);
+        own_book.add(own_bid_submitted);
+        own_book.add(own_ask_accepted);
+        own_book.add(own_ask_submitted);
+
+        // Create a status filter for only ACCEPTED orders
+        let mut status_filter = HashSet::new();
+        status_filter.insert(OrderStatus::Accepted);
+
+        // Get filtered maps with status filter
+        let bids_filtered = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            None,
+            None,
+        );
+        let asks_filtered =
+            book.asks_filtered_as_map(None, Some(&own_book), Some(status_filter), None, None);
+
+        // Check that only ACCEPTED own orders are subtracted
+        assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(70))); // 100 - 30 = 70
+        assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(70))); // 100 - 30 = 70
+
+        // Get filtered maps without status filter (should subtract all own orders)
+        let bids_all_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
+        let asks_all_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+
+        assert_eq!(bids_all_filtered.get(&dec!(100.00)), Some(&dec!(30))); // 100 - 30 - 40 = 30
+        assert_eq!(asks_all_filtered.get(&dec!(101.00)), Some(&dec!(30))); // 100 - 30 - 40 = 30
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_depth_limit() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book at multiple levels
+        let bid_orders = vec![
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(100),
+                1,
+            ),
+            BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(200), 2),
+            BookOrder::new(OrderSide::Buy, Price::from("98.00"), Quantity::from(300), 3),
+        ];
+
+        let ask_orders = vec![
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("101.00"),
+                Quantity::from(100),
+                4,
+            ),
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("102.00"),
+                Quantity::from(200),
+                5,
+            ),
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("103.00"),
+                Quantity::from(300),
+                6,
+            ),
+        ];
+
+        for (i, order) in bid_orders.iter().enumerate() {
+            book.add(*order, 0, i as u64, (i as u64).into());
+        }
+
+        for (i, order) in ask_orders.iter().enumerate() {
+            book.add(
+                *order,
+                0,
+                ((i + bid_orders.len()) as u64).into(),
+                ((i + bid_orders.len()) as u64).into(),
+            );
+        }
+
+        // Add own orders at some levels
+        let own_bid_order = OwnBookOrder::new(
+            ClientOrderId::from("BID-1"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(50),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            1.into(),
+            1.into(),
+        );
+
+        let own_ask_order = OwnBookOrder::new(
+            ClientOrderId::from("ASK-1"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(50),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            2.into(),
+            2.into(),
+        );
+
+        own_book.add(own_bid_order);
+        own_book.add(own_ask_order);
+
+        // Get filtered maps with depth limit
+        let bids_filtered = book.bids_filtered_as_map(Some(2), Some(&own_book), None, None, None);
+        let asks_filtered = book.asks_filtered_as_map(Some(2), Some(&own_book), None, None, None);
+
+        // Check that depth limit is respected and filtering still works
+        assert_eq!(bids_filtered.len(), 2);
+        assert_eq!(asks_filtered.len(), 2);
+
+        assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(50))); // 100 - 50 = 50
+        assert_eq!(bids_filtered.get(&dec!(99.00)), Some(&dec!(200))); // unchanged
+        assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(50))); // 100 - 50 = 50
+        assert_eq!(asks_filtered.get(&dec!(102.00)), Some(&dec!(200))); // unchanged
+
+        // Third level should not be present due to depth limit
+        assert!(!bids_filtered.contains_key(&dec!(98.00)));
+        assert!(!asks_filtered.contains_key(&dec!(103.00)));
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_accepted_buffer() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        let ask_order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from(100),
+            2,
+        );
+
+        book.add(bid_order, 0, 1, 1.into());
+        book.add(ask_order, 0, 2, 2.into());
+
+        // Current time is 1000 ns
+        let now = UnixNanos::from(1000);
+
+        // Add own orders with ACCEPTED status at different times
+        // This order was accepted at time 900 ns (100 ns ago)
+        let own_bid_recent = OwnBookOrder::new(
+            ClientOrderId::from("BID-RECENT"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(30),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            900.into(), // ts_last is 100 ns ago
+            800.into(),
+        );
+
+        // This order was accepted at time 500 ns (500 ns ago)
+        let own_bid_older = OwnBookOrder::new(
+            ClientOrderId::from("BID-OLDER"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(40),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            500.into(), // ts_last is 500 ns ago
+            400.into(),
+        );
+
+        // This order was accepted at time 900 ns (100 ns ago)
+        let own_ask_recent = OwnBookOrder::new(
+            ClientOrderId::from("ASK-RECENT"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(30),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            900.into(), // ts_last is 100 ns ago
+            800.into(),
+        );
+
+        // This order was accepted at time 500 ns (500 ns ago)
+        let own_ask_older = OwnBookOrder::new(
+            ClientOrderId::from("ASK-OLDER"),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from(40),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            500.into(), // ts_last is 500 ns ago
+            400.into(),
+        );
+
+        own_book.add(own_bid_recent);
+        own_book.add(own_bid_older);
+        own_book.add(own_ask_recent);
+        own_book.add(own_ask_older);
+
+        // Status filter for ACCEPTED orders only
+        let mut status_filter = HashSet::new();
+        status_filter.insert(OrderStatus::Accepted);
+
+        // Test with a 200 ns buffer - only orders accepted before 800 ns should be filtered
+        let accepted_buffer = 200;
+
+        // Get filtered maps with accepted_buffer
+        let bids_filtered = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            Some(accepted_buffer),
+            Some(now.into()),
+        );
+
+        let asks_filtered = book.asks_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            Some(accepted_buffer),
+            Some(now.into()),
+        );
+
+        // Only older orders should be filtered out, recent orders should still be included
+        // 100 - 40 = 60 (only older order subtracted)
+        assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(60)));
+        assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(60)));
+
+        // Test with a 50 ns buffer - all orders should be filtered
+        let short_buffer = 50;
+
+        let bids_short_buffer = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            Some(short_buffer),
+            Some(now.into()),
+        );
+
+        let asks_short_buffer = book.asks_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            Some(short_buffer),
+            Some(now.into()),
+        );
+
+        // All orders should be filtered out
+        // 100 - 30 - 40 = 30
+        assert_eq!(bids_short_buffer.get(&dec!(100.00)), Some(&dec!(30)));
+        assert_eq!(asks_short_buffer.get(&dec!(101.00)), Some(&dec!(30)));
+
+        // Test with a 600 ns buffer - no orders should be filtered
+        let long_buffer = 600;
+
+        let bids_long_buffer = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            Some(long_buffer),
+            Some(now.into()),
+        );
+
+        let asks_long_buffer = book.asks_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter.clone()),
+            Some(long_buffer),
+            Some(now.into()),
+        );
+
+        // No orders should be filtered out (all too recent)
+        assert_eq!(bids_long_buffer.get(&dec!(100.00)), Some(&dec!(100)));
+        assert_eq!(asks_long_buffer.get(&dec!(101.00)), Some(&dec!(100)));
+    }
+
+    #[rstest]
+    fn test_filtered_book_with_accepted_buffer_mixed_statuses() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut own_book = OwnOrderBook::new(instrument_id);
+
+        // Add orders to the public book
+        let bid_order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(100),
+            1,
+        );
+        book.add(bid_order, 0, 1, 1.into());
+
+        // Current time is 1000 ns
+        let now = UnixNanos::from(1000);
+
+        // Add own orders with different statuses
+        let own_bid_accepted = OwnBookOrder::new(
+            ClientOrderId::from("BID-ACCEPTED"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(20),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            500.into(), // ts_last is 500 ns ago
+            400.into(),
+        );
+
+        let own_bid_submitted = OwnBookOrder::new(
+            ClientOrderId::from("BID-SUBMITTED"),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from(30),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Submitted,
+            500.into(), // ts_last doesn't matter for non-ACCEPTED orders
+            400.into(),
+        );
+
+        own_book.add(own_bid_accepted);
+        own_book.add(own_bid_submitted);
+
+        // Test with no status filter but with accepted buffer
+        // Buffer of 300 ns means orders accepted before 700 ns should be filtered
+        let accepted_buffer = 300;
+
+        // Without status filter, buffer applies only to ACCEPTED orders
+        let bids_filtered = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            None,
+            Some(accepted_buffer),
+            Some(now.into()),
+        );
+
+        // ACCEPTED order should be filtered (500 + 300 = 800 < 1000)
+        // SUBMITTED order is always filtered when no status filter
+        // 100 - 20 - 30 = 50
+        assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(50)));
+
+        // Now test with a status filter for SUBMITTED only
+        let mut status_filter = HashSet::new();
+        status_filter.insert(OrderStatus::Submitted);
+
+        let bids_filtered_submitted = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter),
+            Some(accepted_buffer),
+            Some(now.into()),
+        );
+
+        // Only SUBMITTED orders should be filtered, buffer doesn't apply
+        // 100 - 30 = 70
+        assert_eq!(bids_filtered_submitted.get(&dec!(100.00)), Some(&dec!(70)));
+
+        // Now test with a status filter for both SUBMITTED and ACCEPTED
+        let mut status_filter_both = HashSet::new();
+        status_filter_both.insert(OrderStatus::Submitted);
+        status_filter_both.insert(OrderStatus::Accepted);
+
+        let bids_filtered_both = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter_both.clone()),
+            Some(accepted_buffer),
+            Some(now.into()),
+        );
+
+        // Both orders should be filtered, buffer applies to ACCEPTED
+        // 100 - 20 - 30 = 50
+        assert_eq!(bids_filtered_both.get(&dec!(100.00)), Some(&dec!(50)));
+
+        // Test with a longer buffer that excludes the ACCEPTED order
+        let long_buffer = 600;
+
+        let bids_filtered_long_buffer = book.bids_filtered_as_map(
+            None,
+            Some(&own_book),
+            Some(status_filter_both),
+            Some(long_buffer),
+            Some(now.into()),
+        );
+
+        // Only SUBMITTED order is filtered, ACCEPTED is too recent
+        // 100 - 30 = 70
+        assert_eq!(
+            bids_filtered_long_buffer.get(&dec!(100.00)),
+            Some(&dec!(70))
+        );
     }
 }
