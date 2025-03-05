@@ -29,6 +29,18 @@ from nautilus_trader.trading.strategy import Strategy
 class Each10thBarEvent(Event):
     """
     A custom event that is published every 10th bar.
+
+    By inheriting from `Event` class, we automatically get important attributes:
+     - `id`: A unique string identifier for each event (in UUID format)
+     - `ts_event`: Timestamp when the event occurred (used for event ordering)
+     - `ts_init`: Timestamp when the event was initialized
+
+    These attributes are crucial for correct event processing and ordering in the message bus,
+    especially during backtesting where event timing is important.
+
+    Event class offers complete flexibility in terms of attributes:
+    - Can contain attributes of any Python type (int, float, str, custom objects, etc.)
+
     """
 
     bar: Bar  # The 10th bar related to this event
@@ -36,6 +48,10 @@ class Each10thBarEvent(Event):
 
 
 class DemoStrategyConfig(StrategyConfig, frozen=True):
+    """
+    Configuration for the demo strategy.
+    """
+
     instrument: Instrument
     bar_type: BarType
 
@@ -55,6 +71,10 @@ class DemoStrategy(Strategy):
         # Subscribe to market data
         self.subscribe_bars(self.config.bar_type)
         self.log.info(f"Subscribed to {self.config.bar_type}", color=LogColor.YELLOW)
+
+        # The message bus implements a topic-based publish/subscribe pattern:
+        # - Publishers can publish events to one or more named topics
+        # - Subscribers can subscribe to one or more topics of interest
 
         # Subscribe to our custom event
         # First argument is the topic name to subscribe to, second is the custom handler method
@@ -85,11 +105,7 @@ class DemoStrategy(Strategy):
 
     def on_each_10th_bar(self, event: Each10thBarEvent):
         """
-        Event handler for Each10thBarEvent.
-
-        This method is called automatically when an Each10thBarEvent is published,
-        thanks to our subscription in on_start.
-
+        Handle each 10th bar event received from the message bus.
         """
         # Log the event details
         self.log.info(
