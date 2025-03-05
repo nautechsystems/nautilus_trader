@@ -579,6 +579,114 @@ class TestInstrument:
         assert AAPL_OPTION.underlying == "AAPL"
         assert AAPL_OPTION.option_kind == option_kind_from_str("CALL")
 
+    def test_next_bid_prices_when_no_tick_scheme(self):
+        # Arrange, Act
+        with pytest.raises(ValueError) as exc_info:
+            BTCUSDT_BINANCE.next_bid_prices(100_000.0)
+        # Assert
+        assert (
+            str(exc_info.value)
+            == "No tick scheme for instrument BTCUSDT.BINANCE. You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+        )
+
+    def test_next_ask_prices_when_no_tick_scheme(self):
+        # Arrange, Act
+        with pytest.raises(ValueError) as exc_info:
+            BTCUSDT_BINANCE.next_ask_prices(100_000.0)
+        # Assert
+        assert (
+            str(exc_info.value)
+            == "No tick scheme for instrument BTCUSDT.BINANCE. You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+        )
+
+    @pytest.mark.parametrize(
+        ("instrument", "value", "num_ticks", "expected_len"),
+        [
+            (AUDUSD_SIM, 0.72001, 5, 5),
+            (AUDUSD_SIM, 0.90001, 3, 3),
+            (AUDUSD_SIM, 0.72001, 0, 0),
+        ],
+    )
+    def test_next_ask_prices_length(self, instrument, value, num_ticks, expected_len):
+        # Arrange, Act
+        result = instrument.next_ask_prices(value, num_ticks=num_ticks)
+
+        # Assert
+        assert len(result) == expected_len
+        if expected_len > 0:
+            assert isinstance(result[0], Decimal)
+
+    @pytest.mark.parametrize(
+        ("instrument", "value", "num_ticks", "expected_len"),
+        [
+            (AUDUSD_SIM, 0.72000, 5, 5),
+            (AUDUSD_SIM, 0.90000, 3, 3),
+            (AUDUSD_SIM, 0.72000, 0, 0),
+        ],
+    )
+    def test_next_bid_prices_length(self, instrument, value, num_ticks, expected_len):
+        # Arrange, Act
+        result = instrument.next_bid_prices(value, num_ticks=num_ticks)
+
+        # Assert
+        assert len(result) == expected_len
+        if expected_len > 0:
+            assert isinstance(result[0], Decimal)
+
+    @pytest.mark.parametrize(
+        ("instrument", "value", "num_ticks", "expected_first", "expected_last"),
+        [
+            (AUDUSD_SIM, 0.72000, 10, "0.72001", "0.72010"),
+            (AUDUSD_SIM, 0.72001, 5, "0.72002", "0.72006"),
+            (AUDUSD_SIM, 0.90001, 3, "0.90002", "0.90004"),
+        ],
+    )
+    def test_next_ask_prices_values(
+        self,
+        instrument,
+        value,
+        num_ticks,
+        expected_first,
+        expected_last,
+    ):
+        # Arrange, Act
+        result = instrument.next_ask_prices(value, num_ticks=num_ticks)
+
+        # Assert
+        assert len(result) == num_ticks
+        assert str(result[0]) == expected_first
+        assert str(result[-1]) == expected_last
+        # Check that prices are increasing
+        for i in range(1, len(result)):
+            assert result[i] > result[i - 1]
+
+    @pytest.mark.parametrize(
+        ("instrument", "value", "num_ticks", "expected_first", "expected_last"),
+        [
+            (AUDUSD_SIM, 0.72000, 10, "0.71999", "0.71990"),
+            (AUDUSD_SIM, 0.72000, 5, "0.71999", "0.71995"),
+            (AUDUSD_SIM, 0.90000, 3, "0.89999", "0.89997"),
+        ],
+    )
+    def test_next_bid_prices_values(
+        self,
+        instrument,
+        value,
+        num_ticks,
+        expected_first,
+        expected_last,
+    ):
+        # Arrange, Act
+        result = instrument.next_bid_prices(value, num_ticks=num_ticks)
+
+        # Assert
+        assert len(result) == num_ticks
+        assert str(result[0]) == expected_first
+        assert str(result[-1]) == expected_last
+        # Check that prices are decreasing
+        for i in range(1, len(result)):
+            assert result[i] < result[i - 1]
+
 
 def test_pyo3_equity_to_legacy_equity() -> None:
     # Arrange

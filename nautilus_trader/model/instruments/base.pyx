@@ -79,9 +79,9 @@ cdef class Instrument(Data):
         The price decimal precision.
     size_precision : int
         The trading size decimal precision.
-    size_increment : Price
+    size_increment : Quantity
         The minimum size increment.
-    multiplier : Decimal
+    multiplier : Quantity
         The contract value multiplier (determines tick value).
     lot_size : Quantity, optional
         The rounded lot unit size (standard/board).
@@ -511,6 +511,124 @@ cdef class Instrument(Data):
             )
 
         return self._tick_scheme.next_ask_price(value=value, n=num_ticks)
+
+    cpdef list next_bid_prices(self, double value, int num_ticks=100):
+        """
+        Return a list of prices up to `num_ticks` bid ticks away from value.
+
+        If a given price is between two ticks, the first price will be the nearest bid tick.
+        Returns as many valid ticks as possible up to `num_ticks`. Will return an empty list
+        if no valid ticks can be generated.
+
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        num_ticks : int, default 100
+            The number of ticks to return.
+
+        Returns
+        -------
+        list[Decimal]
+            A list of bid prices as Decimal values.
+
+        Raises
+        ------
+        ValueError
+            If a tick scheme is not initialized.
+        """
+        if self._tick_scheme is None:
+            raise ValueError(
+                f"No tick scheme for instrument {self.id.to_str()}. "
+                "You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+            )
+
+        if num_ticks <= 0:
+            return []
+
+        cdef Price value_price = Price(value, self.price_precision)
+        cdef Price initial_price = self._tick_scheme.next_bid_price(value=value, n=0)
+
+        cdef:
+            list prices = []
+            Price price
+            int i
+
+        if value_price != initial_price:
+            prices.append(initial_price.as_decimal())
+            num_ticks -= 1
+
+        for i in range(1, num_ticks + 1):
+            try:
+                price = self._tick_scheme.next_bid_price(value=value, n=i)
+                if price is None:
+                    break
+                if self.min_price is not None and price < self.min_price:
+                    break
+                prices.append(price.as_decimal())
+            except Exception:
+                break
+
+        return prices
+
+    cpdef list next_ask_prices(self, double value, int num_ticks=100):
+        """
+        Return a list of prices up to `num_ticks` ask ticks away from value.
+
+        If a given price is between two ticks, the first price will be the nearest ask tick.
+        Returns as many valid ticks as possible up to `num_ticks`. Will return an empty list
+        if no valid ticks can be generated.
+
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        num_ticks : int, default 100
+            The number of ticks to return.
+
+        Returns
+        -------
+        list[Decimal]
+            A list of ask prices as Decimal values.
+
+        Raises
+        ------
+        ValueError
+            If a tick scheme is not initialized.
+        """
+        if self._tick_scheme is None:
+            raise ValueError(
+                f"No tick scheme for instrument {self.id.to_str()}. "
+                "You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+            )
+
+        if num_ticks <= 0:
+            return []
+
+        cdef Price value_price = Price(value, self.price_precision)
+        cdef Price initial_price = self._tick_scheme.next_ask_price(value=value, n=0)
+
+        cdef:
+            list prices = []
+            Price price
+            int i
+
+        if value_price != initial_price:
+            prices.append(initial_price.as_decimal())
+            num_ticks -= 1
+
+        for i in range(1, num_ticks + 1):
+            try:
+                price = self._tick_scheme.next_ask_price(value=value, n=i)
+                if price is None:
+                    break
+                if self.max_price is not None and price > self.max_price:
+                    break
+                prices.append(price.as_decimal())
+            except Exception:
+                break
+
+        return prices
 
     cpdef Quantity make_qty(self, value):
         """
