@@ -9,9 +9,17 @@ runs:
       if: github.event_name == 'push'
       id: vars
       run: |
-        echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-        cd dist
-        echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+        if [ ! -d "./dist" ]; then
+          echo "Error: dist directory not found"
+          exit 1
+        fi
+        ASSET_PATH=$(find ./dist -name "*.whl" -printf "%T@ %p\n" | sort -n | tail -1 | cut -f2- -d" ")
+        if [ -z "$ASSET_PATH" ]; then
+          echo "Error: No .whl files found in dist directory"
+          exit 1
+        fi
+        echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
+        echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
     - name: Upload wheel artifact
       if: github.event_name == 'push'
