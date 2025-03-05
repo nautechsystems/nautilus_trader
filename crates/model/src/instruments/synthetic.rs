@@ -19,7 +19,7 @@ use std::{
 };
 
 use derive_builder::Builder;
-use evalexpr::{ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node, Value};
+use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::{UnixNanos, correctness::FAILED};
 use serde::{Deserialize, Serialize};
 
@@ -176,11 +176,11 @@ impl SyntheticInstrument {
 
     #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
-        evalexpr::build_operator_tree::<DefaultNumericTypes>(formula).is_ok()
+        evalexpr::build_operator_tree(formula).is_ok()
     }
 
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let operator_tree = evalexpr::build_operator_tree::<DefaultNumericTypes>(&formula)?;
+        let operator_tree = evalexpr::build_operator_tree(&formula)?;
         self.formula = formula;
         self.operator_tree = operator_tree;
         Ok(())

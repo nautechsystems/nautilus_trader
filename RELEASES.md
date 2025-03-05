@@ -55,6 +55,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored reconciliation interface into messages (#2375), thanks @faysou
+- Refactored `_handle_query_group` to work with `update_catalog` (#2412), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Refactored repetitive code in backtest examples (#2387, #2395), thanks @stefansimik
 - Refined yield curve data (#2300), thanks @faysou
@@ -66,6 +67,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Refined parsing of IB symbols (#2388), thanks @faysou
 - Refined `base_template` behaviour in parquet write_data (#2389), thanks @faysou
 - Refined mixed catalog client requests (#2405), thanks @faysou
+- Refined update catalog docstring (#2411), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -106,12 +108,16 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed cache index loading to ensure persisted data remains available after startup, thanks for reporting @Saransh-28
 
 ### Documentation Updates
+- Added documentation for messaging styles (#2410), thanks @stefansimik
 - Added backtest clock and timers example (#2327), thanks @stefansimik
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
 - Added backtest portfolio example (#2362), thanks @stefansimik
 - Added backtest cache example (#2370), thanks @stefansimik
 - Added backtest cascaded indicators example (#2398), thanks @stefansimik
 - Added backtest custom event with msgbus example (#2400), thanks @stefansimik
+- Added backtest messaging with msgbus example (#2406), thanks @stefansimik
+- Added backtest messaging with actor & data example (#2407), thanks @stefansimik
+- Added backtest messaging with actor & signal example (#2408), thanks @stefansimik
 - Added indicators example (#2396), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik
