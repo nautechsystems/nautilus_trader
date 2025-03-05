@@ -20,6 +20,7 @@ from collections import defaultdict
 from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
+from betfair_parser.spec.betting.enums import InstructionReportErrorCode
 from betfair_parser.spec.betting.enums import InstructionReportStatus
 from betfair_parser.spec.betting.enums import OrderProjection
 from betfair_parser.spec.betting.orders import CancelOrders
@@ -689,14 +690,17 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._clock.timestamp_ns(),
             )
             return
-        self._log.debug(f"result={result}")
+        self._log.debug(f"{result=}")
 
         # Parse response
         for report in result.instruction_reports or []:
             venue_order_id = VenueOrderId(str(report.instruction.bet_id))
-            if report.status == InstructionReportStatus.FAILURE:
+            if (
+                report.status == InstructionReportStatus.FAILURE
+                and report.error_code != InstructionReportErrorCode.BET_TAKEN_OR_LAPSED
+            ):
                 reason = f"{report.error_code.name}: {report.error_code.__doc__}"
-                self._log.warning(f"cancel failed - {reason}")
+                self._log.warning(f"Cancel failed: {reason}")
                 self.generate_order_cancel_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -718,7 +722,6 @@ class BetfairExecutionClient(LiveExecutionClient):
                 venue_order_id,
                 self._clock.timestamp_ns(),
             )
-            self._log.debug("Sent order cancel")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders = self._cache.orders_open(
