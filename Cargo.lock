@@ -3109,6 +3109,7 @@ dependencies = [
 name = "nautilus-databento"
 version = "0.42.0"
 dependencies = [
+ "ahash 0.8.11",
  "anyhow",
  "criterion",
  "databento",
