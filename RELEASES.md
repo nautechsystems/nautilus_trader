@@ -2,7 +2,7 @@
 
 Released on TBD (UTC).
 
-This release introduces [uv](https://docs.astral.sh/uv) as the project and dependency management tool.
+This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
 
 ### Enhancements
 - Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
