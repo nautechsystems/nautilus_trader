@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_databento"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["python", "nautilus-core/ffi"]
