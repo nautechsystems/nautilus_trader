@@ -3190,6 +3190,7 @@ class OwnBookOrder:
         time_in_force: TimeInForce,
         status: OrderStatus,
         ts_last: int,
+        ts_accepted: int,
         ts_init: int,
     ) -> None: ...
     @property

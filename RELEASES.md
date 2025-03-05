@@ -8,6 +8,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
 - Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
 - Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
+- Added `ts_accepted` timestamp property for orders
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added pnl information to greeks data (#2378), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
