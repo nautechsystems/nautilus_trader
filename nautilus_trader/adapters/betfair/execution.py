@@ -438,11 +438,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        self._log.debug(f"result={result}")
+        self._log.debug(f"{result=}")
+
         for report in result.instruction_reports or []:
             if result.status == ExecutionReportStatus.FAILURE:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
-                self._log.warning(f"Submit failed - {reason}")
+                self._log.warning(f"Submit failed: {reason}")
                 self.generate_order_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -559,12 +560,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        self._log.debug(f"result={result}")
+        self._log.debug(f"{result=}")
 
         for report in result.instruction_reports or []:
             if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
-                self._log.warning(f"replace failed - {reason}")
+                self._log.warning(f"Replace failed: {reason}")
                 self.generate_order_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -636,12 +637,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        self._log.debug(f"result={result}")
+        self._log.debug(f"{result=}")
 
         for report in result.instruction_reports or []:
             if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
-                self._log.warning(f"size reduction failed - {reason}")
+                self._log.warning(f"Size reduction failed: {reason}")
                 self.generate_order_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -673,7 +674,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             command=command,
             instrument=instrument,
         )
-        self._log.debug(f"cancel_order {cancel_orders}")
+        self._log.debug(f"cancel_orders: {cancel_orders}")
 
         try:
             result = await self._client.cancel_orders(cancel_orders)
@@ -690,9 +691,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._clock.timestamp_ns(),
             )
             return
+
         self._log.debug(f"{result=}")
 
-        # Parse response
         for report in result.instruction_reports or []:
             venue_order_id = VenueOrderId(str(report.instruction.bet_id))
             if (
