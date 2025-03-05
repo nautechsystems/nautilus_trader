@@ -1766,54 +1766,97 @@ cdef class DataEngine(Component):
     cpdef void _handle_response(self, DataResponse response):
         if self.debug:
             self._log.debug(f"{RECV}{RES} {response}", LogColor.MAGENTA)
-
         self.response_count += 1
-        correlation_id = response.correlation_id
-        update_catalog_mode = response.params.get("update_catalog_mode", None)
-
-        if type(response.data) is list:
-            response_data = response.data
-        else:
-            # For request_instrument case
-            response_data = [response.data]
-
-        if update_catalog_mode is not None and response.data_type.type != Instrument:
-            # For instruments we want to handle each instrument individually
-            self._update_catalog(response_data, update_catalog_mode)
 
         # We may need to join responses from a catalog and a client
-        response_data = self._handle_query_group(correlation_id, response_data)
-
-        if response_data is None:
+        response_2 = self._handle_query_group(response)
+        if response_2 is None:
             return
 
-        if response.data_type.type != Instrument:
-            response.data = response_data
+        if response_2.data_type.type == Instrument:
+            update_catalog_mode = response_2.params.get("update_catalog_mode", None)
+            if isinstance(response_2.data, list):
+                self._handle_instruments(response_2.data, update_catalog_mode)
+            else:
+                self._handle_instrument(response_2.data, update_catalog_mode)
+        elif response_2.data_type.type == QuoteTick:
+            if response_2.params.get("bars_market_data_type"):
+                response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                response_2.data_type = DataType(Bar)
+            else:
+                self._handle_quote_ticks(response_2.data)
+        elif response_2.data_type.type == TradeTick:
+            if response_2.params.get("bars_market_data_type"):
+                response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                response_2.data_type = DataType(Bar)
+            else:
+                self._handle_trade_ticks(response_2.data)
+        elif response_2.data_type.type == Bar:
+            if response_2.params.get("bars_market_data_type"):
+                response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+            else:
+                self._handle_bars(response_2.data, response_2.data_type.metadata.get("partial"))
 
-        if response.data_type.type == Instrument:
-            if isinstance(response.data, list):
-                self._handle_instruments(response.data, update_catalog_mode)
-            else:
-                self._handle_instrument(response.data, update_catalog_mode)
-        elif response.data_type.type == QuoteTick:
-            if response.params.get("bars_market_data_type"):
-                response.data = self._handle_aggregated_bars(response.data, response.params)
-                response.data_type = DataType(Bar)
-            else:
-                self._handle_quote_ticks(response.data)
-        elif response.data_type.type == TradeTick:
-            if response.params.get("bars_market_data_type"):
-                response.data = self._handle_aggregated_bars(response.data, response.params)
-                response.data_type = DataType(Bar)
-            else:
-                self._handle_trade_ticks(response.data)
-        elif response.data_type.type == Bar:
-            if response.params.get("bars_market_data_type"):
-                response.data = self._handle_aggregated_bars(response.data, response.params)
-            else:
-                self._handle_bars(response.data, response.data_type.metadata.get("partial"))
+        self._msgbus.response(response_2)
 
-        self._msgbus.response(response)
+    cpdef void _new_query_group(self, UUID4 correlation_id, int n_components):
+        self._query_group_n_components[correlation_id] = n_components
+
+    cpdef DataResponse _handle_query_group(self, DataResponse response):
+        # Closure is not allowed in cpdef functions so we call a cdef function
+        return self._handle_query_group_aux(response)
+
+    cdef DataResponse _handle_query_group_aux(self, DataResponse response):
+        if response.data_type.type is Instrument:
+            return response
+
+        correlation_id = response.correlation_id
+
+        if correlation_id not in self._query_group_n_components or self._query_group_n_components[correlation_id] == 1:
+            update_catalog_mode = response.params.get("update_catalog_mode", None)
+            if update_catalog_mode is not None:
+                self._update_catalog(response.data, update_catalog_mode)
+            self._query_group_n_components.pop(correlation_id, None)
+            return response
+
+        if correlation_id not in self._query_group_components:
+            self._query_group_components[correlation_id] = []
+
+        self._query_group_components[correlation_id].append(response)
+        if len(self._query_group_components[correlation_id]) != self._query_group_n_components[correlation_id]:
+            return None
+
+        components = []
+        for component in self._query_group_components[correlation_id]:
+            if len(component.data) > 0:
+                components.append(component)
+
+        components = sorted(components, key=lambda response: response.data[0].ts_init)
+        result = []
+        last_timestamp = None
+        for component in components:
+            first_non_duplicate_index = 0
+
+            if last_timestamp is not None:
+                for i in range(len(component.data)):
+                    if component.data[i].ts_init > last_timestamp:
+                        first_non_duplicate_index = i
+                        break
+
+            last_timestamp = component.data[-1].ts_init
+
+            update_catalog_mode = component.params.get("update_catalog_mode", None)
+            if update_catalog_mode is not None:
+                self._update_catalog(component.data[first_non_duplicate_index:], update_catalog_mode)
+
+            result += component.data[first_non_duplicate_index:]
+
+        del self._query_group_n_components[correlation_id]
+        del self._query_group_components[correlation_id]
+
+        response.data = result
+
+        return response
 
     cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode, bint is_instrument = False):
         if len(ticks) == 0:
@@ -1844,54 +1887,6 @@ cdef class DataEngine(Component):
             timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)
         else:
             self._log.warning("No catalog available for appending data.")
-
-    cpdef void _new_query_group(self, UUID4 correlation_id, int n_components):
-        self._query_group_n_components[correlation_id] = n_components
-
-    cpdef object _handle_query_group(self, UUID4 correlation_id, list ticks):
-        # Closure is not allowed in cpdef functions so we call a cdef function
-        return self._handle_query_group_aux(correlation_id, ticks)
-
-    cdef object _handle_query_group_aux(self, UUID4 correlation_id, list ticks):
-        # Returns None or a list of ticks
-        if correlation_id not in self._query_group_n_components:
-            return ticks
-
-        if self._query_group_n_components[correlation_id] == 1:
-            del self._query_group_n_components[correlation_id]
-            return ticks
-
-        if correlation_id not in self._query_group_components:
-            self._query_group_components[correlation_id] = []
-
-        self._query_group_components[correlation_id].append(ticks)
-
-        if len(self._query_group_components[correlation_id]) != self._query_group_n_components[correlation_id]:
-            return None
-
-        components = []
-        for component in self._query_group_components[correlation_id]:
-            if len(component) > 0:
-                components.append(component)
-
-        components = sorted(components, key=lambda l: l[0].ts_init)
-        result = components[0]
-        last_timestamp = result[-1].ts_init
-
-        if len(components) > 1:
-            for component in components[1:]:
-                first_index = 0
-                for i in range(len(component)):
-                    if component[i].ts_init > last_timestamp:
-                        first_index = i
-                        last_timestamp = component[-1].ts_init
-                        break
-                result += component[first_index:]
-
-        del self._query_group_n_components[correlation_id]
-        del self._query_group_components[correlation_id]
-
-        return result
 
     cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = None):
         cdef Instrument instrument
