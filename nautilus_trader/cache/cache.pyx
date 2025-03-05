@@ -2334,7 +2334,6 @@ cdef class Cache(CacheFacade):
         return process_own_order_map(
             own_order_book.bids_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
             self._orders,
-            status,
         )
 
     cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
@@ -2364,7 +2363,6 @@ cdef class Cache(CacheFacade):
         return process_own_order_map(
             own_order_book.asks_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
             self._orders,
-            status,
         )
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
@@ -4510,7 +4508,6 @@ cdef class Cache(CacheFacade):
 cdef inline dict[Decimal, list[Order]] process_own_order_map(
     dict[Decimal, list[nautilus_pyo3.OwnBookOrder]] own_order_map,
     dict[ClientOrderId, Order] order_cache,
-    set[OrderStatus] status,
 ):
     cdef dict[Decimal, Order] order_map = {}
 
@@ -4525,10 +4522,8 @@ cdef inline dict[Decimal, list[Order]] process_own_order_map(
             order = order_cache.get(client_order_id)
             if order is None:
                 RuntimeError(f"{client_order_id!r} from own book not found in cache")
-            if status and <OrderStatus>order._fsm.state not in status:
-                continue
             orders.append(order)
-        if orders:
-            order_map[level_price] = orders
+
+        order_map[level_price] = orders
 
     return order_map
