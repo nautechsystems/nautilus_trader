@@ -13,11 +13,14 @@ runs:
           echo "Error: dist directory not found"
           exit 1
         fi
-        ASSET_PATH=$(find ./dist -name "*.whl" -printf "%T@ %p\n" | sort -n | tail -1 | cut -f2- -d" ")
+
+        ASSET_PATH=$(find ./dist -name "*.whl" -type f | xargs ls -t 2>/dev/null | head -n 1)
+
         if [ -z "$ASSET_PATH" ]; then
           echo "Error: No .whl files found in dist directory"
           exit 1
         fi
+
         echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
         echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
