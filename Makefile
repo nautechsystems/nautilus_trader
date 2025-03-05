@@ -16,6 +16,19 @@ install-debug:
 install-just-deps:
 	uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
 
+# Install instructions that also set up a uv venv inside the nautilus directory
+.PHONY: install-uv
+install-uv:
+	BUILD_MODE=release uv sync --all-groups --all-extras
+
+.PHONY: install-debug-uv
+install-debug-uv:
+	BUILD_MODE=debug uv sync --all-groups --all-extras
+
+.PHONY: install-just-deps-uv
+install-just-deps-uv:
+	uv sync --all-groups --all-extras --no-install-package nautilus_trader
+
 .PHONY: build
 build:
 	BUILD_MODE=release uv run --active --no-sync build.py
