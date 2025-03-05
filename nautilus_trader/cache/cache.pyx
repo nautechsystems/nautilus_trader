@@ -2006,12 +2006,7 @@ cdef class Cache(CacheFacade):
         else:
             self._index_orders_emulated.add(order.client_order_id)
 
-        if self._database is None:
-            return
-
-        # Update database
-        self._database.update_order(order)
-
+        # Update own book
         if update_own_book and should_handle_own_book_order(order):
             own_book = self._own_order_books.get(order.instrument_id)
             if own_book is None:
@@ -2021,6 +2016,12 @@ cdef class Cache(CacheFacade):
                 own_book.delete(order.to_own_book_order())
             else:
                 own_book.update(order.to_own_book_order())
+
+        if self._database is None:
+            return
+
+        # Update database
+        self._database.update_order(order)
 
     cpdef void update_order_pending_cancel_local(self, Order order):
         """
