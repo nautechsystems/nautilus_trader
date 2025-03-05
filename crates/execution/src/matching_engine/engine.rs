@@ -1558,7 +1558,7 @@ impl OrderMatchingEngine {
                                     "Added position id {} to cache for order {}",
                                     position_id,
                                     client_order_id
-                                )
+                                );
                             }
 
                             if (!child_order.is_open())
@@ -1631,7 +1631,7 @@ impl OrderMatchingEngine {
                                     price,
                                     trigger_price,
                                     Some(false),
-                                )
+                                );
                             }
                         }
                     } else {
@@ -2077,7 +2077,7 @@ impl OrderMatchingEngine {
                         price,
                         trigger_price,
                         Some(false),
-                    )
+                    );
                 }
             }
         }

@@ -1283,7 +1283,7 @@ mod tests {
         #[case] input: Result<&str, &'static str>, // Using `&'static str` for errors
         #[case] expected: Currency,
     ) {
-        let actual = parse_currency_or_usd_default(input.map_err(|e| std::io::Error::other(e)));
+        let actual = parse_currency_or_usd_default(input.map_err(std::io::Error::other));
         assert_eq!(actual, expected);
     }
 

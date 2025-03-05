@@ -196,7 +196,7 @@ impl ExecutionEngine {
                         continue;
                     }
                     let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
-                    own_book.add(order.to_own_book_order())
+                    own_book.add(order.to_own_book_order());
                 }
             }
         }
