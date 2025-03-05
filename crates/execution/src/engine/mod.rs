@@ -23,7 +23,7 @@
 pub mod config;
 
 use std::{
-    cell::RefCell,
+    cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
     rc::Rc,
     time::SystemTime,
@@ -46,6 +46,7 @@ use nautilus_model::{
     },
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
+    orderbook::own::{OwnOrderBook, should_handle_own_book_order},
     orders::{OrderAny, OrderError},
     position::Position,
     types::{Money, Price, Quantity},
@@ -176,6 +177,7 @@ impl ExecutionEngine {
     }
 
     // -- COMMANDS ------------------------------------------------------------
+
     #[allow(clippy::await_holding_refcell_ref)]
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
         let ts = SystemTime::now();
@@ -187,6 +189,16 @@ impl ExecutionEngine {
             self.cache.borrow_mut().cache_all().await?;
             cache.build_index();
             let _ = cache.check_integrity();
+
+            if self.config.manage_own_order_books {
+                for order in cache.orders(None, None, None, None) {
+                    if order.is_closed() || !should_handle_own_book_order(order) {
+                        continue;
+                    }
+                    let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
+                    own_book.add(order.to_own_book_order())
+                }
+            }
         }
 
         self.set_position_id_counts();
@@ -195,7 +207,7 @@ impl ExecutionEngine {
             "Loaded cache in {}ms",
             SystemTime::now()
                 .duration_since(ts)
-                .map_err(|e| anyhow::anyhow!("Failed to calculate duration: {}", e))?
+                .map_err(|e| anyhow::anyhow!("Failed to calculate duration: {e}"))?
                 .as_millis()
         );
 
@@ -253,7 +265,6 @@ impl ExecutionEngine {
     }
 
     fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
-        let mut command = command;
         let mut order = command.order.clone();
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
@@ -308,9 +319,13 @@ impl ExecutionEngine {
             }
         }
 
-        command.order = order;
+        if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
+            let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
+            own_book.add(order.to_own_book_order());
+        }
 
         // Send the order to the execution client
+        // TODO: Avoid this clone
         if let Err(e) = client.submit_order(command.clone()) {
             log::error!("Error submitting order to client: {e}");
             self.deny_order(
@@ -383,6 +398,15 @@ impl ExecutionEngine {
                         );
                     }
                     return; // Denied
+                }
+            }
+        }
+
+        if self.config.manage_own_order_books {
+            let mut own_book = self.get_or_init_own_order_book(&command.instrument_id);
+            for order in &command.order_list.orders {
+                if should_handle_own_book_order(order) {
+                    own_book.add(order.to_own_book_order());
                 }
             }
         }
@@ -1031,6 +1055,16 @@ impl ExecutionEngine {
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);
         }
+    }
+
+    fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<OwnOrderBook> {
+        let mut cache = self.cache.borrow_mut();
+        if cache.own_order_book_mut(instrument_id).is_none() {
+            let own_book = OwnOrderBook::new(*instrument_id);
+            cache.add_own_order_book(own_book).unwrap();
+        }
+
+        RefMut::map(cache, |c| c.own_order_book_mut(instrument_id).unwrap())
     }
 }
 

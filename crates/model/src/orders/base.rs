@@ -429,6 +429,7 @@ pub struct OrderCore {
     pub slippage: Option<f64>,
     pub init_id: UUID4,
     pub ts_init: UnixNanos,
+    pub ts_accepted: Option<UnixNanos>,
     pub ts_last: UnixNanos,
 }
 
@@ -475,6 +476,7 @@ impl OrderCore {
             slippage: None,
             init_id: init.event_id,
             ts_init: init.ts_event,
+            ts_accepted: None,
             ts_last: init.ts_event,
         }
     }

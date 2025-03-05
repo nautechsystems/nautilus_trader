@@ -43,6 +43,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
+    orderbook::OwnBookOrder,
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -341,6 +342,21 @@ impl OrderAny {
             Self::StopMarket(order) => order.ts_init,
             Self::TrailingStopLimit(order) => order.ts_init,
             Self::TrailingStopMarket(order) => order.ts_init,
+        }
+    }
+
+    #[must_use]
+    pub fn ts_accepted(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Limit(order) => order.ts_accepted,
+            Self::LimitIfTouched(order) => order.ts_accepted,
+            Self::Market(order) => order.ts_accepted,
+            Self::MarketIfTouched(order) => order.ts_accepted,
+            Self::MarketToLimit(order) => order.ts_accepted,
+            Self::StopLimit(order) => order.ts_accepted,
+            Self::StopMarket(order) => order.ts_accepted,
+            Self::TrailingStopLimit(order) => order.ts_accepted,
+            Self::TrailingStopMarket(order) => order.ts_accepted,
         }
     }
 
@@ -1106,6 +1122,21 @@ impl OrderAny {
             Self::TrailingStopLimit(order) => order.liquidity_side = Some(liquidity_side),
             Self::TrailingStopMarket(order) => order.liquidity_side = Some(liquidity_side),
         }
+    }
+
+    pub fn to_own_book_order(&self) -> OwnBookOrder {
+        OwnBookOrder::new(
+            self.client_order_id(),
+            self.order_side_specified(),
+            self.price().expect("`OwnBookOrder` must have a price"), // TBD
+            self.quantity(),
+            self.order_type(),
+            self.time_in_force(),
+            self.status(),
+            self.ts_last(),
+            self.ts_accepted().unwrap_or_default(),
+            self.ts_init(),
+        )
     }
 }
 
