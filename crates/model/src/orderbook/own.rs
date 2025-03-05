@@ -33,6 +33,7 @@ use crate::{
     enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
     orderbook::BookPrice,
+    orders::OrderAny,
     types::{Price, Quantity},
 };
 
@@ -661,6 +662,12 @@ impl Ord for OwnBookLevel {
     fn cmp(&self, other: &Self) -> Ordering {
         self.price.cmp(&other.price)
     }
+}
+
+pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
+    order.order_type() != OrderType::Market
+        && order.time_in_force() != TimeInForce::Ioc
+        && order.time_in_force() != TimeInForce::Fok
 }
 
 ////////////////////////////////////////////////////////////////////////////////

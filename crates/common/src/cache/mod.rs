@@ -48,7 +48,7 @@ use nautilus_model::{
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
-    orderbook::OrderBook,
+    orderbook::{OrderBook, own::OwnOrderBook},
     orders::{OrderAny, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
@@ -68,6 +68,7 @@ pub struct Cache {
     mark_prices: HashMap<InstrumentId, Price>,
     mark_xrates: HashMap<(Currency, Currency), f64>,
     books: HashMap<InstrumentId, OrderBook>,
+    own_books: HashMap<InstrumentId, OwnOrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
     instruments: HashMap<InstrumentId, InstrumentAny>,
@@ -103,6 +104,7 @@ impl Cache {
             quotes: HashMap::new(),
             trades: HashMap::new(),
             books: HashMap::new(),
+            own_books: HashMap::new(),
             bars: HashMap::new(),
             currencies: HashMap::new(),
             instruments: HashMap::new(),
@@ -801,6 +803,7 @@ impl Cache {
         self.quotes.clear();
         self.trades.clear();
         self.books.clear();
+        self.own_books.clear();
         self.bars.clear();
         self.currencies.clear();
         self.instruments.clear();
@@ -858,6 +861,14 @@ impl Cache {
         }
 
         self.books.insert(book.instrument_id, book);
+        Ok(())
+    }
+
+    /// Adds the given `own_book` to the cache.
+    pub fn add_own_order_book(&mut self, own_book: OwnOrderBook) -> anyhow::Result<()> {
+        log::debug!("Adding `OwnOrderBook` {}", own_book.instrument_id);
+
+        self.own_books.insert(own_book.instrument_id, own_book);
         Ok(())
     }
 
@@ -2371,6 +2382,21 @@ impl Cache {
     #[must_use]
     pub fn order_book_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut OrderBook> {
         self.books.get_mut(instrument_id)
+    }
+
+    /// Gets a reference to the own order book for the given `instrument_id`.
+    #[must_use]
+    pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
+        self.own_books.get(instrument_id)
+    }
+
+    /// Gets a reference to the own order book for the given `instrument_id`.
+    #[must_use]
+    pub fn own_order_book_mut(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&mut OwnOrderBook> {
+        self.own_books.get_mut(instrument_id)
     }
 
     /// Gets a reference to the latest quote tick for the given `instrument_id`.

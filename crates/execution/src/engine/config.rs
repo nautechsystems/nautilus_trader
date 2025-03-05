@@ -21,6 +21,9 @@ pub struct ExecutionEngineConfig {
     /// If the cache should be loaded on initialization.
     #[serde(default = "default_true")]
     pub load_cache: bool,
+    /// If the execution engine should maintain own/user order books based on commands and events.
+    #[serde(default)]
+    pub manage_own_order_books: bool,
     /// If order state snapshot lists are persisted to a backing database.
     /// Snapshots will be taken at every order state update (when events are applied).
     #[serde(default)]
@@ -46,6 +49,7 @@ impl Default for ExecutionEngineConfig {
     fn default() -> Self {
         Self {
             load_cache: true,
+            manage_own_order_books: false,
             snapshot_orders: false,
             snapshot_positions: false,
             snapshot_positions_interval_secs: None,
