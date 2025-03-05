@@ -43,6 +43,7 @@ impl OwnBookOrder {
         time_in_force: TimeInForce,
         status: OrderStatus,
         ts_last: u64,
+        ts_accepted: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
         Ok(OwnBookOrder::new(
@@ -54,6 +55,7 @@ impl OwnBookOrder {
             time_in_force,
             status,
             ts_last.into(),
+            ts_accepted.into(),
             ts_init.into(),
         ))
     }

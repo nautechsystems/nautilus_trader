@@ -41,8 +41,9 @@ def test_own_book_order_creation():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     assert order.client_order_id == ClientOrderId("O-12345")
@@ -62,8 +63,9 @@ def test_own_book_order_exposure():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     assert order.exposure() == 1000.0  # 100.0 * 10.0
@@ -85,8 +87,9 @@ def test_own_book_order_signed_size(side, expected):
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     assert order.signed_size() == expected
@@ -101,16 +104,17 @@ def test_own_book_order_repr():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     expected_repr = (
         "OwnBookOrder(client_order_id=O-12345, side=BUY, price=100.00, size=10, "
-        "order_type=LIMIT, time_in_force=GTC, status=ACCEPTED, ts_init=0)"
+        "order_type=LIMIT, time_in_force=GTC, status=ACCEPTED, ts_last=2, ts_accepted=2, ts_init=1)"
     )
     assert repr(order) == expected_repr
-    assert str(order) == "O-12345,BUY,100.00,10,LIMIT,GTC,ACCEPTED,0"
+    assert str(order) == "O-12345,BUY,100.00,10,LIMIT,GTC,ACCEPTED,2,2,1"
 
 
 # ------------------------------------------------------------------------------
@@ -147,8 +151,9 @@ def test_own_order_book_add_update_delete():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     # 1) Add order
@@ -167,8 +172,9 @@ def test_own_order_book_add_update_delete():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
     book.update(updated_order)
     assert book.event_count == 2  # Update increments the event count
@@ -206,8 +212,9 @@ def test_own_order_book_clear():
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.ACCEPTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_init=1,
         ),
     )
     assert book.event_count == 1
@@ -243,8 +250,9 @@ def test_own_order_book_bids_asks_as_map(side):
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
     book.add(order)
 
@@ -287,8 +295,9 @@ def test_own_order_book_fifo_same_price():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=1,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
     order2 = OwnBookOrder(
         client_order_id=ClientOrderId("O-2"),
@@ -299,7 +308,8 @@ def test_own_order_book_fifo_same_price():
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
         ts_last=2,
-        ts_init=0,
+        ts_accepted=2,
+        ts_init=1,
     )
     book.add(order1)
     book.add(order2)
@@ -332,6 +342,7 @@ def test_own_order_book_price_change():
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
         ts_last=10,
+        ts_accepted=10,
         ts_init=0,
     )
     book.add(order)
@@ -347,6 +358,7 @@ def test_own_order_book_price_change():
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
         ts_last=11,
+        ts_accepted=11,
         ts_init=0,
     )
     book.update(updated)
@@ -378,8 +390,9 @@ def test_own_order_book_bid_ask_quantity():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
     bid_order2 = OwnBookOrder(
         client_order_id=ClientOrderId("O-2"),
@@ -389,8 +402,9 @@ def test_own_order_book_bid_ask_quantity():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
     # Add an order at a different price level (bids)
     bid_order3 = OwnBookOrder(
@@ -401,8 +415,9 @@ def test_own_order_book_bid_ask_quantity():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     # Add orders at different price levels (asks)
@@ -414,8 +429,9 @@ def test_own_order_book_bid_ask_quantity():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
     ask_order2 = OwnBookOrder(
         client_order_id=ClientOrderId("O-5"),
@@ -425,8 +441,9 @@ def test_own_order_book_bid_ask_quantity():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     book.add(bid_order1)
@@ -519,8 +536,9 @@ def test_own_order_book_quantities_parametrized(
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.ACCEPTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_init=1,
         )
         book.add(order)
 
@@ -547,8 +565,9 @@ def test_bids_to_dict_with_status_filter():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.SUBMITTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     accepted_order = OwnBookOrder(
@@ -559,8 +578,9 @@ def test_bids_to_dict_with_status_filter():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     canceled_order = OwnBookOrder(
@@ -571,8 +591,9 @@ def test_bids_to_dict_with_status_filter():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.CANCELED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=3,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     book.add(submitted_order)
@@ -619,8 +640,9 @@ def test_bid_quantity_with_status_filter():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.SUBMITTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=1,
+        ts_accepted=0,
+        ts_init=1,
     )
 
     accepted_order = OwnBookOrder(
@@ -631,8 +653,9 @@ def test_bid_quantity_with_status_filter():
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_init=1,
     )
 
     book.add(submitted_order)
@@ -670,8 +693,9 @@ def test_mixed_status_filtering():
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.SUBMITTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_init=1,
         ),
     )
 
@@ -684,8 +708,9 @@ def test_mixed_status_filtering():
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.ACCEPTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_init=1,
         ),
     )
 
@@ -698,8 +723,9 @@ def test_mixed_status_filtering():
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.SUBMITTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=1,
+            ts_accepted=0,
+            ts_init=1,
         ),
     )
 
@@ -712,8 +738,9 @@ def test_mixed_status_filtering():
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.SUBMITTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=1,
+            ts_accepted=0,
+            ts_init=1,
         ),
     )
 
@@ -726,8 +753,9 @@ def test_mixed_status_filtering():
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.ACCEPTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_init=1,
         ),
     )
 

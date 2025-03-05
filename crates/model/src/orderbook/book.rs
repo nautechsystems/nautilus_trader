@@ -299,7 +299,7 @@ impl OrderBook {
 
                             // For ACCEPTED status, check the buffer period
                             if order.status == OrderStatus::Accepted {
-                                return order.ts_last + buffer <= ts_now;
+                                return order.ts_accepted + buffer <= ts_now;
                             }
 
                             true
@@ -326,7 +326,7 @@ impl OrderBook {
                             }
 
                             // For ACCEPTED status, check the buffer period
-                            order.ts_last + buffer <= ts_now
+                            order.ts_accepted + buffer <= ts_now
                         })
                         .map(|order| order.size.as_decimal())
                         .sum::<Decimal>(),
@@ -1328,6 +1328,7 @@ mod tests {
             OrderStatus::Accepted,
             1.into(),
             1.into(),
+            1.into(),
         );
 
         let own_ask_order = OwnBookOrder::new(
@@ -1338,6 +1339,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            2.into(),
             2.into(),
             2.into(),
         );
@@ -1390,6 +1392,7 @@ mod tests {
             OrderStatus::Accepted,
             1.into(),
             1.into(),
+            1.into(),
         );
 
         let own_ask_order = OwnBookOrder::new(
@@ -1400,6 +1403,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            2.into(),
             2.into(),
             2.into(),
         );
@@ -1450,6 +1454,7 @@ mod tests {
             OrderStatus::Accepted,
             1.into(),
             1.into(),
+            1.into(),
         );
 
         let own_ask_order = OwnBookOrder::new(
@@ -1460,6 +1465,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            2.into(),
             2.into(),
             2.into(),
         );
@@ -1510,6 +1516,7 @@ mod tests {
             OrderStatus::Accepted,
             1.into(),
             1.into(),
+            1.into(),
         );
 
         let own_ask_order = OwnBookOrder::new(
@@ -1520,6 +1527,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            2.into(),
             2.into(),
             2.into(),
         );
@@ -1570,6 +1578,7 @@ mod tests {
             OrderStatus::Accepted,
             1.into(),
             1.into(),
+            1.into(),
         );
 
         let own_bid_submitted = OwnBookOrder::new(
@@ -1580,6 +1589,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Submitted,
+            2.into(),
             2.into(),
             2.into(),
         );
@@ -1594,6 +1604,7 @@ mod tests {
             OrderStatus::Accepted,
             3.into(),
             3.into(),
+            3.into(),
         );
 
         let own_ask_submitted = OwnBookOrder::new(
@@ -1604,6 +1615,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Submitted,
+            4.into(),
             4.into(),
             4.into(),
         );
@@ -1703,6 +1715,7 @@ mod tests {
             OrderStatus::Accepted,
             1.into(),
             1.into(),
+            1.into(),
         );
 
         let own_ask_order = OwnBookOrder::new(
@@ -1713,6 +1726,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            2.into(),
             2.into(),
             2.into(),
         );
@@ -1775,6 +1789,7 @@ mod tests {
             TimeInForce::Gtc,
             OrderStatus::Accepted,
             900.into(), // ts_last is 100 ns ago
+            900.into(), // ts_last is 100 ns ago
             800.into(),
         );
 
@@ -1787,6 +1802,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            500.into(), // ts_last is 500 ns ago
             500.into(), // ts_last is 500 ns ago
             400.into(),
         );
@@ -1801,6 +1817,7 @@ mod tests {
             TimeInForce::Gtc,
             OrderStatus::Accepted,
             900.into(), // ts_last is 100 ns ago
+            900.into(), // ts_last is 100 ns ago
             800.into(),
         );
 
@@ -1813,6 +1830,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            500.into(), // ts_last is 500 ns ago
             500.into(), // ts_last is 500 ns ago
             400.into(),
         );
@@ -1927,6 +1945,7 @@ mod tests {
             TimeInForce::Gtc,
             OrderStatus::Accepted,
             500.into(), // ts_last is 500 ns ago
+            500.into(), // ts_last is 500 ns ago
             400.into(),
         );
 
@@ -1939,6 +1958,7 @@ mod tests {
             TimeInForce::Gtc,
             OrderStatus::Submitted,
             500.into(), // ts_last doesn't matter for non-ACCEPTED orders
+            500.into(),
             400.into(),
         );
 
