@@ -1837,7 +1837,8 @@ cdef class DataEngine(Component):
             return
 
         if timestamp_bound_catalog is None and len(self._catalogs) > 0:
-            last_timestamp_catalog = self._catalogs[0]
+            # if more than one catalog exists, the first declared one is the default one
+            last_timestamp_catalog = list(self._catalogs.values())[0]
 
         if timestamp_bound_catalog is not None:
             timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)

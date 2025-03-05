@@ -2113,6 +2113,8 @@ cdef class Actor(Component):
             Recommended catalog write modes are:
             - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
             - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+            It is assumed that the data in a catalog for an instrument id is contiguous in time.
+            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2130,6 +2132,14 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
+
+        cdef datetime now = self.clock.utc_now()
+        if start is not None:
+            Condition.is_true(start <= now, "start was > now")
+        if end is not None:
+            Condition.is_true(end <= now, "end was > now")
+        if start is not None and end is not None:
+            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         params = params if params else {}
@@ -2368,11 +2378,6 @@ cdef class Actor(Component):
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2454,6 +2459,8 @@ cdef class Actor(Component):
             Recommended catalog write modes are:
             - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
             - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+            It is assumed that the data in a catalog for an instrument_id is contiguous in time.
+            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2482,8 +2489,6 @@ cdef class Actor(Component):
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
             Condition.is_true(end <= now, "end was > now")
-            Condition.is_true(update_catalog_mode is None,
-                     "end and update_catalog_mode cannot be set at the same time to prevent data holes.")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2554,6 +2559,8 @@ cdef class Actor(Component):
             Recommended catalog write modes are:
             - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
             - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+            It is assumed that the data in a catalog for an instrument id is contiguous in time.
+            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2582,8 +2589,6 @@ cdef class Actor(Component):
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
             Condition.is_true(end <= now, "end was > now")
-            Condition.is_true(update_catalog_mode is None,
-                      "end and update_catalog_mode cannot be set at the same time to prevent data holes.")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2654,6 +2659,8 @@ cdef class Actor(Component):
             Recommended catalog write modes are:
             - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
             - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+            It is assumed that the data in a catalog for an instrument id is contiguous in time.
+            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2682,8 +2689,6 @@ cdef class Actor(Component):
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
             Condition.is_true(end <= now, "end was > now")
-            Condition.is_true(update_catalog_mode is None,
-                      "end and update_catalog_mode cannot be set at the same time to prevent data holes.")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2766,6 +2771,8 @@ cdef class Actor(Component):
             Recommended catalog write modes are:
             - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
             - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+            It is assumed that the data in a catalog for an instrument id is contiguous in time.
+            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2799,8 +2806,6 @@ cdef class Actor(Component):
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
             Condition.is_true(end <= now, "end was > now")
-            Condition.is_true(update_catalog_mode is None,
-                      "end and update_catalog_mode cannot be set at the same time to prevent data holes.")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
