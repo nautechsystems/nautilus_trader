@@ -2010,12 +2010,20 @@ cdef class Cache(CacheFacade):
         if update_own_book and should_handle_own_book_order(order):
             own_book = self._own_order_books.get(order.instrument_id)
             if own_book is None:
+                self._log.debug(
+                    f"OwnOrderBook for {order.instrument_id} does not exist to update {order.client_order_id!r}",
+                    LogColor.MAGENTA,
+                )
                 return
 
+            own_book_order = order.to_own_book_order()
+
             if order.is_closed_c():
-                own_book.delete(order.to_own_book_order())
+                own_book.delete(own_book_order)
+                self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
             else:
-                own_book.update(order.to_own_book_order())
+                own_book.update(own_book_order)
+                self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
 
         if self._database is None:
             return

@@ -80,4 +80,4 @@ cdef class BookLevel:
 
 
 cdef inline bint should_handle_own_book_order(Order order):
-    return order.order_type != OrderType.MARKET and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK
+    return order.has_price_c() and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK
