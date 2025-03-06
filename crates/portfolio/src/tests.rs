@@ -46,8 +46,8 @@ mod tests {
     use crate::portfolio::Portfolio;
 
     #[fixture]
-    fn msgbus() -> MessageBus {
-        MessageBus::default()
+    fn msgbus() -> Rc<RefCell<MessageBus>> {
+        MessageBus::default().register_message_bus()
     }
 
     #[fixture]
@@ -90,7 +90,7 @@ mod tests {
 
     #[fixture]
     fn portfolio(
-        msgbus: MessageBus,
+        msgbus: Rc<RefCell<MessageBus>>,
         mut simple_cache: Cache,
         clock: TestClock,
         instrument_audusd: InstrumentAny,
@@ -104,7 +104,7 @@ mod tests {
         simple_cache.add_instrument(instrument_ethusdt).unwrap();
 
         Portfolio::new(
-            Rc::new(RefCell::new(msgbus)),
+            msgbus,
             Rc::new(RefCell::new(simple_cache)),
             Rc::new(RefCell::new(clock)),
             None,

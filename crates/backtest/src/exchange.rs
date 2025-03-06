@@ -620,7 +620,7 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         msgbus::{
-            MessageBus,
+            MessageBus, register,
             stubs::{get_message_saving_handler, get_saved_messages},
         },
     };
@@ -1042,10 +1042,10 @@ mod tests {
     #[rstest]
     fn test_accounting() {
         let account_type = AccountType::Margin;
-        let mut msgbus = MessageBus::default();
+        let msgbus = MessageBus::default().register_message_bus();
         let mut cache = Cache::default();
         let handler = get_message_saving_handler::<AccountState>(None);
-        msgbus.register(Ustr::from("Portfolio.update_account"), handler.clone());
+        register(Ustr::from("Portfolio.update_account"), handler.clone());
         let margin_account = MarginAccount::new(
             AccountState::new(
                 AccountId::from("SIM-001"),
@@ -1074,7 +1074,7 @@ mod tests {
             Venue::new("SIM"),
             account_type,
             BookType::L2_MBP,
-            Some(Rc::new(RefCell::new(msgbus))),
+            Some(msgbus.clone()),
             Some(Rc::new(RefCell::new(cache))),
         );
         exchange.initialize_account();

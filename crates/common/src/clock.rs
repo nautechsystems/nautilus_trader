@@ -102,6 +102,8 @@ pub trait Clock {
     fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
+
+    fn reset(&mut self);
 }
 
 /// A static test clock.
@@ -374,6 +376,13 @@ impl Clock for TestClock {
         }
         self.timers = BTreeMap::new();
     }
+
+    fn reset(&mut self) {
+        self.time = AtomicTime::new(false, UnixNanos::default());
+        self.timers = BTreeMap::new();
+        self.heap = BinaryHeap::new();
+        self.callbacks = HashMap::new();
+    }
 }
 
 /// A real-time clock which uses system time.
@@ -629,6 +638,12 @@ impl Clock for LiveClock {
             timer.cancel();
         }
         self.timers.clear();
+    }
+
+    fn reset(&mut self) {
+        self.timers = HashMap::new();
+        self.heap = Arc::new(Mutex::new(BinaryHeap::new()));
+        self.callbacks = HashMap::new();
     }
 }
 

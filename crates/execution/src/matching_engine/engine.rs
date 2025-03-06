@@ -27,7 +27,10 @@ use std::{
 };
 
 use chrono::TimeDelta;
-use nautilus_common::{cache::Cache, msgbus::MessageBus};
+use nautilus_common::{
+    cache::Cache,
+    msgbus::{MessageBus, send},
+};
 use nautilus_core::{AtomicTime, UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, order::BookOrder},
@@ -2122,7 +2125,7 @@ impl OrderMatchingEngine {
             false,
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
@@ -2143,7 +2146,7 @@ impl OrderMatchingEngine {
             false,
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2175,7 +2178,7 @@ impl OrderMatchingEngine {
             account_id,
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2204,7 +2207,7 @@ impl OrderMatchingEngine {
             Some(account_id),
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_updated(
@@ -2231,7 +2234,7 @@ impl OrderMatchingEngine {
             trigger_price,
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2252,7 +2255,7 @@ impl OrderMatchingEngine {
             order.account_id(),
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
@@ -2270,7 +2273,7 @@ impl OrderMatchingEngine {
             order.account_id(),
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
@@ -2288,7 +2291,7 @@ impl OrderMatchingEngine {
             order.account_id(),
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2329,7 +2332,7 @@ impl OrderMatchingEngine {
             Some(commission),
         ));
         let msgbus = self.msgbus.as_ref().borrow();
-        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
