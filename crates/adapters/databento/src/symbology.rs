@@ -15,13 +15,35 @@
 
 use std::collections::HashMap;
 
-use databento::dbn::{self, SType};
+use super::types::PublisherId;
+use ahash::AHashMap;
+use databento::dbn::{self, PitSymbolMap, SType};
 use dbn::{Publisher, Record};
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_slice_not_empty;
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 
-use super::types::PublisherId;
+#[derive(Debug)]
+pub struct MetadataCache {
+    metadata: dbn::Metadata,
+    date_metadata_map: AHashMap<time::Date, PitSymbolMap>,
+}
+
+impl MetadataCache {
+    pub fn new(metadata: dbn::Metadata) -> Self {
+        Self {
+            metadata,
+            date_metadata_map: AHashMap::new(),
+        }
+    }
+
+    pub fn symbol_map_for_date(&mut self, date: time::Date) -> dbn::Result<&PitSymbolMap> {
+        Ok(self
+            .date_metadata_map
+            .entry(date)
+            .or_insert_with(|| self.metadata.symbol_map_for_date(date).unwrap()))
+    }
+}
 
 pub fn instrument_id_to_symbol_string(
     instrument_id: InstrumentId,
@@ -44,7 +66,7 @@ pub fn instrument_id_to_symbol_string(
 
 pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
-    metadata: &dbn::Metadata,
+    metadata: &mut MetadataCache,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &HashMap<Symbol, Venue>,
 ) -> anyhow::Result<InstrumentId> {
@@ -65,7 +87,7 @@ pub fn decode_nautilus_instrument_id(
 
 pub fn get_nautilus_instrument_id_for_record(
     record: &dbn::RecordRef,
-    metadata: &dbn::Metadata,
+    metadata: &mut MetadataCache,
     venue: Venue,
 ) -> anyhow::Result<InstrumentId> {
     let (instrument_id, nanoseconds) = if let Some(msg) = record.get::<dbn::MboMsg>() {

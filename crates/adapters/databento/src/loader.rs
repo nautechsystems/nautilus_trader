@@ -19,6 +19,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::{
+    decode::{
+        decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
+        decode_status_msg,
+    },
+    symbology::decode_nautilus_instrument_id,
+    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
+};
+use crate::symbology::MetadataCache;
 use databento::dbn;
 use dbn::{
     Publisher,
@@ -34,15 +43,6 @@ use nautilus_model::{
     types::Currency,
 };
 use ustr::Ustr;
-
-use super::{
-    decode::{
-        decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
-        decode_status_msg,
-    },
-    symbology::decode_nautilus_instrument_id,
-    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
-};
 
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
@@ -236,6 +236,7 @@ impl DatabentoDataLoader {
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
+        let mut metadata_cache = MetadataCache::new(metadata);
         let mut dbn_stream = decoder.decode_stream::<T>();
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
@@ -251,7 +252,7 @@ impl DatabentoDataLoader {
                         Some(id) => *id, // Copy
                         None => decode_nautilus_instrument_id(
                             &record,
-                            &metadata,
+                            &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
@@ -440,6 +441,7 @@ impl DatabentoDataLoader {
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
+        let mut metadata_cache = MetadataCache::new(metadata);
         let mut dbn_stream = decoder.decode_stream::<T>();
 
         Ok(std::iter::from_fn(move || {
@@ -453,7 +455,7 @@ impl DatabentoDataLoader {
                         Some(id) => *id, // Copy
                         None => decode_nautilus_instrument_id(
                             &record,
-                            &metadata,
+                            &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
@@ -482,6 +484,7 @@ impl DatabentoDataLoader {
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
+        let mut metadata_cache = MetadataCache::new(metadata);
         let mut dbn_stream = decoder.decode_stream::<T>();
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
@@ -497,7 +500,7 @@ impl DatabentoDataLoader {
                         Some(id) => *id, // Copy
                         None => decode_nautilus_instrument_id(
                             &record,
-                            &metadata,
+                            &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
@@ -533,6 +536,7 @@ impl DatabentoDataLoader {
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
+        let mut metadata_cache = MetadataCache::new(metadata);
         let mut dbn_stream = decoder.decode_stream::<T>();
 
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
@@ -548,7 +552,7 @@ impl DatabentoDataLoader {
                         Some(id) => *id, // Copy
                         None => decode_nautilus_instrument_id(
                             &record,
-                            &metadata,
+                            &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
