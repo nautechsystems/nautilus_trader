@@ -66,8 +66,8 @@ pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
-    clients: HashMap<ClientId, ExecutionClient>,
-    default_client: Option<ExecutionClient>,
+    clients: HashMap<ClientId, Rc<dyn ExecutionClient>>,
+    default_client: Option<Rc<dyn ExecutionClient>>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
@@ -109,12 +109,12 @@ impl ExecutionEngine {
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|c| c.is_connected)
+        self.clients.values().all(|c| c.is_connected())
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|c| !c.is_connected)
+        self.clients.values().all(|c| !c.is_connected())
     }
 
     #[must_use]
@@ -129,21 +129,21 @@ impl ExecutionEngine {
 
     // -- REGISTRATION --------------------------------------------------------
 
-    pub fn register_client(&mut self, client: ExecutionClient) -> anyhow::Result<()> {
-        if self.clients.contains_key(&client.client_id) {
-            anyhow::bail!("Client already registered with ID {}", client.client_id);
+    pub fn register_client(&mut self, client: Rc<dyn ExecutionClient>) -> anyhow::Result<()> {
+        if self.clients.contains_key(&client.client_id()) {
+            anyhow::bail!("Client already registered with ID {}", client.client_id());
         }
 
         // If client has venue, register routing
-        self.routing_map.insert(client.venue, client.client_id);
+        self.routing_map.insert(client.venue(), client.client_id());
 
-        log::info!("Registered client {}", client.client_id);
-        self.clients.insert(client.client_id, client);
+        log::info!("Registered client {}", client.client_id());
+        self.clients.insert(client.client_id(), client);
         Ok(())
     }
 
-    pub fn register_default_client(&mut self, client: ExecutionClient) {
-        log::info!("Registered default client {}", client.client_id);
+    pub fn register_default_client(&mut self, client: Rc<dyn ExecutionClient>) {
+        log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
 
@@ -235,7 +235,7 @@ impl ExecutionEngine {
             log::debug!("{RECV}{CMD} {command:?}");
         }
 
-        let client = if let Some(client) = self
+        let client: Rc<dyn ExecutionClient> = if let Some(client) = self
             .clients
             .get(&command.client_id())
             .or_else(|| {
@@ -245,7 +245,7 @@ impl ExecutionEngine {
             })
             .or(self.default_client.as_ref())
         {
-            client
+            client.clone()
         } else {
             log::error!(
                 "No execution client found for command: client_id={:?}, venue={}, command={command:?}",
@@ -266,7 +266,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
+    fn handle_submit_order(&self, client: Rc<dyn ExecutionClient>, command: SubmitOrder) {
         let mut order = command.order.clone();
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
@@ -337,7 +337,11 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order_list(&self, client: &ExecutionClient, mut command: SubmitOrderList) {
+    fn handle_submit_order_list(
+        &self,
+        client: Rc<dyn ExecutionClient>,
+        mut command: SubmitOrderList,
+    ) {
         let orders = command.order_list.orders.clone();
 
         // Cache orders
@@ -425,31 +429,35 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
+    fn handle_modify_order(&self, client: Rc<dyn ExecutionClient>, command: ModifyOrder) {
         if let Err(e) = client.modify_order(command) {
             log::error!("Error modifying order: {e}");
         }
     }
 
-    fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
+    fn handle_cancel_order(&self, client: Rc<dyn ExecutionClient>, command: CancelOrder) {
         if let Err(e) = client.cancel_order(command) {
             log::error!("Error canceling order: {e}");
         }
     }
 
-    fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+    fn handle_cancel_all_orders(&self, client: Rc<dyn ExecutionClient>, command: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(command) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
-    fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
+    fn handle_batch_cancel_orders(
+        &self,
+        client: Rc<dyn ExecutionClient>,
+        command: BatchCancelOrders,
+    ) {
         if let Err(e) = client.batch_cancel_orders(command) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
-    fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
+    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, command: QueryOrder) {
         if let Err(e) = client.query_order(command) {
             log::error!("Error querying order: {e}");
         }
@@ -575,12 +583,12 @@ impl ExecutionEngine {
         // Use native venue OMS
         if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue) {
             if let Some(client) = self.clients.get(client_id) {
-                return client.oms_type;
+                return client.oms_type();
             }
         }
 
         if let Some(client) = &self.default_client {
-            return client.oms_type;
+            return client.oms_type();
         }
 
         OmsType::Netting // Default fallback
