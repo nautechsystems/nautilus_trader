@@ -62,7 +62,7 @@ impl ActorRegistry {
 unsafe impl Sync for ActorRegistry {}
 unsafe impl Send for ActorRegistry {}
 
-pub static ACTOR_REGISTRY: OnceLock<ActorRegistry> = OnceLock::new();
+static ACTOR_REGISTRY: OnceLock<ActorRegistry> = OnceLock::new();
 
 pub fn get_actor_registry() -> &'static ActorRegistry {
     ACTOR_REGISTRY.get_or_init(ActorRegistry::new)

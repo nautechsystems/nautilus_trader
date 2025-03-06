@@ -1,2 +1,3 @@
 [toolchain]
-channel = "nightly"
+version = "1.85.0"
+channel = "stable"

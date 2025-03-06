@@ -23,11 +23,17 @@ use std::{
 };
 
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
+use nautilus_model::data::Data;
+use ustr::Ustr;
 
 use crate::{
     actor::{Actor, get_actor_unchecked, register_actor},
     clock::Clock,
     messages::data::DataResponse,
+    msgbus::{
+        handler::{MessageHandler, ShareableMessageHandler},
+        register, send,
+    },
     timer::{TimeEvent, TimeEventCallback},
 };
 
@@ -213,8 +219,17 @@ where
     F: Fn(T) + 'static,
 {
     pub fn to_actor(self) -> Rc<UnsafeCell<Self>> {
+        // Register process endpoint
+        let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
+        register(
+            process_handler.id().as_str(),
+            ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
+        );
+
+        // register actor state
         let actor = Rc::new(UnsafeCell::new(self));
         register_actor(actor.clone());
+
         actor
     }
 
@@ -236,9 +251,7 @@ where
         let callback = if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());
-            Some(TimeEventCallback::Rust(Rc::new(
-                ThrottlerProcess::<T, F>::new(self.actor_id),
-            )))
+            Some(ThrottlerProcess::<T, F>::new(self.actor_id).get_timer_callback())
         } else {
             log::debug!("Dropping");
             if let Some(drop) = &self.output_drop {
@@ -269,40 +282,47 @@ where
     }
 }
 
-#[derive(Clone)]
+/// Process buffered messages for throttler
+///
+/// When limit is reached, schedules a timer event to call self again. The handler
+/// is registered as a separated endpoint on the message bus as `{actor_id}_process`.
 struct ThrottlerProcess<T, F> {
     actor_id: UUID4,
-    phantom_1: PhantomData<T>,
-    phantom_2: PhantomData<F>,
+    endpoint: Ustr,
+    phantom_t: PhantomData<T>,
+    phantom_f: PhantomData<F>,
 }
 
 impl<T, F> ThrottlerProcess<T, F> {
     pub fn new(actor_id: UUID4) -> Self {
+        let endpoint = Ustr::from(&format!("{}_process", actor_id));
         Self {
             actor_id,
-            phantom_1: PhantomData,
-            phantom_2: PhantomData,
+            endpoint,
+            phantom_t: PhantomData,
+            phantom_f: PhantomData,
         }
+    }
+
+    pub fn get_timer_callback(&self) -> TimeEventCallback {
+        let endpoint_clone = self.endpoint;
+        let process_callback = Rc::new(move |_event: TimeEvent| {
+            send(&endpoint_clone, &());
+        });
+        TimeEventCallback::Rust(process_callback)
     }
 }
 
-// Dummy impls to satisfy the compiler
-impl<T, F> FnOnce<(TimeEvent,)> for ThrottlerProcess<T, F> {
-    type Output = ();
-    extern "rust-call" fn call_once(self, _args: (TimeEvent,)) -> Self::Output {}
-}
-
-// Dummy impls to satisfy the compiler
-impl<T, F> FnMut<(TimeEvent,)> for ThrottlerProcess<T, F> {
-    extern "rust-call" fn call_mut(&mut self, _args: (TimeEvent,)) -> Self::Output {}
-}
-
-impl<T, F> Fn<(TimeEvent,)> for ThrottlerProcess<T, F>
+impl<T, F> MessageHandler for ThrottlerProcess<T, F>
 where
     T: 'static,
     F: Fn(T) + 'static,
 {
-    extern "rust-call" fn call(&self, _args: (TimeEvent,)) -> Self::Output {
+    fn id(&self) -> Ustr {
+        self.endpoint
+    }
+
+    fn handle(&self, _message: &dyn Any) {
         let throttler = get_actor_unchecked::<Throttler<T, F>>(&self.actor_id);
         while let Some(msg) = throttler.buffer.pop_back() {
             throttler.send_msg(msg);
@@ -313,17 +333,33 @@ where
             if !throttler.buffer.is_empty() && throttler.delta_next() > 0 {
                 throttler.is_limiting = true;
 
-                let process_callback =
-                    TimeEventCallback::Rust(Rc::new(ThrottlerProcess::<T, F>::new(self.actor_id)));
-                throttler.set_timer(Some(process_callback));
+                let endpoint_clone = self.endpoint;
+                // Send message to throttler process endpoint to resume
+                let process_callback = Rc::new(move |_event: TimeEvent| {
+                    send(&endpoint_clone, &());
+                });
+                throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
                 return;
             }
         }
 
         throttler.is_limiting = false;
     }
+
+    fn handle_response(&self, _resp: DataResponse) {
+        // TODO: Implement
+    }
+
+    fn handle_data(&self, _data: Data) {
+        // TODO: Implement
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
+/// Sets throttler to resume sending messages
 pub fn throttler_resume<T, F>(actor_id: UUID4) -> TimeEventCallback
 where
     T: 'static,
@@ -351,14 +387,14 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::{RateLimit, Throttler};
-    use crate::clock::TestClock;
-
+    use crate::{clock::TestClock, msgbus::tests::stub_msgbus};
     type SharedThrottler = Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>;
 
     /// Test throttler with default values for testing
     ///
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
+    #[derive(Clone)]
     struct TestThrottler {
         throttler: SharedThrottler,
         clock: Rc<RefCell<TestClock>>,
@@ -374,6 +410,7 @@ mod tests {
 
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
+        stub_msgbus();
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {msg}");
         });
@@ -401,6 +438,7 @@ mod tests {
 
     #[fixture]
     pub fn test_throttler_unbuffered() -> TestThrottler {
+        stub_msgbus();
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {msg}");
         });
@@ -702,8 +740,7 @@ mod tests {
         prop::collection::vec(throttler_input_strategy(), 10..=150)
     }
 
-    fn test_throttler_with_inputs(inputs: Vec<ThrottlerInput>) {
-        let test_throttler = test_throttler_buffered();
+    fn test_throttler_with_inputs(inputs: Vec<ThrottlerInput>, test_throttler: TestThrottler) {
         let test_clock = test_throttler.clock.clone();
         let interval = test_throttler.interval;
         let throttler = test_throttler.get_throttler();
@@ -775,13 +812,20 @@ mod tests {
         ]
         .to_vec();
 
-        test_throttler_with_inputs(inputs);
+        let test_throttler = test_throttler_buffered();
+        test_throttler_with_inputs(inputs, test_throttler);
     }
 
-    proptest! {
-        #[test]
-        fn test(inputs in throttler_test_strategy()) {
-            test_throttler_with_inputs(inputs);
-        }
+    #[test]
+    fn prop_test() {
+        let test_throttler = test_throttler_buffered();
+
+        proptest!(move |(inputs in throttler_test_strategy())| {
+            test_throttler_with_inputs(inputs, test_throttler.clone());
+            // Reset throttler state between runs
+            let throttler = unsafe { &mut *(test_throttler.throttler.get() as *mut _ as *mut Throttler<u64, Box<dyn Fn(u64)>>) };
+            throttler.reset();
+            throttler.clock.borrow_mut().reset();
+        });
     }
 }

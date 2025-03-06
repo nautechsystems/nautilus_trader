@@ -46,7 +46,7 @@ pub struct MessageBusWrapper(Rc<RefCell<MessageBus>>);
 unsafe impl Send for MessageBusWrapper {}
 unsafe impl Sync for MessageBusWrapper {}
 
-pub static MESSAGE_BUS: OnceLock<MessageBusWrapper> = OnceLock::new();
+static MESSAGE_BUS: OnceLock<MessageBusWrapper> = OnceLock::new();
 
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
     if MESSAGE_BUS.set(MessageBusWrapper(msgbus)).is_err() {
@@ -57,7 +57,7 @@ pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
 pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     MESSAGE_BUS
         .get()
-        .expect("MessageBus should be at application start")
+        .expect("Message bus should initialized be at application start")
         .0
         .clone()
 }
@@ -508,7 +508,7 @@ impl Default for MessageBus {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
 
     use nautilus_core::UUID4;
     use rstest::*;
@@ -517,7 +517,7 @@ mod tests {
     use super::*;
     use crate::msgbus::stubs::{get_call_check_shareable_handler, get_stub_shareable_handler};
 
-    fn stub_msgbus() -> Rc<RefCell<MessageBus>> {
+    pub fn stub_msgbus() -> Rc<RefCell<MessageBus>> {
         let msgbus = MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None);
         let msgbus = Rc::new(RefCell::new(msgbus));
         set_message_bus(msgbus.clone());
