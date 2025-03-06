@@ -60,7 +60,7 @@ pub struct OwnBookOrder {
     pub order_type: OrderType,
     /// The order time in force.
     pub time_in_force: TimeInForce,
-    /// The current order status (SUBMITTED/ACCEPTED/CANCELED/FILLED).
+    /// The current order status (SUBMITTED/ACCEPTED/PENDING_CANCEL/PENDING_UPDATE/PARTIALLY_FILLED).
     pub status: OrderStatus,
     /// UNIX timestamp (nanoseconds) when the last order event occurred for this order.
     pub ts_last: UnixNanos,
