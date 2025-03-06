@@ -46,7 +46,6 @@ use pyo3::{
 };
 use tokio::sync::Mutex;
 
-use crate::symbology::MetadataCache;
 use crate::{
     common::get_date_time_range,
     decode::{
@@ -54,8 +53,8 @@ use crate::{
         decode_status_msg,
     },
     symbology::{
-        check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type,
-        instrument_id_to_symbol_string,
+        MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
+        infer_symbology_type, instrument_id_to_symbol_string,
     },
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
