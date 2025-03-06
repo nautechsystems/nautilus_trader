@@ -19,7 +19,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SENT},
-    msgbus::send,
+    msgbus::{self},
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -521,14 +521,14 @@ impl OrderManager {
     pub fn send_emulator_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
 
-        send(&Ustr::from("OrderEmulator.execute"), &command);
+        msgbus::send(&Ustr::from("OrderEmulator.execute"), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
         log::info!("{CMD}{SENT} {command}");
 
         let endpoint = format!("{exec_algorithm_id}.execute");
-        send(
+        msgbus::send(
             &Ustr::from(&endpoint),
             &TradingCommand::SubmitOrder(command),
         );
@@ -536,23 +536,21 @@ impl OrderManager {
 
     pub fn send_risk_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
-
-        send(&Ustr::from("RiskEngine.execute"), &command);
+        msgbus::send(&Ustr::from("RiskEngine.execute"), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
-
-        send(&Ustr::from("ExecEngine.execute"), &command);
+        msgbus::send(&Ustr::from("ExecEngine.execute"), &command);
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
         log::info!("{}{} {}", EVT, SENT, event);
-        send(&Ustr::from("RiskEngine.process"), &event);
+        msgbus::send(&Ustr::from("RiskEngine.process"), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
         log::info!("{}{} {}", EVT, SENT, event);
-        send(&Ustr::from("ExecEngine.process"), &event);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event);
     }
 }

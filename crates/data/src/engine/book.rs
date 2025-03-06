@@ -23,7 +23,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     messages::data::DataResponse,
-    msgbus::{MessageBus, handler::MessageHandler, publish},
+    msgbus::{self, MessageBus, handler::MessageHandler},
     timer::TimeEvent,
 };
 use nautilus_model::{
@@ -156,6 +156,6 @@ impl BookSnapshotter {
             return;
         }
 
-        publish(topic, book as &dyn Any);
+        msgbus::publish(topic, book as &dyn Any);
     }
 }

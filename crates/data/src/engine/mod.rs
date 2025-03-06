@@ -57,9 +57,8 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{Action, DataRequest, DataResponse, SubscriptionCommand},
     msgbus::{
-        MessageBus,
+        self, MessageBus,
         handler::{MessageHandler, ShareableMessageHandler},
-        publish, subscribe, unsubscribe,
     },
     timer::TimeEventCallback,
 };
@@ -449,7 +448,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_instrument_topic(instrument.id())
         };
-        publish(&topic, &instrument as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &instrument as &dyn Any); // TODO: Optimize
     }
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
@@ -478,7 +477,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
         };
-        publish(&topic, &deltas as &dyn Any);
+        msgbus::publish(&topic, &deltas as &dyn Any);
     }
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
@@ -514,7 +513,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
         };
-        publish(&topic, &deltas as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
@@ -522,7 +521,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_depth_topic(depth.instrument_id)
         };
-        publish(&topic, &depth as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
     fn handle_quote(&mut self, quote: QuoteTick) {
@@ -536,7 +535,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_quotes_topic(quote.instrument_id)
         };
-        publish(&topic, &quote as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
@@ -550,7 +549,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_trades_topic(trade.instrument_id)
         };
-        publish(&topic, &trade as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
     fn handle_bar(&mut self, bar: Bar) {
@@ -583,7 +582,7 @@ impl DataEngine {
             let mut msgbus = self.msgbus.borrow_mut();
             msgbus.switchboard.get_bars_topic(bar.bar_type)
         };
-        publish(&topic, &bar as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
@@ -796,7 +795,7 @@ impl DataEngine {
                     && msgbus.is_subscribed(*topic, handler.clone())
                 {
                     log::debug!("Unsubscribing BookUpdater from {topic}");
-                    unsubscribe(*topic, handler.clone());
+                    msgbus::unsubscribe(*topic, handler.clone());
                 }
             }
 
@@ -888,12 +887,12 @@ impl DataEngine {
 
         let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
         if !msgbus.is_subscribed(topic, handler.clone()) {
-            subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
         }
 
         let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
         if !only_deltas && !msgbus.is_subscribed(topic, handler.clone()) {
-            subscribe(topic, handler, Some(self.msgbus_priority));
+            msgbus::subscribe(topic, handler, Some(self.msgbus_priority));
         }
 
         Ok(())
@@ -914,7 +913,7 @@ impl DataEngine {
 
             let mut msgbus = msgbus.borrow_mut();
             let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
-            publish(&topic, &bar as &dyn Any);
+            msgbus::publish(&topic, &bar as &dyn Any);
         };
 
         let clock = self.clock.clone();

@@ -32,7 +32,7 @@ use crate::{
     messages::data::DataResponse,
     msgbus::{
         handler::{MessageHandler, ShareableMessageHandler},
-        register, send,
+        {self},
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -221,7 +221,7 @@ where
     pub fn to_actor(self) -> Rc<UnsafeCell<Self>> {
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
-        register(
+        msgbus::register(
             process_handler.id().as_str(),
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
         );
@@ -307,7 +307,7 @@ impl<T, F> ThrottlerProcess<T, F> {
     pub fn get_timer_callback(&self) -> TimeEventCallback {
         let endpoint_clone = self.endpoint;
         let process_callback = Rc::new(move |_event: TimeEvent| {
-            send(&endpoint_clone, &());
+            msgbus::send(&endpoint_clone, &());
         });
         TimeEventCallback::Rust(process_callback)
     }
@@ -336,7 +336,7 @@ where
                 let endpoint_clone = self.endpoint;
                 // Send message to throttler process endpoint to resume
                 let process_callback = Rc::new(move |_event: TimeEvent| {
-                    send(&endpoint_clone, &());
+                    msgbus::send(&endpoint_clone, &());
                 });
                 throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
                 return;

@@ -43,7 +43,7 @@ impl BusMessage {
 impl MessageBus {
     /// Sends a message to a an endpoint.
     #[pyo3(name = "send")]
-    pub fn send_py(&self, endpoint: &str, message: PyObject) {
+    pub fn py_send(&self, endpoint: &str, message: PyObject) {
         if let Some(handler) = self.get_endpoint(endpoint) {
             handler.0.handle(&message);
         }
@@ -51,7 +51,7 @@ impl MessageBus {
 
     /// Publish a message to a topic.
     #[pyo3(name = "publish")]
-    pub fn publish_py(&self, topic: &str, message: PyObject) {
+    pub fn py_publish(&self, topic: &str, message: PyObject) {
         let topic = Ustr::from(topic);
         let matching_subs = self.matching_subscriptions(&topic);
 
@@ -63,7 +63,7 @@ impl MessageBus {
     /// Registers the given `handler` for the `endpoint` address.
     #[pyo3(name = "register")]
     #[staticmethod]
-    pub fn register_py(endpoint: &str, handler: PythonMessageHandler) {
+    pub fn py_register(endpoint: &str, handler: PythonMessageHandler) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
         register(endpoint, handler);
@@ -88,7 +88,7 @@ impl MessageBus {
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (topic, handler, priority=None))]
     #[staticmethod]
-    pub fn subscribe_py(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
+    pub fn py_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
         subscribe(topic, handler, priority);
@@ -97,7 +97,7 @@ impl MessageBus {
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
     #[pyo3(name = "is_subscribed")]
-    pub fn is_subscribed_py(&self, topic: &str, handler: PythonMessageHandler) -> bool {
+    pub fn py_is_subscribed(&self, topic: &str, handler: PythonMessageHandler) -> bool {
         let handler = ShareableMessageHandler(Rc::new(handler));
         self.is_subscribed(topic, handler)
     }
@@ -105,7 +105,7 @@ impl MessageBus {
     /// Unsubscribes the given `handler` from the `topic`.
     #[pyo3(name = "unsubscribe")]
     #[staticmethod]
-    pub fn unsubscribe_py(topic: &str, handler: PythonMessageHandler) {
+    pub fn py_unsubscribe(topic: &str, handler: PythonMessageHandler) {
         let handler = ShareableMessageHandler(Rc::new(handler));
         unsubscribe(topic, handler);
     }
@@ -113,14 +113,14 @@ impl MessageBus {
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
     #[pyo3(name = "is_registered")]
-    pub fn is_registered_py(&self, endpoint: &str) -> bool {
+    pub fn py_is_registered(&self, endpoint: &str) -> bool {
         self.is_registered(endpoint)
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
     #[pyo3(name = "deregister")]
     #[staticmethod]
-    pub fn deregister_py(endpoint: &str) {
+    pub fn py_deregister(endpoint: &str) {
         // Removes entry if it exists for endpoint
         deregister(&Ustr::from(endpoint));
     }
