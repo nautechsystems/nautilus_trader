@@ -38,9 +38,11 @@ from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
@@ -412,10 +414,8 @@ cdef class Cache(CacheFacade):
 
     cpdef void build_index(self):
         """
-        Clear the current cache index and re-build.
+        Build the cache index from objects currently held in memory.
         """
-        self.clear_index()
-
         self._log.debug(f"Building index")
         cdef double ts = time.time()
 
@@ -1961,7 +1961,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_account(account)
 
-    cpdef void update_order(self, Order order):
+    cpdef void update_order(self, Order order, bint update_own_book=False):
         """
         Update the given order in the cache.
 
@@ -1969,6 +1969,8 @@ cdef class Cache(CacheFacade):
         ----------
         order : Order
             The order to update (from last event).
+        update_own_book : bool, default False
+            If any corresponding own order book should also be updated.
 
         """
         Condition.not_none(order, "order")
@@ -2003,6 +2005,25 @@ cdef class Cache(CacheFacade):
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
+
+        # Update own book
+        if update_own_book and should_handle_own_book_order(order):
+            own_book = self._own_order_books.get(order.instrument_id)
+            if own_book is None:
+                self._log.debug(
+                    f"OwnOrderBook for {order.instrument_id} does not exist to update {order.client_order_id!r}",
+                    LogColor.MAGENTA,
+                )
+                return
+
+            own_book_order = order.to_own_book_order()
+
+            if order.is_closed_c():
+                own_book.delete(own_book_order)
+                self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
+            else:
+                own_book.update(own_book_order)
+                self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
 
         if self._database is None:
             return
@@ -4507,10 +4528,11 @@ cdef inline dict[Decimal, list[Order]] process_own_order_map(
         orders = []
         for own_order in own_orders:
             client_order_id = ClientOrderId(own_order.client_order_id.value)
-            order = order_cache.get(ClientOrderId(own_order.client_order_id.value))
+            order = order_cache.get(client_order_id)
             if order is None:
                 RuntimeError(f"{client_order_id!r} from own book not found in cache")
             orders.append(order)
+
         order_map[level_price] = orders
 
     return order_map

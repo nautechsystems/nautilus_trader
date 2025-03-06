@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_databento"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["python", "nautilus-core/ffi"]
@@ -41,7 +41,7 @@ tracing = { workspace = true }
 ustr = { workspace = true }
 databento = "0.20.0"
 fallible-streaming-iterator = "0.1.9"
-time = "0.3.37"
+time = "0.3.38"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../../test_kit" }

@@ -90,10 +90,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     inflight_check_interval_ms : NonNegativeInt, default 2_000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
-        This should not be set less than the `inflight_check_interval_ms`.
+        This should not be set less than the `inflight_check_threshold_ms`.
     inflight_check_threshold_ms : NonNegativeInt, default 5_000
-        The threshold (milliseconds) beyond which an in-flight orders status
-        is checked with the venue.
+        The threshold (milliseconds) beyond which an in-flight orders status is checked with the venue.
         As a rule of thumb, you shouldn't consider reducing this setting unless you
         are colocated with the venue (to avoid the potential for race conditions).
     inflight_check_retries : NonNegativeInt, default 5

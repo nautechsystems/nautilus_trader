@@ -6,23 +6,23 @@ IMAGE_FULL?=${IMAGE}:${GIT_TAG}
 
 .PHONY: install
 install:
-	BUILD_MODE=release uv sync --all-groups --all-extras
+	BUILD_MODE=release uv sync --active --all-groups --all-extras
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug uv sync --all-groups --all-extras
+	BUILD_MODE=debug uv sync --active --all-groups --all-extras
 
 .PHONY: install-just-deps
 install-just-deps:
-	uv sync --all-groups --all-extras --no-install-package nautilus_trader
+	uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
 
 .PHONY: build
 build:
-	BUILD_MODE=release uv run --no-sync build.py
+	BUILD_MODE=release uv run --active --no-sync build.py
 
 .PHONY: build-debug
 build-debug:
-	BUILD_MODE=debug uv run --no-sync build.py
+	BUILD_MODE=debug uv run --active --no-sync build.py
 
 .PHONY: build-wheel
 build-wheel:
@@ -55,11 +55,11 @@ format:
 
 .PHONY: pre-commit
 pre-commit:
-	uv run --no-sync pre-commit run --all-files
+	uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: ruff
 ruff:
-	uv run --no-sync ruff check . --fix
+	uv run --active --no-sync ruff check . --fix
 
 # Requires cargo-outdated v0.16.0+ (currently broken waiting for 2024 edition update)
 .PHONY: outdated
@@ -75,7 +75,7 @@ docs: docs-python docs-rust
 
 .PHONY: docs-python
 docs-python:
-	BUILD_MODE=debug uv run sphinx-build -M markdown ./docs/api_reference ./api_reference
+	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust:
@@ -180,11 +180,11 @@ stop-services:
 
 .PHONY: pytest
 pytest:
-	uv run --no-sync pytest --new-first --failed-first
+	uv run --active --no-sync pytest --new-first --failed-first
 
 .PHONY: test-performance
 test-performance:
-	uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
 .PHONY: install-cli
 install-cli:

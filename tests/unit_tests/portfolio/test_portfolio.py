@@ -1863,7 +1863,7 @@ class TestPortfolio:
         assert self.portfolio.net_exposures(BETFAIR) == {}
         assert self.portfolio.unrealized_pnls(BETFAIR) == {GBP: Money(0.00, GBP)}
         assert self.portfolio.realized_pnls(BETFAIR) == {GBP: Money(-10.00, GBP)}
-        assert self.portfolio.net_exposure(BETTING_INSTRUMENT.id) == Money(0.00, GBP)
+        assert self.portfolio.net_exposure(BETTING_INSTRUMENT.id) == Money(-20.00, GBP)
         assert self.portfolio.unrealized_pnl(BETTING_INSTRUMENT.id) == Money(0.00, GBP)
         assert self.portfolio.realized_pnl(BETTING_INSTRUMENT.id) == Money(-10.00, GBP)
         assert self.portfolio.total_pnl(BETTING_INSTRUMENT.id) == Money(-10.00, GBP)

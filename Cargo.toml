@@ -37,7 +37,7 @@ arrow = "54.2.1"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.87"
 base64 = "0.22.1"
-bytes = { version = "1.10.0", features = ["serde"] }
+bytes = { version = "1.10.1", features = ["serde"] }
 chrono = { version = "=0.4.39", features = ["serde"] }  # Pinned due temporary trait ambiguity with arrow
 chrono-tz = { version = "0.10.1" }
 derive_builder = "0.20.2"

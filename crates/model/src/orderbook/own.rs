@@ -33,6 +33,7 @@ use crate::{
     enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId},
     orderbook::BookPrice,
+    orders::OrderAny,
     types::{Price, Quantity},
 };
 
@@ -59,10 +60,12 @@ pub struct OwnBookOrder {
     pub order_type: OrderType,
     /// The order time in force.
     pub time_in_force: TimeInForce,
-    /// The current order status (SUBMITTED/ACCEPTED/CANCELED/FILLED).
+    /// The current order status (SUBMITTED/ACCEPTED/PENDING_CANCEL/PENDING_UPDATE/PARTIALLY_FILLED).
     pub status: OrderStatus,
-    /// UNIX timestamp (nanoseconds) when the last event occurred for this order.
+    /// UNIX timestamp (nanoseconds) when the last order event occurred for this order.
     pub ts_last: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the order was accepted (zero unless accepted).
+    pub ts_accepted: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the order was initialized.
     pub ts_init: UnixNanos,
 }
@@ -80,6 +83,7 @@ impl OwnBookOrder {
         time_in_force: TimeInForce,
         status: OrderStatus,
         ts_last: UnixNanos,
+        ts_accepted: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
         Self {
@@ -91,6 +95,7 @@ impl OwnBookOrder {
             time_in_force,
             status,
             ts_last,
+            ts_accepted,
             ts_init,
         }
     }
@@ -146,7 +151,7 @@ impl Debug for OwnBookOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(client_order_id={}, side={}, price={}, size={}, order_type={}, time_in_force={}, status={}, ts_init={})",
+            "{}(client_order_id={}, side={}, price={}, size={}, order_type={}, time_in_force={}, status={}, ts_last={}, ts_accepted={}, ts_init={})",
             stringify!(OwnBookOrder),
             self.client_order_id,
             self.side,
@@ -155,6 +160,8 @@ impl Debug for OwnBookOrder {
             self.order_type,
             self.time_in_force,
             self.status,
+            self.ts_last,
+            self.ts_accepted,
             self.ts_init,
         )
     }
@@ -164,7 +171,7 @@ impl Display for OwnBookOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}",
             self.client_order_id,
             self.side,
             self.price,
@@ -172,6 +179,8 @@ impl Display for OwnBookOrder {
             self.order_type,
             self.time_in_force,
             self.status,
+            self.ts_last,
+            self.ts_accepted,
             self.ts_init,
         )
     }
@@ -655,6 +664,12 @@ impl Ord for OwnBookLevel {
     }
 }
 
+pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
+    order.order_type() != OrderType::Market
+        && order.time_in_force() != TimeInForce::Ioc
+        && order.time_in_force() != TimeInForce::Fok
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -676,8 +691,9 @@ mod tests {
         let order_type = OrderType::Limit;
         let time_in_force = TimeInForce::Gtc;
         let status = OrderStatus::Submitted;
-        let ts_last = UnixNanos::default();
-        let ts_init = UnixNanos::default();
+        let ts_last = UnixNanos::from(1);
+        let ts_accepted = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(1);
 
         OwnBookOrder::new(
             client_order_id,
@@ -688,6 +704,7 @@ mod tests {
             time_in_force,
             status,
             ts_last,
+            ts_accepted,
             ts_init,
         )
     }
@@ -716,8 +733,9 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
-            UnixNanos::default(),
-            UnixNanos::default(),
+            UnixNanos::from(1),
+            UnixNanos::from(0),
+            UnixNanos::from(1),
         );
 
         assert_eq!(own_order_buy.signed_size(), 10.0);
@@ -728,7 +746,7 @@ mod tests {
     fn test_debug(own_order: OwnBookOrder) {
         assert_eq!(
             format!("{own_order:?}"),
-            "OwnBookOrder(client_order_id=O-123456789, side=BUY, price=100.00, size=10, order_type=LIMIT, time_in_force=GTC, status=SUBMITTED, ts_init=0)"
+            "OwnBookOrder(client_order_id=O-123456789, side=BUY, price=100.00, size=10, order_type=LIMIT, time_in_force=GTC, status=SUBMITTED, ts_last=1, ts_accepted=0, ts_init=1)"
         );
     }
 
@@ -736,7 +754,7 @@ mod tests {
     fn test_display(own_order: OwnBookOrder) {
         assert_eq!(
             own_order.to_string(),
-            "O-123456789,BUY,100.00,10,LIMIT,GTC,SUBMITTED,0".to_string()
+            "O-123456789,BUY,100.00,10,LIMIT,GTC,SUBMITTED,1,0,1".to_string()
         );
     }
 
@@ -756,6 +774,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         let order2 = OwnBookOrder::new(
             ClientOrderId::from("O-2"),
@@ -765,6 +784,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -792,6 +812,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         level.add(order);
         assert_eq!(level.len(), 1);
@@ -805,6 +826,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -830,6 +852,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         let order2 = OwnBookOrder::new(
             ClientOrderId::from("O-2"),
@@ -839,6 +862,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -856,6 +880,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -881,6 +906,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         let order_sell = OwnBookOrder::new(
             ClientOrderId::from("O-2"),
@@ -890,6 +916,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -909,6 +936,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -938,6 +966,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         let order2 = OwnBookOrder::new(
             ClientOrderId::from("O-2"),
@@ -947,6 +976,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -996,6 +1026,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         let bid_order2 = OwnBookOrder::new(
             ClientOrderId::from("O-2"),
@@ -1005,6 +1036,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1017,6 +1049,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1032,6 +1065,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
         let ask_order2 = OwnBookOrder::new(
             ClientOrderId::from("O-5"),
@@ -1041,6 +1075,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1077,6 +1112,7 @@ mod tests {
             OrderStatus::Submitted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_accepted = OwnBookOrder::new(
@@ -1089,6 +1125,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_canceled = OwnBookOrder::new(
@@ -1099,6 +1136,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1160,6 +1198,7 @@ mod tests {
             OrderStatus::Submitted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_accepted = OwnBookOrder::new(
@@ -1170,6 +1209,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1210,6 +1250,7 @@ mod tests {
             OrderStatus::Submitted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_accepted = OwnBookOrder::new(
@@ -1222,6 +1263,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_canceled = OwnBookOrder::new(
@@ -1232,6 +1274,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1286,6 +1329,7 @@ mod tests {
             OrderStatus::Submitted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_accepted = OwnBookOrder::new(
@@ -1298,6 +1342,7 @@ mod tests {
             OrderStatus::Accepted,
             UnixNanos::default(),
             UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let order_canceled = OwnBookOrder::new(
@@ -1308,6 +1353,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
+            UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );

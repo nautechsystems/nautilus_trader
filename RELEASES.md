@@ -2,12 +2,13 @@
 
 Released on TBD (UTC).
 
-This release introduces [uv](https://docs.astral.sh/uv) as the project and dependency management tool.
+This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
 
 ### Enhancements
 - Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
 - Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
 - Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
+- Added `ts_accepted` timestamp property for orders
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added pnl information to greeks data (#2378), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
@@ -54,6 +55,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
 - Refactored reconciliation interface into messages (#2375), thanks @faysou
+- Refactored `_handle_query_group` to work with `update_catalog` (#2412), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
 - Refactored repetitive code in backtest examples (#2387, #2395), thanks @stefansimik
 - Refined yield curve data (#2300), thanks @faysou
@@ -63,7 +65,9 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
 - Refined Rust date functions (#2356), thanks @faysou
 - Refined parsing of IB symbols (#2388), thanks @faysou
-- Refined base_template behaviour in parquet write_data (#2389), thanks @faysou
+- Refined `base_template` behaviour in parquet write_data (#2389), thanks @faysou
+- Refined mixed catalog client requests (#2405), thanks @faysou
+- Refined update catalog docstring (#2411), thanks @faysou
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -74,6 +78,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
 - Ported market-to-limit order handling for `OrderMatchingEngine` in Rust (#2354), thanks @filipmacek
 - Ported trailing stop order handling for `OrderMatchingEngine` in Rust (#2366, #2376), thanks @filipmacek
+- Ported contingent orders handling for `OrderMatchingEngine` in Rust (#2404), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
 - Upgraded Rust to 1.85.0 and 2024 edition
 - Upgraded `datafusion` crate to v45.0.0
@@ -100,14 +105,19 @@ This release introduces [uv](https://docs.astral.sh/uv) as the project and depen
 - Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
 - Fixed subscribe composite bars (#2390), thanks @faysou
 - Fixed invalid link in IB docs (#2401), thanks @stefansimik
+- Fixed cache index loading to ensure persisted data remains available after startup, thanks for reporting @Saransh-28
 
 ### Documentation Updates
+- Added documentation for messaging styles (#2410), thanks @stefansimik
 - Added backtest clock and timers example (#2327), thanks @stefansimik
 - Added backtest bar aggregation example (#2340), thanks @stefansimik
 - Added backtest portfolio example (#2362), thanks @stefansimik
 - Added backtest cache example (#2370), thanks @stefansimik
 - Added backtest cascaded indicators example (#2398), thanks @stefansimik
 - Added backtest custom event with msgbus example (#2400), thanks @stefansimik
+- Added backtest messaging with msgbus example (#2406), thanks @stefansimik
+- Added backtest messaging with actor & data example (#2407), thanks @stefansimik
+- Added backtest messaging with actor & signal example (#2408), thanks @stefansimik
 - Added indicators example (#2396), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
 - Added MRE strategy example (#2352), thanks @stefansimik

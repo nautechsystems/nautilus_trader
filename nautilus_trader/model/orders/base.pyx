@@ -217,6 +217,7 @@ cdef class Order:
         # Timestamps
         self.init_id = init.id
         self.ts_init = init.ts_init
+        self.ts_accepted = 0
         self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
@@ -452,6 +453,7 @@ cdef class Order:
             time_in_force=time_in_force_to_pyo3(self.time_in_force),
             status=order_status_to_pyo3(<OrderStatus>self._fsm.state),
             ts_last=self.ts_last,
+            ts_accepted=self.ts_accepted,
             ts_init=self.ts_init,
         )
 
@@ -1070,6 +1072,7 @@ cdef class Order:
 
     cdef void _accepted(self, OrderAccepted event):
         self.venue_order_id = event.venue_order_id
+        self.ts_accepted = event.ts_event
 
     cdef void _updated(self, OrderUpdated event):
         """Abstract method (implement in subclass)."""

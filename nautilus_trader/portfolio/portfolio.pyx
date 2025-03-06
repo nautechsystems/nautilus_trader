@@ -1109,7 +1109,7 @@ cdef class Portfolio(PortfolioFacade):
             Money notional_value
         for position in positions_open:
             price = price or self._get_price(position)
-            if price is None:
+            if price is None and not isinstance(instrument, BettingInstrument):
                 self._log.error(
                     f"Cannot calculate net exposure: "
                     f"no {self._log_price} for {position.instrument_id}",
