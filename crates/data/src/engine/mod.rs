@@ -445,8 +445,10 @@ impl DataEngine {
             log::error!("Error on cache insert: {e}");
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_instrument_topic(instrument.id());
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_instrument_topic(instrument.id())
+        };
         publish(&topic, &instrument as &dyn Any); // TODO: Optimize
     }
 
@@ -472,8 +474,10 @@ impl DataEngine {
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
+        };
         publish(&topic, &deltas as &dyn Any);
     }
 
@@ -506,14 +510,18 @@ impl DataEngine {
             deltas
         };
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
+        };
         publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_depth_topic(depth.instrument_id);
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_depth_topic(depth.instrument_id)
+        };
         publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
@@ -524,8 +532,10 @@ impl DataEngine {
 
         // TODO: Handle synthetics
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_quotes_topic(quote.instrument_id);
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_quotes_topic(quote.instrument_id)
+        };
         publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
@@ -536,8 +546,10 @@ impl DataEngine {
 
         // TODO: Handle synthetics
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_trades_topic(trade.instrument_id);
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_trades_topic(trade.instrument_id)
+        };
         publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
@@ -567,8 +579,10 @@ impl DataEngine {
             log::error!("Error on cache insert: {e}");
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
+        let topic = {
+            let mut msgbus = self.msgbus.borrow_mut();
+            msgbus.switchboard.get_bars_topic(bar.bar_type)
+        };
         publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 

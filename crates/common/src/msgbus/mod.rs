@@ -463,6 +463,13 @@ impl MessageBus {
             sub.handler.0.handle_data(message.clone());
         }
     }
+
+    /// Register message bus globally
+    pub fn register_message_bus(self) -> Rc<RefCell<MessageBus>> {
+        let msgbus = Rc::new(RefCell::new(self));
+        set_message_bus(msgbus.clone());
+        msgbus
+    }
 }
 
 /// Match a topic and a string pattern
