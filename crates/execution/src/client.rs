@@ -21,7 +21,10 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, msgbus::MessageBus};
+use nautilus_common::{
+    cache::Cache,
+    msgbus::{MessageBus, send},
+};
 use nautilus_core::{AtomicTime, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
@@ -425,9 +428,7 @@ impl ExecutionClient {
 
     fn send_account_state(&self, account_state: AccountState) {
         let endpoint = Ustr::from("Portfolio.update_account");
-        self.msgbus
-            .borrow()
-            .send(&endpoint, &account_state as &dyn Any);
+        send(&endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {

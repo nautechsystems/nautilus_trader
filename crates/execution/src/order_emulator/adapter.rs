@@ -21,7 +21,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{MessageBus, handler::ShareableMessageHandler},
+    msgbus::{handler::ShareableMessageHandler, register},
 };
 use nautilus_core::UUID4;
 use ustr::Ustr;
@@ -41,19 +41,11 @@ pub struct OrderEmulatorAdapter {
 }
 
 impl OrderEmulatorAdapter {
-    pub fn new(
-        clock: Rc<RefCell<dyn Clock>>,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) -> Self {
-        let emulator = Rc::new(RefCell::new(OrderEmulator::new(
-            clock,
-            cache,
-            msgbus.clone(),
-        )));
+    pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
+        let emulator = Rc::new(RefCell::new(OrderEmulator::new(clock, cache)));
 
-        Self::initialize_execute_handler(emulator.clone(), msgbus.clone());
-        Self::initialize_on_event_handler(emulator.clone(), msgbus);
+        Self::initialize_execute_handler(emulator.clone());
+        Self::initialize_on_event_handler(emulator.clone());
         Self::initialize_submit_order_handler(emulator.clone());
         Self::initialize_cancel_order_handler(emulator.clone());
         Self::initialize_modify_order_handler(emulator.clone());
@@ -76,32 +68,22 @@ impl OrderEmulatorAdapter {
         emulator.borrow_mut().set_modify_order_handler(handler);
     }
 
-    fn initialize_execute_handler(
-        emulator: Rc<RefCell<OrderEmulator>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) {
+    fn initialize_execute_handler(emulator: Rc<RefCell<OrderEmulator>>) {
         let handler = ShareableMessageHandler(Rc::new(OrderEmulatorExecuteHandler {
             id: Ustr::from(&UUID4::new().to_string()),
             emulator,
         }));
 
-        msgbus
-            .borrow_mut()
-            .register("OrderEmulator.execute", handler);
+        register("OrderEmulator.execute", handler);
     }
 
-    fn initialize_on_event_handler(
-        emulator: Rc<RefCell<OrderEmulator>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) {
+    fn initialize_on_event_handler(emulator: Rc<RefCell<OrderEmulator>>) {
         let handler = ShareableMessageHandler(Rc::new(OrderEmulatorOnEventHandler {
             id: Ustr::from(&UUID4::new().to_string()),
             emulator,
         }));
 
-        msgbus
-            .borrow_mut()
-            .register("OrderEmulator.on_event", handler);
+        register("OrderEmulator.on_event", handler);
     }
 
     #[must_use]

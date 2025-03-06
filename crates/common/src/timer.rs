@@ -38,7 +38,6 @@ use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_valid_string},
     datetime::floor_to_nearest_microsecond,
-    python::IntoPyObjectNautilusExt,
     time::get_atomic_clock_realtime,
 };
 #[cfg(feature = "python")]
@@ -536,6 +535,7 @@ fn call_python_with_time_event(
     ts_init: UnixNanos,
     callback: &PyObject,
 ) {
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::types::PyCapsule;
 
     Python::with_gil(|py| {

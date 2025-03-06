@@ -27,7 +27,7 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{MessageBus, handler::ShareableMessageHandler},
+    msgbus::{MessageBus, handler::ShareableMessageHandler, publish, register, subscribe},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -220,16 +220,15 @@ impl Portfolio {
             }))
         };
 
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.register("Portfolio.update_account", update_account_handler.clone());
+        register("Portfolio.update_account", update_account_handler.clone());
 
-        msgbus.subscribe("data.quotes.*", update_quote_handler, Some(10));
+        subscribe("data.quotes.*", update_quote_handler, Some(10));
         if bar_updates {
-            msgbus.subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
+            subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
         }
-        msgbus.subscribe("events.order.*", update_order_handler, Some(10));
-        msgbus.subscribe("events.position.*", update_position_handler, Some(10));
-        msgbus.subscribe("events.account.*", update_account_handler, Some(10));
+        subscribe("events.order.*", update_order_handler, Some(10));
+        subscribe("events.position.*", update_position_handler, Some(10));
+        subscribe("events.account.*", update_account_handler, Some(10));
     }
 
     pub fn reset(&mut self) {
@@ -1319,7 +1318,7 @@ fn update_order(
     borrowed_cache.update_account(account.clone()).unwrap();
 
     if let Some(account_state) = account_state {
-        msgbus.borrow().publish(
+        publish(
             &Ustr::from(&format!("events.account.{}", account.id())),
             &account_state,
         );

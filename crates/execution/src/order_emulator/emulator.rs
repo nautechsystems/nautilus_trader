@@ -24,7 +24,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{MessageBus, handler::ShareableMessageHandler},
+    msgbus::{handler::ShareableMessageHandler, publish, subscribe},
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
@@ -50,7 +50,6 @@ use crate::{
 pub struct OrderEmulator {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     manager: OrderManager,
     matching_cores: HashMap<InstrumentId, OrderMatchingCore>,
     subscribed_quotes: HashSet<InstrumentId>,
@@ -61,29 +60,17 @@ pub struct OrderEmulator {
 }
 
 impl OrderEmulator {
-    pub fn new(
-        clock: Rc<RefCell<dyn Clock>>,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) -> Self {
+    pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         // TODO: Impl Actor Trait
         // self.register_base(portfolio, msgbus, cache, clock);
 
         let active_local = true;
-        let manager = OrderManager::new(
-            clock.clone(),
-            msgbus.clone(),
-            cache.clone(),
-            active_local,
-            None,
-            None,
-            None,
-        );
+        let manager =
+            OrderManager::new(clock.clone(), cache.clone(), active_local, None, None, None);
 
         Self {
             clock,
             cache,
-            msgbus,
             manager,
             matching_cores: HashMap::new(),
             subscribed_quotes: HashSet::new(),
@@ -430,7 +417,7 @@ impl OrderEmulator {
 
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
-            self.msgbus.borrow().publish(
+            publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
@@ -755,12 +742,8 @@ impl OrderEmulator {
         if !self.subscribed_strategies.contains(&strategy_id) {
             // Subscribe to all strategy events
             if let Some(handler) = &self.on_event_handler {
-                self.msgbus.borrow_mut().subscribe(
-                    format!("events.order.{strategy_id}"),
-                    handler.clone(),
-                    None,
-                );
-                self.msgbus.borrow_mut().subscribe(
+                subscribe(format!("events.order.{strategy_id}"), handler.clone(), None);
+                subscribe(
                     format!("events.position.{strategy_id}"),
                     handler.clone(),
                     None,
@@ -877,7 +860,7 @@ impl OrderEmulator {
             // Replace commands order with transformed order
             command.order = OrderAny::Limit(transformed.clone());
 
-            self.msgbus.borrow().publish(
+            publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
@@ -918,7 +901,7 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            self.msgbus.borrow().publish(
+            publish(
                 &format!("events.order.{}", transformed.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
@@ -999,7 +982,7 @@ impl OrderEmulator {
             // Replace commands order with transformed order
             command.order = OrderAny::Market(transformed.clone());
 
-            self.msgbus.borrow().publish(
+            publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
@@ -1041,7 +1024,7 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            self.msgbus.borrow().publish(
+            publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );

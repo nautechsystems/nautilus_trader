@@ -27,7 +27,6 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 //! - `stubs`: Enables type stubs for use in testing scenarios.
-
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
 #![deny(rustdoc::broken_intra_doc_links)]

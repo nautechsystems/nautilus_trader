@@ -19,7 +19,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SENT},
-    msgbus::MessageBus,
+    msgbus::send,
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -43,7 +43,6 @@ use crate::messages::{
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     active_local: bool,
     submit_order_handler: Option<SubmitOrderHandlerAny>,
     cancel_order_handler: Option<CancelOrderHandlerAny>,
@@ -54,7 +53,6 @@ pub struct OrderManager {
 impl OrderManager {
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         active_local: bool,
         submit_order_handler: Option<SubmitOrderHandlerAny>,
@@ -64,7 +62,6 @@ impl OrderManager {
         Self {
             clock,
             cache,
-            msgbus,
             active_local,
             submit_order_handler,
             cancel_order_handler,
@@ -524,16 +521,14 @@ impl OrderManager {
     pub fn send_emulator_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
 
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("OrderEmulator.execute"), &command);
+        send(&Ustr::from("OrderEmulator.execute"), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
         log::info!("{CMD}{SENT} {command}");
 
         let endpoint = format!("{exec_algorithm_id}.execute");
-        self.msgbus.borrow().send(
+        send(
             &Ustr::from(&endpoint),
             &TradingCommand::SubmitOrder(command),
         );
@@ -542,30 +537,22 @@ impl OrderManager {
     pub fn send_risk_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
 
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("RiskEngine.execute"), &command);
+        send(&Ustr::from("RiskEngine.execute"), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
 
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("ExecEngine.execute"), &command);
+        send(&Ustr::from("ExecEngine.execute"), &command);
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
         log::info!("{}{} {}", EVT, SENT, event);
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("RiskEngine.process"), &event);
+        send(&Ustr::from("RiskEngine.process"), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
         log::info!("{}{} {}", EVT, SENT, event);
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("ExecEngine.process"), &event);
+        send(&Ustr::from("ExecEngine.process"), &event);
     }
 }
