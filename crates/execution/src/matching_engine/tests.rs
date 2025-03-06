@@ -64,8 +64,8 @@ static ATOMIC_TIME: LazyLock<AtomicTime> =
     LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
 
 #[fixture]
-fn msgbus() -> MessageBus {
-    MessageBus::default()
+fn msgbus() -> Rc<RefCell<MessageBus>> {
+    MessageBus::default().register_message_bus()
 }
 
 #[fixture]
@@ -224,7 +224,7 @@ fn get_order_event_handler_messages(event_handler: ShareableMessageHandler) -> V
 
 #[rstest]
 fn test_process_order_when_instrument_already_expired(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     mut market_order_buy: OrderAny,
@@ -232,14 +232,11 @@ fn test_process_order_when_instrument_already_expired(
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
 
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create engine and process order
-    let mut engine =
-        get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
+    let mut engine = get_order_matching_engine(instrument, msgbus.clone(), None, None, None);
 
     engine.process_order(&mut market_order_buy, account_id);
 
@@ -256,7 +253,7 @@ fn test_process_order_when_instrument_already_expired(
 
 #[rstest]
 fn test_process_order_when_instrument_not_active(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     mut market_order_buy: OrderAny,
@@ -277,14 +274,11 @@ fn test_process_order_when_instrument_not_active(
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)));
 
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create engine and process order
-    let mut engine =
-        get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
+    let mut engine = get_order_matching_engine(instrument, msgbus.clone(), None, None, None);
 
     engine.process_order(&mut market_order_buy, account_id);
 
@@ -301,16 +295,14 @@ fn test_process_order_when_instrument_not_active(
 
 #[rstest]
 fn test_process_order_when_invalid_quantity_precision(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create market order with invalid quantity precision 0 for eth/usdt precision of 3
     let mut market_order_invalid_precision = OrderTestBuilder::new(OrderType::Market)
@@ -321,13 +313,8 @@ fn test_process_order_when_invalid_quantity_precision(
         .build();
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument_eth_usdt,
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt, msgbus.clone(), None, None, None);
 
     engine.process_order(&mut market_order_invalid_precision, account_id);
 
@@ -346,25 +333,18 @@ fn test_process_order_when_invalid_quantity_precision(
 
 #[rstest]
 fn test_process_order_when_invalid_price_precision(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_es: InstrumentAny,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument_es.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument_es.clone(), msgbus.clone(), None, None, None);
 
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_es.id())
@@ -391,25 +371,18 @@ fn test_process_order_when_invalid_price_precision(
 
 #[rstest]
 fn test_process_order_when_invalid_trigger_price_precision(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_es: InstrumentAny,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument_es.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument_es.clone(), msgbus.clone(), None, None, None);
     let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
         .instrument_id(instrument_es.id())
         .side(OrderSide::Sell)
@@ -435,17 +408,15 @@ fn test_process_order_when_invalid_trigger_price_precision(
 
 #[rstest]
 fn test_process_order_when_shorting_equity_without_margin_account(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     equity_aapl: Equity,
 ) {
     let instrument = InstrumentAny::Equity(equity_aapl);
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let mut market_order_sell = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
@@ -455,8 +426,7 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         .build();
 
     // Create engine and process order
-    let mut engine =
-        get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
+    let mut engine = get_order_matching_engine(instrument, msgbus.clone(), None, None, None);
 
     engine.process_order(&mut market_order_sell, account_id);
 
@@ -478,21 +448,19 @@ fn test_process_order_when_shorting_equity_without_margin_account(
 
 #[rstest]
 fn test_process_order_when_invalid_reduce_only(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let mut engine = get_order_matching_engine(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         Some(engine_config),
@@ -522,22 +490,20 @@ fn test_process_order_when_invalid_reduce_only(
 
 #[rstest]
 fn test_process_order_when_invalid_contingent_orders(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_es: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine = get_order_matching_engine(
         instrument_es.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         Some(cache.clone()),
         None,
         Some(engine_config),
@@ -597,22 +563,20 @@ fn test_process_order_when_invalid_contingent_orders(
 
 #[rstest]
 fn test_process_order_when_closed_linked_order(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_es: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine = get_order_matching_engine(
         instrument_es.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         Some(cache.clone()),
         None,
         Some(engine_config),
@@ -677,7 +641,7 @@ fn test_process_order_when_closed_linked_order(
 
 #[rstest]
 fn test_process_market_order_no_market_rejected(
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
@@ -685,19 +649,12 @@ fn test_process_market_order_no_market_rejected(
     mut market_order_sell: OrderAny,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument_eth_usdt,
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt, msgbus.clone(), None, None, None);
 
     engine.process_order(&mut market_order_buy, account_id);
     engine.process_order(&mut market_order_sell, account_id);
@@ -720,14 +677,9 @@ fn test_process_market_order_no_market_rejected(
 }
 
 #[rstest]
-fn test_bid_ask_initialized(msgbus: MessageBus, instrument_es: InstrumentAny) {
-    let mut engine_l2 = get_order_matching_engine_l2(
-        instrument_es.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+fn test_bid_ask_initialized(msgbus: Rc<RefCell<MessageBus>>, instrument_es: InstrumentAny) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_es.clone(), msgbus.clone(), None, None, None);
     // Create bid and ask orderbook delta and check if
     // bid and ask are initialized in order matching core
     let book_order_buy = BookOrder::new(OrderSide::Buy, Price::from("100"), Quantity::from("1"), 0);
@@ -759,16 +711,15 @@ fn test_bid_ask_initialized(msgbus: MessageBus, instrument_es: InstrumentAny) {
 fn test_not_enough_quantity_filled_fok_order(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: ShareableMessageHandler,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -816,16 +767,15 @@ fn test_not_enough_quantity_filled_fok_order(
 fn test_valid_market_buy(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: ShareableMessageHandler,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -889,19 +839,17 @@ fn test_valid_market_buy(
 #[rstest]
 fn test_process_limit_post_only_order_that_would_be_a_taker(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -952,19 +900,17 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
 #[rstest]
 fn test_process_limit_order_not_matched_and_canceled_fok_order(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1015,19 +961,17 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
 #[rstest]
 fn test_process_limit_order_matched_immediate_fill(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1077,22 +1021,20 @@ fn test_process_limit_order_matched_immediate_fill(
 #[rstest]
 fn test_process_stop_market_order_triggered_rejected(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
     // Register saving message handler to exec engine endpoint
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create order matching engine which rejects stop orders
     let mut engine_config = OrderMatchingEngineConfig::default();
     engine_config.reject_stop_orders = true;
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         Some(engine_config),
@@ -1141,18 +1083,17 @@ fn test_process_stop_market_order_triggered_rejected(
 #[rstest]
 fn test_process_stop_market_order_valid_trigger_filled(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1197,17 +1138,16 @@ fn test_process_stop_market_order_valid_trigger_filled(
 #[rstest]
 fn test_process_stop_market_order_valid_not_triggered_accepted(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1250,17 +1190,16 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
 #[rstest]
 fn test_process_stop_limit_order_triggered_not_filled(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1311,18 +1250,17 @@ fn test_process_stop_limit_order_triggered_not_filled(
 #[rstest]
 fn test_process_stop_limit_order_triggered_filled(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1381,18 +1319,17 @@ fn test_process_stop_limit_order_triggered_filled(
 #[rstest]
 fn test_process_cancel_command_valid(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1454,17 +1391,16 @@ fn test_process_cancel_command_valid(
 #[rstest]
 fn test_process_cancel_command_order_not_found(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1505,18 +1441,17 @@ fn test_process_cancel_command_order_not_found(
 #[rstest]
 fn test_process_cancel_all_command(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         Some(cache.clone()),
         None,
         None,
@@ -1643,19 +1578,18 @@ fn test_process_cancel_all_command(
 #[rstest]
 fn test_process_batch_cancel_command(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        Some(cache),
+        msgbus.clone(),
+        Some(cache.clone()),
         None,
         None,
     );
@@ -1761,21 +1695,19 @@ fn test_process_batch_cancel_command(
 #[rstest]
 fn test_expire_order(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
 
     // Create order matching engine with gtd support
     let mut engine_config = OrderMatchingEngineConfig::default();
     engine_config.support_gtd_orders = true;
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         Some(engine_config),
@@ -1848,17 +1780,16 @@ fn test_expire_order(
 #[rstest]
 fn test_process_modify_order_rejected_not_found(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1896,17 +1827,16 @@ fn test_process_modify_order_rejected_not_found(
 #[rstest]
 fn test_update_limit_order_post_only_matched(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -1980,17 +1910,16 @@ fn test_update_limit_order_post_only_matched(
 #[rstest]
 fn test_update_limit_order_valid(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2068,17 +1997,16 @@ fn test_update_limit_order_valid(
 #[rstest]
 fn test_update_stop_market_order_valid(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2147,17 +2075,16 @@ fn test_update_stop_market_order_valid(
 #[rstest]
 fn test_update_stop_limit_order_valid_update_not_triggered(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2215,17 +2142,16 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
 #[rstest]
 fn test_process_market_if_touched_order_already_triggered(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2271,17 +2197,16 @@ fn test_process_market_if_touched_order_already_triggered(
 #[rstest]
 fn test_update_market_if_touched_order_valid(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2338,17 +2263,16 @@ fn test_update_market_if_touched_order_valid(
 #[rstest]
 fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2410,17 +2334,16 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
 #[rstest]
 fn test_update_limit_if_touched_order_valid(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2490,17 +2413,16 @@ fn test_update_limit_if_touched_order_valid(
 #[rstest]
 fn test_process_market_to_limit_orders_not_fully_filled(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2570,17 +2492,16 @@ fn test_process_market_to_limit_orders_not_fully_filled(
 #[rstest]
 fn test_process_trailing_stop_orders_rejeceted_and_valid(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2655,17 +2576,16 @@ fn test_process_trailing_stop_orders_rejeceted_and_valid(
 #[rstest]
 fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         None,
         None,
         None,
@@ -2731,21 +2651,20 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
 #[rstest]
 fn test_updating_of_contingent_orders(
     instrument_eth_usdt: InstrumentAny,
-    msgbus: MessageBus,
+    msgbus: Rc<RefCell<MessageBus>>,
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    register(
-        msgbus.switchboard.exec_engine_process,
-        order_event_handler.clone(),
-    );
+    let endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+    register(endpoint, order_event_handler.clone());
+
     let cache = Rc::new(RefCell::new(Cache::default()));
     // Create order matching engine which supports contingent orders
     let mut engine_config = OrderMatchingEngineConfig::default();
     engine_config.support_contingent_orders = true;
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
-        Rc::new(RefCell::new(msgbus)),
+        msgbus.clone(),
         Some(cache.clone()),
         None,
         Some(engine_config),
