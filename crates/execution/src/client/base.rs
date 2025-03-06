@@ -25,7 +25,7 @@ use nautilus_common::{
     cache::Cache,
     msgbus::{MessageBus, send},
 };
-use nautilus_core::{AtomicTime, UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
@@ -42,12 +42,12 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::messages::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
-    SubmitOrderList,
+use crate::reports::{
+    fill::FillReport, mass_status::ExecutionMassStatus, order::OrderStatusReport,
+    position::PositionStatusReport,
 };
 
-pub struct ExecutionClient {
+pub struct BaseExecutionClient {
     pub trader_id: TraderId,
     pub client_id: ClientId,
     pub venue: Venue,
@@ -56,12 +56,12 @@ pub struct ExecutionClient {
     pub account_type: AccountType,
     pub base_currency: Option<Currency>,
     pub is_connected: bool,
-    clock: &'static AtomicTime,
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
 }
 
-impl ExecutionClient {
+impl BaseExecutionClient {
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         trader_id: TraderId,
@@ -71,7 +71,7 @@ impl ExecutionClient {
         account_id: AccountId,
         account_type: AccountType,
         base_currency: Option<Currency>,
-        clock: &'static AtomicTime,
+        clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
     ) -> Self {
@@ -90,39 +90,17 @@ impl ExecutionClient {
         }
     }
 
+    pub fn set_connected(&mut self, is_connected: bool) {
+        self.is_connected = is_connected;
+    }
+
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = account_id;
+    }
+
     #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
         self.cache.borrow().account(&self.account_id).cloned()
-    }
-
-    // -- COMMAND HANDLERS ----------------------------------------------------
-
-    pub fn submit_order(&self, command: SubmitOrder) -> anyhow::Result<()> {
-        todo!();
-    }
-
-    pub fn submit_order_list(&self, command: SubmitOrderList) -> anyhow::Result<()> {
-        todo!();
-    }
-
-    pub fn modify_order(&self, command: ModifyOrder) -> anyhow::Result<()> {
-        todo!();
-    }
-
-    pub fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()> {
-        todo!();
-    }
-
-    pub fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()> {
-        todo!();
-    }
-
-    pub fn batch_cancel_orders(&self, command: BatchCancelOrders) -> anyhow::Result<()> {
-        todo!();
-    }
-
-    pub fn query_order(&self, command: QueryOrder) -> anyhow::Result<()> {
-        todo!();
     }
 
     pub fn generate_account_state(
@@ -141,7 +119,7 @@ impl ExecutionClient {
             reported,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             self.base_currency,
         );
         self.send_account_state(account_state);
@@ -163,7 +141,7 @@ impl ExecutionClient {
             self.account_id,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
         );
         self.send_order_event(OrderEventAny::Submitted(event));
     }
@@ -185,7 +163,7 @@ impl ExecutionClient {
             reason.into(),
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
         );
         self.send_order_event(OrderEventAny::Rejected(event));
@@ -208,7 +186,7 @@ impl ExecutionClient {
             self.account_id,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
         );
         self.send_order_event(OrderEventAny::Accepted(event));
@@ -231,7 +209,7 @@ impl ExecutionClient {
             reason.into(),
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -256,7 +234,7 @@ impl ExecutionClient {
             reason.into(),
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -274,7 +252,6 @@ impl ExecutionClient {
         quantity: Quantity,
         price: Price,
         trigger_price: Option<Price>,
-        reason: &str,
         ts_event: UnixNanos,
         venue_order_id_modified: bool,
     ) {
@@ -300,7 +277,7 @@ impl ExecutionClient {
             quantity,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -326,7 +303,7 @@ impl ExecutionClient {
             client_order_id,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -350,7 +327,7 @@ impl ExecutionClient {
             client_order_id,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -374,7 +351,7 @@ impl ExecutionClient {
             client_order_id,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -417,7 +394,7 @@ impl ExecutionClient {
             liquidity_side,
             UUID4::new(),
             ts_event,
-            self.clock.get_time_ns(),
+            self.clock.borrow().timestamp_ns(),
             false,
             Some(venue_position_id),
             Some(commission),
@@ -432,15 +409,27 @@ impl ExecutionClient {
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
-        todo!()
+        let endpoint = Ustr::from("ExecEngine.process");
+        self.msgbus.borrow().send(&endpoint, &event as &dyn Any);
     }
 
-    // TODO: Implement execution reports
-    // fn send_mass_status_report(&self, report)
+    fn send_mass_status_report(&self, report: ExecutionMassStatus) {
+        let endpoint = Ustr::from("ExecEngine.reconcile_mass_status");
+        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+    }
 
-    // TODO: Implement execution reports
-    // fn send_order_status_report(&self, report)
+    fn send_order_status_report(&self, report: OrderStatusReport) {
+        let endpoint = Ustr::from("ExecEngine.reconcile_report");
+        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+    }
 
-    // TODO: Implement execution reports
-    // fn send_fill_report(&self, report)
+    fn send_fill_report(&self, report: FillReport) {
+        let endpoint = Ustr::from("ExecEngine.reconcile_report");
+        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+    }
+
+    fn send_position_report(&self, report: PositionStatusReport) {
+        let endpoint = Ustr::from("ExecEngine.reconcile_report");
+        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+    }
 }
