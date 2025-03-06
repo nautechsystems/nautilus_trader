@@ -22,7 +22,9 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{MessageBus, publish, send},
+    msgbus::{
+        MessageBus, {self},
+    },
     throttler::Throttler,
 };
 use nautilus_core::UUID4;
@@ -101,7 +103,7 @@ impl RiskEngine {
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
             Box::new(move |submit_order: SubmitOrder| {
-                send(
+                msgbus::send(
                     &Ustr::from("ExecEngine.execute"),
                     &TradingCommand::SubmitOrder(submit_order),
                 );
@@ -123,7 +125,7 @@ impl RiskEngine {
 
                 let denied = Self::create_order_denied(&submit_order, reason, &clock);
 
-                send(&Ustr::from("ExecEngine.process"), &denied);
+                msgbus::send(&Ustr::from("ExecEngine.process"), &denied);
             }) as Box<dyn Fn(SubmitOrder)>
         };
 
@@ -146,7 +148,7 @@ impl RiskEngine {
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
             Box::new(move |order: ModifyOrder| {
-                send(
+                msgbus::send(
                     &Ustr::from("ExecEngine.execute"),
                     &TradingCommand::ModifyOrder(order),
                 );
@@ -171,7 +173,7 @@ impl RiskEngine {
 
                 let rejected = Self::create_modify_rejected(&order, reason, &clock);
 
-                send(&Ustr::from("ExecEngine.process"), &rejected);
+                msgbus::send(&Ustr::from("ExecEngine.process"), &rejected);
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
@@ -275,7 +277,7 @@ impl RiskEngine {
         // TODO: Create a new Event "TradingStateChanged" in OrderEventAny enum.
         // let event = OrderEventAny::TradingStateChanged(TradingStateChanged::new(..,self.trading_state,..));
 
-        publish(&Ustr::from("events.risk"), &"message"); // TODO: Send the new Event here
+        msgbus::publish(&Ustr::from("events.risk"), &"message"); // TODO: Send the new Event here
 
         log::info!("Trading state set to {state:?}");
     }
@@ -936,7 +938,7 @@ impl RiskEngine {
             self.clock.borrow().timestamp_ns(),
         ));
 
-        send(&Ustr::from("ExecEngine.process"), &denied);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &denied);
     }
 
     fn deny_order_list(&self, order_list: OrderList, reason: &str) {
@@ -963,7 +965,7 @@ impl RiskEngine {
             order.account_id(),
         ));
 
-        send(&Ustr::from("ExecEngine.process"), &denied);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &denied);
     }
 
     // -- EGRESS ----------------------------------------------------------------------------------
@@ -1041,7 +1043,7 @@ impl RiskEngine {
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
-        send(&Ustr::from("ExecEngine.execute"), &command);
+        msgbus::send(&Ustr::from("ExecEngine.execute"), &command);
     }
 
     fn handle_event(&mut self, event: OrderEventAny) {
@@ -1110,7 +1112,7 @@ mod tests {
     use super::{RiskEngine, config::RiskEngineConfig};
 
     #[fixture]
-    fn msgbus() -> Rc<RefCell<MessageBus>> {
+    fn stub_msgbus() -> Rc<RefCell<MessageBus>> {
         MessageBus::default().register_message_bus()
     }
 
@@ -1412,24 +1414,28 @@ mod tests {
 
     // Tests
     #[rstest]
-    fn test_bypass_config_risk_engine(msgbus: Rc<RefCell<MessageBus>>) {
+    fn test_bypass_config_risk_engine(stub_msgbus: Rc<RefCell<MessageBus>>) {
         let risk_engine = get_risk_engine(
-            msgbus, None, None, None, true, // <-- Bypassing pre-trade risk checks for backtest
+            stub_msgbus,
+            None,
+            None,
+            None,
+            true, // <-- Bypassing pre-trade risk checks for backtest
         );
 
         assert!(risk_engine.config.bypass);
     }
 
     #[rstest]
-    fn test_trading_state_after_instantiation_returns_active(msgbus: Rc<RefCell<MessageBus>>) {
-        let risk_engine = get_risk_engine(msgbus, None, None, None, false);
+    fn test_trading_state_after_instantiation_returns_active(stub_msgbus: Rc<RefCell<MessageBus>>) {
+        let risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         assert_eq!(risk_engine.trading_state, TradingState::Active);
     }
 
     #[rstest]
-    fn test_set_trading_state_when_no_change_logs_warning(msgbus: Rc<RefCell<MessageBus>>) {
-        let mut risk_engine = get_risk_engine(msgbus, None, None, None, false);
+    fn test_set_trading_state_when_no_change_logs_warning(stub_msgbus: Rc<RefCell<MessageBus>>) {
+        let mut risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         risk_engine.set_trading_state(TradingState::Active);
 
@@ -1437,8 +1443,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_set_trading_state_changes_value_and_publishes_event(msgbus: Rc<RefCell<MessageBus>>) {
-        let mut risk_engine = get_risk_engine(msgbus, None, None, None, false);
+    fn test_set_trading_state_changes_value_and_publishes_event(
+        stub_msgbus: Rc<RefCell<MessageBus>>,
+    ) {
+        let mut risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         risk_engine.set_trading_state(TradingState::Halted);
 
@@ -1447,9 +1455,9 @@ mod tests {
 
     #[rstest]
     fn test_max_order_submit_rate_when_no_risk_config_returns_10_per_second(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
     ) {
-        let risk_engine = get_risk_engine(msgbus, None, None, None, false);
+        let risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         assert_eq!(risk_engine.config.max_order_submit.limit, 10);
         assert_eq!(risk_engine.config.max_order_submit.interval_ns, 1000);
@@ -1457,9 +1465,9 @@ mod tests {
 
     #[rstest]
     fn test_max_order_modify_rate_when_no_risk_config_returns_5_per_second(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
     ) {
-        let risk_engine = get_risk_engine(msgbus, None, None, None, false);
+        let risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         assert_eq!(risk_engine.config.max_order_modify.limit, 5);
         assert_eq!(risk_engine.config.max_order_modify.interval_ns, 1000);
@@ -1467,19 +1475,19 @@ mod tests {
 
     #[rstest]
     fn test_max_notionals_per_order_when_no_risk_config_returns_empty_hashmap(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
     ) {
-        let risk_engine = get_risk_engine(msgbus, None, None, None, false);
+        let risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         assert_eq!(risk_engine.max_notional_per_order, HashMap::new());
     }
 
     #[rstest]
     fn test_set_max_notional_per_order_changes_setting(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         instrument_audusd: InstrumentAny,
     ) {
-        let mut risk_engine = get_risk_engine(msgbus, None, None, None, false);
+        let mut risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         risk_engine
             .set_max_notional_per_order(instrument_audusd.id(), Decimal::from_i64(100000).unwrap());
@@ -1491,7 +1499,7 @@ mod tests {
 
     #[rstest]
     fn test_given_random_command_then_logs_and_continues(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1499,7 +1507,7 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
     ) {
-        let mut risk_engine = get_risk_engine(msgbus, None, None, None, false);
+        let mut risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
@@ -1530,10 +1538,10 @@ mod tests {
 
     #[rstest]
     fn test_given_random_event_then_logs_and_continues(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         instrument_audusd: InstrumentAny,
     ) {
-        let mut risk_engine = get_risk_engine(msgbus, None, None, None, false);
+        let mut risk_engine = get_risk_engine(stub_msgbus, None, None, None, false);
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
@@ -1560,7 +1568,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_order_with_default_settings_then_sends_to_client(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1573,10 +1581,10 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -1592,7 +1600,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -1632,7 +1640,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1642,13 +1650,13 @@ mod tests {
         process_order_event_handler: ShareableMessageHandler,
         execute_order_event_handler: ShareableMessageHandler,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
-        let mut risk_engine = get_risk_engine(msgbus, None, None, None, true);
+        let mut risk_engine = get_risk_engine(stub_msgbus, None, None, None, true);
 
         // TODO: Limit -> Market
         let order = OrderTestBuilder::new(OrderType::Limit)
@@ -1686,7 +1694,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1698,13 +1706,13 @@ mod tests {
         clock: TestClock,
         simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
-        let msgbus = msgbus;
+        let msgbus = stub_msgbus;
         let clock = Rc::new(RefCell::new(clock));
         let simple_cache = Rc::new(RefCell::new(simple_cache));
 
@@ -1838,7 +1846,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1850,13 +1858,13 @@ mod tests {
         clock: TestClock,
         simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
-        let msgbus = msgbus;
+        let msgbus = stub_msgbus;
         let clock = Rc::new(RefCell::new(clock));
         let simple_cache = Rc::new(RefCell::new(simple_cache));
 
@@ -1966,7 +1974,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1978,7 +1986,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -1994,7 +2002,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2041,7 +2049,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_instrument_not_in_cache_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2053,7 +2061,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2065,7 +2073,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2110,7 +2118,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_price_precision_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2122,7 +2130,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2138,7 +2146,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2187,7 +2195,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2199,7 +2207,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2215,7 +2223,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2260,7 +2268,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_trigger_price_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2272,7 +2280,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2288,7 +2296,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2336,7 +2344,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_quantity_precision_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2348,7 +2356,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2364,7 +2372,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2408,7 +2416,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2420,7 +2428,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2436,7 +2444,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2480,7 +2488,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2492,7 +2500,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2508,7 +2516,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2553,7 +2561,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2565,7 +2573,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -2581,7 +2589,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2626,7 +2634,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2638,10 +2646,10 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler);
 
         simple_cache
@@ -2667,7 +2675,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2715,7 +2723,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2726,7 +2734,7 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2752,7 +2760,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2803,7 +2811,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2814,7 +2822,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2840,7 +2848,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2889,7 +2897,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2900,7 +2908,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -2926,7 +2934,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -2975,7 +2983,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2987,7 +2995,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -3003,7 +3011,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3049,7 +3057,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_list_buys_when_over_free_balance_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3061,7 +3069,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -3077,7 +3085,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3139,7 +3147,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_list_sells_when_over_free_balance_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3151,7 +3159,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -3167,7 +3175,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3234,7 +3242,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3246,10 +3254,10 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -3275,7 +3283,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3357,7 +3365,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3369,10 +3377,10 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -3398,7 +3406,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3478,7 +3486,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_trading_halted_then_denies_order(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3488,7 +3496,7 @@ mod tests {
         process_order_event_handler: ShareableMessageHandler,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -3496,7 +3504,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3541,7 +3549,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_order_beyond_rate_limit_then_denies_order(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3552,7 +3560,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -3566,7 +3574,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3613,7 +3621,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_list_when_trading_halted_then_denies_orders(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3624,7 +3632,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -3638,7 +3646,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3704,7 +3712,7 @@ mod tests {
     #[ignore] // TODO: Revisit after high-precision merged
     #[rstest]
     fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3716,10 +3724,10 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -3745,7 +3753,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3835,7 +3843,7 @@ mod tests {
     #[ignore] // TODO: Revisit after high-precision merged
     #[rstest]
     fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3847,10 +3855,10 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -3876,7 +3884,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -3966,7 +3974,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_bracket_with_default_settings_sends_to_client(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3977,7 +3985,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
         simple_cache
@@ -3991,7 +3999,7 @@ mod tests {
             .unwrap();
 
         let risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -4054,7 +4062,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4065,7 +4073,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -4075,7 +4083,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -4146,7 +4154,7 @@ mod tests {
     // MODIFY ORDER TESTS
     #[rstest]
     fn test_modify_order_when_no_order_found_logs_error(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4157,7 +4165,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -4171,7 +4179,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -4202,7 +4210,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_modify_order_beyond_rate_limit_then_rejects(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4213,7 +4221,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -4238,7 +4246,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -4280,7 +4288,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_modify_order_with_default_settings_then_sends_to_client(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4292,10 +4300,10 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler);
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -4320,7 +4328,7 @@ mod tests {
             .unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -4373,7 +4381,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_betting_account(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4385,7 +4393,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
         simple_cache
@@ -4401,7 +4409,7 @@ mod tests {
         simple_cache.add_quote(quote_audusd).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,
@@ -4437,7 +4445,7 @@ mod tests {
     #[ignore = "Message bus related changes re-investigate"]
     #[rstest]
     fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto_cash_account(
-        msgbus: Rc<RefCell<MessageBus>>,
+        stub_msgbus: Rc<RefCell<MessageBus>>,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4459,10 +4467,10 @@ mod tests {
             UnixNanos::default(),
         );
 
-        let process_endpoint = msgbus.borrow_mut().switchboard.exec_engine_process;
+        let process_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_process;
         register(process_endpoint, process_order_event_handler.clone());
 
-        let execute_endpoint = msgbus.borrow_mut().switchboard.exec_engine_execute;
+        let execute_endpoint = stub_msgbus.borrow_mut().switchboard.exec_engine_execute;
         register(execute_endpoint, execute_order_event_handler.clone());
 
         simple_cache
@@ -4478,7 +4486,7 @@ mod tests {
         simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
-            msgbus,
+            stub_msgbus,
             Some(Rc::new(RefCell::new(simple_cache))),
             None,
             None,

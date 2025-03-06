@@ -35,7 +35,9 @@ use nautilus_common::{
     clock::Clock,
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV},
-    msgbus::{MessageBus, publish},
+    msgbus::{
+        MessageBus, {self},
+    },
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -470,7 +472,7 @@ impl ExecutionEngine {
             let topic = msgbus
                 .switchboard
                 .get_order_snapshots_topic(order.client_order_id());
-            publish(&topic, order);
+            msgbus::publish(&topic, order);
         }
     }
 
@@ -488,7 +490,7 @@ impl ExecutionEngine {
         let topic = msgbus
             .switchboard
             .get_positions_snapshots_topic(position.id);
-        publish(&topic, position);
+        msgbus::publish(&topic, position);
     }
 
     // -- EVENT HANDLERS ----------------------------------------------------
@@ -659,7 +661,7 @@ impl ExecutionEngine {
         let topic = msgbus
             .switchboard
             .get_event_orders_topic(event.strategy_id());
-        publish(&topic, order);
+        msgbus::publish(&topic, order);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
@@ -759,7 +761,7 @@ impl ExecutionEngine {
         let topic = msgbus
             .switchboard
             .get_event_positions_topic(event.strategy_id);
-        publish(&topic, &event);
+        msgbus::publish(&topic, &event);
 
         Ok(position)
     }
@@ -784,10 +786,10 @@ impl ExecutionEngine {
 
         if position.is_closed() {
             let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
-            publish(&topic, &event);
+            msgbus::publish(&topic, &event);
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
-            publish(&topic, &event);
+            msgbus::publish(&topic, &event);
         }
     }
 
@@ -1050,7 +1052,7 @@ impl ExecutionEngine {
         let topic = msgbus
             .switchboard
             .get_event_orders_topic(order.strategy_id());
-        publish(&topic, &denied);
+        msgbus::publish(&topic, &denied);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);

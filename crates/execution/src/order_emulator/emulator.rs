@@ -24,7 +24,10 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{handler::ShareableMessageHandler, publish, subscribe},
+    msgbus::{
+        handler::ShareableMessageHandler,
+        {self},
+    },
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
@@ -417,7 +420,7 @@ impl OrderEmulator {
 
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
-            publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
@@ -742,8 +745,8 @@ impl OrderEmulator {
         if !self.subscribed_strategies.contains(&strategy_id) {
             // Subscribe to all strategy events
             if let Some(handler) = &self.on_event_handler {
-                subscribe(format!("events.order.{strategy_id}"), handler.clone(), None);
-                subscribe(
+                msgbus::subscribe(format!("events.order.{strategy_id}"), handler.clone(), None);
+                msgbus::subscribe(
                     format!("events.position.{strategy_id}"),
                     handler.clone(),
                     None,
@@ -860,7 +863,7 @@ impl OrderEmulator {
             // Replace commands order with transformed order
             command.order = OrderAny::Limit(transformed.clone());
 
-            publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
@@ -901,7 +904,7 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            publish(
+            msgbus::publish(
                 &format!("events.order.{}", transformed.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
@@ -982,7 +985,7 @@ impl OrderEmulator {
             // Replace commands order with transformed order
             command.order = OrderAny::Market(transformed.clone());
 
-            publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
@@ -1024,7 +1027,7 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
