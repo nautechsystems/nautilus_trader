@@ -20,6 +20,7 @@ pub mod cancel_all;
 pub mod cancel_batch;
 pub mod modify;
 pub mod query;
+pub mod reports;
 pub mod submit;
 pub mod submit_list;
 
