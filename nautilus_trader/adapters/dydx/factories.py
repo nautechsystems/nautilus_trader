@@ -44,6 +44,17 @@ def get_dydx_grcp_client(
 ) -> DYDXAccountGRPCAPI:
     """
     Return a dYdX GRPC client.
+
+    Parameters
+    ----------
+    is_testnet : bool, default False
+        Whether to use the testnet or production endpoint.
+
+    Returns
+    -------
+    DYDXAccountGRPCAPI
+        The dYdX GRPC client.
+
     """
     channel_url = get_grpc_base_url(is_testnet=is_testnet)
 
@@ -109,7 +120,7 @@ def get_dydx_instrument_provider(
 
     Parameters
     ----------
-    client : BybitHttpClient
+    client : DYDXHttpClient
         The client for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
@@ -137,7 +148,7 @@ def get_dydx_instrument_provider(
 
 class DYDXLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Bybit` live data client factory.
+    Provides a `dYdX` live data client factory.
     """
 
     @staticmethod
