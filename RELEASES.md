@@ -39,6 +39,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Added initial `Cache` benchmarking for orders (#2341), thanks @filipmacek
 - Added support for `CARGO_BUILD_TARGET` environment variable in `build.py` (#2385), thanks @sunlei
 - Added test for time-bar aggregation (#2391), thanks @stefansimik and @faysou
+- Implemented actor framework and message bus v3 (#2402), thanks @twitu
 - Implemented exchange rate calculations in Rust
 - Improved handling of `oms_type` for `StrategyConfig` which now correctly handles the `OmsType` enum
 - Improved Binance websocket connections management to allow more than 200 streams (#2369), thanks @lidarbtc
@@ -68,6 +69,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Refined `base_template` behaviour in parquet write_data (#2389), thanks @faysou
 - Refined mixed catalog client requests (#2405), thanks @faysou
 - Refined update catalog docstring (#2411), thanks @faysou
+- Refined to use `next_back` instead of `last` for identifier tag functions (#2414), thanks @twitu
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -95,6 +97,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
+- Fixed docstrings for dYdX factories (#2415), thanks @davidsblom
 - Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
 - Fixed composite bars subscription (#2337), thanks @faysou
 - Fixed sub command issue in some adapters (#2343), thanks @faysou

@@ -54,7 +54,7 @@ pyo3 = { version = "0.23.5", features = ["chrono", "indexmap", "rust_decimal", "
 pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
 reqwest = { version = "0.12.12", features = ["blocking"] }
-ring = "0.17.11"
+ring = "0.17.12"
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
@@ -81,7 +81,7 @@ float-cmp = "0.10.0"
 iai = "0.1.1"
 proptest = "1.6.0"
 rstest = "0.25.0"
-tempfile = "3.17.1"
+tempfile = "3.18.0"
 tracing-test = "0.2.5"
 
 # build-dependencies
