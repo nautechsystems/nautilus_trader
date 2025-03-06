@@ -59,6 +59,7 @@ use nautilus_common::{
     msgbus::{
         MessageBus,
         handler::{MessageHandler, ShareableMessageHandler},
+        publish, subscribe, unsubscribe,
     },
     timer::TimeEventCallback,
 };
@@ -446,7 +447,7 @@ impl DataEngine {
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_instrument_topic(instrument.id());
-        msgbus.publish(&topic, &instrument as &dyn Any); // TODO: Optimize
+        publish(&topic, &instrument as &dyn Any); // TODO: Optimize
     }
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
@@ -473,7 +474,7 @@ impl DataEngine {
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
-        msgbus.publish(&topic, &deltas as &dyn Any);
+        publish(&topic, &deltas as &dyn Any);
     }
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
@@ -507,13 +508,13 @@ impl DataEngine {
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
-        msgbus.publish(&topic, &deltas as &dyn Any); // TODO: Optimize
+        publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_depth_topic(depth.instrument_id);
-        msgbus.publish(&topic, &depth as &dyn Any); // TODO: Optimize
+        publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
     fn handle_quote(&mut self, quote: QuoteTick) {
@@ -525,7 +526,7 @@ impl DataEngine {
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_quotes_topic(quote.instrument_id);
-        msgbus.publish(&topic, &quote as &dyn Any); // TODO: Optimize
+        publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
@@ -537,7 +538,7 @@ impl DataEngine {
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_trades_topic(trade.instrument_id);
-        msgbus.publish(&topic, &trade as &dyn Any); // TODO: Optimize
+        publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
     fn handle_bar(&mut self, bar: Bar) {
@@ -568,7 +569,7 @@ impl DataEngine {
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
-        msgbus.publish(&topic, &bar as &dyn Any); // TODO: Optimize
+        publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
@@ -781,7 +782,7 @@ impl DataEngine {
                     && msgbus.is_subscribed(*topic, handler.clone())
                 {
                     log::debug!("Unsubscribing BookUpdater from {topic}");
-                    msgbus.unsubscribe(*topic, handler.clone());
+                    unsubscribe(*topic, handler.clone());
                 }
             }
 
@@ -873,12 +874,12 @@ impl DataEngine {
 
         let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
         if !msgbus.is_subscribed(topic, handler.clone()) {
-            msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            subscribe(topic, handler.clone(), Some(self.msgbus_priority));
         }
 
         let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
         if !only_deltas && !msgbus.is_subscribed(topic, handler.clone()) {
-            msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
+            subscribe(topic, handler, Some(self.msgbus_priority));
         }
 
         Ok(())
@@ -899,7 +900,7 @@ impl DataEngine {
 
             let mut msgbus = msgbus.borrow_mut();
             let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
-            msgbus.publish(&topic, &bar as &dyn Any);
+            publish(&topic, &bar as &dyn Any);
         };
 
         let clock = self.clock.clone();

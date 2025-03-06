@@ -22,7 +22,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::MessageBus,
+    msgbus::{MessageBus, register, send},
     throttler::Throttler,
 };
 use nautilus_core::UUID4;
@@ -101,7 +101,7 @@ impl RiskEngine {
         let success_handler = {
             let msgbus = msgbus.clone();
             Box::new(move |submit_order: SubmitOrder| {
-                msgbus.borrow_mut().send(
+                send(
                     &Ustr::from("ExecEngine.execute"),
                     &TradingCommand::SubmitOrder(submit_order),
                 );
@@ -124,18 +124,18 @@ impl RiskEngine {
 
                 let denied = Self::create_order_denied(&submit_order, reason, &clock);
 
-                msgbus
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.process"), &denied);
+                send(&Ustr::from("ExecEngine.process"), &denied);
             }) as Box<dyn Fn(SubmitOrder)>
         };
 
         Throttler::new(
-            config.max_order_submit.clone(),
+            config.max_order_submit.limit,
+            config.max_order_submit.interval_ns,
             clock,
             "ORDER_SUBMIT_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
+            UUID4::new(),
         )
     }
 
@@ -148,7 +148,7 @@ impl RiskEngine {
         let success_handler = {
             let msgbus = msgbus.clone();
             Box::new(move |order: ModifyOrder| {
-                msgbus.borrow_mut().send(
+                send(
                     &Ustr::from("ExecEngine.execute"),
                     &TradingCommand::ModifyOrder(order),
                 );
@@ -174,18 +174,18 @@ impl RiskEngine {
 
                 let rejected = Self::create_modify_rejected(&order, reason, &clock);
 
-                msgbus
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.process"), &rejected);
+                send(&Ustr::from("ExecEngine.process"), &rejected);
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
         Throttler::new(
-            config.max_order_modify.clone(),
+            config.max_order_modify.limit,
+            config.max_order_modify.interval_ns,
             clock,
             "ORDER_MODIFY_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
+            UUID4::new(),
         )
     }
 
@@ -278,9 +278,7 @@ impl RiskEngine {
         // TODO: Create a new Event "TradingStateChanged" in OrderEventAny enum.
         // let event = OrderEventAny::TradingStateChanged(TradingStateChanged::new(..,self.trading_state,..));
 
-        self.msgbus
-            .borrow_mut()
-            .publish(&Ustr::from("events.risk"), &"message"); // TODO: Send the new Event here
+        publish(&Ustr::from("events.risk"), &"message"); // TODO: Send the new Event here
 
         log::info!("Trading state set to {state:?}");
     }
@@ -942,9 +940,7 @@ impl RiskEngine {
             self.clock.borrow().timestamp_ns(),
         ));
 
-        self.msgbus
-            .borrow_mut()
-            .send(&Ustr::from("ExecEngine.process"), &denied);
+        send(&Ustr::from("ExecEngine.process"), &denied);
     }
 
     fn deny_order_list(&self, order_list: OrderList, reason: &str) {
@@ -971,9 +967,7 @@ impl RiskEngine {
             order.account_id(),
         ));
 
-        self.msgbus
-            .borrow_mut()
-            .send(&Ustr::from("ExecEngine.process"), &denied);
+        send(&Ustr::from("ExecEngine.process"), &denied);
     }
 
     // -- EGRESS ----------------------------------------------------------------------------------
@@ -1585,12 +1579,12 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -1658,12 +1652,12 @@ mod tests {
         process_order_event_handler: ShareableMessageHandler,
         execute_order_event_handler: ShareableMessageHandler,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -1719,12 +1713,12 @@ mod tests {
         clock: TestClock,
         simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -1875,12 +1869,12 @@ mod tests {
         clock: TestClock,
         simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -2007,7 +2001,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2084,7 +2078,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2155,7 +2149,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2234,7 +2228,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2309,7 +2303,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2387,7 +2381,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2461,7 +2455,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2535,7 +2529,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2609,7 +2603,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -2684,12 +2678,12 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler,
         );
@@ -2776,7 +2770,7 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2866,7 +2860,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -2954,7 +2948,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3043,7 +3037,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3119,7 +3113,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3211,7 +3205,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3307,12 +3301,12 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -3433,12 +3427,12 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -3556,7 +3550,7 @@ mod tests {
         process_order_event_handler: ShareableMessageHandler,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3621,7 +3615,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3695,7 +3689,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -3789,12 +3783,12 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -3924,12 +3918,12 @@ mod tests {
         bitmex_cash_account_state_multi: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -4057,7 +4051,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
@@ -4147,7 +4141,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -4241,7 +4235,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -4298,7 +4292,7 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -4378,12 +4372,12 @@ mod tests {
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );
@@ -4475,7 +4469,7 @@ mod tests {
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
     ) {
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
@@ -4550,12 +4544,12 @@ mod tests {
             UnixNanos::default(),
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
         );
 
-        msgbus.register(
+        register(
             msgbus.switchboard.exec_engine_execute,
             execute_order_event_handler.clone(),
         );

@@ -1045,7 +1045,7 @@ mod tests {
         let mut msgbus = MessageBus::default();
         let mut cache = Cache::default();
         let handler = get_message_saving_handler::<AccountState>(None);
-        msgbus.register(Ustr::from("Portfolio.update_account"), handler.clone());
+        register(Ustr::from("Portfolio.update_account"), handler.clone());
         let margin_account = MarginAccount::new(
             AccountState::new(
                 AccountId::from("SIM-001"),

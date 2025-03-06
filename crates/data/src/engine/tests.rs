@@ -29,7 +29,9 @@ use nautilus_common::{
     msgbus::{
         MessageBus,
         handler::ShareableMessageHandler,
+        register, send,
         stubs::{get_message_saving_handler, get_saved_messages},
+        subscribe,
         switchboard::MessagingSwitchboard,
     },
     testing::init_logger_for_testing,
@@ -145,7 +147,7 @@ fn test_execute_subscribe_custom_data(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let data_type = DataType::new(stringify!(String), None);
     let cmd = SubscriptionCommand::new(
@@ -157,7 +159,7 @@ fn test_execute_subscribe_custom_data(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -176,7 +178,7 @@ fn test_execute_subscribe_custom_data(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -204,7 +206,7 @@ fn test_execute_subscribe_order_book_deltas(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
@@ -221,7 +223,7 @@ fn test_execute_subscribe_order_book_deltas(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -240,7 +242,7 @@ fn test_execute_subscribe_order_book_deltas(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -268,7 +270,7 @@ fn test_execute_subscribe_order_book_snapshots(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
@@ -285,7 +287,7 @@ fn test_execute_subscribe_order_book_snapshots(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -304,7 +306,7 @@ fn test_execute_subscribe_order_book_snapshots(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -332,7 +334,7 @@ fn test_execute_subscribe_instrument(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
@@ -347,7 +349,7 @@ fn test_execute_subscribe_instrument(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -366,7 +368,7 @@ fn test_execute_subscribe_instrument(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -394,7 +396,7 @@ fn test_execute_subscribe_quote_ticks(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
@@ -409,7 +411,7 @@ fn test_execute_subscribe_quote_ticks(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -428,7 +430,7 @@ fn test_execute_subscribe_quote_ticks(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -456,7 +458,7 @@ fn test_execute_subscribe_trade_ticks(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
@@ -471,7 +473,7 @@ fn test_execute_subscribe_trade_ticks(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -490,7 +492,7 @@ fn test_execute_subscribe_trade_ticks(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(
@@ -516,7 +518,7 @@ fn test_execute_subscribe_bars(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     data_engine.borrow_mut().process(&audusd_sim as &dyn Any);
@@ -539,7 +541,7 @@ fn test_execute_subscribe_bars(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
@@ -553,7 +555,7 @@ fn test_execute_subscribe_bars(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert_eq!(audusd_sim.id(), bar_type.instrument_id());
@@ -581,7 +583,7 @@ fn test_process_instrument(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
+    register(endpoint, handler);
 
     let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
     let cmd = SubscriptionCommand::new(
@@ -593,13 +595,13 @@ fn test_process_instrument(
         UnixNanos::default(),
         None,
     );
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<InstrumentAny>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_instrument_topic(audusd_sim.id());
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();
@@ -648,15 +650,15 @@ fn test_process_order_book_delta(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    register(endpoint, handler);
+    send(&endpoint, &cmd as &dyn Any);
 
     let delta = stub_delta();
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_deltas_topic(delta.instrument_id);
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();
@@ -700,8 +702,8 @@ fn test_process_order_book_deltas(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    register(endpoint, handler);
+    send(&endpoint, &cmd as &dyn Any);
 
     // TODO: Using FFI API wrapper temporarily until Cython gone
     let deltas = OrderBookDeltas_API::new(stub_deltas());
@@ -709,7 +711,7 @@ fn test_process_order_book_deltas(
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();
@@ -754,15 +756,15 @@ fn test_process_order_book_depth10(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    register(endpoint, handler);
+    send(&endpoint, &cmd as &dyn Any);
 
     let depth = stub_depth10();
     let handler = get_message_saving_handler::<OrderBookDepth10>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_depth_topic(depth.instrument_id);
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();
@@ -805,15 +807,15 @@ fn test_process_quote_tick(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    register(endpoint, handler);
+    send(&endpoint, &cmd as &dyn Any);
 
     let quote = QuoteTick::default();
     let handler = get_message_saving_handler::<QuoteTick>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_quotes_topic(quote.instrument_id);
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();
@@ -857,15 +859,15 @@ fn test_process_trade_tick(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    register(endpoint, handler);
+    send(&endpoint, &cmd as &dyn Any);
 
     let trade = TradeTick::default();
     let handler = get_message_saving_handler::<TradeTick>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_trades_topic(trade.instrument_id);
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();
@@ -909,14 +911,14 @@ fn test_process_bar(
         id: endpoint,
         engine_ref: data_engine.clone(),
     }));
-    msgbus.borrow_mut().register(endpoint, handler);
-    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    register(endpoint, handler);
+    send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<Bar>(None);
     {
         let mut msgbus = msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
-        msgbus.subscribe(topic, handler.clone(), None);
+        subscribe(topic, handler.clone(), None);
     }
 
     let mut data_engine = data_engine.borrow_mut();

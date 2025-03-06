@@ -21,7 +21,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{MessageBus, handler::ShareableMessageHandler},
+    msgbus::{MessageBus, handler::ShareableMessageHandler, register},
 };
 use nautilus_core::UUID4;
 use ustr::Ustr;
@@ -85,9 +85,7 @@ impl OrderEmulatorAdapter {
             emulator,
         }));
 
-        msgbus
-            .borrow_mut()
-            .register("OrderEmulator.execute", handler);
+        register("OrderEmulator.execute", handler);
     }
 
     fn initialize_on_event_handler(
@@ -99,9 +97,7 @@ impl OrderEmulatorAdapter {
             emulator,
         }));
 
-        msgbus
-            .borrow_mut()
-            .register("OrderEmulator.on_event", handler);
+        register("OrderEmulator.on_event", handler);
     }
 
     #[must_use]
