@@ -178,6 +178,7 @@ def test_betting_instrument_tick_scheme_next_ask_prices() -> None:
 
     assert len(result) == 10
     assert result == [
+        Decimal("3.00"),
         Decimal("3.05"),
         Decimal("3.10"),
         Decimal("3.15"),
@@ -187,7 +188,6 @@ def test_betting_instrument_tick_scheme_next_ask_prices() -> None:
         Decimal("3.35"),
         Decimal("3.40"),
         Decimal("3.45"),
-        Decimal("3.50"),
     ]
 
 
@@ -198,6 +198,7 @@ def test_betting_instrument_tick_scheme_next_bid_prices() -> None:
 
     assert len(result) == 10
     assert result == [
+        Decimal("20.00"),
         Decimal("19.50"),
         Decimal("19.00"),
         Decimal("18.50"),
@@ -207,5 +208,23 @@ def test_betting_instrument_tick_scheme_next_bid_prices() -> None:
         Decimal("16.50"),
         Decimal("16.00"),
         Decimal("15.50"),
-        Decimal("15.00"),
     ]
+
+
+@pytest.mark.parametrize(
+    "instrument, expected_bids, expected_asks",
+    [
+        (betting_instrument(), 10, 20),
+    ],
+)
+def test_next_prices(instrument, expected_bids, expected_asks):
+    bid_price = instrument.next_bid_price(1.102)
+    ask_price = instrument.next_ask_price(1.102)
+    bid_prices = instrument.next_bid_prices(1.102, 20)
+    ask_prices = instrument.next_ask_prices(1.102, 20)
+
+    assert bid_price == bid_prices[0]
+    assert ask_price == ask_prices[0]
+
+    assert len(bid_prices) == expected_bids
+    assert len(ask_prices) == expected_asks

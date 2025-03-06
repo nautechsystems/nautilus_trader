@@ -636,9 +636,9 @@ class TestInstrument:
     @pytest.mark.parametrize(
         ("instrument", "value", "num_ticks", "expected_first", "expected_last"),
         [
-            (AUDUSD_SIM, 0.72000, 10, "0.72001", "0.72010"),
+            (AUDUSD_SIM, 0.72000, 10, "0.72000", "0.72009"),
             (AUDUSD_SIM, 0.72001, 5, "0.72002", "0.72006"),
-            (AUDUSD_SIM, 0.90001, 3, "0.90002", "0.90004"),
+            (AUDUSD_SIM, 0.90001, 3, "0.90001", "0.90003"),
         ],
     )
     def test_next_ask_prices_values(
@@ -665,7 +665,7 @@ class TestInstrument:
         [
             (AUDUSD_SIM, 0.72000, 10, "0.71999", "0.71990"),
             (AUDUSD_SIM, 0.72000, 5, "0.71999", "0.71995"),
-            (AUDUSD_SIM, 0.90000, 3, "0.89999", "0.89997"),
+            (AUDUSD_SIM, 0.90000, 3, "0.90000", "0.89998"),
         ],
     )
     def test_next_bid_prices_values(

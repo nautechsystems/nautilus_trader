@@ -8,9 +8,9 @@ demonstrating proper initialization, updating, and accessing indicator values in
 
 **What this example demonstrates:**
 
-- Creating and configuring multiple technical indicators (EMAs)
-- Setting up a cascaded indicator relationship
-- Registering the primary indicator to receive bar data
-- Manually updating the cascaded indicator
-- Storing and accessing historical values for both indicators
-- Proper handling of indicator initialization in a cascaded setup
+- Creating and configuring multiple technical indicators (EMAs).
+- Setting up a cascaded indicator relationship.
+- Registering the primary indicator to receive bar data.
+- Manually updating the cascaded indicator.
+- Storing and accessing historical values for both indicators.
+- Proper handling of indicator initialization in a cascaded setup.

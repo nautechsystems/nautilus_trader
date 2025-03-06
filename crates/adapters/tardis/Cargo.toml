@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_tardis"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["python", "nautilus-core/ffi"]

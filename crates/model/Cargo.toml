@@ -37,7 +37,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
-evalexpr = "12.0.2"
+evalexpr = "=11.3.1"  # Pinned for MIT licensing
 implied-vol = { version = "1.0.1", features = ["normal-distribution"] }
 tabled = "0.18.0"
 

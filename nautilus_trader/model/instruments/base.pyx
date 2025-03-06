@@ -546,19 +546,12 @@ cdef class Instrument(Data):
         if num_ticks <= 0:
             return []
 
-        cdef Price value_price = Price(value, self.price_precision)
-        cdef Price initial_price = self._tick_scheme.next_bid_price(value=value, n=0)
-
         cdef:
             list prices = []
             Price price
             int i
 
-        if value_price != initial_price:
-            prices.append(initial_price.as_decimal())
-            num_ticks -= 1
-
-        for i in range(1, num_ticks + 1):
+        for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_bid_price(value=value, n=i)
                 if price is None:
@@ -605,19 +598,12 @@ cdef class Instrument(Data):
         if num_ticks <= 0:
             return []
 
-        cdef Price value_price = Price(value, self.price_precision)
-        cdef Price initial_price = self._tick_scheme.next_ask_price(value=value, n=0)
-
         cdef:
             list prices = []
             Price price
             int i
 
-        if value_price != initial_price:
-            prices.append(initial_price.as_decimal())
-            num_ticks -= 1
-
-        for i in range(1, num_ticks + 1):
+        for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_ask_price(value=value, n=i)
                 if price is None:
