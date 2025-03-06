@@ -39,10 +39,10 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
+ahash = "0.8.11"
 databento = "0.20.0"
 fallible-streaming-iterator = "0.1.9"
-time = "0.3.38"
-ahash = "0.8.11"
+time = "0.3.39"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../../test_kit" }
