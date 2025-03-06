@@ -9,10 +9,10 @@ It connects directly to the broker to get real-time positions, balances, and P&L
 
 The strategy shows portfolio information at four key points:
 
-1. **Initial State**: Before any trades are executed
-2. **Position Open**: When a new position is created
-3. **Mid-Trade**: Two minutes after position opening
-4. **Final State**: After all positions are closed (when strategy stops)
+1. **Initial State**: Before any trades are executed.
+2. **Position Open**: When a new position is created.
+3. **Mid-Trade**: Two minutes after position opening.
+4. **Final State**: After all positions are closed (when strategy stops).
 
 To simulate these specific portfolio states, the strategy fires bracket order (a combination of an entry order
 with associated take-profit and stop-loss orders), allowing us to demonstrate the complete lifecycle of portfolio states.
@@ -23,18 +23,18 @@ Key differences between `Portfolio` and `Cache`:
 
 `Portfolio`:
 
-- Gets data directly from broker for maximum accuracy
-- Best for real-time position and risk management
-- Provides authoritative account state (margins, balances)
-- Should be used for critical trading decisions
+- Gets data directly from broker for maximum accuracy.
+- Best for real-time position and risk management.
+- Provides authoritative account state (margins, balances).
+- Should be used for critical trading decisions.
 
 `Cache`:
 
-- Stores all trading data in system memory
-- Useful for quick access to historical data and market state
-- More efficient for frequent queries as it avoids broker round-trips
-- Updates automatically as new data arrives
-- Might have minimal delay compared to broker data
+- Stores all trading data in system memory.
+- Useful for quick access to historical data and market state.
+- More efficient for frequent queries as it avoids broker round-trips.
+- Updates automatically as new data arrives.
+- Might have minimal delay compared to broker data.
 
 ## Additional Resources
 
