@@ -19,15 +19,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{
-    decode::{
-        decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
-        decode_status_msg,
-    },
-    symbology::decode_nautilus_instrument_id,
-    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
-};
-use crate::symbology::MetadataCache;
 use databento::dbn;
 use dbn::{
     Publisher,
@@ -43,6 +34,16 @@ use nautilus_model::{
     types::Currency,
 };
 use ustr::Ustr;
+
+use super::{
+    decode::{
+        decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
+        decode_status_msg,
+    },
+    symbology::decode_nautilus_instrument_id,
+    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
+};
+use crate::symbology::MetadataCache;
 
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///

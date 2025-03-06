@@ -15,13 +15,14 @@
 
 use std::collections::HashMap;
 
-use super::types::PublisherId;
 use ahash::AHashMap;
 use databento::dbn::{self, PitSymbolMap, SType};
 use dbn::{Publisher, Record};
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_slice_not_empty;
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
+
+use super::types::PublisherId;
 
 #[derive(Debug)]
 pub struct MetadataCache {
@@ -30,6 +31,7 @@ pub struct MetadataCache {
 }
 
 impl MetadataCache {
+    #[must_use]
     pub fn new(metadata: dbn::Metadata) -> Self {
         Self {
             metadata,

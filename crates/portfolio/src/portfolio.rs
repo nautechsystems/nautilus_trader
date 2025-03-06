@@ -203,7 +203,7 @@ impl Portfolio {
 
         let update_order_handler = {
             let cache = cache;
-            let msgbus = msgbus.clone();
+            let msgbus = msgbus;
             let clock = clock.clone();
             let inner = inner;
             ShareableMessageHandler(Rc::new(UpdateOrderHandler {
@@ -1284,7 +1284,7 @@ fn update_order(
         let mut portfolio_clone = Portfolio {
             clock: clock.clone(),
             cache: cache.clone(),
-            msgbus: msgbus.clone(),
+            msgbus,
             inner: inner.clone(),
             config: PortfolioConfig::default(), // TODO: TBD
         };
