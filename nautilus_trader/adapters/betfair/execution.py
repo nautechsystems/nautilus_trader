@@ -897,7 +897,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             return
 
         # Check for any portion executed
-        if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
+        if unmatched_order.sm and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
                 fill_qty = unmatched_order.sm - order.filled_qty
@@ -905,6 +905,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     unmatched_order=unmatched_order,
                     order=order,
                 )
+                ts_event = self._get_matched_timestamp(unmatched_order=unmatched_order)
+
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -919,48 +921,17 @@ class BetfairExecutionClient(LiveExecutionClient):
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-                    ts_event=millis_to_nanos(unmatched_order.md),
+                    ts_event=ts_event,
                 )
                 self._published_executions[client_order_id].append(trade_id)
 
-    def _determine_fill_price(self, unmatched_order: UnmatchedOrder, order: Order) -> float:
-        if not unmatched_order.avp:
-            # We don't have any specifics about the fill, assume it was filled at our price
-            return unmatched_order.p
-        if order.filled_qty == 0:
-            # New fill, simply return average price
-            return unmatched_order.avp
-        else:
-            new_price = betfair_float_to_price(unmatched_order.avp)
-            prev_price = order.avg_px
-            if prev_price == new_price:
-                # Matched at same price
-                return unmatched_order.avp
-            else:
-                avg_price = betfair_float_to_price(order.avg_px)
-                prev_price = betfair_float_to_price(avg_price)
-                prev_size = order.filled_qty
-                new_price = betfair_float_to_price(unmatched_order.avp)
-                new_size = unmatched_order.sm - prev_size
-                total_size = prev_size + new_size
-                price = (new_price - (prev_price * (prev_size / total_size))) / (
-                    new_size / total_size
-                )
-                self._log.debug(
-                    f"Calculating fill price: {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}",
-                )
-                return price
-
-    def _handle_stream_execution_complete_order_update(
+    def _handle_stream_execution_complete_order_update(  # noqa: C901 (too complex)
         self,
         unmatched_order: UnmatchedOrder,
     ) -> None:
         """
         Handle 'EC' (execution complete) order updates.
         """
-        # TODO: Uncomment for development
-        # self._log.info(f"Received {unmatched_order}", LogColor.MAGENTA)
-
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
         if client_order_id is None:
@@ -984,7 +955,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             return
 
         # Check for fill
-        if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
+        if unmatched_order.sm and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
                 fill_qty = unmatched_order.sm - order.filled_qty
@@ -992,6 +963,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     unmatched_order=unmatched_order,
                     order=order,
                 )
+                ts_event = self._get_matched_timestamp(unmatched_order=unmatched_order)
+
                 # At least some part of this order has been filled
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
@@ -1008,19 +981,13 @@ class BetfairExecutionClient(LiveExecutionClient):
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-                    ts_event=millis_to_nanos(unmatched_order.md),
+                    ts_event=ts_event,
                 )
                 self._published_executions[client_order_id].append(trade_id)
 
         # Check for cancel
-        cancel_qty = unmatched_order.sc + unmatched_order.sl + unmatched_order.sv
+        cancel_qty = self._get_cancel_quantity(unmatched_order)
         if cancel_qty > 0 and not order.is_closed:
-            # TODO: Occasionally this assert fails during normal trading,
-            # since we're probably about to close the order anyway, will try running without it.
-            # assert (
-            #     unmatched_order.sm + cancel_qty == unmatched_order.s
-            # ), f"Size matched + canceled != total: {unmatched_order}"
-
             key = (client_order_id, venue_order_id)
             self._log.debug(
                 f"cancel key: {key}, pending_update_order_client_ids: {self._pending_update_order_client_ids}",
@@ -1041,50 +1008,33 @@ class BetfairExecutionClient(LiveExecutionClient):
             # This order has lapsed. No lapsed size was found in the above check for cancel,
             # so we assume size lapsed None implies the entire order.
             self._log.info(
-                f"{client_order_id!r}, {venue_order_id!r} lapsed: "
+                f"{client_order_id!r}, {venue_order_id!r} lapsed on cancel: "
                 f"lapse_status={unmatched_order.lapse_status_reason_code}, "
                 f"size_lapsed={unmatched_order.sl}",
             )
-            canceled_ts = self._get_canceled_timestamp(unmatched_order)
-            self.generate_order_canceled(
-                strategy_id=order.strategy_id,
-                instrument_id=instrument.id,
-                client_order_id=client_order_id,
-                venue_order_id=venue_order_id,
-                ts_event=canceled_ts,
-            )
+
+            order = self._cache.order(order.client_order_id)
+            if order is None:
+                self._log.error("Cannot handle cancel: {order.client_order_id!r} not found")
+                return
+
+            # Check if order is still open before generating a cancel.
+            # Note: A race condition exists where a closing event might still be en route
+            # to the execution engine. Running with this for now to avoid the complexity
+            # of another hot cache to deal with the lapsed bet sequencing.
+            if order.is_open:
+                canceled_ts = self._get_canceled_timestamp(unmatched_order)
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=instrument.id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    ts_event=canceled_ts,
+                )
 
         # Market order will not be in self.published_executions
         # This execution is complete - no need to track this anymore
         self._published_executions.pop(client_order_id, None)
-
-    def _get_canceled_timestamp(self, unmatched_order: UnmatchedOrder):
-        canceled_ts = unmatched_order.cd or unmatched_order.ld or unmatched_order.md
-        canceled_ts = (
-            millis_to_nanos(canceled_ts) if canceled_ts is not None else self._clock.timestamp_ns()
-        )
-        return canceled_ts
-
-    async def _wait_for_order(
-        self,
-        venue_order_id: VenueOrderId,
-        timeout_secs: float,
-    ) -> ClientOrderId | None:
-        try:
-            PyCondition.type(venue_order_id, VenueOrderId, "venue_order_id")
-
-            timeout_ns = secs_to_nanos(timeout_secs)
-            start = self._clock.timestamp_ns()
-            now = start
-            while (now - start) < timeout_ns:
-                client_order_id = self._cache.client_order_id(venue_order_id)
-                if client_order_id:
-                    return client_order_id
-                await asyncio.sleep(0.01)
-                now = self._clock.timestamp_ns()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'wait_for_order'")
-        return None
 
     def _handle_status_message(self, update: Status) -> None:
         if update.is_error:
@@ -1101,3 +1051,74 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self._log.info("Reconnect already in progress")
                     return
                 self.create_task(self._reconnect())
+
+    def _determine_fill_price(self, unmatched_order: UnmatchedOrder, order: Order) -> float:
+        if not unmatched_order.avp:
+            # We don't have any specifics about the fill, assume it was filled at our price
+            return unmatched_order.p
+        if order.filled_qty == 0:
+            # New fill, simply return average price
+            return unmatched_order.avp
+        else:
+            new_price = betfair_float_to_price(unmatched_order.avp)
+            prev_price = order.avg_px
+            if prev_price == new_price:
+                # Matched at same price
+                return unmatched_order.avp
+            else:
+                avg_price = betfair_float_to_price(order.avg_px)
+                prev_price = betfair_float_to_price(avg_price)
+                prev_size = order.filled_qty
+                new_price = betfair_float_to_price(unmatched_order.avp)
+                new_size = unmatched_order.sm - prev_size
+                total_size = prev_size + new_size
+
+                # Check for division by zero
+                if new_size == 0 or total_size == 0:
+                    # In case there's no new size, return the previous price
+                    self._log.warning(
+                        f"Avoided division by zero: {prev_price=} {prev_size=} {new_price=} {new_size=}",
+                    )
+                    return prev_price
+
+                price = (new_price - (prev_price * (prev_size / total_size))) / (
+                    new_size / total_size
+                )
+                self._log.debug(
+                    f"Calculating fill price: {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}",
+                )
+                return price
+
+    def _get_matched_timestamp(self, unmatched_order: UnmatchedOrder) -> int:
+        if unmatched_order.md is None:
+            self._log.warning("Matched timestamp was `None` from Betfair")
+            matched_ms = 0
+        else:
+            matched_ms = unmatched_order.md
+        return millis_to_nanos(matched_ms)
+
+    def _get_canceled_timestamp(self, unmatched_order: UnmatchedOrder) -> int:
+        canceled_ms = unmatched_order.cd or unmatched_order.ld or unmatched_order.md
+        return millis_to_nanos(canceled_ms) if canceled_ms else self._clock.timestamp_ns()
+
+    def _get_cancel_quantity(self, unmatched_order: UnmatchedOrder) -> float:
+        return (unmatched_order.sc or 0) + (unmatched_order.sl or 0) + (unmatched_order.sv or 0)
+
+    async def _wait_for_order(
+        self,
+        venue_order_id: VenueOrderId,
+        timeout_secs: float,
+    ) -> ClientOrderId | None:
+        try:
+            timeout_ns = secs_to_nanos(timeout_secs)
+            start = self._clock.timestamp_ns()
+            now = start
+            while (now - start) < timeout_ns:
+                client_order_id = self._cache.client_order_id(venue_order_id)
+                if client_order_id:
+                    return client_order_id
+                await asyncio.sleep(0.01)
+                now = self._clock.timestamp_ns()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'wait_for_order'")
+        return None
