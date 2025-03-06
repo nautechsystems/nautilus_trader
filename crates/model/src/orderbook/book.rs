@@ -277,76 +277,25 @@ impl OrderBook {
         public_map: &mut IndexMap<Decimal, Decimal>,
         own_orders: impl Iterator<Item = &'a OwnBookLevel>,
         status_filter: Option<&HashSet<OrderStatus>>,
-        accepted_buffer: Option<u64>,
+        accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) {
+        let accepted_buffer_ns = accepted_buffer_ns.unwrap_or(0);
         let ts_now = ts_now.unwrap_or_else(nanos_since_unix_epoch);
 
         for level in own_orders {
             let price = level.price.value.as_decimal();
-
             if let Some(public_size) = public_map.get_mut(&price) {
-                let own_size = match (status_filter, accepted_buffer) {
-                    // If both status filter and accepted_buffer are provided
-                    (Some(filter), Some(buffer)) => level
-                        .orders
-                        .values()
-                        .filter(|order| {
-                            // Filter by status
-                            if !filter.contains(&order.status) {
-                                return false;
-                            }
+                let own_size = level
+                    .orders
+                    .values()
+                    .filter(|order| status_filter.is_none_or(|f| f.contains(&order.status)))
+                    .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
+                    .map(|order| order.size.as_decimal())
+                    .sum::<Decimal>();
 
-                            // For ACCEPTED status, check the buffer period
-                            if order.status == OrderStatus::Accepted {
-                                return order.ts_accepted + buffer <= ts_now;
-                            }
+                *public_size = (*public_size - own_size).max(Decimal::ZERO);
 
-                            true
-                        })
-                        .map(|order| order.size.as_decimal())
-                        .sum::<Decimal>(),
-
-                    // If only status filter is provided (no buffer check)
-                    (Some(filter), None) => level
-                        .orders
-                        .values()
-                        .filter(|order| filter.contains(&order.status))
-                        .map(|order| order.size.as_decimal())
-                        .sum::<Decimal>(),
-
-                    // If only accepted_buffer is provided (apply to all ACCEPTED orders)
-                    (None, Some(buffer)) => level
-                        .orders
-                        .values()
-                        .filter(|order| {
-                            // For non-ACCEPTED orders, always include
-                            if order.status != OrderStatus::Accepted {
-                                return true;
-                            }
-
-                            // For ACCEPTED status, check the buffer period
-                            order.ts_accepted + buffer <= ts_now
-                        })
-                        .map(|order| order.size.as_decimal())
-                        .sum::<Decimal>(),
-
-                    // If neither is provided, include all orders
-                    (None, None) => level
-                        .orders
-                        .values()
-                        .map(|order| order.size.as_decimal())
-                        .sum::<Decimal>(),
-                };
-
-                // Subtract own size, ensuring we don't go below zero
-                *public_size = if *public_size > own_size {
-                    *public_size - own_size
-                } else {
-                    Decimal::ZERO
-                };
-
-                // Remove the price level if size becomes zero
                 if *public_size == Decimal::ZERO {
                     public_map.shift_remove(&price);
                 }
@@ -2031,7 +1980,7 @@ mod tests {
         // 100 - 30 = 70
         assert_eq!(
             bids_filtered_long_buffer.get(&dec!(100.00)),
-            Some(&dec!(70))
+            Some(&dec!(100))
         );
     }
 }
