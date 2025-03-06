@@ -774,7 +774,7 @@ impl DataEngine {
     fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, topics: &[Ustr]) {
         if let Some(updater) = self.book_updaters.get(instrument_id) {
             let handler = ShareableMessageHandler(updater.clone());
-            let mut msgbus = self.msgbus.borrow_mut();
+            let msgbus = self.msgbus.borrow_mut();
 
             // Unsubscribe handler if it is the last subscriber
             for topic in topics {

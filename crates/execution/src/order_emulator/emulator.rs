@@ -24,7 +24,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{MessageBus, handler::ShareableMessageHandler, publish, subscribe},
+    msgbus::{handler::ShareableMessageHandler, publish, subscribe},
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
@@ -50,7 +50,6 @@ use crate::{
 pub struct OrderEmulator {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     manager: OrderManager,
     matching_cores: HashMap<InstrumentId, OrderMatchingCore>,
     subscribed_quotes: HashSet<InstrumentId>,
@@ -61,29 +60,17 @@ pub struct OrderEmulator {
 }
 
 impl OrderEmulator {
-    pub fn new(
-        clock: Rc<RefCell<dyn Clock>>,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) -> Self {
+    pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         // TODO: Impl Actor Trait
         // self.register_base(portfolio, msgbus, cache, clock);
 
         let active_local = true;
-        let manager = OrderManager::new(
-            clock.clone(),
-            msgbus.clone(),
-            cache.clone(),
-            active_local,
-            None,
-            None,
-            None,
-        );
+        let manager =
+            OrderManager::new(clock.clone(), cache.clone(), active_local, None, None, None);
 
         Self {
             clock,
             cache,
-            msgbus,
             manager,
             matching_cores: HashMap::new(),
             subscribed_quotes: HashSet::new(),

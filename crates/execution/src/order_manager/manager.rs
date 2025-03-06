@@ -19,7 +19,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SENT},
-    msgbus::{MessageBus, send},
+    msgbus::send,
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -43,7 +43,6 @@ use crate::messages::{
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     active_local: bool,
     submit_order_handler: Option<SubmitOrderHandlerAny>,
     cancel_order_handler: Option<CancelOrderHandlerAny>,
@@ -54,7 +53,6 @@ pub struct OrderManager {
 impl OrderManager {
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         active_local: bool,
         submit_order_handler: Option<SubmitOrderHandlerAny>,
@@ -64,7 +62,6 @@ impl OrderManager {
         Self {
             clock,
             cache,
-            msgbus,
             active_local,
             submit_order_handler,
             cancel_order_handler,

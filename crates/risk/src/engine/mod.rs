@@ -22,7 +22,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{MessageBus, register, send},
+    msgbus::{MessageBus, publish, send},
     throttler::Throttler,
 };
 use nautilus_core::UUID4;
@@ -45,6 +45,7 @@ pub mod config;
 type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
 type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
 
+#[allow(dead_code)]
 pub struct RiskEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -96,10 +97,9 @@ impl RiskEngine {
         config: &RiskEngineConfig,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
+        _msgbus: Rc<RefCell<MessageBus>>,
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
-            let msgbus = msgbus.clone();
             Box::new(move |submit_order: SubmitOrder| {
                 send(
                     &Ustr::from("ExecEngine.execute"),
@@ -109,7 +109,6 @@ impl RiskEngine {
         };
 
         let failure_handler = {
-            let msgbus = msgbus;
             let cache = cache;
             let clock = clock.clone();
             Box::new(move |submit_order: SubmitOrder| {
@@ -143,10 +142,9 @@ impl RiskEngine {
         config: &RiskEngineConfig,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
+        _msgbus: Rc<RefCell<MessageBus>>,
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
-            let msgbus = msgbus.clone();
             Box::new(move |order: ModifyOrder| {
                 send(
                     &Ustr::from("ExecEngine.execute"),
@@ -156,7 +154,6 @@ impl RiskEngine {
         };
 
         let failure_handler = {
-            let msgbus = msgbus;
             let cache = cache;
             let clock = clock.clone();
             Box::new(move |order: ModifyOrder| {
@@ -494,7 +491,6 @@ impl RiskEngine {
         match self.trading_state {
             TradingState::Halted => {
                 self.reject_modify_order(order, "TradingState is HALTED: Cannot modify order");
-                return; // Denied
             }
             TradingState::Reducing => {
                 if let Some(quantity) = command.quantity {
@@ -509,14 +505,14 @@ impl RiskEngine {
                                 instrument.id()
                             ),
                         );
-                        return; // Denied
                     }
                 }
             }
             _ => {}
         }
 
-        self.throttled_modify_order.send(command);
+        // TODO: Fix message bus usage
+        // self.throttled_modify_order.send(command);
     }
 
     // -- PRE-TRADE CHECKS ------------------------------------------------------------------------
@@ -1032,8 +1028,9 @@ impl RiskEngine {
                 _ => {}
             },
             TradingState::Active => match command {
-                TradingCommand::SubmitOrder(submit_order) => {
-                    self.throttled_submit_order.send(submit_order);
+                TradingCommand::SubmitOrder(_submit_order) => {
+                    // TODO: Fix message bus usage
+                    // self.throttled_submit_order.send(submit_order);
                 }
                 TradingCommand::SubmitOrderList(_submit_order_list) => {
                     todo!("NOT IMPLEMENTED");
@@ -1044,9 +1041,7 @@ impl RiskEngine {
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
-        self.msgbus
-            .borrow_mut()
-            .send(&Ustr::from("ExecEngine.execute"), &command);
+        send(&Ustr::from("ExecEngine.execute"), &command);
     }
 
     fn handle_event(&mut self, event: OrderEventAny) {
@@ -1071,6 +1066,7 @@ mod tests {
         msgbus::{
             MessageBus,
             handler::ShareableMessageHandler,
+            register,
             stubs::{get_message_saving_handler, get_saved_messages},
         },
         throttler::RateLimit,
@@ -1566,7 +1562,7 @@ mod tests {
     // SUBMIT ORDER TESTS
     #[rstest]
     fn test_submit_order_with_default_settings_then_sends_to_client(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1642,7 +1638,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1701,7 +1697,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1857,7 +1853,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -1989,7 +1985,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2066,7 +2062,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_instrument_not_in_cache_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2137,7 +2133,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_price_precision_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2216,7 +2212,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2291,7 +2287,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_trigger_price_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2369,7 +2365,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_quantity_precision_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2443,7 +2439,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2517,7 +2513,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2591,7 +2587,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2666,7 +2662,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2759,7 +2755,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2849,7 +2845,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -2937,7 +2933,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3025,7 +3021,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3101,7 +3097,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_list_buys_when_over_free_balance_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3193,7 +3189,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_list_sells_when_over_free_balance_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3289,7 +3285,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3415,7 +3411,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3540,7 +3536,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_trading_halted_then_denies_order(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3604,7 +3600,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_beyond_rate_limit_then_denies_order(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3678,7 +3674,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_list_when_trading_halted_then_denies_orders(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3771,7 +3767,7 @@ mod tests {
     #[ignore] // TODO: Revisit after high-precision merged
     #[rstest]
     fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -3906,7 +3902,7 @@ mod tests {
     #[ignore] // TODO: Revisit after high-precision merged
     #[rstest]
     fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4040,7 +4036,7 @@ mod tests {
     // SUBMIT BRACKET ORDER TESTS
     #[rstest]
     fn test_submit_bracket_with_default_settings_sends_to_client(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4130,7 +4126,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4224,7 +4220,7 @@ mod tests {
     // MODIFY ORDER TESTS
     #[rstest]
     fn test_modify_order_when_no_order_found_logs_error(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4281,7 +4277,7 @@ mod tests {
 
     #[rstest]
     fn test_modify_order_beyond_rate_limit_then_rejects(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4360,7 +4356,7 @@ mod tests {
 
     #[rstest]
     fn test_modify_order_with_default_settings_then_sends_to_client(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4457,7 +4453,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_betting_account(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
@@ -4522,7 +4518,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto_cash_account(
-        mut msgbus: MessageBus,
+        msgbus: MessageBus,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
         trader_id: TraderId,
