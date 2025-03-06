@@ -7,8 +7,8 @@ demonstrating proper initialization, updating, and accessing latest / previous i
 
 **What this example demonstrates:**
 
-- Creating and configuring a technical indicator (EMA)
-- Registering the indicator to receive bar data
-- Accessing indicator values in the strategy
-- Storing historical indicator values
-- Accessing latest / previous indicator values
+- Creating and configuring a technical indicator (EMA).
+- Registering the indicator to receive bar data.
+- Accessing indicator values in the strategy.
+- Storing historical indicator values.
+- Accessing latest / previous indicator values.
