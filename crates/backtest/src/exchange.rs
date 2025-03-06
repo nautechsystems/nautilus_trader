@@ -50,13 +50,14 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use crate::modules::SimulationModule;
 
 pub struct SimulatedExchange {
-    id: Venue,
-    oms_type: OmsType,
-    account_type: AccountType,
+    pub id: Venue,
+    pub oms_type: OmsType,
+    pub account_type: AccountType,
     starting_balances: Vec<Money>,
     book_type: BookType,
     default_leverage: Decimal,
-    exec_client: Option<ExecutionClient>,
+    exec_client: Option<Box<dyn ExecutionClient>>,
+    pub base_currency: Option<Currency>,
     fee_model: FeeModelAny,
     fill_model: FillModel,
     latency_model: LatencyModel,
@@ -122,6 +123,7 @@ impl SimulatedExchange {
             book_type,
             default_leverage,
             exec_client: None,
+            base_currency,
             fee_model,
             fill_model,
             latency_model,
@@ -144,10 +146,8 @@ impl SimulatedExchange {
         })
     }
 
-    pub fn register_client(&mut self, client: ExecutionClient) {
-        let client_id = client.client_id;
+    pub fn register_client(&mut self, client: Box<dyn ExecutionClient>) {
         self.exec_client = Some(client);
-        log::info!("Registered ExecutionClient: {client_id}");
     }
 
     pub fn set_fill_model(&mut self, fill_model: FillModel) {
@@ -319,7 +319,7 @@ impl SimulatedExchange {
         }
 
         if let Some(exec_client) = &self.exec_client {
-            let venue = exec_client.venue;
+            let venue = exec_client.venue();
             println!("Adjusting account for venue {venue}");
             if let Some(account) = self.cache.borrow().account_for_venue(&venue) {
                 match account.balance(Some(adjustment.currency)) {
@@ -553,7 +553,7 @@ impl SimulatedExchange {
     pub fn process_trading_command(&mut self, command: TradingCommand) {
         if let Some(matching_engine) = self.matching_engines.get_mut(&command.instrument_id()) {
             let account_id = if let Some(exec_client) = &self.exec_client {
-                exec_client.account_id
+                exec_client.account_id()
             } else {
                 panic!("Execution client should be initialized");
             };

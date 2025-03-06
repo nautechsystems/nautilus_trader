@@ -38,6 +38,7 @@
 pub mod data_client;
 pub mod engine;
 pub mod exchange;
+pub mod execution_client;
 pub mod modules;
 pub mod runner;
 
