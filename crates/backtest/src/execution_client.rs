@@ -41,7 +41,7 @@ use crate::exchange::SimulatedExchange;
 
 pub struct BacktestExecutionClient {
     base: BaseExecutionClient,
-    exchange: SimulatedExchange,
+    exchange: Rc<RefCell<SimulatedExchange>>,
     clock: Rc<RefCell<dyn Clock>>,
     is_connected: bool,
     routing: bool,
@@ -53,7 +53,7 @@ impl BacktestExecutionClient {
     pub fn new(
         trader_id: TraderId,
         account_id: AccountId,
-        exchange: SimulatedExchange,
+        exchange: Rc<RefCell<SimulatedExchange>>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
         clock: Rc<RefCell<dyn Clock>>,
@@ -62,14 +62,15 @@ impl BacktestExecutionClient {
     ) -> Self {
         let routing = routing.unwrap_or(false);
         let frozen_account = frozen_account.unwrap_or(false);
+        let exchange_id = exchange.borrow().id;
         let base_client = BaseExecutionClient::new(
             trader_id,
-            ClientId::from(exchange.id.as_str()),
-            Venue::from(exchange.id.as_str()),
-            exchange.oms_type,
+            ClientId::from(exchange_id.as_str()),
+            Venue::from(exchange_id.as_str()),
+            exchange.borrow().oms_type,
             account_id,
-            exchange.account_type,
-            exchange.base_currency,
+            exchange.borrow().account_type,
+            exchange.borrow().base_currency,
             clock.clone(),
             cache.clone(),
             msgbus.clone(),
@@ -146,7 +147,9 @@ impl ExecutionClient for BacktestExecutionClient {
             self.clock.borrow().timestamp_ns(),
         );
 
-        self.exchange.send(TradingCommand::SubmitOrder(command));
+        self.exchange
+            .borrow()
+            .send(TradingCommand::SubmitOrder(command));
         Ok(())
     }
 
@@ -160,33 +163,44 @@ impl ExecutionClient for BacktestExecutionClient {
             );
         }
 
-        self.exchange.send(TradingCommand::SubmitOrderList(command));
+        self.exchange
+            .borrow()
+            .send(TradingCommand::SubmitOrderList(command));
         Ok(())
     }
 
     fn modify_order(&self, command: ModifyOrder) -> anyhow::Result<()> {
-        self.exchange.send(TradingCommand::ModifyOrder(command));
+        self.exchange
+            .borrow()
+            .send(TradingCommand::ModifyOrder(command));
         Ok(())
     }
 
     fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()> {
-        self.exchange.send(TradingCommand::CancelOrder(command));
+        self.exchange
+            .borrow()
+            .send(TradingCommand::CancelOrder(command));
         Ok(())
     }
 
     fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()> {
-        self.exchange.send(TradingCommand::CancelAllOrders(command));
+        self.exchange
+            .borrow()
+            .send(TradingCommand::CancelAllOrders(command));
         Ok(())
     }
 
     fn batch_cancel_orders(&self, command: BatchCancelOrders) -> anyhow::Result<()> {
         self.exchange
+            .borrow()
             .send(TradingCommand::BatchCancelOrders(command));
         Ok(())
     }
 
     fn query_order(&self, command: QueryOrder) -> anyhow::Result<()> {
-        self.exchange.send(TradingCommand::QueryOrder(command));
+        self.exchange
+            .borrow()
+            .send(TradingCommand::QueryOrder(command));
         Ok(())
     }
 }
