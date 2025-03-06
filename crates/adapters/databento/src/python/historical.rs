@@ -46,6 +46,7 @@ use pyo3::{
 };
 use tokio::sync::Mutex;
 
+use crate::symbology::MetadataCache;
 use crate::{
     common::get_date_time_range,
     decode::{
@@ -177,13 +178,14 @@ impl DatabentoHistoricalClient {
             decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2);
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut instruments = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
                 let record = dbn::RecordRef::from(msg);
                 let mut instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
@@ -279,12 +281,13 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut result: Vec<QuoteTick> = Vec::new();
 
             let mut process_record = |record: dbn::RecordRef| -> PyResult<()> {
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
@@ -381,13 +384,14 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut result: Vec<TradeTick> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
@@ -472,13 +476,14 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut result: Vec<Bar> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
@@ -555,13 +560,14 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut result: Vec<DatabentoImbalance> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::ImbalanceMsg>().await {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
@@ -627,13 +633,14 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut result: Vec<DatabentoStatistics> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatMsg>().await {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
@@ -698,13 +705,14 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
             let metadata = decoder.metadata().clone();
+            let mut metadata_cache = MetadataCache::new(metadata);
             let mut result: Vec<InstrumentStatus> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatusMsg>().await {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    &metadata,
+                    &mut metadata_cache,
                     &publisher_venue_map,
                     &symbol_venue_map.read().unwrap(),
                 )
