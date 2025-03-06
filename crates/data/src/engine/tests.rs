@@ -32,7 +32,6 @@ use nautilus_common::{
         register, send,
         stubs::{get_message_saving_handler, get_saved_messages},
         subscribe,
-        switchboard::{self, MessagingSwitchboard},
     },
     testing::init_logger_for_testing,
 };
