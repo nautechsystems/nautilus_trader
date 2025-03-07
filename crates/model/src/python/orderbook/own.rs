@@ -25,16 +25,18 @@ use rust_decimal::Decimal;
 
 use crate::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId, TraderId, VenueOrderId},
     orderbook::{OwnBookOrder, own::OwnOrderBook},
     types::{Price, Quantity},
 };
 
 #[pymethods]
 impl OwnBookOrder {
+    #[pyo3(signature = (trader_id, client_order_id, side, price, size, order_type, time_in_force, status, ts_last, ts_accepted, ts_submitted, ts_init, venue_order_id=None))]
     #[new]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
+        trader_id: TraderId,
         client_order_id: ClientOrderId,
         side: OrderSide,
         price: Price,
@@ -44,10 +46,14 @@ impl OwnBookOrder {
         status: OrderStatus,
         ts_last: u64,
         ts_accepted: u64,
+        ts_submitted: u64,
         ts_init: u64,
+        venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Self> {
         Ok(OwnBookOrder::new(
+            trader_id,
             client_order_id,
+            venue_order_id,
             side.as_specified(),
             price,
             size,
@@ -56,6 +62,7 @@ impl OwnBookOrder {
             status,
             ts_last.into(),
             ts_accepted.into(),
+            ts_submitted.into(),
             ts_init.into(),
         ))
     }

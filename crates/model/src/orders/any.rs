@@ -346,6 +346,21 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn ts_submitted(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Limit(order) => order.ts_submitted,
+            Self::LimitIfTouched(order) => order.ts_submitted,
+            Self::Market(order) => order.ts_submitted,
+            Self::MarketIfTouched(order) => order.ts_submitted,
+            Self::MarketToLimit(order) => order.ts_submitted,
+            Self::StopLimit(order) => order.ts_submitted,
+            Self::StopMarket(order) => order.ts_submitted,
+            Self::TrailingStopLimit(order) => order.ts_submitted,
+            Self::TrailingStopMarket(order) => order.ts_submitted,
+        }
+    }
+
+    #[must_use]
     pub fn ts_accepted(&self) -> Option<UnixNanos> {
         match self {
             Self::Limit(order) => order.ts_accepted,
@@ -1126,7 +1141,9 @@ impl OrderAny {
 
     pub fn to_own_book_order(&self) -> OwnBookOrder {
         OwnBookOrder::new(
+            self.trader_id(),
             self.client_order_id(),
+            self.venue_order_id(),
             self.order_side_specified(),
             self.price().expect("`OwnBookOrder` must have a price"), // TBD
             self.quantity(),
@@ -1134,6 +1151,7 @@ impl OrderAny {
             self.time_in_force(),
             self.status(),
             self.ts_last(),
+            self.ts_submitted().unwrap_or_default(),
             self.ts_accepted().unwrap_or_default(),
             self.ts_init(),
         )

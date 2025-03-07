@@ -24,6 +24,9 @@ pub mod ladder;
 pub mod level;
 pub mod own;
 
+#[cfg(test)]
+mod tests;
+
 // Re-exports
 pub use crate::orderbook::{
     book::OrderBook,
