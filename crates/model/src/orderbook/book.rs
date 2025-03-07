@@ -57,7 +57,7 @@ pub struct OrderBook {
     pub sequence: u64,
     /// The timestamp of the last event applied to the order book.
     pub ts_last: UnixNanos,
-    /// The current count of events applied to the order book.
+    /// The current count of updates applied to the order book.
     pub update_count: u64,
     pub(crate) bids: BookLadder,
     pub(crate) asks: BookLadder,

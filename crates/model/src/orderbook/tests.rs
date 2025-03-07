@@ -1603,6 +1603,154 @@ fn test_own_order_display(own_order: OwnBookOrder) {
 }
 
 #[rstest]
+fn test_client_order_ids_empty_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let book = OwnOrderBook::new(instrument_id);
+
+    let bid_ids = book.bid_client_order_ids();
+    let ask_ids = book.ask_client_order_ids();
+
+    assert!(bid_ids.is_empty());
+    assert!(ask_ids.is_empty());
+
+    let client_order_id = ClientOrderId::from("O-NONEXISTENT");
+    assert!(!book.is_order_in_book(&client_order_id));
+}
+
+#[rstest]
+fn test_client_order_ids_with_orders() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    let bid_id1 = ClientOrderId::from("O-BID-1");
+    let bid_id2 = ClientOrderId::from("O-BID-2");
+    let ask_id1 = ClientOrderId::from("O-ASK-1");
+    let ask_id2 = ClientOrderId::from("O-ASK-2");
+
+    let bid_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        bid_id1.clone(),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let bid_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        bid_id2.clone(),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("99.00"),
+        Quantity::from("20"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ask_id1.clone(),
+        Some(VenueOrderId::from("3")),
+        OrderSideSpecified::Sell,
+        Price::from("101.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ask_id2.clone(),
+        Some(VenueOrderId::from("4")),
+        OrderSideSpecified::Sell,
+        Price::from("102.00"),
+        Quantity::from("20"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    book.add(bid_order1);
+    book.add(bid_order2);
+    book.add(ask_order1);
+    book.add(ask_order2);
+
+    let bid_ids = book.bid_client_order_ids();
+    assert_eq!(bid_ids.len(), 2);
+    assert!(bid_ids.contains(&bid_id1));
+    assert!(bid_ids.contains(&bid_id2));
+    assert!(!bid_ids.contains(&ask_id1));
+    assert!(!bid_ids.contains(&ask_id2));
+
+    let ask_ids = book.ask_client_order_ids();
+    assert_eq!(ask_ids.len(), 2);
+    assert!(ask_ids.contains(&ask_id1));
+    assert!(ask_ids.contains(&ask_id2));
+    assert!(!ask_ids.contains(&bid_id1));
+    assert!(!ask_ids.contains(&bid_id2));
+
+    assert!(book.is_order_in_book(&bid_id1));
+    assert!(book.is_order_in_book(&bid_id2));
+    assert!(book.is_order_in_book(&ask_id1));
+    assert!(book.is_order_in_book(&ask_id2));
+    assert!(!book.is_order_in_book(&ClientOrderId::from("O-NON-EXISTENT")));
+}
+
+#[rstest]
+fn test_client_order_ids_after_operations() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    let client_order_id = ClientOrderId::from("O-BID-1");
+    let order = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        client_order_id.clone(),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    book.add(order);
+
+    assert!(book.is_order_in_book(&client_order_id));
+    assert_eq!(book.bid_client_order_ids().len(), 1);
+
+    book.delete(order).unwrap();
+
+    assert!(!book.is_order_in_book(&client_order_id));
+    assert!(book.bid_client_order_ids().is_empty());
+}
+
+#[rstest]
 fn test_own_book_level_size_and_exposure() {
     let mut level = OwnBookLevel::new(BookPrice::new(
         Price::from("100.00"),
