@@ -23,6 +23,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
+    clock::Clock,
     msgbus::{MessageBus, send},
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -410,26 +411,26 @@ impl BaseExecutionClient {
 
     fn send_order_event(&self, event: OrderEventAny) {
         let endpoint = Ustr::from("ExecEngine.process");
-        self.msgbus.borrow().send(&endpoint, &event as &dyn Any);
+        send(&endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
         let endpoint = Ustr::from("ExecEngine.reconcile_mass_status");
-        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+        send(&endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
         let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+        send(&endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
         let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+        send(&endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
         let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        self.msgbus.borrow().send(&endpoint, &report as &dyn Any);
+        send(&endpoint, &report as &dyn Any);
     }
 }
