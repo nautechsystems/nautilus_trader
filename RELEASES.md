@@ -12,6 +12,8 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added pnl information to greeks data (#2378), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
+- Added `Order.ts_accepted` property
+- Added `Order.ts_submitted` property
 - Added `UnixNanos::to_datetime_utc()` in Rust
 - Added `Mark` variant for `PriceType` enum
 - Added mark price handling for `Cache`

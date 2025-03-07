@@ -217,6 +217,7 @@ cdef class Order:
         # Timestamps
         self.init_id = init.id
         self.ts_init = init.ts_init
+        self.ts_submitted = 0
         self.ts_accepted = 0
         self.ts_last = init.ts_init
 
@@ -441,11 +442,13 @@ cdef class Order:
 
         """
         if not self.has_price_c():
-            raise TypeError(f"Cannot initialize {self.type_string_c()} orders as `nautilus_pyo3.OwnBookOrder`, no price")
+            raise TypeError(f"Cannot initialize {self.type_string_c()} order as `nautilus_pyo3.OwnBookOrder`, no price")
 
         cdef Price price = self.price
         return nautilus_pyo3.OwnBookOrder(
+            trader_id=nautilus_pyo3.TraderId(self.trader_id.value),
             client_order_id=nautilus_pyo3.ClientOrderId(self.client_order_id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(self.venue_order_id.value) if self.venue_order_id else None,
             side=nautilus_pyo3.OrderSide.BUY if self.side == OrderSide.BUY else nautilus_pyo3.OrderSide.SELL,
             price=nautilus_pyo3.Price(price.as_f64_c(), price._mem.precision),
             size=nautilus_pyo3.Quantity(self.leaves_qty.as_f64_c(), self.leaves_qty._mem.precision),
@@ -454,6 +457,7 @@ cdef class Order:
             status=order_status_to_pyo3(<OrderStatus>self._fsm.state),
             ts_last=self.ts_last,
             ts_accepted=self.ts_accepted,
+            ts_submitted=self.ts_submitted,
             ts_init=self.ts_init,
         )
 
@@ -1066,6 +1070,7 @@ cdef class Order:
 
     cdef void _submitted(self, OrderSubmitted event):
         self.account_id = event.account_id
+        self.ts_submitted = event.ts_event
 
     cdef void _rejected(self, OrderRejected event):
         pass  # Do nothing else

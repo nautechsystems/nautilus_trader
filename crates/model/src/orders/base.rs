@@ -428,9 +428,10 @@ pub struct OrderCore {
     pub avg_px: Option<f64>,
     pub slippage: Option<f64>,
     pub init_id: UUID4,
-    pub ts_init: UnixNanos,
-    pub ts_accepted: Option<UnixNanos>,
     pub ts_last: UnixNanos,
+    pub ts_accepted: Option<UnixNanos>,
+    pub ts_submitted: Option<UnixNanos>,
+    pub ts_init: UnixNanos,
 }
 
 impl OrderCore {
@@ -475,9 +476,10 @@ impl OrderCore {
             avg_px: None,
             slippage: None,
             init_id: init.event_id,
-            ts_init: init.ts_event,
-            ts_accepted: None,
             ts_last: init.ts_event,
+            ts_accepted: None,
+            ts_submitted: None,
+            ts_init: init.ts_event,
         }
     }
 
