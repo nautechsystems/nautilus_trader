@@ -70,7 +70,7 @@ pub struct OwnBookOrder {
     pub ts_last: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the order was accepted (zero unless accepted).
     pub ts_accepted: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the order was submitted.
+    /// UNIX timestamp (nanoseconds) when the order was submitted (zero unless submitted).
     pub ts_submitted: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the order was initialized.
     pub ts_init: UnixNanos,
@@ -149,7 +149,9 @@ impl PartialOrd for OwnBookOrder {
 
 impl PartialEq for OwnBookOrder {
     fn eq(&self, other: &Self) -> bool {
-        self.client_order_id == other.client_order_id && self.ts_init == other.ts_init
+        self.client_order_id == other.client_order_id
+            && self.status == other.status
+            && self.ts_last == other.ts_last
     }
 }
 
@@ -305,6 +307,22 @@ impl OwnOrderBook {
     /// Returns an iterator over ask price levels.
     pub fn asks(&self) -> impl Iterator<Item = &OwnBookLevel> {
         self.asks.levels.values()
+    }
+
+    /// Returns the client order IDs currently on the bid side.
+    pub fn bid_client_order_ids(&self) -> Vec<ClientOrderId> {
+        self.bids.cache.keys().cloned().collect()
+    }
+
+    /// Returns the client order IDs currently on the ask side.
+    pub fn ask_client_order_ids(&self) -> Vec<ClientOrderId> {
+        self.asks.cache.keys().cloned().collect()
+    }
+
+    /// Return whether the given client order ID is in the own book.
+    pub fn is_order_in_book(&self, client_order_id: &ClientOrderId) -> bool {
+        self.asks.cache.contains_key(client_order_id)
+            || self.bids.cache.contains_key(client_order_id)
     }
 
     /// Returns bid price levels as a map of level price to order list at that level.

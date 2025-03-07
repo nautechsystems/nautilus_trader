@@ -212,6 +212,21 @@ impl OwnOrderBook {
         self.clear();
     }
 
+    #[pyo3(name = "bid_client_order_ids")]
+    pub fn py_bid_client_order_ids(&self) -> Vec<ClientOrderId> {
+        self.bid_client_order_ids()
+    }
+
+    #[pyo3(name = "ask_client_order_ids")]
+    pub fn py_ask_client_order_ids(&self) -> Vec<ClientOrderId> {
+        self.ask_client_order_ids()
+    }
+
+    #[pyo3(name = "is_order_in_book")]
+    pub fn py_is_order_in_book(&self, client_order_id: &ClientOrderId) -> bool {
+        self.is_order_in_book(client_order_id)
+    }
+
     #[pyo3(signature = (status=None))]
     #[pyo3(name = "bids_to_dict")]
     fn py_bids_to_dict(
