@@ -49,6 +49,7 @@ nautilus-portfolio = { path = "../portfolio" }
 nautilus-risk = { path = "../risk" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }

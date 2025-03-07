@@ -3211,6 +3211,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-live"
+version = "0.42.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "criterion",
+ "futures",
+ "indexmap",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-execution",
+ "nautilus-model",
+ "nautilus-portfolio",
+ "nautilus-risk",
+ "pyo3",
+ "rand 0.9.0",
+ "rstest",
+ "serde",
+ "strum",
+ "tokio",
+]
+
+[[package]]
 name = "nautilus-model"
 version = "0.42.0"
 dependencies = [
