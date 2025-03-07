@@ -72,7 +72,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The market data type to be set
 
         """
-        self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.to_str(market_data_type)}")
+        self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.toStr(market_data_type)}")
         self._eclient.reqMarketDataType(market_data_type)
 
     async def _subscribe(
@@ -715,9 +715,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         to frozen and back and from delayed to delayed-frozen and back.
         """
         if market_data_type == MarketDataTypeEnum.REALTIME:
-            self._log.debug(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
+            self._log.debug(f"Market DataType is {MarketDataTypeEnum.toStr(market_data_type)}")
         else:
-            self._log.warning(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
+            self._log.warning(f"Market DataType is {MarketDataTypeEnum.toStr(market_data_type)}")
 
     async def process_tick_by_tick_bid_ask(
         self,
