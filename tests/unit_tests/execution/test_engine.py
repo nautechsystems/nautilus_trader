@@ -3409,3 +3409,72 @@ class TestExecutionEngine:
         # Check that order is no longer in the book
         current_bids = self.cache.own_bid_orders(instrument.id)
         assert Decimal("1.15") not in current_bids
+
+    def test_own_book_order_overfill_removes_from_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+
+        # Submit and accept the order
+        strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Verify order is in the own book
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count == 3
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("1.00000") in own_book.bids_to_dict()
+
+        # Partially fill the order with 50% of quantity
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                instrument,
+                last_qty=Quantity.from_int(50_000),
+            ),
+        )
+
+        # Verify order is still in the book with updated status
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        own_book = self.cache.own_order_book(instrument.id)
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("1.00000") in own_book.bids_to_dict()
+
+        # Act - overfill the order (60K more when only 50K remains)
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                instrument,
+                last_qty=Quantity.from_int(60_000),
+                trade_id=TradeId("2"),
+            ),
+        )
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert order.status == OrderStatus.FILLED
+        assert (
+            len(own_book.bids_to_dict()) == 0
+        ), "Order should be removed from own book despite overfill"
+        assert (
+            self.cache.own_bid_orders(instrument.id) == {}
+        ), "Own book cache should be empty after overfill"

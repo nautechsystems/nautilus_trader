@@ -1145,8 +1145,8 @@ cdef class ExecutionEngine(Component):
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
             return
-
-        self._cache.update_order(order, update_own_book=self.manage_own_order_books)
+        finally:
+            self._cache.update_order(order, update_own_book=self.manage_own_order_books)
 
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",

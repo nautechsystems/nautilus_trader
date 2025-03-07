@@ -2021,9 +2021,6 @@ cdef class Cache(CacheFacade):
             if order.is_closed_c():
                 own_book.delete(own_book_order)
                 self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
-                self._log.debug(f"bid_ids={own_book.bid_client_order_ids()}", LogColor.MAGENTA)  # Temporary
-                self._log.debug(f"ask_ids={own_book.ask_client_order_ids()}", LogColor.MAGENTA)  # Temporary
-                self._log.debug(f"is_order_in_book={own_book.is_order_in_book(own_book_order.client_order_id)}", LogColor.MAGENTA)  # Temporary
             else:
                 own_book.update(own_book_order)
                 self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
