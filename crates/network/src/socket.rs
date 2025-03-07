@@ -666,14 +666,14 @@ impl SocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use std::{ffi::CString, net::TcpListener};
+    use std::ffi::CString;
 
     use nautilus_common::testing::wait_until_async;
     use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::prepare_freethreaded_python;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpStream,
+        net::{TcpListener, TcpStream},
         task,
         time::{Duration, sleep},
     };
@@ -716,8 +716,10 @@ counter = Counter()
         })
     }
 
-    fn bind_test_server() -> (u16, TcpListener) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
+    async fn bind_test_server() -> (u16, TcpListener) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind ephemeral port");
         let port = listener.local_addr().unwrap().port();
         (port, listener)
     }
@@ -759,13 +761,9 @@ counter = Counter()
     async fn test_basic_send_receive() {
         prepare_freethreaded_python();
 
-        let (port, listener) = bind_test_server();
+        let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
-            let (socket, _) = tokio::net::TcpListener::from_std(listener)
-                .unwrap()
-                .accept()
-                .await
-                .unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
             run_echo_server(socket).await;
         });
 
@@ -802,7 +800,7 @@ counter = Counter()
     async fn test_reconnect_fail_exhausted() {
         prepare_freethreaded_python();
 
-        let (port, listener) = bind_test_server();
+        let (port, listener) = bind_test_server().await;
         drop(listener); // We drop it immediately -> no server is listening
 
         let config = SocketConfig {
@@ -830,13 +828,9 @@ counter = Counter()
     async fn test_user_disconnect() {
         prepare_freethreaded_python();
 
-        let (port, listener) = bind_test_server();
+        let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
-            let (socket, _) = tokio::net::TcpListener::from_std(listener)
-                .unwrap()
-                .accept()
-                .await
-                .unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
             let mut buf = [0u8; 1024];
             let _ = socket.try_read(&mut buf);
 
@@ -872,16 +866,12 @@ counter = Counter()
     async fn test_heartbeat() {
         prepare_freethreaded_python();
 
-        let (port, listener) = bind_test_server();
+        let (port, listener) = bind_test_server().await;
         let received = Arc::new(Mutex::new(Vec::new()));
         let received2 = received.clone();
 
         let server_task = task::spawn(async move {
-            let (socket, _) = tokio::net::TcpListener::from_std(listener)
-                .unwrap()
-                .accept()
-                .await
-                .unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
 
             let mut buf = Vec::new();
             loop {
@@ -945,13 +935,9 @@ counter = Counter()
     async fn test_python_handler_error() {
         prepare_freethreaded_python();
 
-        let (port, listener) = bind_test_server();
+        let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
-            let (socket, _) = tokio::net::TcpListener::from_std(listener)
-                .unwrap()
-                .accept()
-                .await
-                .unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
             run_echo_server(socket).await;
         });
 
@@ -1008,8 +994,7 @@ def handler(bytes_data):
     async fn test_reconnect_success() {
         prepare_freethreaded_python();
 
-        let (port, listener) = bind_test_server();
-        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+        let (port, listener) = bind_test_server().await;
 
         // Spawn a server task that:
         // 1. Accepts the first connection and then drops it after a short delay (simulate disconnect)
