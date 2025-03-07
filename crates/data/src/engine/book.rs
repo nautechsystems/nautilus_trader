@@ -151,7 +151,7 @@ impl BookSnapshotter {
             .order_book(instrument_id)
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
 
-        if book.event_count == 0 {
+        if book.update_count == 0 {
             log::debug!("OrderBook for {instrument_id} not yet updated for snapshot");
             return;
         }

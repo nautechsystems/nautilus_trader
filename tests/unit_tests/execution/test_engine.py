@@ -2389,7 +2389,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(order.instrument_id)
-        assert own_book.event_count == 1
+        assert own_book.update_count == 1
         assert len(own_book.asks_to_dict()) == 0
         assert len(own_book.bids_to_dict()) == 1
         assert len(own_book.bids_to_dict()[Decimal("10.0")]) == 1
@@ -2427,7 +2427,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(order.instrument_id)
-        assert own_book.event_count == 1
+        assert own_book.update_count == 1
         assert len(own_book.asks_to_dict()) == 1
         assert len(own_book.bids_to_dict()) == 0
         assert len(own_book.asks_to_dict()[Decimal("11.0")]) == 1
@@ -2485,7 +2485,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count == 10
+        assert own_book.update_count == 10
         assert len(own_book.asks_to_dict()) == 0
         assert len(own_book.bids_to_dict()) == 0
         assert self.cache.own_bid_orders(instrument.id) == {}
@@ -2535,7 +2535,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count == 8
+        assert own_book.update_count == 8
         assert len(own_book.asks_to_dict()) == 1  # Order is there with no filtering
         assert len(own_book.bids_to_dict()) == 1  # Order is there with no filtering
         assert (
@@ -2597,7 +2597,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count == 8
+        assert own_book.update_count == 8
         assert len(own_book.asks_to_dict()) == 0
         assert len(own_book.bids_to_dict()) == 0
         assert self.cache.own_bid_orders(instrument.id) == {}
@@ -2649,7 +2649,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count == 8
+        assert own_book.update_count == 8
         assert len(own_book.asks_to_dict()) == 1
         assert len(own_book.bids_to_dict()) == 1
         assert len(own_book.asks_to_dict()[Decimal("12.0")]) == 1
@@ -2747,7 +2747,7 @@ class TestExecutionEngine:
 
         # Verify own order book state
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count > 0
+        assert own_book.update_count > 0
         assert len(own_book.asks_to_dict()) == 0  # Orders should be removed after fill
         assert len(own_book.bids_to_dict()) == 0  # Orders should be removed after fill
 
@@ -2794,7 +2794,7 @@ class TestExecutionEngine:
 
         # Assert
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count > 0
+        assert own_book.update_count > 0
 
         # Verify both orders exist in the book, even though they're "crossed"
         assert len(own_book.asks_to_dict()) == 1
@@ -2858,7 +2858,7 @@ class TestExecutionEngine:
 
         # Assert - before entry fill
         own_book = self.cache.own_order_book(instrument.id)
-        assert own_book.event_count > 1
+        assert own_book.update_count > 1
 
         # Entry order should be in the book as a bid
         assert len(own_book.bids_to_dict()) == 1

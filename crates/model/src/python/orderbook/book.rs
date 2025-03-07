@@ -81,9 +81,9 @@ impl OrderBook {
     }
 
     #[getter]
-    #[pyo3(name = "count")]
-    fn py_count(&self) -> u64 {
-        self.event_count
+    #[pyo3(name = "update_count")]
+    fn py_update_count(&self) -> u64 {
+        self.update_count
     }
 
     #[pyo3(name = "reset")]
