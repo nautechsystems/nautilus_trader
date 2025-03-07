@@ -12,10 +12,3 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-use rstest::rstest;
-
-#[rstest]
-fn test_init() {
-    assert_eq!(1, 1);
-}
