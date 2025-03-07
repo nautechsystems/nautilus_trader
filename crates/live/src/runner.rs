@@ -21,23 +21,15 @@ use std::{
 
 use futures::StreamExt;
 use nautilus_common::{
-    clock::{Clock, LiveClock, TestClock},
+    clock::{Clock, LiveClock},
     messages::data::{DataEvent, DataResponse, SubscriptionCommand},
+    runner::{DataQueue, GlobalDataQueue, RunnerEvent, SyncDataQueue},
     runtime::get_runtime,
-    timer::{TimeEvent, TimeEventHandlerV2},
 };
-use nautilus_model::data::GetTsInit;
+use nautilus_data::engine::DataEngine;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use super::DataEngine;
-
 pub struct AsyncDataQueue(UnboundedSender<DataEvent>);
-
-impl DataQueue for SyncDataQueue {
-    fn push(&mut self, event: DataEvent) {
-        self.0.push_back(event);
-    }
-}
 
 impl DataQueue for AsyncDataQueue {
     fn push(&mut self, event: DataEvent) {
@@ -190,11 +182,13 @@ mod tests {
         );
 
         // runner pulling from event
-        assert!(live_clock
-            .borrow()
-            .get_event_stream()
-            .next()
-            .await
-            .is_some());
+        assert!(
+            live_clock
+                .borrow()
+                .get_event_stream()
+                .next()
+                .await
+                .is_some()
+        );
     }
 }

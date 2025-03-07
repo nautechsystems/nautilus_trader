@@ -12,6 +12,7 @@ members = [
     "crates/execution",
     "crates/indicators",
     "crates/infrastructure",
+    "crates/live",
     "crates/model",
     "crates/network",
     "crates/persistence",
