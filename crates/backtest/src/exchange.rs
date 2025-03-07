@@ -933,7 +933,7 @@ mod tests {
         exchange.process_order_book_delta(delta_sell);
 
         let book = exchange.get_book(crypto_perpetual_ethusdt.id).unwrap();
-        assert_eq!(book.count, 2);
+        assert_eq!(book.event_count, 2);
         assert_eq!(book.sequence, 1);
         assert_eq!(book.ts_last, UnixNanos::from(2));
         let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
@@ -994,7 +994,7 @@ mod tests {
         exchange.process_order_book_deltas(orderbook_deltas);
 
         let book = exchange.get_book(crypto_perpetual_ethusdt.id).unwrap();
-        assert_eq!(book.count, 2);
+        assert_eq!(book.event_count, 2);
         assert_eq!(book.sequence, 1);
         assert_eq!(book.ts_last, UnixNanos::from(1));
         let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);

@@ -2424,7 +2424,9 @@ impl Cache {
     /// Gets the order book update count for the given `instrument_id`.
     #[must_use]
     pub fn book_update_count(&self, instrument_id: &InstrumentId) -> usize {
-        self.books.get(instrument_id).map_or(0, |book| book.count) as usize
+        self.books
+            .get(instrument_id)
+            .map_or(0, |book| book.event_count) as usize
     }
 
     /// Gets the quote tick count for the given `instrument_id`.
