@@ -94,7 +94,7 @@ pub extern "C" fn orderbook_ts_last(book: &OrderBook_API) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_count(book: &OrderBook_API) -> u64 {
-    book.count
+    book.event_count
 }
 
 #[unsafe(no_mangle)]

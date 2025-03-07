@@ -58,7 +58,7 @@ pub struct OrderBook {
     /// The timestamp of the last event applied to the order book.
     pub ts_last: UnixNanos,
     /// The current count of events applied to the order book.
-    pub count: u64,
+    pub event_count: u64,
     pub(crate) bids: BookLadder,
     pub(crate) asks: BookLadder,
 }
@@ -92,7 +92,7 @@ impl OrderBook {
             book_type,
             sequence: 0,
             ts_last: UnixNanos::default(),
-            count: 0,
+            event_count: 0,
             bids: BookLadder::new(OrderSideSpecified::Buy),
             asks: BookLadder::new(OrderSideSpecified::Sell),
         }
@@ -104,7 +104,7 @@ impl OrderBook {
         self.asks.clear();
         self.sequence = 0;
         self.ts_last = UnixNanos::default();
-        self.count = 0;
+        self.event_count = 0;
     }
 
     /// Adds an order to the book after preprocessing based on book type.
@@ -467,7 +467,7 @@ impl OrderBook {
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.sequence = sequence;
         self.ts_last = ts_event;
-        self.count += 1;
+        self.event_count += 1;
     }
 
     /// Updates L1 book state from a quote tick. Only valid for L1_MBP book type.
