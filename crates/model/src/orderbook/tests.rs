@@ -120,7 +120,7 @@ fn test_book_display() {
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
     assert_eq!(
         book.to_string(),
-        "OrderBook(instrument_id=ETHUSDT-PERP.BINANCE, book_type=L2_MBP)"
+        "OrderBook(instrument_id=ETHUSDT-PERP.BINANCE, book_type=L2_MBP, update_count=0)"
     );
 }
 
@@ -415,7 +415,7 @@ fn test_book_orderbook_creation() {
     assert_eq!(book.book_type, BookType::L2_MBP);
     assert_eq!(book.sequence, 0);
     assert_eq!(book.ts_last, 0);
-    assert_eq!(book.event_count, 0);
+    assert_eq!(book.update_count, 0);
 }
 
 #[rstest]
@@ -424,14 +424,14 @@ fn test_book_orderbook_reset() {
     let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
     book.sequence = 10;
     book.ts_last = 100.into();
-    book.event_count = 3;
+    book.update_count = 3;
 
     book.reset();
 
     assert_eq!(book.book_type, BookType::L1_MBP);
     assert_eq!(book.sequence, 0);
     assert_eq!(book.ts_last, 0);
-    assert_eq!(book.event_count, 0);
+    assert_eq!(book.update_count, 0);
 }
 
 #[rstest]

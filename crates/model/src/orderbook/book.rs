@@ -58,7 +58,7 @@ pub struct OrderBook {
     /// The timestamp of the last event applied to the order book.
     pub ts_last: UnixNanos,
     /// The current count of events applied to the order book.
-    pub event_count: u64,
+    pub update_count: u64,
     pub(crate) bids: BookLadder,
     pub(crate) asks: BookLadder,
 }
@@ -75,10 +75,11 @@ impl Display for OrderBook {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, book_type={})",
+            "{}(instrument_id={}, book_type={}, update_count={})",
             stringify!(OrderBook),
             self.instrument_id,
             self.book_type,
+            self.update_count,
         )
     }
 }
@@ -92,7 +93,7 @@ impl OrderBook {
             book_type,
             sequence: 0,
             ts_last: UnixNanos::default(),
-            event_count: 0,
+            update_count: 0,
             bids: BookLadder::new(OrderSideSpecified::Buy),
             asks: BookLadder::new(OrderSideSpecified::Sell),
         }
@@ -104,7 +105,7 @@ impl OrderBook {
         self.asks.clear();
         self.sequence = 0;
         self.ts_last = UnixNanos::default();
-        self.event_count = 0;
+        self.update_count = 0;
     }
 
     /// Adds an order to the book after preprocessing based on book type.
@@ -467,7 +468,7 @@ impl OrderBook {
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.sequence = sequence;
         self.ts_last = ts_event;
-        self.event_count += 1;
+        self.update_count += 1;
     }
 
     /// Updates L1 book state from a quote tick. Only valid for L1_MBP book type.

@@ -142,7 +142,7 @@ def test_own_order_book_creation():
     book = OwnOrderBook(instrument_id)
 
     assert book.instrument_id == instrument_id
-    assert book.event_count == 0
+    assert book.update_count == 0
     assert book.ts_last == 0
 
 
@@ -175,7 +175,7 @@ def test_own_order_book_add_update_delete():
 
     # 1) Add order
     book.add(order)
-    assert book.event_count == 1  # Add increments the event count
+    assert book.update_count == 1  # Add increments the event count
     bids_map = book.bids_to_dict()
     assert len(bids_map) == 1
     assert Price(100.0, 2).as_decimal() in bids_map
@@ -197,7 +197,7 @@ def test_own_order_book_add_update_delete():
         ts_init=1,
     )
     book.update(updated_order)
-    assert book.event_count == 2  # Update increments the event count
+    assert book.update_count == 2  # Update increments the event count
 
     # Check updated size
     bids_map = book.bids_to_dict()
@@ -209,7 +209,7 @@ def test_own_order_book_add_update_delete():
     book.delete(order)
     # Depending on how your book logic is implemented,
     # count might now be 3 (since delete is an event).
-    assert book.event_count == 3, "Delete should increment event count"
+    assert book.update_count == 3, "Delete should increment event count"
 
     # Confirm no bids left
     assert len(book.bids_to_dict()) == 0
@@ -240,11 +240,11 @@ def test_own_order_book_clear():
             ts_init=1,
         ),
     )
-    assert book.event_count == 1
+    assert book.update_count == 1
 
     # Call clear() -> typically increments event count
     book.clear()
-    assert book.event_count == 1
+    assert book.update_count == 1
     assert len(book.bids_to_dict()) == 0
     assert len(book.asks_to_dict()) == 0
 

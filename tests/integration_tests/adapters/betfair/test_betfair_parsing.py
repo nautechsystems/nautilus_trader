@@ -302,7 +302,7 @@ class TestBetfairParsingStreaming:
                     books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
-        result = [book.count for book in books.values()]
+        result = [book.update_count for book in books.values()]
         assert result == book_count
 
     def test_betfair_trade_sizes(self) -> None:  # noqa: C901
