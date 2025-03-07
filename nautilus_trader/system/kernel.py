@@ -514,6 +514,7 @@ class NautilusKernel:
 
         # State flags
         self._is_running = False
+        self._is_stopping = False
 
         build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
         self._log.info(f"Initialized in {build_time_ms}ms")
@@ -583,6 +584,9 @@ class NautilusKernel:
         if not self._is_running:
             self._log.warning(f"Received {command!r} when not running")
             return
+
+        if self._is_stopping:
+            return  # Already stopping
 
         self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
 
@@ -997,6 +1001,7 @@ class NautilusKernel:
         Stop the Nautilus system kernel.
         """
         self._log.info("STOPPING")
+        self._is_stopping = True
 
         self._stop_clients()
 
@@ -1014,6 +1019,7 @@ class NautilusKernel:
 
         self._log.info("STOPPED")
         self._is_running = False
+        self._is_stopping = False
         self._ts_shutdown = self._clock.timestamp_ns()
 
     async def stop_async(self) -> None:
@@ -1034,6 +1040,7 @@ class NautilusKernel:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
         self._log.info("STOPPING")
+        self._is_stopping = True
 
         if self._trader.is_running:
             self._trader.stop()
@@ -1053,6 +1060,7 @@ class NautilusKernel:
 
         self._log.info("STOPPED")
         self._is_running = False
+        self._is_stopping = False
         self._ts_shutdown = self._clock.timestamp_ns()
 
     def dispose(self) -> None:
