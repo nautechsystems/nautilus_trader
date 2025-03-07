@@ -47,7 +47,7 @@ def test_orderbook_spy_xnas_itch_mbo_l3(benchmark) -> None:
     # Assert
     assert book.ts_last == 1701129555644234540
     assert book.sequence == 429411899
-    assert book.count == 6197580
+    assert book.update_count == 6197580
     assert len(book.bids()) == 52
     assert len(book.asks()) == 38
     assert book.best_bid_price() == Price.from_str("454.84")

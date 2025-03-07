@@ -2638,7 +2638,7 @@ uint64_t orderbook_sequence(const struct OrderBook_API *book);
 
 uint64_t orderbook_ts_last(const struct OrderBook_API *book);
 
-uint64_t orderbook_count(const struct OrderBook_API *book);
+uint64_t orderbook_update_count(const struct OrderBook_API *book);
 
 void orderbook_add(struct OrderBook_API *book,
                    struct BookOrder_t order,

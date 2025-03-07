@@ -58,7 +58,6 @@ from nautilus_trader.core.rust.model cimport orderbook_check_integrity
 from nautilus_trader.core.rust.model cimport orderbook_clear
 from nautilus_trader.core.rust.model cimport orderbook_clear_asks
 from nautilus_trader.core.rust.model cimport orderbook_clear_bids
-from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_drop
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
@@ -75,6 +74,7 @@ from nautilus_trader.core.rust.model cimport orderbook_simulate_fills
 from nautilus_trader.core.rust.model cimport orderbook_spread
 from nautilus_trader.core.rust.model cimport orderbook_ts_last
 from nautilus_trader.core.rust.model cimport orderbook_update
+from nautilus_trader.core.rust.model cimport orderbook_update_count
 from nautilus_trader.core.rust.model cimport orderbook_update_quote_tick
 from nautilus_trader.core.rust.model cimport orderbook_update_trade_tick
 from nautilus_trader.core.rust.model cimport vec_fills_drop
@@ -128,7 +128,7 @@ cdef class OrderBook(Data):
             f"instrument: {self.instrument_id}\n"
             f"sequence: {self.sequence}\n"
             f"ts_last: {self.ts_last}\n"
-            f"count: {self.count}\n"
+            f"update_count: {self.update_count}\n"
             f"{self.pprint()}"
         )
 
@@ -230,7 +230,7 @@ cdef class OrderBook(Data):
         return orderbook_ts_last(&self._mem)
 
     @property
-    def count(self) -> int:
+    def update_count(self) -> int:
         """
         Return the books update count.
 
@@ -239,7 +239,7 @@ cdef class OrderBook(Data):
         int
 
         """
-        return orderbook_count(&self._mem)
+        return orderbook_update_count(&self._mem)
 
     cpdef void reset(self):
         """

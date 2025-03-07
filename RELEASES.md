@@ -35,7 +35,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Renamed `InterestRateData` to `YieldCurveData`
 - Renamed `Cache.add_interest_rate_curve` to `add_yield_curve`
 - Renamed `Cache.interest_rate_curve` to `yield_curve`
-- Renamed `OrderBook.count` to `event_count` for clarity
+- Renamed `OrderBook.count` to `update_count` for clarity
 - Moved `ExecEngineConfig.portfolio_bar_updates` config option to `PortfolioConfig.bar_updates`
 
 ### Internal Improvements

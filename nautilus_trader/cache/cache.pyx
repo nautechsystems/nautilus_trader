@@ -2498,7 +2498,7 @@ cdef class Cache(CacheFacade):
         if book is None:
             return 0
         else:
-            return book.count
+            return book.update_count
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id):
         """

@@ -1724,7 +1724,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t orderbook_ts_last(const OrderBook_API *book);
 
-    uint64_t orderbook_count(const OrderBook_API *book);
+    uint64_t orderbook_update_count(const OrderBook_API *book);
 
     void orderbook_add(OrderBook_API *book,
                        BookOrder_t order,
