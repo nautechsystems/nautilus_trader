@@ -39,7 +39,7 @@ thiserror = { workspace = true }
 parquet = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "45.0.0", default-features = false, features = [
+datafusion = { version = "46.0.0", default-features = false, features = [
   "compression",
   "parquet",
   "regex_expressions",
