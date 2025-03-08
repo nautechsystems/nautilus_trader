@@ -30,4 +30,4 @@ __version__ = nautilus_pyo3.NAUTILUS_VERSION
 PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 TEST_DATA_DIR: Final[Path] = PACKAGE_ROOT / "tests" / "test_data"
 
-USER_AGENT: Final[str] = nautilus_pyo3.USER_AGENT
+NAUTILUS_USER_AGENT: Final[str] = nautilus_pyo3.NAUTILUS_USER_AGENT

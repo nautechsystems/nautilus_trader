@@ -128,7 +128,7 @@ class BetfairHttpClient:
         self._headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": nautilus_trader.USER_AGENT,
+            "User-Agent": nautilus_trader.NAUTILUS_USER_AGENT,
             "X-Application": self.app_key,
         }
 
