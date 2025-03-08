@@ -43,6 +43,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Added support for `CARGO_BUILD_TARGET` environment variable in `build.py` (#2385), thanks @sunlei
 - Added test for time-bar aggregation (#2391), thanks @stefansimik and @faysou
 - Implemented actor framework and message bus v3 (#2402), thanks @twitu
+- Implemented latency modeling for SimulatedExchange in Rust (#2423), thanks @filipmacek
 - Implemented exchange rate calculations in Rust
 - Improved handling of `oms_type` for `StrategyConfig` which now correctly handles the `OmsType` enum
 - Improved Binance websocket connections management to allow more than 200 streams (#2369), thanks @lidarbtc
@@ -85,8 +86,8 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Ported trailing stop order handling for `OrderMatchingEngine` in Rust (#2366, #2376), thanks @filipmacek
 - Ported contingent orders handling for `OrderMatchingEngine` in Rust (#2404), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
+- Upgraded `nautilus-ibapi` to 10.30.1 with necessary changes for Interactive Brokers (#2420), thanks @FGU1
 - Upgraded Rust to 1.85.0 and 2024 edition
-- Upgraded `datafusion` crate to v45.0.0
 - Upgraded `arrow` and `parquet` crates to v54.2.1
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
 - Upgraded `datafusion` crate to v46.0.0
@@ -137,6 +138,8 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Improved FSM example explanations for beginners (#2351), thanks @stefansimik
 - Refined option greeks docstrings (#2320), thanks @faysou
 - Refined adapters concept documentation (#2358), thanks @faysou
+- Fixed typo in docs/concepts/actors.md (#2422), thanks @Isamaciel
+- Fixed singular noun in docs/concepts/instruments.md (#2424), thanks @lsamaciel
 
 ### Deprecations
 None
