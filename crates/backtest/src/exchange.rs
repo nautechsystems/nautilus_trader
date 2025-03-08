@@ -19,7 +19,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BinaryHeap, HashMap, VecDeque},
+    rc::Rc,
+};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{
@@ -49,6 +53,42 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::modules::SimulationModule;
 
+/// Represents commands with simulated network latency in a min-heap priority queue.
+/// The commands are ordered by timestamp for FIFO processing, with the
+/// earliest timestamp having the highest priority in the queue.
+#[derive(Debug, Eq, PartialEq)]
+struct InflightCommand {
+    ts: UnixNanos,
+    counter: u32,
+    command: TradingCommand,
+}
+
+impl InflightCommand {
+    fn new(ts: UnixNanos, counter: u32, command: TradingCommand) -> Self {
+        Self {
+            ts,
+            counter,
+            command,
+        }
+    }
+}
+
+impl Ord for InflightCommand {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reverse ordering for min-heap (earliest timestamp first then lowest counter)
+        other
+            .ts
+            .cmp(&self.ts)
+            .then_with(|| other.counter.cmp(&self.counter))
+    }
+}
+
+impl PartialOrd for InflightCommand {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub struct SimulatedExchange {
     pub id: Venue,
     pub oms_type: OmsType,
@@ -60,7 +100,7 @@ pub struct SimulatedExchange {
     pub base_currency: Option<Currency>,
     fee_model: FeeModelAny,
     fill_model: FillModel,
-    latency_model: LatencyModel,
+    latency_model: Option<LatencyModel>,
     instruments: HashMap<InstrumentId, InstrumentAny>,
     matching_engines: HashMap<InstrumentId, OrderMatchingEngine>,
     leverages: HashMap<InstrumentId, Decimal>,
@@ -68,6 +108,9 @@ pub struct SimulatedExchange {
     clock: &'static AtomicTime,
     msgbus: Rc<RefCell<MessageBus>>,
     cache: Rc<RefCell<Cache>>,
+    message_queue: VecDeque<TradingCommand>,
+    inflight_queue: BinaryHeap<InflightCommand>,
+    inflight_counter: HashMap<UnixNanos, u32>,
     frozen_account: bool,
     bar_execution: bool,
     reject_stop_orders: bool,
@@ -96,8 +139,8 @@ impl SimulatedExchange {
         clock: &'static AtomicTime,
         fill_model: FillModel,
         fee_model: FeeModelAny,
-        latency_model: LatencyModel,
         book_type: BookType,
+        latency_model: Option<LatencyModel>,
         frozen_account: Option<bool>,
         bar_execution: Option<bool>,
         reject_stop_orders: Option<bool>,
@@ -134,6 +177,9 @@ impl SimulatedExchange {
             clock,
             msgbus,
             cache,
+            message_queue: VecDeque::new(),
+            inflight_queue: BinaryHeap::new(),
+            inflight_counter: HashMap::new(),
             frozen_account: frozen_account.unwrap_or(false),
             bar_execution: bar_execution.unwrap_or(true),
             reject_stop_orders: reject_stop_orders.unwrap_or(true),
@@ -163,8 +209,7 @@ impl SimulatedExchange {
     }
 
     pub fn set_latency_model(&mut self, latency_model: LatencyModel) {
-        self.latency_model = latency_model;
-        log::info!("Setting latency model to {}", self.latency_model);
+        self.latency_model = Some(latency_model);
     }
 
     pub fn initialize_account(&mut self) {
@@ -357,12 +402,45 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn send(&self, _command: TradingCommand) {
-        todo!("send")
+    pub fn send(&mut self, command: TradingCommand) {
+        if !self.use_message_queue {
+            self.process_trading_command(command);
+        } else if self.latency_model.is_none() {
+            self.message_queue.push_back(command);
+        } else {
+            let (ts, counter) = self.generate_inflight_command(&command);
+            self.inflight_queue
+                .push(InflightCommand::new(ts, counter, command));
+        }
     }
 
-    pub fn generate_inflight_command(&self, _command: TradingCommand) {
-        todo!("generate inflight command")
+    pub fn generate_inflight_command(&mut self, command: &TradingCommand) -> (UnixNanos, u32) {
+        if let Some(latency_model) = &self.latency_model {
+            let ts = match command {
+                TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
+                    command.ts_init() + latency_model.insert_latency_nanos
+                }
+                TradingCommand::ModifyOrder(_) => {
+                    command.ts_init() + latency_model.update_latency_nanos
+                }
+                TradingCommand::CancelOrder(_)
+                | TradingCommand::CancelAllOrders(_)
+                | TradingCommand::BatchCancelOrders(_) => {
+                    command.ts_init() + latency_model.delete_latency_nanos
+                }
+                _ => panic!("Invalid command was {}", command),
+            };
+
+            let counter = self
+                .inflight_counter
+                .entry(ts)
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
+
+            (ts, *counter)
+        } else {
+            panic!("Latency model should be initialized");
+        }
     }
 
     pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
@@ -531,8 +609,24 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process(&mut self, _ts_now: UnixNanos) {
-        todo!("process")
+    pub fn process(&mut self, ts_now: UnixNanos) {
+        self.clock.set_time(ts_now);
+
+        // Process inflight commands
+        while let Some(inflight) = self.inflight_queue.peek() {
+            if inflight.ts > ts_now {
+                // Future commands remain in the queue
+                break;
+            }
+            // We get the inflight command, remove it from the queue and process it
+            let inflight = self.inflight_queue.pop().unwrap();
+            self.process_trading_command(inflight.command);
+        }
+
+        // Process regular message queue
+        while let Some(command) = self.message_queue.pop_front() {
+            self.process_trading_command(command);
+        }
     }
 
     pub fn reset(&mut self) {
@@ -615,7 +709,12 @@ impl SimulatedExchange {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::LazyLock};
+    use std::{
+        cell::RefCell,
+        collections::{BinaryHeap, HashMap},
+        rc::Rc,
+        sync::LazyLock,
+    };
 
     use nautilus_common::{
         cache::Cache,
@@ -626,10 +725,13 @@ mod tests {
         },
     };
     use nautilus_core::{AtomicTime, UUID4, UnixNanos};
-    use nautilus_execution::models::{
-        fee::{FeeModelAny, MakerTakerFeeModel},
-        fill::FillModel,
-        latency::LatencyModel,
+    use nautilus_execution::{
+        messages::{SubmitOrder, TradingCommand},
+        models::{
+            fee::{FeeModelAny, MakerTakerFeeModel},
+            fill::FillModel,
+            latency::LatencyModel,
+        },
     };
     use nautilus_model::{
         accounts::{AccountAny, MarginAccount},
@@ -639,17 +741,24 @@ mod tests {
         },
         enums::{
             AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
-            OmsType, OrderSide,
+            OmsType, OrderSide, OrderType,
         },
         events::AccountState,
-        identifiers::{AccountId, TradeId, TraderId, Venue},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
+            VenueOrderId,
+        },
         instruments::{CryptoPerpetual, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        orders::OrderTestBuilder,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
     use ustr::Ustr;
 
-    use crate::{exchange::SimulatedExchange, execution_client::BacktestExecutionClient};
+    use crate::{
+        exchange::{InflightCommand, SimulatedExchange},
+        execution_client::BacktestExecutionClient,
+    };
 
     static ATOMIC_TIME: LazyLock<AtomicTime> =
         LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
@@ -679,8 +788,8 @@ mod tests {
                 &ATOMIC_TIME,
                 FillModel::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
-                LatencyModel,
                 book_type,
+                None,
                 None,
                 None,
                 None,
@@ -710,6 +819,30 @@ mod tests {
             .register_client(Rc::new(execution_client));
 
         exchange
+    }
+
+    fn create_submit_order_command(ts_init: UnixNanos) -> TradingCommand {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from(1))
+            .build();
+        TradingCommand::SubmitOrder(
+            SubmitOrder::new(
+                TraderId::default(),
+                ClientId::default(),
+                StrategyId::default(),
+                instrument_id,
+                ClientOrderId::default(),
+                VenueOrderId::default(),
+                order,
+                None,
+                None,
+                UUID4::default(),
+                ts_init,
+            )
+            .unwrap(),
+        )
     }
 
     #[rstest]
@@ -1138,5 +1271,125 @@ mod tests {
         assert_eq!(current_balance.free, Money::new(1500.0, Currency::USD()));
         assert_eq!(current_balance.locked, Money::new(0.0, Currency::USD()));
         assert_eq!(current_balance.total, Money::new(1500.0, Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_inflight_commands_binary_heap_ordering_respecting_timestamp_counter() {
+        // Create 3 inflight commands with different timestamps and counters
+        let inflight1 = InflightCommand::new(
+            UnixNanos::from(100),
+            1,
+            create_submit_order_command(UnixNanos::from(100)),
+        );
+        let inflight2 = InflightCommand::new(
+            UnixNanos::from(200),
+            2,
+            create_submit_order_command(UnixNanos::from(200)),
+        );
+        let inflight3 = InflightCommand::new(
+            UnixNanos::from(100),
+            2,
+            create_submit_order_command(UnixNanos::from(100)),
+        );
+
+        // Create a binary heap and push the inflight commands
+        let mut inflight_heap = BinaryHeap::new();
+        inflight_heap.push(inflight1);
+        inflight_heap.push(inflight2);
+        inflight_heap.push(inflight3);
+
+        // Pop the inflight commands and check if they are in the correct order
+        // by our custom ordering with counter and timestamp
+        let first = inflight_heap.pop().unwrap();
+        let second = inflight_heap.pop().unwrap();
+        let third = inflight_heap.pop().unwrap();
+
+        assert_eq!(first.ts, UnixNanos::from(100));
+        assert_eq!(first.counter, 1);
+        assert_eq!(second.ts, UnixNanos::from(100));
+        assert_eq!(second.counter, 2);
+        assert_eq!(third.ts, UnixNanos::from(200));
+        assert_eq!(third.counter, 2);
+    }
+
+    #[rstest]
+    fn test_process_without_latency_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let msgbus = MessageBus::default().register_message_bus();
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            Some(msgbus.clone()),
+            None,
+        );
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        exchange.borrow_mut().add_instrument(instrument).unwrap();
+
+        let command1 = create_submit_order_command(UnixNanos::from(100));
+        let command2 = create_submit_order_command(UnixNanos::from(200));
+
+        exchange.borrow_mut().send(command1);
+        exchange.borrow_mut().send(command2);
+
+        // Verify that message queue has 2 commands and inflight queue is empty
+        // as we are not using latency model
+        assert_eq!(exchange.borrow().message_queue.len(), 2);
+        assert_eq!(exchange.borrow().inflight_queue.len(), 0);
+
+        // Process command and check that queues is empty
+        exchange.borrow_mut().process(UnixNanos::from(300));
+        assert_eq!(exchange.borrow().message_queue.len(), 0);
+        assert_eq!(exchange.borrow().inflight_queue.len(), 0);
+    }
+
+    #[rstest]
+    fn test_process_with_latency_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let latency_model = LatencyModel::new(
+            UnixNanos::from(100),
+            UnixNanos::from(200),
+            UnixNanos::from(300),
+            UnixNanos::from(100),
+        );
+        let msgbus = MessageBus::default().register_message_bus();
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            Some(msgbus.clone()),
+            None,
+        );
+        exchange.borrow_mut().set_latency_model(latency_model);
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        exchange.borrow_mut().add_instrument(instrument).unwrap();
+
+        let command1 = create_submit_order_command(UnixNanos::from(100));
+        let command2 = create_submit_order_command(UnixNanos::from(150));
+        exchange.borrow_mut().send(command1);
+        exchange.borrow_mut().send(command2);
+
+        // Verify that inflight queue has 2 commands and message queue is empty
+        assert_eq!(exchange.borrow().message_queue.len(), 0);
+        assert_eq!(exchange.borrow().inflight_queue.len(), 2);
+        // First inflight command should have timestamp at 100 and 200 insert latency
+        assert_eq!(
+            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            UnixNanos::from(300)
+        );
+        // Second inflight command should have timestamp at 150 and 200 insert latency
+        assert_eq!(
+            exchange.borrow().inflight_queue.iter().nth(1).unwrap().ts,
+            UnixNanos::from(350)
+        );
+
+        // Process at timestamp 350, and test that only first command is processed
+        exchange.borrow_mut().process(UnixNanos::from(320));
+        assert_eq!(exchange.borrow().message_queue.len(), 0);
+        assert_eq!(exchange.borrow().inflight_queue.len(), 1);
+        assert_eq!(
+            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            UnixNanos::from(350)
+        );
     }
 }

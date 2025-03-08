@@ -25,7 +25,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub struct SubmitOrderList {
     pub trader_id: TraderId,

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use super::any::OrderAny;
 use crate::identifiers::{InstrumentId, OrderListId, StrategyId};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
