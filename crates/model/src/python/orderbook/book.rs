@@ -175,6 +175,26 @@ impl OrderBook {
         self.asks_as_map(depth)
     }
 
+    #[pyo3(signature = (group_size, depth=None))]
+    #[pyo3(name = "group_bids")]
+    pub fn py_group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_bids(group_size, depth)
+    }
+
+    #[pyo3(signature = (group_size, depth=None))]
+    #[pyo3(name = "group_asks")]
+    pub fn py_group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_asks(group_size, depth)
+    }
+
     #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bids_filtered_to_dict")]
     fn py_bids_filtered_to_dict(
@@ -201,24 +221,46 @@ impl OrderBook {
         self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (group_size, depth=None))]
-    #[pyo3(name = "group_bids")]
-    pub fn py_group_bids(
+    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "group_bids_filtered")]
+    fn py_group_bids_filered(
         &self,
         group_size: Decimal,
         depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_bids(group_size, depth)
+        self.group_bids_filtered(
+            group_size,
+            depth,
+            own_book,
+            status,
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
-    #[pyo3(signature = (group_size, depth=None))]
-    #[pyo3(name = "group_asks")]
-    pub fn py_group_asks(
+    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "group_asks_filtered")]
+    fn py_group_asks_filtered(
         &self,
         group_size: Decimal,
         depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_asks(group_size, depth)
+        self.group_asks_filtered(
+            group_size,
+            depth,
+            own_book,
+            status,
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "best_bid_price")]

@@ -227,34 +227,74 @@ impl OwnOrderBook {
         self.is_order_in_book(client_order_id)
     }
 
-    #[pyo3(signature = (status=None))]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bids_to_dict")]
     fn py_bids_to_dict(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.bids_as_map(status)
+        self.bids_as_map(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (status=None))]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "asks_to_dict")]
     fn py_asks_to_dict(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.asks_as_map(status)
+        self.asks_as_map(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (status=None))]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bid_quantity")]
-    fn py_bid_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
-        self.bid_quantity(status)
+    fn py_bid_quantity(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.bid_quantity(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (status=None))]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "ask_quantity")]
-    fn py_ask_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
-        self.ask_quantity(status)
+    fn py_ask_quantity(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.ask_quantity(status, accepted_buffer_ns, ts_now)
+    }
+
+    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "group_bids")]
+    fn py_group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_bids(group_size, depth, status, accepted_buffer_ns, ts_now)
+    }
+
+    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "group_asks")]
+    fn py_group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_asks(group_size, depth, status, accepted_buffer_ns, ts_now)
     }
 
     #[pyo3(signature = (num_levels=3))]
