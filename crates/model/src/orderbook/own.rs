@@ -325,10 +325,10 @@ impl OwnOrderBook {
             || self.bids.cache.contains_key(client_order_id)
     }
 
-    /// Returns bid price levels as a map of level price to order list at that level.
+    /// Maps bid price levels to their own orders, excluding empty levels after filtering.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn bids_as_map(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -338,10 +338,10 @@ impl OwnOrderBook {
         filter_orders(self.bids(), status.as_ref(), accepted_buffer_ns, ts_now)
     }
 
-    /// Returns ask price levels as a map of level price to order list at that level.
+    /// Maps ask price levels to their own orders, excluding empty levels after filtering.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn asks_as_map(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -351,10 +351,10 @@ impl OwnOrderBook {
         filter_orders(self.asks(), status.as_ref(), accepted_buffer_ns, ts_now)
     }
 
-    /// Returns the aggregated own bid quantity at each price level.
+    /// Aggregates own bid quantities per price level, omitting zero-quantity levels.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
+    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
+    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn bid_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -368,10 +368,10 @@ impl OwnOrderBook {
             .collect()
     }
 
-    /// Returns the aggregated own ask quantity at each price level.
+    /// Aggregates own ask quantities per price level, omitting zero-quantity levels.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
+    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
+    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn ask_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -388,7 +388,10 @@ impl OwnOrderBook {
             .collect()
     }
 
-    /// Groups bid levels by price, up to specified depth.
+    /// Groups own bid quantities by price into buckets, truncating to a maximum depth.
+    ///
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn group_bids(
         &self,
         group_size: Decimal,
@@ -398,10 +401,13 @@ impl OwnOrderBook {
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
         let quantities = self.bid_quantity(status, accepted_buffer_ns, ts_now);
-        group_quantities(quantities, group_size, true, depth)
+        group_quantities(quantities, group_size, depth, true)
     }
 
-    /// Groups ask levels by price, up to specified depth.
+    /// Groups own ask quantities by price into buckets, truncating to a maximum depth.
+    ///
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn group_asks(
         &self,
         group_size: Decimal,
@@ -411,7 +417,7 @@ impl OwnOrderBook {
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
         let quantities = self.ask_quantity(status, accepted_buffer_ns, ts_now);
-        group_quantities(quantities, group_size, false, depth)
+        group_quantities(quantities, group_size, depth, false)
     }
 
     /// Return a formatted string representation of the order book.
@@ -448,8 +454,8 @@ fn filter_orders<'a>(
 fn group_quantities(
     quantities: IndexMap<Decimal, Decimal>,
     group_size: Decimal,
-    is_bid: bool,
     depth: Option<usize>,
+    is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
     let mut grouped = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
