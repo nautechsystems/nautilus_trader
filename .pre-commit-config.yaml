@@ -82,7 +82,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.9
+    rev: v0.9.10
     hooks:
       - id: ruff
         args: ["--fix"]

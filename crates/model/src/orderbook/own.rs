@@ -25,7 +25,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
 
 use super::display::pprint_own_book;
@@ -325,82 +325,99 @@ impl OwnOrderBook {
             || self.bids.cache.contains_key(client_order_id)
     }
 
-    /// Returns bid price levels as a map of level price to order list at that level.
+    /// Maps bid price levels to their own orders, excluding empty levels after filtering.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn bids_as_map(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.bids()
-            .map(|level| {
-                let orders = match &status {
-                    Some(filter) => filter_orders_by_status(&level.orders, filter),
-                    None => level.orders.values().cloned().collect(),
-                };
-                (level.price.value.as_decimal(), orders)
-            })
-            .filter(|(_, orders)| !orders.is_empty())
-            .collect()
+        filter_orders(self.bids(), status.as_ref(), accepted_buffer_ns, ts_now)
     }
 
-    /// Returns ask price levels as a map of level price to order list at that level.
+    /// Maps ask price levels to their own orders, excluding empty levels after filtering.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn asks_as_map(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.asks()
-            .map(|level| {
-                let orders = match &status {
-                    Some(filter) => filter_orders_by_status(&level.orders, filter),
-                    None => level.orders.values().cloned().collect(),
-                };
-                (level.price.value.as_decimal(), orders)
-            })
-            .filter(|(_, orders)| !orders.is_empty())
+        filter_orders(self.asks(), status.as_ref(), accepted_buffer_ns, ts_now)
+    }
+
+    /// Aggregates own bid quantities per price level, omitting zero-quantity levels.
+    ///
+    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
+    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    pub fn bid_quantity(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.bids_as_map(status, accepted_buffer_ns, ts_now)
+            .into_iter()
+            .map(|(price, orders)| (price, sum_order_sizes(orders.iter())))
+            .filter(|(_, quantity)| *quantity > Decimal::ZERO)
             .collect()
     }
 
-    /// Returns the aggregated own bid quantity at each price level.
+    /// Aggregates own ask quantities per price level, omitting zero-quantity levels.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
-    pub fn bid_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
-        self.bids()
-            .map(|level| {
-                let quantity = match &status {
-                    Some(filter) => {
-                        sum_order_sizes(filter_orders_by_status(&level.orders, filter).iter())
-                    }
-                    None => sum_order_sizes(level.orders.values()),
-                };
-                (level.price.value.as_decimal(), quantity)
+    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
+    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    pub fn ask_quantity(
+        &self,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.asks_as_map(status, accepted_buffer_ns, ts_now)
+            .into_iter()
+            .map(|(price, orders)| {
+                let quantity = sum_order_sizes(orders.iter());
+                (price, quantity)
             })
             .filter(|(_, quantity)| *quantity > Decimal::ZERO)
             .collect()
     }
 
-    /// Returns the aggregated own ask quantity at each price level.
+    /// Groups own bid quantities by price into buckets, truncating to a maximum depth.
     ///
-    /// If `status` filter is provided, includes only orders with matching status values.
-    /// Empty price levels after filtering are excluded from the result.
-    pub fn ask_quantity(&self, status: Option<HashSet<OrderStatus>>) -> IndexMap<Decimal, Decimal> {
-        self.asks()
-            .map(|level| {
-                let quantity = match &status {
-                    Some(filter) => {
-                        sum_order_sizes(filter_orders_by_status(&level.orders, filter).iter())
-                    }
-                    None => sum_order_sizes(level.orders.values()),
-                };
-                (level.price.value.as_decimal(), quantity)
-            })
-            .filter(|(_, quantity)| *quantity > Decimal::ZERO)
-            .collect()
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
+    pub fn group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        let quantities = self.bid_quantity(status, accepted_buffer_ns, ts_now);
+        group_quantities(quantities, group_size, depth, true)
+    }
+
+    /// Groups own ask quantities by price into buckets, truncating to a maximum depth.
+    ///
+    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
+    /// at least that many nanoseconds before `ts_now` (defaults to now).
+    pub fn group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        let quantities = self.ask_quantity(status, accepted_buffer_ns, ts_now);
+        group_quantities(quantities, group_size, depth, false)
     }
 
     /// Return a formatted string representation of the order book.
@@ -410,15 +427,69 @@ impl OwnOrderBook {
     }
 }
 
-fn filter_orders_by_status(
-    orders: &IndexMap<ClientOrderId, OwnBookOrder>,
-    filter: &HashSet<OrderStatus>,
-) -> Vec<OwnBookOrder> {
-    orders
-        .values()
-        .filter(|order| filter.contains(&order.status))
-        .cloned()
-        .collect()
+fn filter_orders<'a>(
+    levels: impl Iterator<Item = &'a OwnBookLevel>,
+    status: Option<&HashSet<OrderStatus>>,
+    accepted_buffer_ns: Option<u64>,
+    ts_now: Option<u64>,
+) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+    let accepted_buffer_ns = accepted_buffer_ns.unwrap_or(0);
+    let ts_now = ts_now.unwrap_or_else(nanos_since_unix_epoch);
+    levels
+        .map(|level| {
+            let orders = level
+                .orders
+                .values()
+                .filter(|order| status.is_none_or(|f| f.contains(&order.status)))
+                .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
+                .cloned()
+                .collect::<Vec<OwnBookOrder>>();
+
+            (level.price.value.as_decimal(), orders)
+        })
+        .filter(|(_, orders)| !orders.is_empty())
+        .collect::<IndexMap<Decimal, Vec<OwnBookOrder>>>()
+}
+
+fn group_quantities(
+    quantities: IndexMap<Decimal, Decimal>,
+    group_size: Decimal,
+    depth: Option<usize>,
+    is_bid: bool,
+) -> IndexMap<Decimal, Decimal> {
+    let mut grouped = IndexMap::new();
+    let depth = depth.unwrap_or(usize::MAX);
+
+    for (price, size) in quantities {
+        let grouped_price = if is_bid {
+            (price / group_size).floor() * group_size
+        } else {
+            (price / group_size).ceil() * group_size
+        };
+
+        grouped
+            .entry(grouped_price)
+            .and_modify(|total| *total += size)
+            .or_insert(size);
+
+        if grouped.len() > depth {
+            if is_bid {
+                // For bids, remove the lowest price level
+                if let Some((lowest_price, _)) = grouped.iter().min_by_key(|(price, _)| *price) {
+                    let lowest_price = *lowest_price;
+                    grouped.shift_remove(&lowest_price);
+                }
+            } else {
+                // For asks, remove the highest price level
+                if let Some((highest_price, _)) = grouped.iter().max_by_key(|(price, _)| *price) {
+                    let highest_price = *highest_price;
+                    grouped.shift_remove(&highest_price);
+                }
+            }
+        }
+    }
+
+    grouped
 }
 
 fn sum_order_sizes<'a, I>(orders: I) -> Decimal

@@ -529,10 +529,12 @@ impl OrderCore {
 
     fn submitted(&mut self, event: &OrderSubmitted) {
         self.account_id = Some(event.account_id);
+        self.ts_submitted = Some(event.ts_event);
     }
 
     fn accepted(&mut self, event: &OrderAccepted) {
         self.venue_order_id = Some(event.venue_order_id);
+        self.ts_accepted = Some(event.ts_event);
     }
 
     fn rejected(&self, _event: &OrderRejected) {
@@ -591,6 +593,11 @@ impl OrderCore {
         self.filled_qty += event.last_qty;
         self.leaves_qty -= event.last_qty;
         self.ts_last = event.ts_event;
+        if self.ts_accepted.is_none() {
+            // Set ts_accepted to time of first fill if not previously set
+            self.ts_accepted = Some(event.ts_event);
+        }
+
         self.set_avg_px(event.last_qty, event.last_px);
     }
 

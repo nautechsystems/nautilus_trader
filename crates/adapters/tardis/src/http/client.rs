@@ -15,7 +15,7 @@
 
 use std::{env, time::Duration};
 
-use nautilus_core::{UnixNanos, consts::USER_AGENT};
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::instruments::InstrumentAny;
 use reqwest::Response;
 
@@ -65,7 +65,7 @@ impl TardisHttpClient {
         let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
 
         let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
+            .user_agent(NAUTILUS_USER_AGENT)
             .timeout(timeout)
             .build()?;
 

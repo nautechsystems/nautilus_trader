@@ -90,6 +90,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
@@ -140,12 +141,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
-        AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+
+        if config.calculate_account_state:
+            AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
         # Configuration
         self.config = config
         self.check_order_timeout_secs = 10.0
         self._log.info(f"{config.account_currency=}", LogColor.BLUE)
+        self._log.info(f"{config.calculate_account_state=}", LogColor.BLUE)
         self._log.info(f"{config.request_account_state_secs=}", LogColor.BLUE)
         self._log.info(f"{self.check_order_timeout_secs=}", LogColor.BLUE)
 
@@ -163,7 +167,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Async tasks
         self._update_account_task: asyncio.Task | None = None
 
-        # Hot caches
+        # Hot caches:
+        # - filled_qty_cache: Tracks filled quantities separately from order state since Betfair
+        #   only provides cumulative matched sizes (sm). This lets us calculate incremental fills
+        #   while avoiding race conditions with delayed order state updates.
+        # - pending_update_order_client_ids: Tracks orders with pending updates to ensure state
+        #   consistency during asynchronous processing.
+        # - published_executions: Stores published executions per order to avoid duplicates and
+        #   support reconciliation with external systems.
+        self._filled_qty_cache: dict[ClientOrderId, Quantity] = {}
         self._pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
         self._published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
 
@@ -195,17 +207,29 @@ class BetfairExecutionClient(LiveExecutionClient):
         await asyncio.gather(*aws)
 
         self._log.debug("Starting 'update_account_state' task")
-        self._update_account_task = self.create_task(self._update_account_state())
+
+        if self.config.request_account_state_secs:
+            self._update_account_task = self.create_task(self._update_account_state())
+        else:
+            # Request one initial update
+            account_state = await self.request_account_state()
+            self._log.debug(f"Received account state: {account_state}")
+            self._send_account_state(account_state)
 
     async def _reconnect(self) -> None:
         self._log.info("Reconnecting to Betfair")
         self._is_reconnecting = True
+
         if self._update_account_task:
             self._update_account_task.cancel()
             self._update_account_task = None
+
         await self._client.reconnect()
         await self._stream.reconnect()
-        self._update_account_task = self.create_task(self._update_account_state())
+
+        if self.config.request_account_state_secs:
+            self._update_account_task = self.create_task(self._update_account_state())
+
         self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
@@ -213,6 +237,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         if self._update_account_task:
             self._log.debug("Canceling task 'update_account_task'")
             self._update_account_task.cancel()
+            self._update_account_task = None
 
         self._log.info("Closing streaming socket")
         await self._stream.disconnect()
@@ -871,6 +896,25 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         return True
 
+    async def _wait_for_order(
+        self,
+        venue_order_id: VenueOrderId,
+        timeout_secs: float,
+    ) -> ClientOrderId | None:
+        try:
+            timeout_ns = secs_to_nanos(timeout_secs)
+            start = self._clock.timestamp_ns()
+            now = start
+            while (now - start) < timeout_ns:
+                client_order_id = self._cache.client_order_id(venue_order_id)
+                if client_order_id:
+                    return client_order_id
+                await asyncio.sleep(0.01)
+                now = self._clock.timestamp_ns()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'wait_for_order'")
+        return None
+
     def _handle_stream_executable_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         # Handle update containing 'E' (executable) order update
         venue_order_id = VenueOrderId(str(unmatched_order.id))
@@ -900,12 +944,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         if unmatched_order.sm and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
-                fill_qty = unmatched_order.sm - order.filled_qty
-                fill_price = self._determine_fill_price(
-                    unmatched_order=unmatched_order,
-                    order=order,
-                )
-                ts_event = self._get_matched_timestamp(unmatched_order=unmatched_order)
+                fill_qty = self._determine_fill_qty(unmatched_order, order)
+                fill_price = self._determine_fill_price(unmatched_order, order)
+                ts_event = self._get_matched_timestamp(unmatched_order)
 
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
@@ -916,7 +957,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
-                    last_qty=betfair_float_to_quantity(fill_qty),
+                    last_qty=fill_qty,
                     last_px=betfair_float_to_price(fill_price),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
@@ -958,12 +999,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         if unmatched_order.sm and unmatched_order.sm > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
-                fill_qty = unmatched_order.sm - order.filled_qty
-                fill_price = self._determine_fill_price(
-                    unmatched_order=unmatched_order,
-                    order=order,
-                )
-                ts_event = self._get_matched_timestamp(unmatched_order=unmatched_order)
+                fill_qty = self._determine_fill_qty(unmatched_order, order)
+                fill_price = self._determine_fill_price(unmatched_order, order)
+                ts_event = self._get_matched_timestamp(unmatched_order)
 
                 # At least some part of this order has been filled
                 self.generate_order_filled(
@@ -975,7 +1013,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
-                    last_qty=betfair_float_to_quantity(fill_qty),
+                    last_qty=fill_qty,
                     last_px=betfair_float_to_price(fill_price),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
@@ -1089,6 +1127,19 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 return price
 
+    def _determine_fill_qty(self, unmatched_order: UnmatchedOrder, order: Order) -> Quantity:
+        prev_filled_qty = self._filled_qty_cache.get(order.client_order_id)
+        fill_qty = betfair_float_to_quantity((unmatched_order.sm or 0) - (prev_filled_qty or 0))
+
+        total_matched_qty = betfair_float_to_quantity(unmatched_order.sm)
+
+        if total_matched_qty >= order.quantity:
+            self._filled_qty_cache.pop(order.client_order_id, None)  # Done
+        else:
+            self._filled_qty_cache[order.client_order_id] = total_matched_qty
+
+        return fill_qty
+
     def _get_matched_timestamp(self, unmatched_order: UnmatchedOrder) -> int:
         if unmatched_order.md is None:
             self._log.warning("Matched timestamp was `None` from Betfair")
@@ -1103,22 +1154,3 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _get_cancel_quantity(self, unmatched_order: UnmatchedOrder) -> float:
         return (unmatched_order.sc or 0) + (unmatched_order.sl or 0) + (unmatched_order.sv or 0)
-
-    async def _wait_for_order(
-        self,
-        venue_order_id: VenueOrderId,
-        timeout_secs: float,
-    ) -> ClientOrderId | None:
-        try:
-            timeout_ns = secs_to_nanos(timeout_secs)
-            start = self._clock.timestamp_ns()
-            now = start
-            while (now - start) < timeout_ns:
-                client_order_id = self._cache.client_order_id(venue_order_id)
-                if client_order_id:
-                    return client_order_id
-                await asyncio.sleep(0.01)
-                now = self._clock.timestamp_ns()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'wait_for_order'")
-        return None

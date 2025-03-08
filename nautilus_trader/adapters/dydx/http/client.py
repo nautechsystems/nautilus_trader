@@ -68,7 +68,7 @@ class DYDXHttpClient:
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
-            "User-Agent": nautilus_trader.USER_AGENT,
+            "User-Agent": nautilus_trader.NAUTILUS_USER_AGENT,
         }
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],

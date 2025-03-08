@@ -129,7 +129,7 @@ cdef class Order:
     cdef readonly uint64_t ts_init
     """UNIX timestamp (nanoseconds) when the order was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_accepted
-    """UNIX timestamp (nanoseconds) when the order was accepted (zero unless accepted).\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the order was accepted or first filled (zero unless accepted or filled).\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_submitted
     """UNIX timestamp (nanoseconds) when the order was submitted (zero unless submitted).\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_last

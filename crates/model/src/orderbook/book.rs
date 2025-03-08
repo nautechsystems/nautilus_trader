@@ -18,15 +18,12 @@
 use std::{collections::HashSet, fmt::Display};
 
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
+use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::{
-    aggregation::pre_process_order,
-    analysis,
-    display::pprint_book,
-    level::BookLevel,
-    own::{OwnBookLevel, OwnOrderBook},
+    aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel,
+    own::OwnOrderBook,
 };
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
@@ -219,7 +216,29 @@ impl OrderBook {
             .collect()
     }
 
-    /// Returns bid price levels as a map of price to size with own order size filtered out.
+    /// Groups bid quantities by price into buckets, limited by depth.
+    pub fn group_bids(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        group_levels(self.bids(None), group_size, depth, true)
+    }
+
+    /// Groups ask quantities by price into buckets, limited by depth.
+    pub fn group_asks(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+    ) -> IndexMap<Decimal, Decimal> {
+        group_levels(self.asks(None), group_size, depth, false)
+    }
+
+    /// Maps bid prices to total public size per level, excluding own orders up to a depth limit.
+    ///
+    /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
+    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
+    /// nanoseconds before `now` (defaults to now).
     pub fn bids_filtered_as_map(
         &self,
         depth: Option<usize>,
@@ -234,19 +253,20 @@ impl OrderBook {
             .collect::<IndexMap<Decimal, Decimal>>();
 
         if let Some(own_book) = own_book {
-            self.filter_quantities(
+            filter_quantities(
                 &mut public_map,
-                own_book.bids(),
-                status.as_ref(),
-                accepted_buffer_ns,
-                now,
+                own_book.bid_quantity(status, accepted_buffer_ns, now),
             );
         }
 
         public_map
     }
 
-    /// Returns ask price levels as a map of price to size with own order size filtered out.
+    /// Maps ask prices to total public size per level, excluding own orders up to a depth limit.
+    ///
+    /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
+    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
+    /// nanoseconds before `now` (defaults to now).
     pub fn asks_filtered_as_map(
         &self,
         depth: Option<usize>,
@@ -261,98 +281,65 @@ impl OrderBook {
             .collect::<IndexMap<Decimal, Decimal>>();
 
         if let Some(own_book) = own_book {
-            self.filter_quantities(
+            filter_quantities(
                 &mut public_map,
-                own_book.asks(),
-                status.as_ref(),
-                accepted_buffer_ns,
-                now,
+                own_book.ask_quantity(status, accepted_buffer_ns, now),
             );
         }
 
         public_map
     }
 
-    fn filter_quantities<'a>(
+    /// Groups bid quantities into price buckets, truncating to a maximum depth, excluding own orders.
+    ///
+    /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
+    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
+    /// nanoseconds before `now` (defaults to now).
+    pub fn group_bids_filtered(
         &self,
-        public_map: &mut IndexMap<Decimal, Decimal>,
-        own_orders: impl Iterator<Item = &'a OwnBookLevel>,
-        status_filter: Option<&HashSet<OrderStatus>>,
+        group_size: Decimal,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) {
-        let accepted_buffer_ns = accepted_buffer_ns.unwrap_or(0);
-        let ts_now = ts_now.unwrap_or_else(nanos_since_unix_epoch);
-
-        for level in own_orders {
-            let price = level.price.value.as_decimal();
-            if let Some(public_size) = public_map.get_mut(&price) {
-                let own_size = level
-                    .orders
-                    .values()
-                    .filter(|order| status_filter.is_none_or(|f| f.contains(&order.status)))
-                    .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
-                    .map(|order| order.size.as_decimal())
-                    .sum::<Decimal>();
-
-                *public_size = (*public_size - own_size).max(Decimal::ZERO);
-
-                if *public_size == Decimal::ZERO {
-                    public_map.shift_remove(&price);
-                }
-            }
-        }
-    }
-
-    /// Groups bid levels by price, up to specified depth.
-    pub fn group_bids(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
+        now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_levels(self.bids(None), group_size, true, depth)
-    }
+        let mut public_map = group_levels(self.bids(None), group_size, depth, true);
 
-    /// Groups ask levels by price, up to specified depth.
-    pub fn group_asks(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-    ) -> IndexMap<Decimal, Decimal> {
-        self.group_levels(self.asks(None), group_size, false, depth)
-    }
-
-    fn group_levels<'a>(
-        &self,
-        levels_iter: impl Iterator<Item = &'a BookLevel>,
-        group_size: Decimal,
-        is_bid: bool,
-        depth: Option<usize>,
-    ) -> IndexMap<Decimal, Decimal> {
-        let mut levels = IndexMap::new();
-        let depth = depth.unwrap_or(usize::MAX);
-
-        for level in levels_iter {
-            let price = level.price.value.as_decimal();
-            let grouped_price = if is_bid {
-                (price / group_size).floor() * group_size
-            } else {
-                (price / group_size).ceil() * group_size
-            };
-            let size = level.size_decimal();
-
-            levels
-                .entry(grouped_price)
-                .and_modify(|total| *total += size)
-                .or_insert(size);
-
-            if levels.len() > depth {
-                levels.pop();
-                break;
-            }
+        if let Some(own_book) = own_book {
+            filter_quantities(
+                &mut public_map,
+                own_book.group_bids(group_size, depth, status, accepted_buffer_ns, now),
+            );
         }
 
-        levels
+        public_map
+    }
+
+    /// Groups ask quantities into price buckets, truncating to a maximum depth, excluding own orders.
+    ///
+    /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
+    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
+    /// nanoseconds before `now` (defaults to now).
+    pub fn group_asks_filtered(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        let mut public_map = group_levels(self.asks(None), group_size, depth, false);
+
+        if let Some(own_book) = own_book {
+            filter_quantities(
+                &mut public_map,
+                own_book.group_asks(group_size, depth, status, accepted_buffer_ns, now),
+            );
+        }
+
+        public_map
     }
 
     /// Returns true if the book has any bid orders.
@@ -540,4 +527,51 @@ impl OrderBook {
         }
         self.asks.add(order);
     }
+}
+
+fn filter_quantities(
+    public_map: &mut IndexMap<Decimal, Decimal>,
+    own_map: IndexMap<Decimal, Decimal>,
+) {
+    for (price, own_size) in own_map {
+        if let Some(public_size) = public_map.get_mut(&price) {
+            *public_size = (*public_size - own_size).max(Decimal::ZERO);
+
+            if *public_size == Decimal::ZERO {
+                public_map.shift_remove(&price);
+            }
+        }
+    }
+}
+
+fn group_levels<'a>(
+    levels_iter: impl Iterator<Item = &'a BookLevel>,
+    group_size: Decimal,
+    depth: Option<usize>,
+    is_bid: bool,
+) -> IndexMap<Decimal, Decimal> {
+    let mut levels = IndexMap::new();
+    let depth = depth.unwrap_or(usize::MAX);
+
+    for level in levels_iter {
+        let price = level.price.value.as_decimal();
+        let grouped_price = if is_bid {
+            (price / group_size).floor() * group_size
+        } else {
+            (price / group_size).ceil() * group_size
+        };
+        let size = level.size_decimal();
+
+        levels
+            .entry(grouped_price)
+            .and_modify(|total| *total += size)
+            .or_insert(size);
+
+        if levels.len() > depth {
+            levels.pop();
+            break;
+        }
+    }
+
+    levels
 }
