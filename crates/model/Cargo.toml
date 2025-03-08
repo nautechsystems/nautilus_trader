@@ -26,6 +26,7 @@ nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
+enum_dispatch = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }

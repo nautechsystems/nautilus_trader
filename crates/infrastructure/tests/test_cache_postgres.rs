@@ -36,7 +36,7 @@ mod serial_tests {
             Instrument, InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
         },
-        orders::builder::OrderTestBuilder,
+        orders::{Order, builder::OrderTestBuilder},
         types::{Currency, Quantity},
     };
 

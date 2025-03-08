@@ -591,7 +591,7 @@ impl LimitOrder {
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item(
             "commissions",
-            commissions_from_indexmap(py, self.commissions())?,
+            commissions_from_indexmap(py, self.commissions().clone())?,
         )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),

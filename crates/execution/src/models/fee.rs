@@ -16,7 +16,7 @@
 use nautilus_model::{
     enums::LiquiditySide,
     instruments::InstrumentAny,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     types::{Money, Price, Quantity},
 };
 use rust_decimal::prelude::ToPrimitive;
@@ -129,6 +129,7 @@ mod tests {
         enums::{LiquiditySide, OrderSide, OrderType},
         instruments::{InstrumentAny, stubs::audusd_sim},
         orders::{
+            Order,
             builder::OrderTestBuilder,
             stubs::{TestOrderEventStubs, TestOrderStubs},
         },

@@ -47,7 +47,7 @@ mod serial_tests {
                 currency_pair_ethusdt, equity_aapl, futures_contract_es, option_contract_appl,
             },
         },
-        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Currency, Price, Quantity},
     };

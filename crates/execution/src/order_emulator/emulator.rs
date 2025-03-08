@@ -823,12 +823,12 @@ impl OrderEmulator {
                 Some(trigger_instrument_id),
                 order.contingency_type(),
                 order.order_list_id(),
-                order.linked_order_ids(),
+                order.linked_order_ids().map(Vec::from),
                 order.parent_order_id(),
                 order.exec_algorithm_id(),
-                order.exec_algorithm_params(),
+                order.exec_algorithm_params().cloned(),
                 order.exec_spawn_id(),
-                order.tags(),
+                order.tags().map(Vec::from),
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
             ) {
@@ -959,12 +959,12 @@ impl OrderEmulator {
                 order.is_quote_quantity(),
                 order.contingency_type(),
                 order.order_list_id(),
-                order.linked_order_ids(),
+                order.linked_order_ids().map(Vec::from),
                 order.parent_order_id(),
                 order.exec_algorithm_id(),
-                order.exec_algorithm_params(),
+                order.exec_algorithm_params().cloned(),
                 order.exec_spawn_id(),
-                order.tags(),
+                order.tags().map(Vec::from),
             );
 
             let original_events = order.events();

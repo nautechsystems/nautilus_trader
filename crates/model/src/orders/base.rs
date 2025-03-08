@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use enum_dispatch::enum_dispatch;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
@@ -22,8 +23,8 @@ use ustr::Ustr;
 use super::any::OrderAny;
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -34,6 +35,13 @@ use crate::{
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
+    },
+    orderbook::OwnBookOrder,
+    orders::{
+        limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
+        market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
+        stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
+        trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -155,6 +163,7 @@ impl OrderStatus {
     }
 }
 
+#[enum_dispatch(OrderAny)]
 pub trait Order: 'static + Send {
     fn into_any(self) -> OrderAny;
     fn status(&self) -> OrderStatus;
@@ -168,7 +177,7 @@ pub trait Order: 'static + Send {
     fn position_id(&self) -> Option<PositionId>;
     fn account_id(&self) -> Option<AccountId>;
     fn last_trade_id(&self) -> Option<TradeId>;
-    fn side(&self) -> OrderSide;
+    fn order_side(&self) -> OrderSide;
     fn order_type(&self) -> OrderType;
     fn quantity(&self) -> Quantity;
     fn time_in_force(&self) -> TimeInForce;
@@ -199,13 +208,21 @@ pub trait Order: 'static + Send {
     fn avg_px(&self) -> Option<f64>;
     fn slippage(&self) -> Option<f64>;
     fn init_id(&self) -> UUID4;
-    fn ts_init(&self) -> UnixNanos;
     fn ts_last(&self) -> UnixNanos;
+    fn ts_accepted(&self) -> Option<UnixNanos>;
+    fn ts_submitted(&self) -> Option<UnixNanos>;
+    fn ts_init(&self) -> UnixNanos;
+
+    fn order_side_specified(&self) -> OrderSideSpecified {
+        self.order_side().as_specified()
+    }
+    fn commissions(&self) -> &IndexMap<Currency, Money>;
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError>;
     fn update(&mut self, event: &OrderUpdated);
 
     fn events(&self) -> Vec<&OrderEventAny>;
+
     fn last_event(&self) -> &OrderEventAny {
         // SAFETY: Unwrap safe as `Order` specification guarantees at least one event (`OrderInitialized`)
         self.events().last().unwrap()
@@ -219,12 +236,14 @@ pub trait Order: 'static + Send {
 
     fn trade_ids(&self) -> Vec<&TradeId>;
 
+    fn has_price(&self) -> bool;
+
     fn is_buy(&self) -> bool {
-        self.side() == OrderSide::Buy
+        self.order_side() == OrderSide::Buy
     }
 
     fn is_sell(&self) -> bool {
-        self.side() == OrderSide::Sell
+        self.order_side() == OrderSide::Sell
     }
 
     fn is_passive(&self) -> bool {
@@ -330,22 +349,34 @@ pub trait Order: 'static + Send {
         self.exec_spawn_id()
             .is_some_and(|exec_spawn_id| exec_spawn_id != self.client_order_id())
     }
-}
 
-impl From<OrderAny> for Box<dyn Order> {
-    fn from(order: OrderAny) -> Box<dyn Order> {
-        match order {
-            OrderAny::Limit(order) => Box::new(order),
-            OrderAny::LimitIfTouched(order) => Box::new(order),
-            OrderAny::Market(order) => Box::new(order),
-            OrderAny::MarketIfTouched(order) => Box::new(order),
-            OrderAny::MarketToLimit(order) => Box::new(order),
-            OrderAny::StopLimit(order) => Box::new(order),
-            OrderAny::StopMarket(order) => Box::new(order),
-            OrderAny::TrailingStopLimit(order) => Box::new(order),
-            OrderAny::TrailingStopMarket(order) => Box::new(order),
-        }
+    fn to_own_book_order(&self) -> OwnBookOrder {
+        OwnBookOrder::new(
+            self.trader_id(),
+            self.client_order_id(),
+            self.venue_order_id(),
+            self.order_side().as_specified(),
+            self.price().expect("`OwnBookOrder` must have a price"), // TBD
+            self.quantity(),
+            self.order_type(),
+            self.time_in_force(),
+            self.status(),
+            self.ts_last(),
+            self.ts_submitted().unwrap_or_default(),
+            self.ts_accepted().unwrap_or_default(),
+            self.ts_init(),
+        )
     }
+
+    fn is_triggered(&self) -> Option<bool>; // TODO: Temporary on trait
+    fn set_position_id(&mut self, position_id: Option<PositionId>);
+    fn set_quantity(&mut self, quantity: Quantity);
+    fn set_leaves_qty(&mut self, leaves_qty: Quantity);
+    fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>);
+    fn set_is_quote_quantity(&mut self, is_quote_quantity: bool);
+    fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide);
+    fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool;
+    fn previous_status(&self) -> Option<OrderStatus>;
 }
 
 impl<T> From<&T> for OrderInitialized
@@ -358,7 +389,7 @@ where
             strategy_id: order.strategy_id(),
             instrument_id: order.instrument_id(),
             client_order_id: order.client_order_id(),
-            order_side: order.side(),
+            order_side: order.order_side(),
             order_type: order.order_type(),
             quantity: order.quantity(),
             price: order.price(),
@@ -817,6 +848,6 @@ mod tests {
         assert!(!order.is_open());
         assert!(order.is_closed());
         assert_eq!(order.commission(&Currency::USD()), None);
-        assert_eq!(order.commissions(), IndexMap::new());
+        assert_eq!(order.commissions(), &IndexMap::new());
     }
 }

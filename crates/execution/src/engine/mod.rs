@@ -49,7 +49,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::InstrumentAny,
     orderbook::own::{OwnOrderBook, should_handle_own_book_order},
-    orders::{OrderAny, OrderError},
+    orders::{Order, OrderAny, OrderError},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -719,7 +719,7 @@ impl ExecutionEngine {
         if matches!(order.contingency_type(), Some(ContingencyType::Oto)) && position.is_open() {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
                 let mut cache = self.cache.borrow_mut();
-                let contingent_order = cache.mut_order(&client_order_id);
+                let contingent_order = cache.mut_order(client_order_id);
                 if let Some(contingent_order) = contingent_order {
                     if contingent_order.position_id().is_none() {
                         contingent_order.set_position_id(Some(position_id));
@@ -988,7 +988,7 @@ impl ExecutionEngine {
 
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
-                match self.cache.borrow_mut().mut_order(&client_order_id) {
+                match self.cache.borrow_mut().mut_order(client_order_id) {
                     Some(contingent_order) => {
                         if !contingent_order.is_quote_quantity() {
                             continue; // Already base quantity

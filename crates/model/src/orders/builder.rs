@@ -29,7 +29,7 @@ use crate::{
         TraderId,
     },
     orders::{
-        any::OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
+        Order, OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
         market::MarketOrder, market_if_touched::MarketIfTouchedOrder,
         market_to_limit::MarketToLimitOrder, stop_limit::StopLimitOrder,
         stop_market::StopMarketOrder, trailing_stop_limit::TrailingStopLimitOrder,

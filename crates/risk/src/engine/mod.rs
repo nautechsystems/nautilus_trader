@@ -35,7 +35,7 @@ use nautilus_model::{
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::InstrumentAny,
-    orders::{OrderAny, OrderList},
+    orders::{Order, OrderAny, OrderList},
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_portfolio::Portfolio;
@@ -1101,7 +1101,7 @@ mod tests {
             CryptoPerpetual, CurrencyPair, InstrumentAny,
             stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
         },
-        orders::{OrderAny, OrderList, OrderTestBuilder},
+        orders::{Order, OrderAny, OrderList, OrderTestBuilder},
         types::{AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
     };
     use nautilus_portfolio::Portfolio;
