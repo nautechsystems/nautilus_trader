@@ -11,7 +11,7 @@ name = "nautilus_tardis"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["python", "nautilus-core/ffi"]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",

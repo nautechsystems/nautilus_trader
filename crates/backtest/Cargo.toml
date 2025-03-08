@@ -11,7 +11,7 @@ name = "nautilus_backtest"
 crate-type = ["rlib", "staticlib"]
 
 [features]
-default = ["ffi", "python"]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-common/extension-module",
