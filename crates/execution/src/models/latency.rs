@@ -25,7 +25,8 @@ pub struct LatencyModel {
 }
 
 impl LatencyModel {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         base_latency_nanos: UnixNanos,
         insert_latency_nanos: UnixNanos,
         update_latency_nanos: UnixNanos,

@@ -64,7 +64,7 @@ struct InflightCommand {
 }
 
 impl InflightCommand {
-    fn new(ts: UnixNanos, counter: u32, command: TradingCommand) -> Self {
+    const fn new(ts: UnixNanos, counter: u32, command: TradingCommand) -> Self {
         Self {
             ts,
             counter,
@@ -208,7 +208,7 @@ impl SimulatedExchange {
         self.fill_model = fill_model;
     }
 
-    pub fn set_latency_model(&mut self, latency_model: LatencyModel) {
+    pub const fn set_latency_model(&mut self, latency_model: LatencyModel) {
         self.latency_model = Some(latency_model);
     }
 
@@ -428,7 +428,7 @@ impl SimulatedExchange {
                 | TradingCommand::BatchCancelOrders(_) => {
                     command.ts_init() + latency_model.delete_latency_nanos
                 }
-                _ => panic!("Invalid command was {}", command),
+                _ => panic!("Invalid command was {command}"),
             };
 
             let counter = self
