@@ -31,7 +31,7 @@ use pyo3::{
 
 use crate::{
     UUID4,
-    consts::{NAUTILUS_VERSION, USER_AGENT},
+    consts::{NAUTILUS_USER_AGENT, NAUTILUS_VERSION},
     datetime::{
         MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
         NANOSECONDS_IN_SECOND,
@@ -94,7 +94,7 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 #[rustfmt::skip]
 pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(NAUTILUS_VERSION), NAUTILUS_VERSION)?;
-    m.add(stringify!(USER_AGENT), USER_AGENT)?;
+    m.add(stringify!(NAUTILUS_USER_AGENT), NAUTILUS_USER_AGENT)?;
     m.add(stringify!(MILLISECONDS_IN_SECOND), MILLISECONDS_IN_SECOND)?;
     m.add(stringify!(NANOSECONDS_IN_SECOND), NANOSECONDS_IN_SECOND)?;
     m.add(stringify!(NANOSECONDS_IN_MILLISECOND), NANOSECONDS_IN_MILLISECOND)?;

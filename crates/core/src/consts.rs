@@ -24,4 +24,4 @@ pub static NAUTILUS_TRADER: &str = "NautilusTrader";
 pub static NAUTILUS_VERSION: &str = env!("NAUTILUS_VERSION");
 
 /// The `NautilusTrader` common User-Agent string including the current version at compile time.
-pub static USER_AGENT: &str = env!("NAUTILUS_USER_AGENT");
+pub static NAUTILUS_USER_AGENT: &str = env!("NAUTILUS_USER_AGENT");
