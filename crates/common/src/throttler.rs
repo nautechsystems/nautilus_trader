@@ -226,7 +226,7 @@ where
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
         );
 
-        // register actor state
+        // Register actor state
         let actor = Rc::new(UnsafeCell::new(self));
         register_actor(actor.clone());
 
