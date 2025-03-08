@@ -33,7 +33,7 @@ use crate::{
     enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, TraderId, VenueOrderId},
     orderbook::BookPrice,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     types::{Price, Quantity},
 };
 

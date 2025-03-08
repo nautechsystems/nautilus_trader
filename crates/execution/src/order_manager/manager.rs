@@ -28,7 +28,7 @@ use nautilus_model::{
         OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, ExecAlgorithmId, PositionId},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     types::Quantity,
 };
 use ustr::Ustr;
@@ -307,7 +307,7 @@ impl OrderManager {
 
                 for client_order_id in linked_orders {
                     let mut child_order =
-                        if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
+                        if let Some(order) = self.cache.borrow().order(client_order_id).cloned() {
                             order
                         } else {
                             panic!(
@@ -352,11 +352,7 @@ impl OrderManager {
                 };
 
                 for client_order_id in linked_orders {
-                    let contingent_order = match self
-                        .cache
-                        .borrow()
-                        .order(&client_order_id)
-                        .cloned()
+                    let contingent_order = match self.cache.borrow().order(client_order_id).cloned()
                     {
                         Some(contingent_order) => contingent_order,
                         None => {
@@ -410,14 +406,14 @@ impl OrderManager {
 
         for client_order_id in linked_orders {
             let mut contingent_order =
-                if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
+                if let Some(order) = self.cache.borrow().order(client_order_id).cloned() {
                     order
                 } else {
                     panic!("Cannot find contingent order for client_order_id: {client_order_id}");
                 };
 
             if !self.should_manage_order(&contingent_order)
-                || client_order_id == order.client_order_id()
+                || client_order_id == &order.client_order_id()
             {
                 continue;
             }
@@ -487,7 +483,7 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let mut contingent_order = match self.cache.borrow().order(&client_order_id).cloned() {
+            let mut contingent_order = match self.cache.borrow().order(client_order_id).cloned() {
                 Some(contingent_order) => contingent_order,
                 None => panic!(
                     "Cannot find OCO contingent order for client_order_id: {client_order_id}"
@@ -495,7 +491,7 @@ impl OrderManager {
             };
 
             if !self.should_manage_order(&contingent_order)
-                || client_order_id == order.client_order_id()
+                || client_order_id == &order.client_order_id()
                 || contingent_order.is_closed()
             {
                 continue;

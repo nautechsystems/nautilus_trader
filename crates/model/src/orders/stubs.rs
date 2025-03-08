@@ -25,7 +25,7 @@ use crate::{
         AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
-    orders::OrderTestBuilder,
+    orders::{Order, OrderTestBuilder},
     types::{Money, Price, Quantity},
 };
 

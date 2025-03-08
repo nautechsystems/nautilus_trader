@@ -289,7 +289,7 @@ impl OrderMatchingCore {
 mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
-        orders::builder::OrderTestBuilder,
+        orders::{Order, builder::OrderTestBuilder},
         types::Quantity,
     };
     use rstest::rstest;

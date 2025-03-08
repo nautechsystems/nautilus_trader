@@ -34,6 +34,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
     identifiers::{AccountId, ClientId, TraderId, Venue},
+    orders::Order,
     types::{AccountBalance, MarginBalance},
 };
 

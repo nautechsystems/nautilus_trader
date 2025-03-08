@@ -49,7 +49,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::{OrderBook, own::OwnOrderBook},
-    orders::{OrderAny, OrderList},
+    orders::{Order, OrderAny, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };

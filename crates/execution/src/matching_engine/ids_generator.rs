@@ -19,7 +19,7 @@ use nautilus_common::cache::Cache;
 use nautilus_model::{
     enums::OmsType,
     identifiers::{PositionId, TradeId, Venue, VenueOrderId},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
 };
 use uuid::Uuid;
 

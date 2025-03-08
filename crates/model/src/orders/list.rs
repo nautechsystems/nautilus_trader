@@ -18,7 +18,7 @@ use std::fmt::Display;
 use nautilus_core::{UnixNanos, correctness::check_slice_not_empty};
 use serde::{Deserialize, Serialize};
 
-use super::any::OrderAny;
+use super::{Order, OrderAny};
 use crate::identifiers::{InstrumentId, OrderListId, StrategyId};
 
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]

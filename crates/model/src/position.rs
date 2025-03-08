@@ -533,7 +533,7 @@ mod tests {
         events::OrderFilled,
         identifiers::{AccountId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4},
         instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny, stubs::*},
-        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         stubs::*,
         types::{Money, Price, Quantity},

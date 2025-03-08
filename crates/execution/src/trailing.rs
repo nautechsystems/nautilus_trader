@@ -17,7 +17,7 @@
 use anyhow;
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
-    orders::{OrderAny, base::OrderError},
+    orders::{Order, OrderAny, OrderError},
     types::Price,
 };
 use rust_decimal::{Decimal, prelude::*};

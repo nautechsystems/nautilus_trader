@@ -559,7 +559,7 @@ impl OrderMatchingEngine {
 
                 if let Some(linked_order_ids) = order.linked_order_ids() {
                     for client_order_id in linked_order_ids {
-                        match cache_borrow.order(&client_order_id) {
+                        match cache_borrow.order(client_order_id) {
                             Some(contingent_order)
                                 if (order.contingency_type().unwrap() == ContingencyType::Oco
                                     || order.contingency_type().unwrap()
@@ -1534,7 +1534,7 @@ impl OrderMatchingEngine {
             match contingency_type {
                 ContingencyType::Oto => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
-                        for client_order_id in &linked_orders_ids {
+                        for client_order_id in linked_orders_ids {
                             let mut child_order = match self.cache.borrow().order(client_order_id) {
                                 Some(child_order) => child_order.clone(),
                                 None => panic!("Order {client_order_id} not found in cache"),
@@ -1590,7 +1590,7 @@ impl OrderMatchingEngine {
                 }
                 ContingencyType::Oco => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
-                        for client_order_id in &linked_orders_ids {
+                        for client_order_id in linked_orders_ids {
                             let child_order = match self.cache.borrow().order(client_order_id) {
                                 Some(child_order) => child_order.clone(),
                                 None => panic!("Order {client_order_id} not found in cache"),
@@ -1611,7 +1611,7 @@ impl OrderMatchingEngine {
                 }
                 ContingencyType::Ouo => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
-                        for client_order_id in &linked_orders_ids {
+                        for client_order_id in linked_orders_ids {
                             let mut child_order = match self.cache.borrow().order(client_order_id) {
                                 Some(child_order) => child_order.clone(),
                                 None => panic!("Order {client_order_id} not found in cache"),
@@ -2059,7 +2059,7 @@ impl OrderMatchingEngine {
     fn update_contingent_order(&mut self, order: &OrderAny) {
         log::debug!("Updating OUO orders from {}", order.client_order_id());
         if let Some(linked_order_ids) = order.linked_order_ids() {
-            for client_order_id in &linked_order_ids {
+            for client_order_id in linked_order_ids {
                 let mut child_order = match self.cache.borrow().order(client_order_id) {
                     Some(order) => order.clone(),
                     None => panic!("Order {client_order_id} not found in cache."),
@@ -2088,7 +2088,7 @@ impl OrderMatchingEngine {
 
     fn cancel_contingent_orders(&mut self, order: &OrderAny) {
         if let Some(linked_order_ids) = order.linked_order_ids() {
-            for client_order_id in &linked_order_ids {
+            for client_order_id in linked_order_ids {
                 let contingent_order = match self.cache.borrow().order(client_order_id) {
                     Some(order) => order.clone(),
                     None => panic!("Cannot find contingent order for {client_order_id}"),

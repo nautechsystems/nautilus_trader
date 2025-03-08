@@ -42,6 +42,7 @@ bytes = { version = "1.10.1", features = ["serde"] }
 chrono = { version = "=0.4.39", features = ["serde"] }  # Pinned due temporary trait ambiguity with arrow
 chrono-tz = { version = "0.10.1" }
 derive_builder = "0.20.2"
+enum_dispatch = "0.3.13"
 futures = "0.3.31"
 futures-util = "0.3.31"
 heck = "0.5.0"

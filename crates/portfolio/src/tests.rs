@@ -34,7 +34,7 @@ use nautilus_model::{
         CryptoPerpetual, CurrencyPair, InstrumentAny,
         stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
     },
-    orders::{OrderAny, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderTestBuilder},
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };

@@ -36,7 +36,7 @@ use nautilus_model::{
     events::{AccountState, OrderEventAny, position::PositionEvent},
     identifiers::{InstrumentId, Venue},
     instruments::InstrumentAny,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::{Currency, Money, Price},
 };

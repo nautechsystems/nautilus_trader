@@ -27,8 +27,8 @@ use super::{
 };
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
@@ -36,7 +36,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::OrderError,
-    types::{Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -202,7 +202,7 @@ impl Order for TrailingStopMarketOrder {
         self.last_trade_id
     }
 
-    fn side(&self) -> OrderSide {
+    fn order_side(&self) -> OrderSide {
         self.side
     }
 
@@ -248,6 +248,10 @@ impl Order for TrailingStopMarketOrder {
 
     fn is_quote_quantity(&self) -> bool {
         self.is_quote_quantity
+    }
+
+    fn has_price(&self) -> bool {
+        false
     }
 
     fn display_qty(&self) -> Option<Quantity> {
@@ -326,12 +330,20 @@ impl Order for TrailingStopMarketOrder {
         self.init_id
     }
 
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
     fn ts_last(&self) -> UnixNanos {
         self.ts_last
+    }
+
+    fn ts_accepted(&self) -> Option<UnixNanos> {
+        self.ts_accepted
+    }
+
+    fn ts_submitted(&self) -> Option<UnixNanos> {
+        self.ts_submitted
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 
     fn events(&self) -> Vec<&OrderEventAny> {
@@ -344,6 +356,10 @@ impl Order for TrailingStopMarketOrder {
 
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
+    }
+
+    fn commissions(&self) -> &IndexMap<Currency, Money> {
+        &self.commissions
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
@@ -371,19 +387,41 @@ impl Order for TrailingStopMarketOrder {
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity - self.filled_qty;
     }
-}
 
-impl From<OrderAny> for TrailingStopMarketOrder {
-    fn from(order: OrderAny) -> TrailingStopMarketOrder {
-        match order {
-            OrderAny::TrailingStopMarket(order) => order,
-            _ => {
-                panic!(
-                    "Invalid `OrderAny` not `{}`, was {order:?}",
-                    stringify!(TrailingStopMarketOrder),
-                )
-            }
-        }
+    fn is_triggered(&self) -> Option<bool> {
+        Some(self.is_triggered)
+    }
+
+    fn set_position_id(&mut self, position_id: Option<PositionId>) {
+        self.position_id = position_id;
+    }
+
+    fn set_quantity(&mut self, quantity: Quantity) {
+        self.quantity = quantity;
+    }
+
+    fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
+        self.leaves_qty = leaves_qty;
+    }
+
+    fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
+        self.emulation_trigger = emulation_trigger;
+    }
+
+    fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
+        self.is_quote_quantity = is_quote_quantity;
+    }
+
+    fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
+        self.liquidity_side = Some(liquidity_side)
+    }
+
+    fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.core.would_reduce_only(side, position_qty)
+    }
+
+    fn previous_status(&self) -> Option<OrderStatus> {
+        self.core.previous_status
     }
 }
 
