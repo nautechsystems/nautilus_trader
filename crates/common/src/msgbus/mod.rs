@@ -72,7 +72,7 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
 /// Publish a message to a topic.
 pub fn publish(topic: &Ustr, message: &dyn Any) {
     log::trace!(
-        "Publishing topic '{topic}' {message:?} {}",
+        "Publishing topic '{topic}' {message:?} at {}",
         get_message_bus().borrow().memory_address()
     );
     let matching_subs = get_message_bus().borrow().matching_subscriptions(topic);
@@ -127,7 +127,7 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
 
     let sub = Subscription::new(topic.as_ref(), handler, priority);
     if msgbus_ref_mut.subscriptions.contains_key(&sub) {
-        log::error!("{sub:?} already exists.");
+        log::error!("{sub:?} already exists");
         return;
     }
 
