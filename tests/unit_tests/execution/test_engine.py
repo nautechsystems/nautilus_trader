@@ -3478,3 +3478,49 @@ class TestExecutionEngine:
         assert (
             self.cache.own_bid_orders(instrument.id) == {}
         ), "Own book cache should be empty after overfill"
+
+    def test_own_book_order_denied_removes_from_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Submit an order which will be denied by the RiskEngine
+        order1 = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000_000_000),  # <-- Size exceeds maximum
+            price=Price.from_str("1.00000"),
+        )
+
+        strategy.submit_order(order1)
+        assert self.cache.own_order_book(instrument.id) is None  # OwnBook not yet created
+
+        # Submit a valid order
+        order2 = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+
+        strategy.submit_order(order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book is not None
+        assert order1.status == OrderStatus.DENIED
+        assert order2.status == OrderStatus.SUBMITTED
+        assert len(own_book.bids_to_dict()) == 1
+        assert order2.client_order_id.value == own_book.bid_client_order_ids()[0].value
