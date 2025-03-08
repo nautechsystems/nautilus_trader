@@ -141,12 +141,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
-        AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+
+        if config.calculate_account_state:
+            AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
         # Configuration
         self.config = config
         self.check_order_timeout_secs = 10.0
         self._log.info(f"{config.account_currency=}", LogColor.BLUE)
+        self._log.info(f"{config.calculate_account_state=}", LogColor.BLUE)
         self._log.info(f"{config.request_account_state_secs=}", LogColor.BLUE)
         self._log.info(f"{self.check_order_timeout_secs=}", LogColor.BLUE)
 
@@ -204,17 +207,29 @@ class BetfairExecutionClient(LiveExecutionClient):
         await asyncio.gather(*aws)
 
         self._log.debug("Starting 'update_account_state' task")
-        self._update_account_task = self.create_task(self._update_account_state())
+
+        if self.config.request_account_state_secs:
+            self._update_account_task = self.create_task(self._update_account_state())
+        else:
+            # Request one initial update
+            account_state = await self.request_account_state()
+            self._log.debug(f"Received account state: {account_state}")
+            self._send_account_state(account_state)
 
     async def _reconnect(self) -> None:
         self._log.info("Reconnecting to Betfair")
         self._is_reconnecting = True
+
         if self._update_account_task:
             self._update_account_task.cancel()
             self._update_account_task = None
+
         await self._client.reconnect()
         await self._stream.reconnect()
-        self._update_account_task = self.create_task(self._update_account_state())
+
+        if self.config.request_account_state_secs:
+            self._update_account_task = self.create_task(self._update_account_state())
+
         self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
@@ -222,6 +237,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         if self._update_account_task:
             self._log.debug("Canceling task 'update_account_task'")
             self._update_account_task.cancel()
+            self._update_account_task = None
 
         self._log.info("Closing streaming socket")
         await self._stream.disconnect()
