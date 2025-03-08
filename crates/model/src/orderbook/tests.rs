@@ -1514,6 +1514,274 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     );
 }
 
+#[rstest]
+fn test_book_group_bids_filtered_empty_own_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Add some orders to the public book
+    let bid_order1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from(100),
+        1,
+    );
+    let bid_order2 = BookOrder::new(OrderSide::Buy, Price::from("99.50"), Quantity::from(200), 2);
+    let bid_order3 = BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(300), 3);
+
+    book.add(bid_order1, 0, 1, 1.into());
+    book.add(bid_order2, 0, 2, 2.into());
+    book.add(bid_order3, 0, 3, 3.into());
+
+    // Group bids with no own book
+    let grouped_bids = book.group_bids_filtered(dec!(1.0), None, None, None, None, None);
+
+    // Manually group the expected result
+    assert_eq!(grouped_bids.len(), 2);
+    assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(100)));
+    assert_eq!(grouped_bids.get(&dec!(99.0)), Some(&dec!(500))); // 200 + 300 = 500
+}
+
+#[rstest]
+fn test_book_group_asks_filtered_empty_own_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    // Add some orders to the public book
+    let ask_order1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.00"),
+        Quantity::from(100),
+        1,
+    );
+    let ask_order2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.50"),
+        Quantity::from(200),
+        2,
+    );
+    let ask_order3 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("102.00"),
+        Quantity::from(300),
+        3,
+    );
+
+    book.add(ask_order1, 0, 1, 1.into());
+    book.add(ask_order2, 0, 2, 2.into());
+    book.add(ask_order3, 0, 3, 3.into());
+
+    // Group asks with no own book - check that is_bid flag is correctly set to false
+    let grouped_asks = book.group_asks_filtered(dec!(1.0), None, None, None, None, None);
+
+    // Manually group the expected result
+    assert_eq!(grouped_asks.len(), 2);
+    assert_eq!(grouped_asks.get(&dec!(101.0)), Some(&dec!(100)));
+    assert_eq!(grouped_asks.get(&dec!(102.0)), Some(&dec!(500)));
+}
+
+#[rstest]
+fn test_book_group_bids_filtered_with_own_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    // Add orders to the public book
+    let bid_order1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from(100),
+        1,
+    );
+    let bid_order2 = BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(200), 2);
+
+    book.add(bid_order1, 0, 1, 1.into());
+    book.add(bid_order2, 0, 2, 2.into());
+
+    // Add own orders
+    let own_bid_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("40"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let own_bid_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("99.00"),
+        Quantity::from("50"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    own_book.add(own_bid_order1);
+    own_book.add(own_bid_order2);
+
+    // Group bids with own book
+    let grouped_bids = book.group_bids_filtered(dec!(1.0), None, Some(&own_book), None, None, None);
+
+    // Verify that own orders are correctly filtered from the grouped results
+    assert_eq!(grouped_bids.len(), 2);
+    assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(60))); // 100 - 40 = 60
+    assert_eq!(grouped_bids.get(&dec!(99.0)), Some(&dec!(150))); // 200 - 50 = 150
+}
+
+#[rstest]
+fn test_book_group_asks_filtered_with_own_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    // Add orders to the public book
+    let ask_order1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.00"),
+        Quantity::from(100),
+        1,
+    );
+    let ask_order2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("102.00"),
+        Quantity::from(200),
+        2,
+    );
+
+    book.add(ask_order1, 0, 1, 1.into());
+    book.add(ask_order2, 0, 2, 2.into());
+
+    // Add own orders
+    let own_ask_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Sell,
+        Price::from("101.00"),
+        Quantity::from("40"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let own_ask_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Sell,
+        Price::from("102.00"),
+        Quantity::from("50"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    own_book.add(own_ask_order1);
+    own_book.add(own_ask_order2);
+
+    // Group asks with own book
+    let grouped_asks = book.group_asks_filtered(dec!(1.0), None, Some(&own_book), None, None, None);
+
+    // Verify that own orders are correctly filtered from the grouped results
+    assert_eq!(grouped_asks.len(), 2);
+    assert_eq!(grouped_asks.get(&dec!(101.0)), Some(&dec!(60))); // 100 - 40 = 60
+    assert_eq!(grouped_asks.get(&dec!(102.0)), Some(&dec!(150))); // 200 - 50 = 150
+}
+
+#[rstest]
+fn test_book_group_with_status_filter() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    // Add orders to the public book
+    let bid_order1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from(100),
+        1,
+    );
+
+    book.add(bid_order1, 0, 1, 1.into());
+
+    // Add own orders with different statuses
+    let own_accepted = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("40"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let own_submitted = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("30"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Submitted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    own_book.add(own_accepted);
+    own_book.add(own_submitted);
+
+    // Create a status filter for ACCEPTED orders only
+    let mut status_filter = HashSet::new();
+    status_filter.insert(OrderStatus::Accepted);
+
+    // Group with status filter
+    let grouped_bids = book.group_bids_filtered(
+        dec!(1.0),
+        None,
+        Some(&own_book),
+        Some(status_filter),
+        None,
+        None,
+    );
+
+    // Verify that only ACCEPTED own orders are filtered out
+    assert_eq!(grouped_bids.len(), 1);
+    assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(60))); // 100 - 40 = 60 (only ACCEPTED is filtered)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // OwnOrderBook
 ////////////////////////////////////////////////////////////////////////////////
@@ -2010,8 +2278,8 @@ fn test_own_order_book_bids_and_asks_as_map() {
     );
     book.add(order1);
     book.add(order2);
-    let bids_map = book.bids_as_map(None);
-    let asks_map = book.asks_as_map(None);
+    let bids_map = book.bids_as_map(None, None, None);
+    let asks_map = book.asks_as_map(None, None, None);
 
     assert_eq!(bids_map.len(), 1);
     let bid_price = Price::from("100.00").as_decimal();
@@ -2031,8 +2299,8 @@ fn test_own_order_book_quantity_empty_levels() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let book = OwnOrderBook::new(instrument_id);
 
-    let bid_quantities = book.bid_quantity(None);
-    let ask_quantities = book.ask_quantity(None);
+    let bid_quantities = book.bid_quantity(None, None, None);
+    let ask_quantities = book.ask_quantity(None, None, None);
 
     assert!(bid_quantities.is_empty());
     assert!(ask_quantities.is_empty());
@@ -2129,12 +2397,12 @@ fn test_own_order_book_bid_ask_quantity() {
     book.add(ask_order1);
     book.add(ask_order2);
 
-    let bid_quantities = book.bid_quantity(None);
+    let bid_quantities = book.bid_quantity(None, None, None);
     assert_eq!(bid_quantities.len(), 2);
     assert_eq!(bid_quantities.get(&dec!(100.00)), Some(&dec!(25)));
     assert_eq!(bid_quantities.get(&dec!(99.50)), Some(&dec!(20)));
 
-    let ask_quantities = book.ask_quantity(None);
+    let ask_quantities = book.ask_quantity(None, None, None);
     assert_eq!(ask_quantities.len(), 1);
     assert_eq!(ask_quantities.get(&dec!(101.00)), Some(&dec!(20)));
 }
@@ -2198,7 +2466,7 @@ fn test_status_filtering_bids_as_map() {
     book.add(order_canceled);
 
     // Test with no filter (should include all orders)
-    let all_orders = book.bids_as_map(None);
+    let all_orders = book.bids_as_map(None, None, None);
     assert_eq!(all_orders.len(), 2); // Two price levels
     assert_eq!(all_orders.get(&dec!(100.00)).unwrap().len(), 2); // Two orders at 100.00
     assert_eq!(all_orders.get(&dec!(99.50)).unwrap().len(), 1); // One order at 99.50
@@ -2206,7 +2474,7 @@ fn test_status_filtering_bids_as_map() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = HashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_orders = book.bids_as_map(Some(filter_submitted));
+    let submitted_orders = book.bids_as_map(Some(filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
     assert_eq!(submitted_orders.get(&dec!(100.00)).unwrap().len(), 1); // One order at 100.00
     assert_eq!(
@@ -2219,7 +2487,7 @@ fn test_status_filtering_bids_as_map() {
     let mut filter_accepted_canceled = HashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
-    let accepted_canceled_orders = book.bids_as_map(Some(filter_accepted_canceled));
+    let accepted_canceled_orders = book.bids_as_map(Some(filter_accepted_canceled), None, None);
     assert_eq!(accepted_canceled_orders.len(), 2); // Two price levels
     assert_eq!(
         accepted_canceled_orders.get(&dec!(100.00)).unwrap().len(),
@@ -2230,7 +2498,7 @@ fn test_status_filtering_bids_as_map() {
     // Filter for non-existent status
     let mut filter_filled = HashSet::new();
     filter_filled.insert(OrderStatus::Filled);
-    let filled_orders = book.bids_as_map(Some(filter_filled));
+    let filled_orders = book.bids_as_map(Some(filter_filled), None, None);
     assert_eq!(filled_orders.len(), 0); // No orders match
 }
 
@@ -2276,14 +2544,14 @@ fn test_status_filtering_asks_as_map() {
     book.add(order_accepted);
 
     // Test with no filter (should include all orders)
-    let all_orders = book.asks_as_map(None);
+    let all_orders = book.asks_as_map(None, None, None);
     assert_eq!(all_orders.len(), 1); // One price level
     assert_eq!(all_orders.get(&dec!(101.00)).unwrap().len(), 2); // Two orders at 101.00
 
     // Filter for just SUBMITTED status
     let mut filter_submitted = HashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_orders = book.asks_as_map(Some(filter_submitted));
+    let submitted_orders = book.asks_as_map(Some(filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
     assert_eq!(submitted_orders.get(&dec!(101.00)).unwrap().len(), 1); // One order at 101.00
     assert_eq!(
@@ -2351,7 +2619,7 @@ fn test_status_filtering_bid_quantity() {
     book.add(order_canceled);
 
     // Test with no filter (should include all orders)
-    let all_quantities = book.bid_quantity(None);
+    let all_quantities = book.bid_quantity(None, None, None);
     assert_eq!(all_quantities.len(), 2); // Two price levels
     assert_eq!(all_quantities.get(&dec!(100.00)), Some(&dec!(25))); // 10 + 15 = 25
     assert_eq!(all_quantities.get(&dec!(99.50)), Some(&dec!(20))); // 20
@@ -2359,7 +2627,7 @@ fn test_status_filtering_bid_quantity() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = HashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_quantities = book.bid_quantity(Some(filter_submitted));
+    let submitted_quantities = book.bid_quantity(Some(filter_submitted), None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
     assert_eq!(submitted_quantities.get(&dec!(100.00)), Some(&dec!(10))); // 10
     assert!(submitted_quantities.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
@@ -2368,7 +2636,8 @@ fn test_status_filtering_bid_quantity() {
     let mut filter_accepted_canceled = HashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
-    let accepted_canceled_quantities = book.bid_quantity(Some(filter_accepted_canceled));
+    let accepted_canceled_quantities =
+        book.bid_quantity(Some(filter_accepted_canceled), None, None);
     assert_eq!(accepted_canceled_quantities.len(), 2); // Two price levels
     assert_eq!(
         accepted_canceled_quantities.get(&dec!(100.00)),
@@ -2439,7 +2708,7 @@ fn test_status_filtering_ask_quantity() {
     book.add(order_canceled);
 
     // Test with no filter (should include all orders)
-    let all_quantities = book.ask_quantity(None);
+    let all_quantities = book.ask_quantity(None, None, None);
     assert_eq!(all_quantities.len(), 2); // Two price levels
     assert_eq!(all_quantities.get(&dec!(101.00)), Some(&dec!(25))); // 10 + 15 = 25
     assert_eq!(all_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20
@@ -2447,7 +2716,7 @@ fn test_status_filtering_ask_quantity() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = HashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_quantities = book.ask_quantity(Some(filter_submitted));
+    let submitted_quantities = book.ask_quantity(Some(filter_submitted), None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
     assert_eq!(submitted_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10
     assert!(submitted_quantities.get(&dec!(102.00)).is_none()); // No SUBMITTED orders at 102.00
@@ -2456,7 +2725,7 @@ fn test_status_filtering_ask_quantity() {
     let mut filter_multiple = HashSet::new();
     filter_multiple.insert(OrderStatus::Submitted);
     filter_multiple.insert(OrderStatus::Canceled);
-    let multiple_quantities = book.ask_quantity(Some(filter_multiple));
+    let multiple_quantities = book.ask_quantity(Some(filter_multiple), None, None);
     assert_eq!(multiple_quantities.len(), 2); // Two price levels
     assert_eq!(multiple_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10 (Submitted only)
     assert_eq!(multiple_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20 (Canceled only)
@@ -2464,6 +2733,672 @@ fn test_status_filtering_ask_quantity() {
     // Check empty price levels are filtered out
     let mut filter_filled = HashSet::new();
     filter_filled.insert(OrderStatus::Filled);
-    let filled_quantities = book.ask_quantity(Some(filter_filled));
+    let filled_quantities = book.ask_quantity(Some(filter_filled), None, None);
     assert_eq!(filled_quantities.len(), 0); // No orders match
+}
+
+#[rstest]
+fn test_own_book_group_empty_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let book = OwnOrderBook::new(instrument_id);
+
+    let grouped_bids = book.group_bids(dec!(1), None, None, None, None);
+    let grouped_asks = book.group_asks(dec!(1), None, None, None, None);
+
+    assert!(grouped_bids.is_empty());
+    assert!(grouped_asks.is_empty());
+}
+
+#[rstest]
+fn test_own_book_group_price_levels() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    // Add several orders at different price levels on the bid side
+    let bid_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("1.1"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let bid_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("1.2"),
+        Quantity::from("20"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let bid_order3 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-3"),
+        Some(VenueOrderId::from("3")),
+        OrderSideSpecified::Buy,
+        Price::from("1.8"),
+        Quantity::from("30"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    // Add several orders at different price levels on the ask side
+    let ask_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-1"),
+        Some(VenueOrderId::from("4")),
+        OrderSideSpecified::Sell,
+        Price::from("2.1"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-2"),
+        Some(VenueOrderId::from("5")),
+        OrderSideSpecified::Sell,
+        Price::from("2.2"),
+        Quantity::from("20"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order3 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-3"),
+        Some(VenueOrderId::from("6")),
+        OrderSideSpecified::Sell,
+        Price::from("2.8"),
+        Quantity::from("30"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    book.add(bid_order1);
+    book.add(bid_order2);
+    book.add(bid_order3);
+    book.add(ask_order1);
+    book.add(ask_order2);
+    book.add(ask_order3);
+
+    // Group with a 0.5 increment
+    let grouped_bids = book.group_bids(dec!(0.5), None, None, None, None);
+    let grouped_asks = book.group_asks(dec!(0.5), None, None, None, None);
+
+    // Check bid grouping
+    assert_eq!(grouped_bids.len(), 2);
+    assert_eq!(grouped_bids.get(&dec!(1.0)), Some(&dec!(30))); // 1.1, 1.2 group to 1.0
+    assert_eq!(grouped_bids.get(&dec!(1.5)), Some(&dec!(30))); // 1.8 groups to 1.5
+
+    // Check ask grouping
+    assert_eq!(grouped_asks.len(), 2);
+    assert_eq!(grouped_asks.get(&dec!(2.5)), Some(&dec!(30))); // 2.1, 2.2 group to 2.5
+    assert_eq!(grouped_asks.get(&dec!(3.0)), Some(&dec!(30))); // 2.8 groups to 3.0
+}
+
+#[rstest]
+fn test_own_book_group_with_depth_limit() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    // Add several orders at different price levels on both sides
+    let orders = [
+        // Bid orders
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-1"),
+            Some(VenueOrderId::from("1")),
+            OrderSideSpecified::Buy,
+            Price::from("1.0"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-2"),
+            Some(VenueOrderId::from("2")),
+            OrderSideSpecified::Buy,
+            Price::from("2.0"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-3"),
+            Some(VenueOrderId::from("3")),
+            OrderSideSpecified::Buy,
+            Price::from("3.0"),
+            Quantity::from("30"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        // Ask orders
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-1"),
+            Some(VenueOrderId::from("4")),
+            OrderSideSpecified::Sell,
+            Price::from("4.0"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-2"),
+            Some(VenueOrderId::from("5")),
+            OrderSideSpecified::Sell,
+            Price::from("5.0"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-3"),
+            Some(VenueOrderId::from("6")),
+            OrderSideSpecified::Sell,
+            Price::from("6.0"),
+            Quantity::from("30"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+    ];
+
+    for order in &orders {
+        book.add(*order);
+    }
+
+    // Group with depth=2 to limit number of levels returned
+    let grouped_bids = book.group_bids(dec!(1.0), Some(2), None, None, None);
+    let grouped_asks = book.group_asks(dec!(1.0), Some(2), None, None, None);
+
+    // Check bid grouping
+    assert_eq!(grouped_bids.len(), 2); // Should only have 2 levels
+    assert_eq!(grouped_bids.get(&dec!(3.0)), Some(&dec!(30))); // Highest bid first
+    assert_eq!(grouped_bids.get(&dec!(2.0)), Some(&dec!(20)));
+    assert!(grouped_bids.get(&dec!(1.0)).is_none()); // Should be excluded due to depth limit
+
+    // Check ask grouping
+    assert_eq!(grouped_asks.len(), 2); // Should only have 2 levels
+    assert_eq!(grouped_asks.get(&dec!(4.0)), Some(&dec!(10))); // Lowest ask first
+    assert_eq!(grouped_asks.get(&dec!(5.0)), Some(&dec!(20)));
+    assert!(grouped_asks.get(&dec!(6.0)).is_none()); // Should be excluded due to depth limit
+}
+
+#[rstest]
+fn test_own_book_group_with_multiple_orders_at_same_level() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    // Add multiple orders at the same price level
+    let bid_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("1.0"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let bid_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("1.0"),
+        Quantity::from("20"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order1 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-1"),
+        Some(VenueOrderId::from("3")),
+        OrderSideSpecified::Sell,
+        Price::from("2.0"),
+        Quantity::from("15"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order2 = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-2"),
+        Some(VenueOrderId::from("4")),
+        OrderSideSpecified::Sell,
+        Price::from("2.0"),
+        Quantity::from("25"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    book.add(bid_order1);
+    book.add(bid_order2);
+    book.add(ask_order1);
+    book.add(ask_order2);
+
+    // Group with a 1.0 increment (same as the price differences)
+    let grouped_bids = book.group_bids(dec!(1.0), None, None, None, None);
+    let grouped_asks = book.group_asks(dec!(1.0), None, None, None, None);
+
+    // Check that orders at the same price level are aggregated correctly
+    assert_eq!(grouped_bids.len(), 1);
+    assert_eq!(grouped_bids.get(&dec!(1.0)), Some(&dec!(30))); // 10 + 20 = 30
+
+    assert_eq!(grouped_asks.len(), 1);
+    assert_eq!(grouped_asks.get(&dec!(2.0)), Some(&dec!(40))); // 15 + 25 = 40
+}
+
+#[rstest]
+fn test_own_book_group_with_larger_group_size() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    // Add orders at different price levels
+    let bid_orders = [
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-1"),
+            Some(VenueOrderId::from("1")),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-2"),
+            Some(VenueOrderId::from("2")),
+            OrderSideSpecified::Buy,
+            Price::from("99.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-3"),
+            Some(VenueOrderId::from("3")),
+            OrderSideSpecified::Buy,
+            Price::from("98.00"),
+            Quantity::from("30"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+    ];
+
+    let ask_orders = [
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-1"),
+            Some(VenueOrderId::from("4")),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-2"),
+            Some(VenueOrderId::from("5")),
+            OrderSideSpecified::Sell,
+            Price::from("102.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-3"),
+            Some(VenueOrderId::from("6")),
+            OrderSideSpecified::Sell,
+            Price::from("103.00"),
+            Quantity::from("30"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+    ];
+
+    for order in &bid_orders {
+        book.add(*order);
+    }
+
+    for order in &ask_orders {
+        book.add(*order);
+    }
+
+    // Group with a larger increment: 2.0
+    let grouped_bids = book.group_bids(dec!(2), None, None, None, None);
+    let grouped_asks = book.group_asks(dec!(2), None, None, None, None);
+
+    // Check bid grouping with larger group size
+    assert_eq!(grouped_bids.len(), 2);
+    assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(10))); // 100.00 alone
+    assert_eq!(grouped_bids.get(&dec!(98.0)), Some(&dec!(50))); // 99.00 + 98.00 = 50
+
+    // Check ask grouping with larger group size
+    assert_eq!(grouped_asks.len(), 2);
+    assert_eq!(grouped_asks.get(&dec!(102.0)), Some(&dec!(30))); // 101.00 + 102.00 = 30
+    assert_eq!(grouped_asks.get(&dec!(104.0)), Some(&dec!(30))); // 103.00 alone, rounded up to 104.00
+}
+
+#[rstest]
+fn test_own_book_group_with_fractional_group_size() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OwnOrderBook::new(instrument_id);
+
+    // Add orders at various precise price levels
+    let bid_orders = [
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-1"),
+            Some(VenueOrderId::from("1")),
+            OrderSideSpecified::Buy,
+            Price::from("1.23"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-2"),
+            Some(VenueOrderId::from("2")),
+            OrderSideSpecified::Buy,
+            Price::from("1.27"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-3"),
+            Some(VenueOrderId::from("3")),
+            OrderSideSpecified::Buy,
+            Price::from("1.43"),
+            Quantity::from("30"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+    ];
+
+    let ask_orders = [
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-1"),
+            Some(VenueOrderId::from("4")),
+            OrderSideSpecified::Sell,
+            Price::from("1.53"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-2"),
+            Some(VenueOrderId::from("5")),
+            OrderSideSpecified::Sell,
+            Price::from("1.57"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-3"),
+            Some(VenueOrderId::from("6")),
+            OrderSideSpecified::Sell,
+            Price::from("1.73"),
+            Quantity::from("30"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+    ];
+
+    for order in &bid_orders {
+        book.add(*order);
+    }
+
+    for order in &ask_orders {
+        book.add(*order);
+    }
+
+    // Group with a fractional increment: 0.1
+    let grouped_bids = book.group_bids(dec!(0.1), None, None, None, None);
+    let grouped_asks = book.group_asks(dec!(0.1), None, None, None, None);
+
+    // Check bid grouping with fractional group size
+    assert_eq!(grouped_bids.len(), 2);
+    assert_eq!(grouped_bids.get(&dec!(1.2)), Some(&dec!(30))); // 1.23 + 1.27 -> 1.2
+    assert_eq!(grouped_bids.get(&dec!(1.4)), Some(&dec!(30))); // 1.43 -> 1.4
+
+    // Check ask grouping with fractional group size
+    assert_eq!(grouped_asks.len(), 2);
+    assert_eq!(grouped_asks.get(&dec!(1.6)), Some(&dec!(30))); // 1.53 + 1.57 -> 1.6
+    assert_eq!(grouped_asks.get(&dec!(1.8)), Some(&dec!(30))); // 1.73 -> 1.8
+}
+
+#[rstest]
+fn test_own_book_group_with_status_and_buffer() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    // Current time is 1000 ns
+    let now = 1000u64;
+
+    // Add orders with different acceptance times
+    let own_recent = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("40"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::from(900), // ts_last is 100 ns ago
+        UnixNanos::from(900), // ts_accepted is 100 ns ago
+        UnixNanos::from(800),
+        UnixNanos::from(800),
+    );
+
+    let own_older = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-2"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("30"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::from(500), // ts_last is 500 ns ago
+        UnixNanos::from(500), // ts_accepted is 500 ns ago
+        UnixNanos::from(400),
+        UnixNanos::from(400),
+    );
+
+    own_book.add(own_recent);
+    own_book.add(own_older);
+
+    // Create a status filter for ACCEPTED orders
+    let mut status_filter = HashSet::new();
+    status_filter.insert(OrderStatus::Accepted);
+
+    // Group with a buffer of 300 ns - only orders accepted before 700 ns should be included
+    let grouped_bids = own_book.group_bids(
+        dec!(1.0),
+        None,
+        Some(status_filter.clone()),
+        Some(300),
+        Some(now),
+    );
+
+    // Only the older order (ts_accepted = 500) should be included in the grouping
+    assert_eq!(grouped_bids.len(), 1);
+    assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(30))); // Only older order is included
+
+    // Test with a smaller buffer of 50 ns - all orders should be included
+    let grouped_all =
+        own_book.group_bids(dec!(1.0), None, Some(status_filter), Some(50), Some(now));
+
+    // Both orders should be included
+    assert_eq!(grouped_all.len(), 1);
+    assert_eq!(grouped_all.get(&dec!(100.0)), Some(&dec!(70))); // 40 + 30 = 70
 }
