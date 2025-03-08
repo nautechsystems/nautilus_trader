@@ -1067,11 +1067,11 @@ wheels = [
 
 [[package]]
 name = "nautilus-ibapi"
-version = "10.19.4"
+version = "10.30.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/09/94/b293e58248ae72b66f3a0fd2ed3a89d75011bc111745f5351aa28d117bd7/nautilus_ibapi-10.19.4.tar.gz", hash = "sha256:fdfae46b9de577d8b7a396c6345c3b60391155f999c80b0c4021968016685aae", size = 62707 }
+sdist = { url = "https://files.pythonhosted.org/packages/04/06/88ffe792be8b2d8b39cde54739fe9c05a8a82254f07e459a43044fae8863/nautilus_ibapi-10.30.1.tar.gz", hash = "sha256:eaad889d37d35e317eaf6a70afa656c79cd3267e4eee7fc883d097ea9ef6445f", size = 68623 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d2/1c/cfbab96ef72ddd22b4668135899ff56b7a87d08780e57a660c16a188f298/nautilus_ibapi-10.19.4-py3-none-any.whl", hash = "sha256:61f40762a0a18ef6fee57212c7092d5f42c22f72cf3a08c052cb2be68af4f413", size = 71867 },
+    { url = "https://files.pythonhosted.org/packages/42/cf/0ac25403435030814e8c60ef20d476acdc27140738f871c8d7f944e033e7/nautilus_ibapi-10.30.1-py3-none-any.whl", hash = "sha256:2aa0df654de46b469962f504541c388a099486c3e9aa5edb55a40e849ca00ed8", size = 77554 },
 ]
 
 [[package]]
@@ -1160,7 +1160,7 @@ requires-dist = [
     { name = "fsspec", specifier = ">=2025.2.0,<2026.0.0" },
     { name = "grpcio", marker = "extra == 'dydx'", specifier = "==1.68.1" },
     { name = "msgspec", specifier = ">=0.19.0,<1.0.0" },
-    { name = "nautilus-ibapi", marker = "extra == 'ib'", specifier = "==10.19.4" },
+    { name = "nautilus-ibapi", marker = "extra == 'ib'", specifier = "==10.30.1" },
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "pandas", specifier = ">=2.2.3,<3.0.0" },
     { name = "protobuf", marker = "extra == 'dydx'", specifier = "==5.29.1" },
