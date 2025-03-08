@@ -11,7 +11,7 @@ name = "nautilus_test_kit"
 crate-type = ["rlib", "staticlib"]
 
 [features]
-default = ["python"]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",

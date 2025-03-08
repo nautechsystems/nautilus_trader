@@ -11,7 +11,7 @@ name = "nautilus_serialization"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
-default = ["python"]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
