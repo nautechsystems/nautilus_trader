@@ -89,6 +89,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Upgraded `datafusion` crate to v45.0.0
 - Upgraded `arrow` and `parquet` crates to v54.2.1
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
+- Upgraded `datafusion` crate to v46.0.0
 - Upgraded `pyo3` crate to v0.23.5
 - Upgraded `tokio` crate to v1.44.0
 
