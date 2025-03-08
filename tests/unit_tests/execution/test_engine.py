@@ -3499,7 +3499,7 @@ class TestExecutionEngine:
         order1 = strategy.order_factory.limit(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100_000_000_000),  # <-- Size exceeds maximum
+            quantity=Quantity.from_int(10_000_000_000),  # <-- Size exceeds maximum for instrument
             price=Price.from_str("1.00000"),
         )
 
