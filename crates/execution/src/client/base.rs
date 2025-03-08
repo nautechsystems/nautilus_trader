@@ -91,11 +91,11 @@ impl BaseExecutionClient {
         }
     }
 
-    pub fn set_connected(&mut self, is_connected: bool) {
+    pub const fn set_connected(&mut self, is_connected: bool) {
         self.is_connected = is_connected;
     }
 
-    pub fn set_account_id(&mut self, account_id: AccountId) {
+    pub const fn set_account_id(&mut self, account_id: AccountId) {
         self.account_id = account_id;
     }
 

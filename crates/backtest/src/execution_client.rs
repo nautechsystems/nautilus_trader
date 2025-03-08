@@ -72,8 +72,8 @@ impl BacktestExecutionClient {
             exchange.borrow().account_type,
             exchange.borrow().base_currency,
             clock.clone(),
-            cache.clone(),
-            msgbus.clone(),
+            cache,
+            msgbus,
         );
 
         if !frozen_account {

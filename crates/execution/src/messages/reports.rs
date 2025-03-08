@@ -29,7 +29,8 @@ pub struct GenerateOrderStatusReport {
 }
 
 impl GenerateOrderStatusReport {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         command_id: UUID4,
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
@@ -56,7 +57,8 @@ pub struct GenerateOrderStatusReports {
 }
 
 impl GenerateOrderStatusReports {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         command_id: UUID4,
         ts_init: UnixNanos,
         open_only: bool,
@@ -67,8 +69,8 @@ impl GenerateOrderStatusReports {
         Self {
             command_id,
             ts_init,
-            instrument_id,
             open_only,
+            instrument_id,
             start,
             end,
         }
@@ -85,7 +87,8 @@ pub struct GenerateFillReports {
 }
 
 impl GenerateFillReports {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         command_id: UUID4,
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
@@ -113,7 +116,8 @@ pub struct GeneratePositionReports {
 }
 
 impl GeneratePositionReports {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         command_id: UUID4,
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
