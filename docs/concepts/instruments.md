@@ -148,7 +148,7 @@ Margin calculations are handled by the `MarginAccount` class. This section expla
 
 ### When margins apply?
 
-Each exchange (e.g., CME or Binance) operates with a specific account types that determine whether margin calculations are applicable.
+Each exchange (e.g., CME or Binance) operates with a specific account type that determines whether margin calculations are applicable.
 When setting up an exchange venue, you'll specify one of these account types:
 
 - `AccountType.MARGIN`: Accounts that use margin calculations, which are explained below.
