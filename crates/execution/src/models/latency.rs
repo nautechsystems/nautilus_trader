@@ -15,7 +15,30 @@
 
 use std::fmt::Display;
 
-pub struct LatencyModel;
+use nautilus_core::UnixNanos;
+
+pub struct LatencyModel {
+    pub base_latency_nanos: UnixNanos,
+    pub insert_latency_nanos: UnixNanos,
+    pub update_latency_nanos: UnixNanos,
+    pub delete_latency_nanos: UnixNanos,
+}
+
+impl LatencyModel {
+    pub fn new(
+        base_latency_nanos: UnixNanos,
+        insert_latency_nanos: UnixNanos,
+        update_latency_nanos: UnixNanos,
+        delete_latency_nanos: UnixNanos,
+    ) -> Self {
+        Self {
+            base_latency_nanos,
+            insert_latency_nanos,
+            update_latency_nanos,
+            delete_latency_nanos,
+        }
+    }
+}
 
 impl Display for LatencyModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

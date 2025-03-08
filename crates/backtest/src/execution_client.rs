@@ -148,7 +148,7 @@ impl ExecutionClient for BacktestExecutionClient {
         );
 
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::SubmitOrder(command));
         Ok(())
     }
@@ -164,42 +164,42 @@ impl ExecutionClient for BacktestExecutionClient {
         }
 
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::SubmitOrderList(command));
         Ok(())
     }
 
     fn modify_order(&self, command: ModifyOrder) -> anyhow::Result<()> {
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::ModifyOrder(command));
         Ok(())
     }
 
     fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()> {
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::CancelOrder(command));
         Ok(())
     }
 
     fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()> {
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::CancelAllOrders(command));
         Ok(())
     }
 
     fn batch_cancel_orders(&self, command: BatchCancelOrders) -> anyhow::Result<()> {
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::BatchCancelOrders(command));
         Ok(())
     }
 
     fn query_order(&self, command: QueryOrder) -> anyhow::Result<()> {
         self.exchange
-            .borrow()
+            .borrow_mut()
             .send(TradingCommand::QueryOrder(command));
         Ok(())
     }
