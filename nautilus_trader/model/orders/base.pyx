@@ -1104,6 +1104,10 @@ cdef class Order:
         self.strategy_id = fill.strategy_id
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
+        if self.ts_accepted == 0:
+            # Set ts_accepted to time of first fill if not previously set
+            self.ts_accepted = fill.ts_event
+
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
 
         # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
