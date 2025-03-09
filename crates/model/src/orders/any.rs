@@ -95,18 +95,6 @@ impl Display for OrderAny {
     }
 }
 
-impl AsRef<StopMarketOrder> for OrderAny {
-    fn as_ref(&self) -> &StopMarketOrder {
-        match self {
-            OrderAny::StopMarket(order) => order,
-            _ => panic!(
-                "Invalid `OrderAny` not `{}`, was {self:?}",
-                stringify!(StopMarketOrder),
-            ),
-        }
-    }
-}
-
 impl From<OrderAny> for PassiveOrderAny {
     fn from(order: OrderAny) -> PassiveOrderAny {
         match order {

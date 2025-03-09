@@ -184,6 +184,7 @@ cdef class Cache(CacheFacade):
     cpdef void delete_strategy(self, Strategy strategy)
 
     cpdef void heartbeat(self, datetime timestamp)
+    cpdef void audit_own_order_books(self)
 
     cdef timedelta _get_timedelta(self, BarType bar_type)
 

@@ -2671,6 +2671,7 @@ class TestExecutionEngine:
         assert self.cache.own_ask_orders(instrument.id, status={OrderStatus.ACCEPTED}) == {
             Decimal("12.0"): [order_ask],
         }
+        self.cache.audit_own_order_books()
 
     def test_position_flip_with_own_order_book(self) -> None:
         # Arrange
@@ -3096,6 +3097,7 @@ class TestExecutionEngine:
         all_orders = self.cache.own_bid_orders(instrument.id)
         all_order_count = sum(len(orders) for orders in all_orders.values())
         assert all_order_count == 4
+        self.cache.audit_own_order_books()
 
     def test_own_book_status_integrity_during_transitions(self) -> None:
         # Arrange
@@ -3504,7 +3506,6 @@ class TestExecutionEngine:
         )
 
         strategy.submit_order(order1)
-        assert self.cache.own_order_book(instrument.id) is None  # OwnBook not yet created
 
         # Submit a valid order
         order2 = strategy.order_factory.limit(
