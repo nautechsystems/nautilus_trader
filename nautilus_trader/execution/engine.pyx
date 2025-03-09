@@ -827,8 +827,7 @@ cdef class ExecutionEngine(Component):
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._cache.add_own_order_book(own_book)
-            if self.debug:
-                self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
+            self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
         return own_book
 
     cdef void _add_own_book_order(self, Order order):

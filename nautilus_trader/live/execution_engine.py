@@ -144,6 +144,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._cmd_queue_task: asyncio.Task | None = None
         self._evt_queue_task: asyncio.Task | None = None
         self._inflight_check_task: asyncio.Task | None = None
+        self._own_books_audit_task: asyncio.Task | None = None
         self._open_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
@@ -156,6 +157,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self.inflight_check_max_retries: int = config.inflight_check_retries
+        self.own_books_audit_interval_secs: float | None = config.own_books_audit_interval_secs
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
         self.open_check_open_only: float | None = config.open_check_open_only
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -167,6 +169,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.own_books_audit_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_open_only=}", LogColor.BLUE)
 
@@ -247,6 +250,17 @@ class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._inflight_check_task
+
+    def get_own_books_audit_task(self) -> asyncio.Task | None:
+        """
+        Return the own books audit task for the engine.
+
+        Returns
+        -------
+        asyncio.Task or ``None``
+
+        """
+        return self._own_books_audit_task
 
     def get_open_check_task(self) -> asyncio.Task | None:
         """
@@ -354,6 +368,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 self._log.debug(f"Scheduled task '{self._inflight_check_task.get_name()}'")
 
+        if self.own_books_audit_interval_secs and not self._own_books_audit_task:
+            self._own_books_audit_task = self._loop.create_task(
+                self._own_books_audit_loop(self.own_books_audit_interval_secs),
+                name="own_books_audit",
+            )
+
         if self.open_check_interval_secs and not self._open_check_task:
             self._open_check_task = self._loop.create_task(
                 self._open_check_loop(self.open_check_interval_secs),
@@ -365,6 +385,11 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug(f"Canceling task '{self._inflight_check_task.get_name()}'")
             self._inflight_check_task.cancel()
             self._inflight_check_task = None
+
+        if self._own_books_audit_task:
+            self._log.debug(f"Canceling task '{self._own_books_audit_task.get_name()}'")
+            self._own_books_audit_task.cancel()
+            self._own_books_audit_task = None
 
         if self._open_check_task:
             self._log.debug(f"Canceling task '{self._open_check_task.get_name()}'")
@@ -462,6 +487,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 self._execute_command(query)
                 self._inflight_check_retries[order.client_order_id] += 1
+
+    async def _own_books_audit_loop(self, interval_secs: float) -> None:
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                self._cache.audit_own_order_books()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'own_books_audit_loop'")
+        except Exception as e:
+            self._log.error(f"Error auditing own books: {e}")
 
     async def _open_check_loop(self, interval_secs: float) -> None:
         try:

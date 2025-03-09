@@ -90,6 +90,10 @@ class TestCache:
         # Arrange, Act, Assert
         assert self.cache.own_order_book(AUDUSD_SIM.id) is None
 
+    def test_audit_own_order_books_with_no_orders(self):
+        # Arrange, Act, Assert
+        self.cache.audit_own_order_books()  # Should not raise
+
     @pytest.mark.parametrize(
         ("price_type"),
         [

@@ -2010,11 +2010,10 @@ cdef class Cache(CacheFacade):
         if update_own_book and should_handle_own_book_order(order):
             own_book = self._own_order_books.get(order.instrument_id)
             if own_book is None:
-                self._log.debug(
-                    f"OwnOrderBook for {order.instrument_id} does not exist to update {order.client_order_id!r}",
-                    LogColor.MAGENTA,
-                )
-                return
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+                own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
+                self._own_order_books[order.instrument_id] = own_book
+                self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
 
             own_book_order = order.to_own_book_order()
 
@@ -4512,6 +4511,58 @@ cdef class Cache(CacheFacade):
             return
 
         self._database.heartbeat(timestamp)
+
+    cpdef void audit_own_order_books(self):
+        """
+        Audit all own order books against public order books.
+
+        Ensures:
+         - Order statuses are synchronized (stale own book orders are updated).
+         - Closed orders are removed from own order books.
+
+        Logs all failures as errors.
+
+        """
+        cdef Order order
+        cdef ClientOrderId client_order_id
+
+        self._log.debug("Starting own book audit", LogColor.MAGENTA)
+        cdef double start_us = time.time() * 1_000_000
+
+        for own_book in self._own_order_books.values():
+            self._log.debug(f"Auditing {own_book} ", LogColor.MAGENTA)
+
+            own_book_orders = own_book.bids_to_list() + own_book.asks_to_list()
+            if own_book_orders:
+                self._log.debug(
+                    f"Auditing {len(own_book_orders)} own book orders", LogColor.MAGENTA,
+                )
+
+            for own_book_order in own_book_orders:
+                client_order_id = ClientOrderId(own_book_order.client_order_id.value)
+                order = self._orders.get(client_order_id)
+                if order is None:
+                    self._log.error(
+                        f"Audit error - {client_order_id!r} in own book was not in cache",
+                    )
+                    continue
+                order_status_pyo3 = order_status_to_pyo3(<OrderStatus>order._fsm.state)
+                if order_status_pyo3 != own_book_order.status:
+                    self._log.error(
+                        f"Audit error - {client_order_id!r} own book status {own_book_order.status} "
+                        f"did not match cached order status {order_status_pyo3}"
+                    )
+                    own_book_order = order.to_own_book_order()
+                    own_book.update(own_book_order)
+                if order.is_closed_c():
+                    self._log.error(
+                        f"Audit error - {client_order_id!r} cached order status already closed, "
+                        f"deleting from own book. {own_book_order!r}"
+                    )
+                    own_book.delete(own_book_order)
+
+        cdef double audit_us = (time.time() * 1_000_000) - start_us
+        self._log.debug(f"Completed own book audit in {int(audit_us)}us", LogColor.MAGENTA)
 
 
 cdef inline dict[Decimal, list[Order]] process_own_order_map(
