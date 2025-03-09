@@ -227,6 +227,20 @@ impl OwnOrderBook {
         self.is_order_in_book(client_order_id)
     }
 
+    #[pyo3(name = "orders_to_list")]
+    fn py_orders_to_list(&self) -> Vec<OwnBookOrder> {
+        let total_orders = self.bids.cache.len() + self.asks.cache.len();
+        let mut all_orders = Vec::with_capacity(total_orders);
+
+        all_orders.extend(
+            self.bids()
+                .flat_map(|level| level.orders.values().cloned())
+                .chain(self.asks().flat_map(|level| level.orders.values().cloned())),
+        );
+
+        all_orders
+    }
+
     #[pyo3(name = "bids_to_list")]
     fn py_bids_to_list(&self) -> Vec<OwnBookOrder> {
         self.bids()

@@ -4523,16 +4523,18 @@ cdef class Cache(CacheFacade):
         Logs all failures as errors.
 
         """
-        cdef Order order
-        cdef ClientOrderId client_order_id
-
         self._log.debug("Starting own book audit", LogColor.MAGENTA)
         cdef double start_us = time.time() * 1_000_000
+
+        cdef:
+            list[object] own_book_orders
+            ClientOrderId client_order_id
+            Order order
 
         for own_book in self._own_order_books.values():
             self._log.debug(f"Auditing {own_book} ", LogColor.MAGENTA)
 
-            own_book_orders = own_book.bids_to_list() + own_book.asks_to_list()
+            own_book_orders = own_book.orders_to_list()
             if own_book_orders:
                 self._log.debug(
                     f"Auditing {len(own_book_orders)} own book orders", LogColor.MAGENTA,
@@ -4546,11 +4548,10 @@ cdef class Cache(CacheFacade):
                         f"Audit error - {client_order_id!r} in own book was not in cache",
                     )
                     continue
-                order_status_pyo3 = order_status_to_pyo3(<OrderStatus>order._fsm.state)
-                if order_status_pyo3 != own_book_order.status:
+                if own_book_order.status.value != <OrderStatus>order._fsm.state:
                     self._log.error(
                         f"Audit error - {client_order_id!r} own book status {own_book_order.status} "
-                        f"did not match cached order status {order_status_pyo3}"
+                        f"did not match cached order status {order.status_string_c()}"
                     )
                     own_book_order = order.to_own_book_order()
                     own_book.update(own_book_order)
