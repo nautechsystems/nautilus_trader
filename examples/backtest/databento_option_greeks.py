@@ -21,7 +21,6 @@
 
 # %%
 # from nautilus_trader.model.data import DataType
-# from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
@@ -46,6 +45,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.loaders import InterestRateProvider
 from nautilus_trader.persistence.loaders import InterestRateProviderConfig
 from nautilus_trader.trading.strategy import Strategy
@@ -300,15 +300,24 @@ results = node.run(raise_exception=True)
 
 # %%
 if stream_data:
-    # 'overwrite_or_ignore' keeps existing data intact, 'delete_matching' overwrites everything, see in pyarrow/dataset.py
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
-        basename_template="part-{i}",
-        partitioning=["date"],
-        # mode=CatalogWriteMode.NEWFILE, # TODO comment partitioning option above to test this writing mode
-        existing_data_behavior="overwrite_or_ignore",
+        mode=CatalogWriteMode.NEWFILE,
     )
+
+    # other possibility, partitioning data by date (because GreeksData contains a date field)
+    # 'overwrite_or_ignore' keeps existing data intact, 'delete_matching' overwrites everything, see in pyarrow/dataset.py
+    # catalog.convert_stream_to_data(
+    #     results[0].instance_id,
+    #     GreeksData,
+    #     partitioning=["date"],
+    #     existing_data_behavior="overwrite_or_ignore",
+    # )
+
+# %%
+# catalog.consolidate_catalog()
+# catalog.consolidate_data(GreeksData, instrument_id=InstrumentId.from_str("ESM4 P5230.GLBX"))
 
 # %% [markdown]
 # ## backtest results
