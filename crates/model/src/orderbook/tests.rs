@@ -2019,6 +2019,16 @@ fn test_client_order_ids_after_operations() {
 }
 
 #[rstest]
+fn test_own_book_display() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let book = OwnOrderBook::new(instrument_id);
+    assert_eq!(
+        book.to_string(),
+        "OwnOrderBook(instrument_id=ETHUSDT-PERP.BINANCE, orders=0, update_count=0)"
+    );
+}
+
+#[rstest]
 fn test_own_book_level_size_and_exposure() {
     let mut level = OwnBookLevel::new(BookPrice::new(
         Price::from("100.00"),
@@ -3401,4 +3411,153 @@ fn test_own_book_group_with_status_and_buffer() {
     // Both orders should be included
     assert_eq!(grouped_all.len(), 1);
     assert_eq!(grouped_all.get(&dec!(100.0)), Some(&dec!(70))); // 40 + 30 = 70
+}
+
+#[rstest]
+fn test_own_book_audit_open_orders_no_removals() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    let bid_order = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let ask_order = OwnBookOrder::new(
+        TraderId::from("TRADER-001"),
+        ClientOrderId::from("ASK-1"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Sell,
+        Price::from("101.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    own_book.add(bid_order);
+    own_book.add(ask_order);
+
+    // Create a set of open order IDs that includes both orders
+    let mut open_order_ids = HashSet::new();
+    open_order_ids.insert(ClientOrderId::from("BID-1"));
+    open_order_ids.insert(ClientOrderId::from("ASK-1"));
+
+    // Audit the book with these IDs
+    own_book.audit_open_orders(&open_order_ids);
+
+    // Verify no orders were removed
+    assert!(own_book.is_order_in_book(&ClientOrderId::from("BID-1")));
+    assert!(own_book.is_order_in_book(&ClientOrderId::from("ASK-1")));
+    assert_eq!(own_book.bid_client_order_ids().len(), 1);
+    assert_eq!(own_book.ask_client_order_ids().len(), 1);
+}
+
+#[rstest]
+fn test_own_book_audit_open_orders_with_removals() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    let orders = [
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-1"),
+            Some(VenueOrderId::from("1")),
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("BID-2"),
+            Some(VenueOrderId::from("2")),
+            OrderSideSpecified::Buy,
+            Price::from("99.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-1"),
+            Some(VenueOrderId::from("3")),
+            OrderSideSpecified::Sell,
+            Price::from("101.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+        OwnBookOrder::new(
+            TraderId::from("TRADER-001"),
+            ClientOrderId::from("ASK-2"),
+            Some(VenueOrderId::from("4")),
+            OrderSideSpecified::Sell,
+            Price::from("102.00"),
+            Quantity::from("20"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ),
+    ];
+
+    for order in &orders {
+        own_book.add(*order);
+    }
+
+    assert_eq!(own_book.bid_client_order_ids().len(), 2);
+    assert_eq!(own_book.ask_client_order_ids().len(), 2);
+
+    // Create a set of open order IDs that only includes one bid and one ask
+    let mut open_order_ids = HashSet::new();
+    open_order_ids.insert(ClientOrderId::from("BID-1"));
+    open_order_ids.insert(ClientOrderId::from("ASK-1"));
+
+    // Audit the book with these IDs
+    own_book.audit_open_orders(&open_order_ids);
+
+    // Verify the missing orders were removed
+    assert!(own_book.is_order_in_book(&ClientOrderId::from("BID-1")));
+    assert!(!own_book.is_order_in_book(&ClientOrderId::from("BID-2")));
+    assert!(own_book.is_order_in_book(&ClientOrderId::from("ASK-1")));
+    assert!(!own_book.is_order_in_book(&ClientOrderId::from("ASK-2")));
+
+    // Check the final counts
+    assert_eq!(own_book.bid_client_order_ids().len(), 1);
+    assert_eq!(own_book.ask_client_order_ids().len(), 1);
 }

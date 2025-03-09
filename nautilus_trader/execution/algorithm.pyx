@@ -233,7 +233,7 @@ cdef class ExecAlgorithm(Actor):
         )
 
         primary.apply(updated)
-        self.cache.update_order(primary, update_own_book=True)
+        self.cache.update_order(primary)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -321,7 +321,7 @@ cdef class ExecAlgorithm(Actor):
             self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
 
-        self.cache.update_order(order, update_own_book=True)
+        self.cache.update_order(order)
 
         # Publish canceled event
         self._msgbus.publish_c(
@@ -1227,10 +1227,11 @@ cdef class ExecAlgorithm(Actor):
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(
@@ -1359,7 +1360,7 @@ cdef class ExecAlgorithm(Actor):
         )
 
         order.apply(updated)
-        self.cache.update_order(order, update_own_book=True)
+        self.cache.update_order(order)
 
     cpdef void cancel_order(self, Order order, ClientId client_id = None):
         """
@@ -1394,10 +1395,11 @@ cdef class ExecAlgorithm(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(

@@ -232,9 +232,10 @@ impl Display for OwnOrderBook {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, update_count={})",
+            "{}(instrument_id={}, orders={}, update_count={})",
             stringify!(OwnOrderBook),
             self.instrument_id,
+            self.bids.cache.len() + self.asks.cache.len(),
             self.update_count,
         )
     }
@@ -425,6 +426,49 @@ impl OwnOrderBook {
     pub fn pprint(&self, num_levels: usize) -> String {
         pprint_own_book(&self.bids, &self.asks, num_levels)
     }
+
+    pub fn audit_open_orders(&mut self, open_order_ids: &HashSet<ClientOrderId>) {
+        log::debug!("Auditing {self}");
+
+        // Audit bids
+        let bids_to_remove: Vec<ClientOrderId> = self
+            .bids
+            .cache
+            .keys()
+            .filter(|&key| !open_order_ids.contains(key))
+            .cloned()
+            .collect();
+
+        // Audit asks
+        let asks_to_remove: Vec<ClientOrderId> = self
+            .asks
+            .cache
+            .keys()
+            .filter(|&key| !open_order_ids.contains(key))
+            .cloned()
+            .collect();
+
+        for client_order_id in bids_to_remove {
+            log_audit_error(&client_order_id);
+            if let Err(e) = self.bids.remove(&client_order_id) {
+                log::error!("{e}");
+            }
+        }
+
+        for client_order_id in asks_to_remove {
+            log_audit_error(&client_order_id);
+            if let Err(e) = self.asks.remove(&client_order_id) {
+                log::error!("{e}");
+            }
+        }
+    }
+}
+
+fn log_audit_error(client_order_id: &ClientOrderId) {
+    log::error!(
+        "Audit error - {} cached order already closed, deleting from own book",
+        client_order_id
+    );
 }
 
 fn filter_orders<'a>(
@@ -581,14 +625,14 @@ impl OwnBookLadder {
 
     /// Deletes an order from the ladder.
     pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.remove(order.client_order_id)
+        self.remove(&order.client_order_id)
     }
 
     /// Removes an order by its ID from the ladder.
-    pub fn remove(&mut self, client_order_id: ClientOrderId) -> anyhow::Result<()> {
-        if let Some(price) = self.cache.remove(&client_order_id) {
+    pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+        if let Some(price) = self.cache.remove(client_order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
-                level.delete(&client_order_id)?;
+                level.delete(client_order_id)?;
                 if level.is_empty() {
                     self.levels.remove(&price);
                 }
