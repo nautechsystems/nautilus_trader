@@ -24,7 +24,7 @@ pub mod handlers;
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{LimitOrderAny, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
+    orders::{LimitOrderAny, Order, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
 };
 

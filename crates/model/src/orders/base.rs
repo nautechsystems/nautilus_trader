@@ -38,7 +38,8 @@ use crate::{
     },
     orderbook::OwnBookOrder,
     orders::{
-        limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
+        LimitOrderAny, PassiveOrderAny, StopOrderAny, limit::LimitOrder,
+        limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
         market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
         stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
         trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
@@ -164,6 +165,9 @@ impl OrderStatus {
 }
 
 #[enum_dispatch(OrderAny)]
+#[enum_dispatch(PassiveOrderAny)]
+#[enum_dispatch(LimitOrderAny)]
+#[enum_dispatch(StopOrderAny)]
 pub trait Order: 'static + Send {
     fn into_any(self) -> OrderAny;
     fn status(&self) -> OrderStatus;
