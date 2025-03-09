@@ -227,6 +227,20 @@ impl OwnOrderBook {
         self.is_order_in_book(client_order_id)
     }
 
+    #[pyo3(name = "bids_to_list")]
+    fn py_bids_to_list(&self) -> Vec<OwnBookOrder> {
+        self.bids()
+            .flat_map(|level| level.orders.values().cloned())
+            .collect()
+    }
+
+    #[pyo3(name = "asks_to_list")]
+    fn py_asks_to_list(&self) -> Vec<OwnBookOrder> {
+        self.asks()
+            .flat_map(|level| level.orders.values().cloned())
+            .collect()
+    }
+
     #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bids_to_dict")]
     fn py_bids_to_dict(

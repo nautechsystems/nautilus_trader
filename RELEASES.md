@@ -138,8 +138,9 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Improved FSM example explanations for beginners (#2351), thanks @stefansimik
 - Refined option greeks docstrings (#2320), thanks @faysou
 - Refined adapters concept documentation (#2358), thanks @faysou
-- Fixed typo in docs/concepts/actors.md (#2422), thanks @Isamaciel
+- Fixed typo in docs/concepts/actors.md (#2422), thanks @lsamaciel
 - Fixed singular noun in docs/concepts/instruments.md (#2424), thanks @lsamaciel
+- Fixed typo in docs/concepts/data.md (#2426), thanks @lsamaciel
 
 ### Deprecations
 None

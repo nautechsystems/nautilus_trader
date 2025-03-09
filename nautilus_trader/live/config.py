@@ -98,6 +98,10 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     inflight_check_retries : NonNegativeInt, default 5
         The number of retry attempts the engine will make to verify the status of an
         in-flight order with the venue, should the initial attempt fail.
+    own_books_audit_interval_secs : NonNegativeFloat, optional
+        The interval (seconds) between auditing all own books against public order books.
+        The audit will ensure all order statuses are in sync and that no closed orders remain in
+        an own book. Logs all failures as errors.
     open_check_interval_secs : PositiveFloat, optional
         The interval (seconds) between checks for open orders at the venue.
         If there is a discrepancy then an order status report is generated and reconciled.
@@ -121,6 +125,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     inflight_check_retries: NonNegativeInt = 5
+    own_books_audit_interval_secs: PositiveFloat | None = None
     open_check_interval_secs: PositiveFloat | None = None
     open_check_open_only: bool = True
     qsize: PositiveInt = 100_000
