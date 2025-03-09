@@ -467,7 +467,7 @@ The following diagram illustrates how raw data is transformed into Nautilus data
 
 ```
 
-Conceretely, this would involve:
+Concretely, this would involve:
 
 - `BinanceOrderBookDeltaDataLoader.load(...)` which reads CSV files provided by Binance from disk, and returns a `pd.DataFrame`.
 - `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`.
