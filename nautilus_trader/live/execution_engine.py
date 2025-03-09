@@ -43,6 +43,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
+from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -794,6 +795,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True  # No further reconciliation
             # Add to cache without determining any position ID initially
             self._cache.add_order(order)
+            if self.manage_own_order_books and py_should_handle_own_book_order(order):
+                self._add_own_book_order(order)
 
         instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:

@@ -3301,6 +3301,7 @@ dependencies = [
  "iai",
  "implied-vol",
  "indexmap",
+ "log",
  "nautilus-core",
  "nautilus-databento",
  "nautilus-test-kit",

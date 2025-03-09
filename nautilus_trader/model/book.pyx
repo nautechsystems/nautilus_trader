@@ -822,3 +822,7 @@ cdef class BookLevel:
 
         """
         return level_exposure(&self._mem)
+
+
+def py_should_handle_own_book_order(Order order) -> bool:
+    return should_handle_own_book_order(order)

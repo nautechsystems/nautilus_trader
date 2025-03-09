@@ -101,7 +101,7 @@ cdef class ExecutionEngine(Component):
     cpdef void _set_order_base_qty(self, Order order, Quantity base_qty)
     cpdef void _deny_order(self, Order order, str reason)
     cpdef object _get_or_init_own_order_book(self, InstrumentId instrument_id)
-    cdef void _add_own_book_order(self, Order order)
+    cpdef void _add_own_book_order(self, Order order)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

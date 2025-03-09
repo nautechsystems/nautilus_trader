@@ -812,8 +812,8 @@ cdef class ExecutionEngine(Component):
             ts_init=self._clock.timestamp_ns(),
         )
         order.apply(denied)
+        self._cache.update_order(order)
 
-        self._cache.update_order(order)  # Order not yet added to own book
         self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
@@ -830,7 +830,7 @@ cdef class ExecutionEngine(Component):
             self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
         return own_book
 
-    cdef void _add_own_book_order(self, Order order):
+    cpdef void _add_own_book_order(self, Order order):
         own_book = self._get_or_init_own_order_book(order.instrument_id)
         own_book_order = order.to_own_book_order()
         own_book.add(own_book_order)
@@ -1143,9 +1143,11 @@ cdef class ExecutionEngine(Component):
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
+            if should_handle_own_book_order(order):
+                self._cache.update_own_order_book(order)
             return
-        finally:
-            self._cache.update_order(order, update_own_book=self.manage_own_order_books)
+
+        self._cache.update_order(order)
 
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",

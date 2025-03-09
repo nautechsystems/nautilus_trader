@@ -1188,10 +1188,11 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 continue
+
+            self.cache.update_order(order)
 
         cdef CancelAllOrders command = CancelAllOrders(
             trader_id=self.trader_id,
@@ -1421,10 +1422,11 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return None  # Cannot send command
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(
@@ -1462,10 +1464,11 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order, update_own_book=True)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return None  # Cannot send command
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(
