@@ -16,7 +16,6 @@
 from decimal import Decimal
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -323,12 +322,6 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 BinanceFuturesContractType.NEXT_MONTH,
                 BinanceFuturesContractType.NEXT_QUARTER,
             ):
-                expiry_date_part = symbol_info.symbol.partition("_")[2]
-                expiration = pd.to_datetime(expiry_date_part, format="%y%m%d", utc=True)
-                expiration += pd.Timedelta(hours=8)
-
-                activation = expiration - pd.Timedelta(days=90)  # TODO: Improve accuracy
-
                 instrument = CryptoFuture(
                     instrument_id=instrument_id,
                     raw_symbol=raw_symbol,
@@ -336,8 +329,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
                     is_inverse=False,  # No inverse instruments trade on Binance
-                    activation_ns=activation.value,
-                    expiration_ns=expiration.value,
+                    activation_ns=millis_to_nanos(symbol_info.onboardDate),
+                    expiration_ns=millis_to_nanos(symbol_info.deliveryDate),
                     price_precision=price_precision,
                     size_precision=size_precision,
                     price_increment=price_increment,

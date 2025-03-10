@@ -36,6 +36,8 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     ----------
     load_cache : bool, default True
         If the cache should be loaded on initialization.
+    manage_own_order_books : bool, default False
+        If the execution engine should maintain own/user order books based on commands and events.
     snapshot_orders : bool, default False
         If order state snapshot lists are persisted to a backing database.
         Snapshots will be taken at every order state update (when events are applied).
@@ -52,17 +54,15 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         available in the cache.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
-    portfolio_bar_updates : bool, default True
-        If external bars should be considered to update portfolio unrealized and realized pnls.
 
     """
 
     load_cache: bool = True
+    manage_own_order_books: bool = False
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval_secs: PositiveFloat | None = None
     debug: bool = False
-    portfolio_bar_updates: bool = True
 
 
 class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):

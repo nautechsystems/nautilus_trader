@@ -56,6 +56,9 @@ cdef class CacheFacade:
     cpdef list bars(self, BarType bar_type)
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
     cpdef OrderBook order_book(self, InstrumentId instrument_id)
+    cpdef object own_order_book(self, InstrumentId instrument_id)
+    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status=*)
+    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status=*)
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
@@ -68,13 +71,30 @@ cdef class CacheFacade:
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id)
     cpdef bint has_bars(self, BarType bar_type)
 
-    cpdef double get_xrate(
+    cpdef get_xrate(
         self,
         Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*,
     )
+    cpdef get_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    )
+    cpdef void set_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        double xrate,
+    )
+    cpdef void clear_mark_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+    )
+    cpdef void clear_mark_xrates(self)
 
 # -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 
@@ -172,6 +192,6 @@ cdef class CacheFacade:
 # -- GREEKS QUERIES ---------------------------------------------------------------------------
 
     cpdef void add_greeks(self, object greeks)
-    cpdef void add_interest_rate_curve(self, object interest_rate_curve)
+    cpdef void add_yield_curve(self, object yield_curve)
     cpdef object greeks(self, InstrumentId instrument_id)
-    cpdef object interest_rate_curve(self, str currency)
+    cpdef object yield_curve(self, str curve_name)

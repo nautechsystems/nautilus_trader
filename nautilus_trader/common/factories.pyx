@@ -331,7 +331,10 @@ cdef class OrderFactory:
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
@@ -430,7 +433,10 @@ cdef class OrderFactory:
         quote_quantity : bool
             If the order quantity is denominated in the quote currency.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
@@ -539,7 +545,10 @@ cdef class OrderFactory:
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
@@ -727,7 +736,10 @@ cdef class OrderFactory:
         quote_quantity : bool
             If the order quantity is denominated in the quote currency.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
@@ -836,7 +848,10 @@ cdef class OrderFactory:
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
@@ -948,7 +963,10 @@ cdef class OrderFactory:
         quote_quantity : bool
             If the order quantity is denominated in the quote currency.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -1070,7 +1088,10 @@ cdef class OrderFactory:
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
@@ -1215,7 +1236,10 @@ cdef class OrderFactory:
         quote_quantity : bool
             If order quantity is denominated in the quote currency.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The emulation trigger type for the entry, as well as the TP and SL bracket orders.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         trigger_instrument_id : InstrumentId, optional
             The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         contingency_type : ContingencyType, default ``OUO``

@@ -79,6 +79,10 @@ cdef class CacheDatabaseFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `keys` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef dict load_all(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `load` must be implemented in the subclass")  # pragma: no cover
+
     cpdef dict load(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `load` must be implemented in the subclass")  # pragma: no cover

@@ -144,11 +144,15 @@ cdef class Strategy(Actor):
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
 
+        oms_type = config.oms_type or OmsType.UNSPECIFIED
+        if isinstance(oms_type, str):
+            oms_type = oms_type_from_str(config.oms_type.upper())
+
         # Configuration
         self._log_events = config.log_events
         self._log_commands = config.log_commands
         self.config = config
-        self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
+        self.oms_type = <OmsType>oms_type
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
@@ -445,7 +449,7 @@ cdef class Strategy(Actor):
 
     cpdef void on_order_emulated(self, OrderEmulated event):
         """
-        Actions to be performed when running and receives an order initialized event.
+        Actions to be performed when running and receives an order emulated event.
 
         Parameters
         ----------
@@ -829,7 +833,7 @@ cdef class Strategy(Actor):
         Submit the given order list with optional position ID, execution algorithm
         and routing instructions.
 
-        A `SubmitOrderList` command with be created and sent to **either** the
+        A `SubmitOrderList` command will be created and sent to **either** the
         `OrderEmulator`, or the `RiskEngine` (depending whether an order is emulated).
 
         If the order list ID is duplicate, or any client order ID is duplicate,
@@ -1184,10 +1188,11 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 continue
+
+            self.cache.update_order(order)
 
         cdef CancelAllOrders command = CancelAllOrders(
             trader_id=self.trader_id,
@@ -1417,10 +1422,11 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
-                return  # Cannot send command
+                return None  # Cannot send command
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(
@@ -1458,10 +1464,11 @@ cdef class Strategy(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return None  # Cannot send command
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(

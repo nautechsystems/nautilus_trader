@@ -18,10 +18,10 @@ import pytest
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
-from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.data.messages import Unsubscribe
+from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -43,7 +43,7 @@ class TestDataMessage:
     def test_data_messages_when_client_id_and_venue_none_raise_value_error(self):
         # Arrange, Act , Assert
         with pytest.raises(ValueError) as e:
-            Subscribe(
+            SubscribeData(
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
@@ -54,7 +54,7 @@ class TestDataMessage:
         assert e.match("Both `client_id` and `venue` were None")
 
         with pytest.raises(ValueError) as e:
-            Unsubscribe(
+            UnsubscribeData(
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
@@ -66,13 +66,17 @@ class TestDataMessage:
 
         with pytest.raises(ValueError) as e:
             handler = []
-            DataRequest(
+            RequestData(
+                data_type=DataType(QuoteTick),
+                start=None,
+                end=None,
+                limit=0,
                 client_id=None,
                 venue=None,
-                data_type=DataType(QuoteTick),
                 callback=handler.append,
                 request_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
+                params=None,
             )
         assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
@@ -94,7 +98,7 @@ class TestDataMessage:
         # Arrange, Act
         command_id = UUID4()
 
-        command = Subscribe(
+        command = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(Data, {"type": "newswire"}),
@@ -106,10 +110,10 @@ class TestDataMessage:
         # Assert
         assert (
             str(command)
-            == "Subscribe(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'}, params={'filter': 'ABC'})"
+            == "SubscribeData(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'}, params={'filter': 'ABC'})"
         )
         assert repr(command) == (
-            f"Subscribe("
+            f"SubscribeData("
             f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=Data{{'type': 'newswire'}}, "
@@ -120,7 +124,7 @@ class TestDataMessage:
         # Arrange, Act
         command_id = UUID4()
 
-        command = Subscribe(
+        command = SubscribeData(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(TradeTick, {"instrument_id": "BTCUSDT"}),
@@ -131,10 +135,10 @@ class TestDataMessage:
         # Assert
         assert (
             str(command)
-            == "Subscribe(client_id=BINANCE, venue=BINANCE, data_type=TradeTick{'instrument_id': 'BTCUSDT'})"
+            == "SubscribeData(client_id=BINANCE, venue=BINANCE, data_type=TradeTick{'instrument_id': 'BTCUSDT'})"
         )
         assert repr(command) == (
-            f"Subscribe("
+            f"SubscribeData("
             f"client_id=BINANCE, "
             f"venue=BINANCE, "
             f"data_type=TradeTick{{'instrument_id': 'BTCUSDT'}}, "
@@ -146,35 +150,33 @@ class TestDataMessage:
         handler = [].append
         request_id = UUID4()
 
-        request = DataRequest(
-            client_id=None,
-            venue=BINANCE,
+        request = RequestData(
             data_type=DataType(
                 Data,
                 metadata={  # str data type is invalid
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
                 },
             ),
+            start=None,
+            end=None,
+            limit=1000,
+            client_id=None,
+            venue=BINANCE,
             callback=handler,
             request_id=request_id,
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Assert
         assert (
             str(request)
-            == "DataRequest(client_id=None, venue=BINANCE, data_type=Data{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"  # noqa
+            == "RequestData(data_type=Data{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, start=None, end=None, "
+            "limit=1000, client_id=None, venue=BINANCE)"
         )
         assert repr(request) == (
-            f"DataRequest("
-            f"client_id=None, "
-            f"venue=BINANCE, "
-            f"data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000}}, "
-            f"callback={handler!r}, "
-            f"id={request_id})"
+            f"RequestData(data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM')}}, "
+            f"start=None, end=None, limit=1000, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
         )
 
     def test_venue_data_request_message_str_and_repr(self):
@@ -182,35 +184,33 @@ class TestDataMessage:
         handler = [].append
         request_id = UUID4()
 
-        request = DataRequest(
-            client_id=None,
-            venue=BINANCE,
+        request = RequestData(
             data_type=DataType(
                 TradeTick,
                 metadata={  # str data type is invalid
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
                 },
             ),
+            start=None,
+            end=None,
+            limit=1000,
+            client_id=None,
+            venue=BINANCE,
             callback=handler,
             request_id=request_id,
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Assert
         assert (
             str(request)
-            == "DataRequest(client_id=None, venue=BINANCE, data_type=TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"  # noqa
+            == "RequestData(data_type=TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, start=None, end=None, "
+            "limit=1000, client_id=None, venue=BINANCE)"
         )
-        assert repr(request) == (
-            f"DataRequest("
-            f"client_id=None, "
-            f"venue=BINANCE, "
-            f"data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000}}, "
-            f"callback={handler!r}, "
-            f"id={request_id})"
+        assert (
+            f"RequestData(data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'limit': 1000}}, "
+            f"start=None, end=None, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
         )
 
     def test_data_response_message_str_and_repr(self):

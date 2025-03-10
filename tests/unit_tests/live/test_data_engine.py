@@ -22,9 +22,9 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
-from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
@@ -108,7 +108,7 @@ class TestLiveDataEngine:
             config=LiveDataEngineConfig(qsize=1),
         )
 
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),
@@ -141,21 +141,17 @@ class TestLiveDataEngine:
         )
 
         handler = []
-        request = DataRequest(
+        request = request = RequestQuoteTicks(
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+            start=None,
+            end=None,
+            limit=1000,
             client_id=ClientId("RANDOM"),
             venue=None,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act
@@ -260,7 +256,7 @@ class TestLiveDataEngine:
         # Arrange
         self.engine.start()
 
-        subscribe = Subscribe(
+        subscribe = SubscribeData(
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),
@@ -284,21 +280,17 @@ class TestLiveDataEngine:
         self.engine.start()
 
         handler = []
-        request = DataRequest(
+        request = RequestQuoteTicks(
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+            start=None,
+            end=None,
+            limit=1000,
             client_id=ClientId("RANDOM"),
             venue=None,
-            data_type=DataType(
-                QuoteTick,
-                metadata={
-                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "start": None,
-                    "end": None,
-                    "limit": 1000,
-                },
-            ),
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params=None,
         )
 
         # Act

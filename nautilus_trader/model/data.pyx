@@ -108,6 +108,7 @@ from nautilus_trader.core.rust.model cimport orderbook_depth10_ask_counts_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_asks_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_bid_counts_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_bids_array
+from nautilus_trader.core.rust.model cimport orderbook_depth10_clone
 from nautilus_trader.core.rust.model cimport orderbook_depth10_eq
 from nautilus_trader.core.rust.model cimport orderbook_depth10_hash
 from nautilus_trader.core.rust.model cimport orderbook_depth10_new
@@ -206,7 +207,7 @@ cpdef list capsule_to_list(capsule):
         elif ptr[i].tag == Data_t_Tag.DELTAS:
             objects.append(deltas_from_mem_c(ptr[i].deltas))
         elif ptr[i].tag == Data_t_Tag.DEPTH10:
-            objects.append(depth10_from_mem_c(ptr[i].depth10))
+            objects.append(depth10_from_mem_c(orderbook_depth10_clone(ptr[i].depth10)))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
             objects.append(quote_from_mem_c(ptr[i].quote))
         elif ptr[i].tag == Data_t_Tag.TRADE:
@@ -226,7 +227,7 @@ cpdef Data capsule_to_data(capsule):
     elif ptr.tag == Data_t_Tag.DELTAS:
         return deltas_from_mem_c(ptr.deltas)
     elif ptr.tag == Data_t_Tag.DEPTH10:
-        return depth10_from_mem_c(ptr.depth10)
+        return depth10_from_mem_c(orderbook_depth10_clone(ptr.depth10))
     elif ptr.tag == Data_t_Tag.QUOTE:
         return quote_from_mem_c(ptr.quote)
     elif ptr.tag == Data_t_Tag.TRADE:
@@ -3108,7 +3109,7 @@ cdef class OrderBookDepth10(Data):
         # It is supposed to be deallocated by the creator
         capsule = pyo3_depth10.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
-        return depth10_from_mem_c(ptr.depth10)
+        return depth10_from_mem_c(orderbook_depth10_clone(ptr.depth10))
 
     @staticmethod
     cdef OrderBookDepth10 from_dict_c(dict values):

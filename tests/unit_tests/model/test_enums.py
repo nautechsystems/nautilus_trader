@@ -897,6 +897,7 @@ class TestPriceType:
             [PriceType.ASK, "ASK"],
             [PriceType.MID, "MID"],
             [PriceType.LAST, "LAST"],
+            [PriceType.MARK, "MARK"],
         ],
     )
     def test_price_type_to_str(self, enum, expected):
@@ -909,9 +910,11 @@ class TestPriceType:
     @pytest.mark.parametrize(
         ("string", "expected"),
         [
+            ["BID", PriceType.BID],
             ["ASK", PriceType.ASK],
             ["MID", PriceType.MID],
             ["LAST", PriceType.LAST],
+            ["MARK", PriceType.MARK],
         ],
     )
     def test_price_type_from_str(self, string, expected):

@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+from enum import unique
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.identifiers import ClientId
@@ -32,3 +34,15 @@ class CatalogDataResult:
     data: list[Data]
     instrument: Instrument | None = None
     client_id: ClientId | None = None
+
+
+@unique
+class CatalogWriteMode(Enum):
+    """
+    Represents a catalog write mode.
+    """
+
+    APPEND = 1
+    PREPEND = 2
+    OVERWRITE = 3
+    NEWFILE = 4

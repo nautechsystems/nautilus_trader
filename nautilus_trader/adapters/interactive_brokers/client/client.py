@@ -24,9 +24,9 @@ from typing import Any
 from ibapi import comm
 from ibapi.client import EClient
 from ibapi.commission_report import CommissionReport
-from ibapi.common import MAX_MSG_LEN
-from ibapi.common import NO_VALID_ID
 from ibapi.common import BarData
+from ibapi.const import MAX_MSG_LEN
+from ibapi.const import NO_VALID_ID
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
 from ibapi.utils import current_fn_name

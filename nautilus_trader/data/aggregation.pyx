@@ -751,7 +751,7 @@ cdef class TimeBarAggregator(BarAggregator):
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
 
-    def get_start_time(self, now: datetime, enable_delay: bool = True) -> datetime:
+    def get_start_time(self, now: datetime) -> datetime:
         """
         Return the start time for the aggregators next bar.
 
@@ -851,19 +851,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"was {bar_aggregation_to_str(aggregation)}",
             )
 
-        if start_time == now:
-            self._skip_first_non_full_bar = False
-
-        if self._add_delay and enable_delay:
-            start_time += timedelta(microseconds=self._composite_bar_build_delay)
-
         return start_time
-
-    cpdef void stop(self):
-        """
-        Stop the bar aggregator.
-        """
-        self._clock.cancel_timer(str(self.bar_type))
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -916,10 +904,16 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cpdef void _set_build_timer(self):
+        cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
-        cdef int step = self.bar_type.spec.step
+
+        if start_time == now:
+            self._skip_first_non_full_bar = False
+
+        if self._add_delay:
+            start_time += timedelta(microseconds=self._composite_bar_build_delay)
 
         if self.bar_type.spec.aggregation != BarAggregation.MONTH:
             self._clock.set_timer(
@@ -942,6 +936,12 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._log.debug(f"Started timer {self._timer_name}")
 
+    cpdef void stop(self):
+        """
+        Stop the bar aggregator.
+        """
+        self._clock.cancel_timer(str(self.bar_type))
+
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
         if self._skip_first_non_full_bar:
             self._builder.reset()
@@ -953,7 +953,7 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef int step = self.bar_type.spec.step
         self._batch_mode = True
 
-        start_time = self.get_start_time(unix_nanos_to_dt(time_ns), enable_delay=False)
+        start_time = self.get_start_time(unix_nanos_to_dt(time_ns))
         self._batch_open_ns = dt_to_unix_nanos(start_time)
 
         if self.bar_type.spec.aggregation != BarAggregation.MONTH:
@@ -963,9 +963,9 @@ cdef class TimeBarAggregator(BarAggregator):
             self._batch_next_close_ns = self._batch_open_ns + self.interval_ns
         else:
             if self._batch_open_ns == time_ns:
-                self._batch_open_ns -= pd.DateOffset(months=step)
+                self._batch_open_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) - pd.DateOffset(months=step))
 
-            self._batch_next_close_ns = self._batch_open_ns + pd.DateOffset(months=step)
+            self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) + pd.DateOffset(months=step))
 
     cdef void _batch_pre_update(self, uint64_t time_ns):
         if time_ns > self._batch_next_close_ns and self._builder.initialized:
@@ -996,9 +996,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
             else:
                 while self._batch_next_close_ns < time_ns:
-                    self._batch_next_close_ns += pd.DateOffset(months=step)
+                    self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) + pd.DateOffset(months=step))
 
-                self._batch_open_ns = self._batch_next_close_ns - pd.DateOffset(months=step)
+                self._batch_open_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) - pd.DateOffset(months=step))
 
         if time_ns == self._batch_next_close_ns:
             # Adjusting the timestamp logic based on interval_type
@@ -1013,7 +1013,7 @@ cdef class TimeBarAggregator(BarAggregator):
             if self.bar_type.spec.aggregation != BarAggregation.MONTH:
                 self._batch_next_close_ns += self.interval_ns
             else:
-                self._batch_next_close_ns += pd.DateOffset(months=step)
+                self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) + pd.DateOffset(months=step))
 
         # Delay to reset of _batch_next_close_ns to allow the creation of a last histo bar
         # when transitioning to regular bars

@@ -33,12 +33,13 @@ async def run():
 
     pyo3_instruments = await http_client.instruments(
         "binance-delivery",
-        start=None,
-        end=None,
-        base_currency=["BTC"],
-        # quote_currency=["USD"],
+        # base_currency=["BTC"],
+        quote_currency=["USD"],
         instrument_type=["perpetual"],
         active=True,
+        # start=pd.Timestamp("2021-01-01").value,
+        # end=pd.Timestamp("2022-01-01").value,
+        # effective=pd.Timestamp("2022-01-01").value,
     )
 
     for inst in pyo3_instruments:

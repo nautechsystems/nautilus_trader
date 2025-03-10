@@ -56,6 +56,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
 from nautilus_trader.persistence.funcs import urisafe_instrument_id
@@ -248,7 +249,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls: type[Data],
         instrument_id: str | None = None,
         basename_template: str = "part-{i}",
-        mode: str = "overwrite",
+        mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
         if isinstance(data[0], CustomData):
@@ -270,7 +271,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             pds.write_dataset(
                 data=table,
                 base_dir=path,
-                basename_template=basename_template,
+                basename_template=f"{basename_template}.parquet",
                 format="parquet",
                 filesystem=self.fs,
                 min_rows_per_group=self.min_rows_per_group,
@@ -284,14 +285,24 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: str,
         fs: fsspec.AbstractFileSystem,
         basename_template: str,
-        mode: str = "overwrite",
+        mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     ) -> None:
-        name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
+        name = basename_template.format(i=0)
         parquet_file = f"{path}/{name}.parquet"
 
+        if mode == CatalogWriteMode.NEWFILE:
+            i = 0
+            while Path(parquet_file).exists():
+                i += 1
+                name = basename_template.format(i=i)
+                parquet_file = f"{path}/{name}.parquet"
+
         # following solution from https://stackoverflow.com/a/70817689
-        if mode != "overwrite" and Path(parquet_file).exists():
+        if (
+            mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND]
+            and Path(parquet_file).exists()
+        ):
             existing_table = pq.read_table(source=parquet_file, pre_buffer=False, memory_map=True)
 
             with pq.ParquetWriter(
@@ -302,10 +313,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             ) as pq_writer:
                 table = table.cast(existing_table.schema)
 
-                if mode == "append":
+                if mode == CatalogWriteMode.APPEND:
                     pq_writer.write_table(existing_table)
                     pq_writer.write_table(table)
-                elif mode == "prepend":
+                elif mode == CatalogWriteMode.PREPEND:
                     pq_writer.write_table(table)
                     pq_writer.write_table(existing_table)
         else:
@@ -320,7 +331,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         data: list[Data | Event] | list[NautilusRustDataType],
         basename_template: str = "part-{i}",
-        mode: str = "overwrite",
+        mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
         """
@@ -339,13 +350,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             The token '{i}' will be replaced with an automatically incremented
             integer as files are partitioned.
             If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
-        mode : str, optional
+        mode : CatalogWriteMode, default 'OVERWRITE'
             The mode to use when writing data and when not using using the "partitioning" option.
             Can be one of the following:
-            - "append": Appends the data to the existing data.
-            - "prepend": Prepends the data to the existing data.
-            - "overwrite": Overwrites the existing data.
-            If not specified, it defaults to 'overwrite'.
+            - CatalogWriteMode.APPEND: Appends the data to the existing data.
+            - CatalogWriteMode.PREPEND: Prepends the data to the existing data.
+            - CatalogWriteMode.OVERWRITE: Overwrites the existing data.
+            - CatalogWriteMode.NEWFILE: Appends the data to the existing data by creating a new file.
         kwargs : Any
             Additional keyword arguments to be passed to the `write_chunk` method.
 
@@ -660,20 +671,22 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         return dataset.to_table(filter=filter_)
 
-    def query_last_timestamp(
+    def query_timestamp_bound(
         self,
         data_cls: type,
         instrument_id: str | None = None,
         bar_type: str | None = None,
         ts_column: str = "ts_init",
+        is_last: bool = True,
     ) -> pd.Timestamp | None:
         if data_cls == Instrument:
             for instrument_type in Instrument.__subclasses__():
-                last_timestamp = self._query_last_timestamp(
+                last_timestamp = self._query_timestamp_bound(
                     data_cls=instrument_type,
                     instrument_id=instrument_id,
                     bar_type=bar_type,
                     ts_column=ts_column,
+                    is_last=is_last,
                 )
 
                 if last_timestamp is not None:
@@ -681,19 +694,21 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             return None
 
-        return self._query_last_timestamp(
+        return self._query_timestamp_bound(
             data_cls=data_cls,
             instrument_id=instrument_id,
             bar_type=bar_type,
             ts_column=ts_column,
+            is_last=is_last,
         )
 
-    def _query_last_timestamp(
+    def _query_timestamp_bound(
         self,
         data_cls: type,
         instrument_id: str | None = None,
         bar_type: str | None = None,
         ts_column: str = "ts_init",
+        is_last: bool = True,
     ) -> pd.Timestamp | None:
         file_prefix = class_to_filename(data_cls)
         dataset_path = f"{self.path}/data/{file_prefix}"
@@ -711,8 +726,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         if dataset is None:
             return None
 
+        query_sort = "descending" if is_last else "ascending"
+
         return time_object_to_dt(
-            dataset.sort_by([(ts_column, "descending")]).head(1)[ts_column].to_pylist()[0],
+            dataset.sort_by([(ts_column, query_sort)]).head(1)[ts_column].to_pylist()[0],
         )
 
     def _build_query(

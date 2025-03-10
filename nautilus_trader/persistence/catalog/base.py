@@ -70,12 +70,13 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def query_last_timestamp(
+    def query_timestamp_bound(
         self,
         data_cls: type,
         instrument_id: str | None = None,
         bar_type: str | None = None,
         ts_column: str = "ts_init",
+        is_last: bool = True,
     ) -> pd.Timestamp | None:
         raise NotImplementedError
 

@@ -21,8 +21,12 @@ import pytz
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.model.functions cimport asset_class_from_str
+from nautilus_trader.model.functions cimport asset_class_to_str
+from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -191,6 +195,30 @@ cdef class CryptoFuture(Instrument):
         self.settlement_currency = settlement_currency
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}"
+            f"(id={self.id.to_str()}, "
+            f"raw_symbol={self.raw_symbol}, "
+            f"asset_class={asset_class_to_str(self.asset_class)}, "
+            f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
+            f"is_inverse={self.is_inverse}, "
+            f"underlying={self.underlying}, "
+            f"quote_currency={self.quote_currency}, "
+            f"settlement_currency={self.settlement_currency}, "
+            f"activation={format_iso8601(self.activation_utc, nanos_precision=False)}, "
+            f"expiration={format_iso8601(self.expiration_utc, nanos_precision=False)}, "
+            f"price_precision={self.price_precision}, "
+            f"price_increment={self.price_increment}, "
+            f"multiplier={self.multiplier}, "
+            f"lot_size={self.lot_size}, "
+            f"margin_init={self.margin_init}, "
+            f"margin_maint={self.margin_maint}, "
+            f"maker_fee={self.maker_fee}, "
+            f"taker_fee={self.taker_fee}, "
+            f"info={self.info})"
+        )
 
     cpdef Currency get_base_currency(self):
         """

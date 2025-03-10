@@ -38,7 +38,7 @@ from nautilus_trader.core.data import Data
 ###################################################################################################
 
 NAUTILUS_VERSION: Final[str]
-USER_AGENT: Final[str]
+NAUTILUS_USER_AGENT: Final[str]
 
 MILLISECONDS_IN_SECOND: Final[int]
 NANOSECONDS_IN_SECOND: Final[int]
@@ -69,6 +69,14 @@ def convert_to_snake_case(input: str) -> str:...
 ###################################################################################################
 # Common
 ###################################################################################################
+
+def get_exchange_rate(
+    from_currency: str,
+    to_currency: str,
+    price_type: PriceType,
+    quotes_bid: dict[str, float],
+    quotes_ask: dict[str, float],
+) -> float | None: ...
 
 # Logging
 
@@ -168,6 +176,7 @@ def ed25519_signature(private_key: bytes, data: str) -> str: ...
 HIGH_PRECISION: Final[bool]
 FIXED_SCALAR: Final[float]
 FIXED_PRECISION: Final[int]
+PRECISION_BYTES: Final[int]
 
 class DataType:
     def __init__(self, type_name: str, metadata: dict[str, str] | None = None) -> None: ...
@@ -932,6 +941,7 @@ class PriceType(Enum):
     ASK = "ASK"
     MID = "MID"
     LAST = "LAST"
+    MARK = "MARK"
 
 class RecordFlag(Enum):
     F_LAST = "F_LAST"
@@ -993,6 +1003,12 @@ class LogColor(Enum):
     CYAN = "CYAN"
     YELLOW = "YELLOW"
     RED = "RED"
+
+class ForexSession(Enum):
+    SYDNEY = "SYDNEY"
+    TOKYO = "TOKYO"
+    LONDON = "LONDON"
+    NEW_YORK = "NEW_YORK"
 
 # Identifiers
 
@@ -3116,7 +3132,7 @@ class OrderBook:
     @property
     def ts_last(self) -> int: ...
     @property
-    def count(self) -> int: ...
+    def update_count(self) -> int: ...
     def reset(self) -> None: ...
     def add(self, order: BookOrder, flags: int, sequence: int, ts_event: int) -> None: ...
     def update(self, order: BookOrder, flags: int, sequence: int, ts_event: int) -> None: ...
@@ -3133,6 +3149,40 @@ class OrderBook:
     def asks_to_dict(self, depth: int | None = None) -> dict[Decimal, Decimal]: ...
     def group_bids(self, group_size: Decimal, depth: int | None = None) -> dict[Decimal, Decimal]: ...
     def group_asks(self, group_size: Decimal, depth: int | None = None) -> dict[Decimal, Decimal]: ...
+    def bids_filtered_to_dict(
+        self,
+        depth: int | None = None,
+        own_book: OwnOrderBook | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def asks_filtered_to_dict(
+        self,
+        depth: int | None = None,
+        own_book: OwnOrderBook | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def group_bids_filtered(
+        self,
+        group_size: Decimal,
+        depth: int | None = None,
+        own_book: OwnOrderBook | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def group_asks_filtered(
+        self,
+        group_size: Decimal,
+        depth: int | None = None,
+        own_book: OwnOrderBook | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
     def best_bid_price(self) -> Price | None: ...
     def best_ask_price(self) -> Price | None: ...
     def best_bid_size(self) -> Quantity | None: ...
@@ -3142,10 +3192,117 @@ class OrderBook:
     def get_avg_px_for_quantity(self, qty: Quantity, order_side: OrderSide) -> float: ...
     def get_quantity_for_price(self, price: Price, order_side: OrderSide) -> float: ...
     def simulate_fills(self, order: BookOrder) -> list[tuple[Price, Quantity]]: ...
-    def pprint(self, num_levels: int) -> str: ...
+    def pprint(self, num_levels: int = 3) -> str: ...
 
 def update_book_with_quote_tick(book: OrderBook, quote: QuoteTick) -> None: ...
 def update_book_with_trade_tick(book: OrderBook, trade: TradeTick) -> None: ...
+
+class OwnBookOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        side: OrderSide,
+        price: Price,
+        size: Quantity,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+        status: OrderStatus,
+        ts_last: int,
+        ts_accepted: int,
+        ts_submitted: int,
+        ts_init: int,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    @property
+    def trader_id(self) -> TraderId: ...
+    @property
+    def client_order_id(self) -> ClientOrderId: ...
+    @property
+    def venue_order_id(self) -> VenueOrderId | None: ...
+    @property
+    def side(self) -> OrderSide: ...
+    @property
+    def price(self) -> Price: ...
+    @property
+    def size(self) -> Quantity: ...
+    @property
+    def order_type(self) -> OrderType: ...
+    @property
+    def time_in_force(self) -> TimeInForce: ...
+    @property
+    def status(self) -> OrderStatus: ...
+    @property
+    def ts_last(self) -> int: ...
+    @property
+    def ts_accepted(self) -> int: ...
+    @property
+    def ts_submitted(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def exposure(self) -> float: ...
+    def signed_size(self) -> float: ...
+
+class OwnOrderBook:
+    def __init__(self, instrument_id: InstrumentId) -> None: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def ts_last(self) -> int: ...
+    @property
+    def update_count(self) -> int: ...
+    def reset(self) -> None: ...
+    def add(self, order: OwnBookOrder) -> None: ...
+    def update(self, order: OwnBookOrder) -> None: ...
+    def delete(self, order: OwnBookOrder) -> None: ...
+    def clear(self) -> None: ...
+    def bid_client_order_ids(self) -> list[ClientOrderId]: ...
+    def ask_client_order_ids(self) -> list[ClientOrderId]: ...
+    def is_order_in_book(self, client_order_id: ClientOrderId) -> bool:...
+    def orders_to_list(self) -> list[OwnBookOrder]: ...
+    def bids_to_list(self) -> list[OwnBookOrder]: ...
+    def asks_to_list(self) -> list[OwnBookOrder]: ...
+    def bids_to_dict(
+        self,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, list[OwnBookOrder]]: ...
+    def asks_to_dict(
+        self,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, list[OwnBookOrder]]: ...
+    def bid_quantity(
+        self,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def ask_quantity(
+        self,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def group_bids(
+        self,
+        group_size: Decimal,
+        depth: int | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def group_asks(
+        self,
+        group_size: Decimal,
+        depth: int | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        ts_now: int | None = None,
+    ) -> dict[Decimal, Decimal]: ...
+    def pprint(self, num_levels: int = 3) -> str: ...
 
 ###################################################################################################
 # Infrastructure
@@ -4625,16 +4782,11 @@ class DatabentoLiveClient:
 def tardis_exchange_from_venue_str(venue_str: str) -> list[str]: ...
 def bar_spec_to_tardis_trade_bar_string(bar_spec: BarSpecification) -> str: ...
 
-def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
-def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
-def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
-def load_tardis_quotes(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[QuoteTick]: ...  # noqa
-def load_tardis_trades(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[TradeTick]: ...  # noqa
-def load_tardis_deltas_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
-def load_tardis_depth10_from_snapshot5_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
-def load_tardis_depth10_from_snapshot25_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
-def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
-def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_deltas(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
+def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
+def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
+def load_tardis_quotes(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[QuoteTick]: ...  # noqa
+def load_tardis_trades(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[TradeTick]: ...  # noqa
 
 class InstrumentMiniInfo:
     def __init__(
@@ -4664,17 +4816,18 @@ class TardisHttpClient:
         timeout_secs: int = 60,
         normalize_symbols: bool = True,
     ) -> None: ...
-    async def instrument(self, exchange: str, symbol: str, start: int | None = None, end: int | None = None, ts_init: int | None = None) -> list[Instrument]: ...  # noqa
     async def instruments(
         self,
         exchange: str,
-        start: int | None = None,
-        end: int | None = None,
+        symbol: str | None = None,
         base_currency: list[str] | None = None,
         quote_currency: list[str] | None = None,
         instrument_type: list[str] | None = None,
         contract_type: list[str] | None = None,
         active: bool | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        effective: int | None = None,
         ts_init: int | None = None,
     ) -> list[Instrument]: ...
 
@@ -4841,14 +4994,17 @@ class GreeksData(Data):
     expiry: int
     forward: float
     expiry_in_years: float
+    multiplier: float
+    quantity: float
+    underlying_price: float
     interest_rate: float
+    cost_of_carry: float
     vol: float
     price: float
     delta: float
     gamma: float
     vega: float
     theta: float
-    quantity: float
     itm_prob: float
 
     def __init__(
@@ -4859,24 +5015,27 @@ class GreeksData(Data):
         is_call: bool = True,
         strike: float = 0.0,
         expiry: int = 0,
-        forward: float = 0.0,
         expiry_in_years: float = 0.0,
+        multiplier: float = 0.0,
+        quantity: float = 0.0,
+        underlying_price: float = 0.0,
         interest_rate: float = 0.0,
+        cost_of_carry: float = 0.0,
         vol: float = 0.0,
         price: float = 0.0,
         delta: float = 0.0,
         gamma: float = 0.0,
         vega: float = 0.0,
         theta: float = 0.0,
-        quantity: float = 0.0,
         itm_prob: float = 0.0,
     ): ...
 
     @classmethod
-    def from_delta(cls, instrument_id: InstrumentId, delta: float) -> GreeksData: ...
+    def from_delta(cls, instrument_id: InstrumentId, delta: float, ts_event = 0) -> GreeksData: ...
 
 
 class PortfolioGreeks(Data):
+    price: float
     delta: float
     gamma: float
     vega: float
@@ -4886,6 +5045,7 @@ class PortfolioGreeks(Data):
         self,
         ts_event: int = 0,
         ts_init: int = 0,
+        price: float = 0.0,
         delta: float = 0.0,
         gamma: float = 0.0,
         vega: float = 0.0,
@@ -4893,20 +5053,7 @@ class PortfolioGreeks(Data):
     ): ...
 
 
-class InterestRateData(Data):
-    curve_name: str
-    interest_rate: float
-
-    def __init__(
-        self,
-        ts_event: int = 0,
-        ts_init: int = 0,
-        curve_name: str = "USD",
-        interest_rate: float = 0.05,
-    ): ...
-
-
-class InterestRateCurveData(Data):
+class YieldCurveData(Data):
     curve_name: str
     tenors: np.ndarray
     interest_rates: np.ndarray
@@ -4925,3 +5072,37 @@ class InterestRateCurveData(Data):
 ###################################################################################################
 
 def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None): ...
+
+###################################################################################################
+# Trading
+###################################################################################################
+
+# Converts a UTC timestamp to the local time for the given Forex session.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the next session start time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_next_start(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the next session end time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_next_end(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the previous session start time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_prev_start(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+
+# Returns the previous session end time in UTC.
+#
+# The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
+# (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
+def fx_prev_end(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...

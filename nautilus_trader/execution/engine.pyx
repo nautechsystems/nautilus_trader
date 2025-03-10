@@ -33,6 +33,7 @@ import time
 from decimal import Decimal
 
 from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
@@ -56,7 +57,10 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -67,6 +71,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderDenied
@@ -147,6 +152,7 @@ cdef class ExecutionEngine(Component):
 
         # Configuration
         self.debug: bool = config.debug
+        self.manage_own_order_books = config.manage_own_order_books
         self.snapshot_orders = config.snapshot_orders
         self.snapshot_positions = config.snapshot_positions
         self.snapshot_positions_interval_secs = config.snapshot_positions_interval_secs or 0
@@ -360,6 +366,18 @@ cdef class ExecutionEngine(Component):
             clients.add(client)
 
         return clients
+
+    cpdef void set_manage_own_order_books(self, bint value):
+        """
+        Set the `manage_own_order_books` setting with the given `value`.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+
+        """
+        self.manage_own_order_books = value
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -643,7 +661,10 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
+        # Manually measuring timestamps in case the engine is using a test clock
         cdef uint64_t ts = int(time.time() * 1000)
+
+        self._cache.clear_index()
 
         self._cache.cache_general()
         self._cache.cache_currencies()
@@ -653,9 +674,18 @@ cdef class ExecutionEngine(Component):
         self._cache.cache_order_lists()
         self._cache.cache_positions()
 
+        # TODO: Uncomment and replace above individual caching methods once implemented
+        # self._cache.cache_all()
         self._cache.build_index()
         self._cache.check_integrity()
         self._set_position_id_counts()
+
+        cdef Order order
+        if self.manage_own_order_books:
+            for order in self._cache.orders():
+                if order.is_closed_c() or not should_handle_own_book_order(order):
+                    continue
+                self._add_own_book_order(order)
 
         self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
 
@@ -782,14 +812,30 @@ cdef class ExecutionEngine(Component):
             ts_init=self._clock.timestamp_ns(),
         )
         order.apply(denied)
-
         self._cache.update_order(order)
+
         self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
         )
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
+
+    cpdef object _get_or_init_own_order_book(self, InstrumentId instrument_id):
+        own_book = self._cache.own_order_book(instrument_id)
+        if own_book is None:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+            own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
+            self._cache.add_own_order_book(own_book)
+            self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
+        return own_book
+
+    cpdef void _add_own_book_order(self, Order order):
+        own_book = self._get_or_init_own_order_book(order.instrument_id)
+        own_book_order = order.to_own_book_order()
+        own_book.add(own_book_order)
+        if self.debug:
+            self._log.debug(f"Added: {own_book_order!r}", LogColor.MAGENTA)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
@@ -858,6 +904,9 @@ cdef class ExecutionEngine(Component):
             base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
             self._set_order_base_qty(order, base_qty)
 
+        if self.manage_own_order_books and should_handle_own_book_order(order):
+            self._add_own_book_order(order)
+
         # Send to execution client
         client.submit_order(command)
 
@@ -895,6 +944,11 @@ cdef class ExecutionEngine(Component):
                     return  # Denied
                 base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
                 self._set_order_base_qty(order, base_qty)
+
+        if self.manage_own_order_books:
+            for order in command.order_list.orders:
+                if should_handle_own_book_order(order):
+                    self._add_own_book_order(order)
 
         # Send to execution client
         client.submit_order_list(command)
@@ -1089,9 +1143,12 @@ cdef class ExecutionEngine(Component):
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
+            if should_handle_own_book_order(order):
+                self._cache.update_own_order_book(order)
             return
 
         self._cache.update_order(order)
+
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",
             msg=event,

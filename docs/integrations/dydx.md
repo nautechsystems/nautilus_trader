@@ -18,10 +18,10 @@ To install the latest `nautilus_trader` package along with the `dydx` dependenci
 pip install -U "nautilus_trader[dydx]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras dydx
+uv install --extra dydx
 ```
 
 ## Examples

@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
+from nautilus_trader.common.enums import UpdateCatalogMode
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
@@ -26,8 +27,8 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
-from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
@@ -182,8 +183,11 @@ cdef class Actor(Component):
         self,
         DataType data_type,
         ClientId client_id,
+        datetime start=*,
+        datetime end=*,
+        int limit=*,
         callback=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_instrument(
@@ -193,7 +197,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_instruments(
@@ -203,13 +207,13 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_order_book_snapshot(
         self,
         InstrumentId instrument_id,
-        int limit,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         dict[str, object] params=*,
@@ -219,9 +223,10 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_trade_ticks(
@@ -229,9 +234,10 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_bars(
@@ -239,9 +245,10 @@ cdef class Actor(Component):
         BarType bar_type,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_aggregated_bars(
@@ -249,11 +256,12 @@ cdef class Actor(Component):
         list bar_types,
         datetime start=*,
         datetime end=*,
+        int limit=*,
         ClientId client_id=*,
         callback=*,
         bint include_external_data=*,
         bint update_subscriptions=*,
-        bint update_catalog=*,
+        update_catalog_mode: UpdateCatalogMode | None = *,
         dict[str, object] params=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)
@@ -296,4 +304,4 @@ cdef class Actor(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command)
-    cdef void _send_data_req(self, DataRequest request)
+    cdef void _send_data_req(self, RequestData request)

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.cache.cache import Cache
@@ -22,6 +24,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import InvalidConfiguration
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -37,7 +40,9 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderDenied
@@ -53,6 +58,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.model.position import Position
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -71,7 +77,7 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class TestExecutionEngine:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
@@ -353,12 +359,12 @@ class TestExecutionEngine:
     def test_given_random_command_logs_and_continues(self) -> None:
         # Arrange
         random = TradingCommand(
-            None,
-            self.trader_id,
-            self.strategy_id,
-            AUDUSD_SIM.id,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            client_id=None,
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=AUDUSD_SIM.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(random)
@@ -2295,3 +2301,1227 @@ class TestExecutionEngine:
         assert not bracket.orders[0].is_quote_quantity
         assert not bracket.orders[1].is_quote_quantity
         assert not bracket.orders[2].is_quote_quantity
+
+    def test_submit_market_should_not_add_to_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert self.cache.own_order_book(order.instrument_id) is None
+
+    @pytest.mark.parametrize(
+        ("time_in_force"),
+        [
+            TimeInForce.FOK,
+            TimeInForce.IOC,
+        ],
+    )
+    def test_submit_ioc_fok_should_not_add_to_own_book(self, time_in_force: TimeInForce) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+            time_in_force=time_in_force,
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert self.cache.own_order_book(order.instrument_id) is None
+
+    def test_submit_order_adds_to_own_book_bid(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        own_book = self.cache.own_order_book(order.instrument_id)
+        assert own_book.update_count == 1
+        assert len(own_book.asks_to_dict()) == 0
+        assert len(own_book.bids_to_dict()) == 1
+        assert len(own_book.bids_to_dict()[Decimal("10.0")]) == 1
+        own_order = own_book.bids_to_dict()[Decimal("10.0")][0]
+        assert own_order.client_order_id.value == order.client_order_id.value
+        assert own_order.price == Decimal("10.0")
+        assert own_order.size == Decimal(100_000)
+        assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
+        assert self.cache.own_bid_orders(order.instrument_id) == {Decimal("10.0"): [order]}
+        assert self.cache.own_ask_orders(order.instrument_id) == {}
+
+    def test_submit_order_adds_to_own_book_ask(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        own_book = self.cache.own_order_book(order.instrument_id)
+        assert own_book.update_count == 1
+        assert len(own_book.asks_to_dict()) == 1
+        assert len(own_book.bids_to_dict()) == 0
+        assert len(own_book.asks_to_dict()[Decimal("11.0")]) == 1
+        own_order = own_book.asks_to_dict()[Decimal("11.0")][0]
+        assert own_order.client_order_id.value == order.client_order_id.value
+        assert own_order.price == Decimal("11.0")
+        assert own_order.size == Decimal(100_000)
+        assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
+        assert self.cache.own_ask_orders(order.instrument_id) == {Decimal("11.0"): [order]}
+        assert self.cache.own_bid_orders(order.instrument_id) == {}
+
+    def test_cancel_order_removes_from_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        strategy.cancel_order(order_bid)
+        strategy.cancel_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_canceled(order_bid))
+        self.exec_engine.process(TestEventStubs.order_canceled(order_ask))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count == 10
+        assert len(own_book.asks_to_dict()) == 0
+        assert len(own_book.bids_to_dict()) == 0
+        assert self.cache.own_bid_orders(instrument.id) == {}
+        assert self.cache.own_ask_orders(instrument.id) == {}
+
+    def test_own_book_status_filtering(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        strategy.cancel_order(order_bid)
+        strategy.cancel_order(order_ask)
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count == 8
+        assert len(own_book.asks_to_dict()) == 1  # Order is there with no filtering
+        assert len(own_book.bids_to_dict()) == 1  # Order is there with no filtering
+        assert (
+            self.cache.own_bid_orders(
+                instrument.id,
+                status={OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED},
+            )
+            == {}
+        )
+        assert (
+            self.cache.own_ask_orders(
+                instrument.id,
+                status={OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED},
+            )
+            == {}
+        )
+
+    def test_filled_order_removes_from_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_filled(order_bid, instrument))
+        self.exec_engine.process(TestEventStubs.order_filled(order_ask, instrument))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count == 8
+        assert len(own_book.asks_to_dict()) == 0
+        assert len(own_book.bids_to_dict()) == 0
+        assert self.cache.own_bid_orders(instrument.id) == {}
+        assert self.cache.own_ask_orders(instrument.id) == {}
+
+    def test_order_updates_in_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        new_bid_price = Price.from_str("9.0")
+        new_ask_price = Price.from_str("12.0")
+        self.exec_engine.process(TestEventStubs.order_updated(order_bid, price=new_bid_price))
+        self.exec_engine.process(TestEventStubs.order_updated(order_ask, price=new_ask_price))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count == 8
+        assert len(own_book.asks_to_dict()) == 1
+        assert len(own_book.bids_to_dict()) == 1
+        assert len(own_book.asks_to_dict()[Decimal("12.0")]) == 1
+        assert len(own_book.bids_to_dict()[Decimal("9.0")]) == 1
+
+        own_order_bid = own_book.bids_to_dict()[Decimal("9.0")][0]
+        assert own_order_bid.client_order_id.value == order_bid.client_order_id.value
+        assert own_order_bid.price == new_bid_price
+        assert own_order_bid.status == nautilus_pyo3.OrderStatus.ACCEPTED
+
+        own_order_ask = own_book.asks_to_dict()[Decimal("12.0")][0]
+        assert own_order_ask.client_order_id.value == order_ask.client_order_id.value
+        assert own_order_ask.price == new_ask_price
+        assert own_order_ask.status == nautilus_pyo3.OrderStatus.ACCEPTED
+
+        assert self.cache.own_bid_orders(instrument.id, status={OrderStatus.ACCEPTED}) == {
+            Decimal("9.0"): [order_bid],
+        }
+        assert self.cache.own_ask_orders(instrument.id, status={OrderStatus.ACCEPTED}) == {
+            Decimal("12.0"): [order_ask],
+        }
+        self.cache.audit_own_order_books()
+
+    def test_position_flip_with_own_order_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create initial long position
+        buy_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.0"),
+        )
+
+        strategy.submit_order(buy_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(buy_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(buy_order))
+        self.exec_engine.process(TestEventStubs.order_filled(buy_order, instrument))
+
+        # The position ID should be generated by the execution engine
+        position_id = PositionId("P-19700101-000000-000-None-1")
+
+        # Check that the position was created
+        original_position = self.cache.position(position_id)
+        assert original_position is not None, "Original position not created"
+
+        # Create larger sell order to flip position
+        sell_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200_000),  # Twice the size to flip position
+            price=Price.from_str("1.1"),
+        )
+
+        # Act
+        strategy.submit_order(sell_order, position_id=position_id)
+        self.exec_engine.process(TestEventStubs.order_submitted(sell_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(sell_order))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(sell_order, instrument, position_id=position_id),
+        )
+
+        # Instead of assuming a specific ID for the flipped position,
+        # let's find which positions exist in the cache
+        positions = self.cache.positions()
+        assert len(positions) == 2, f"Expected 2 positions, found {len(positions)}"
+
+        # The flipped position should be the one that's open
+        flipped_position = None
+        for pos in positions:
+            if pos.id != position_id and pos.is_open:
+                flipped_position = pos
+                break
+
+        assert flipped_position is not None, "Flipped position not found"
+
+        # Assert
+        # Verify position has flipped
+        assert original_position.is_closed
+        assert flipped_position.is_open
+        assert flipped_position.side == PositionSide.SHORT
+        assert flipped_position.quantity == Quantity.from_int(100_000)
+
+        # Verify own order book state
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count > 0
+        assert len(own_book.asks_to_dict()) == 0  # Orders should be removed after fill
+        assert len(own_book.bids_to_dict()) == 0  # Orders should be removed after fill
+
+    def test_own_book_with_crossed_orders(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create a bid above current best ask
+        buy_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.05"),  # Buy at 1.05
+        )
+
+        # Create an ask below the bid
+        sell_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.04"),  # Sell at 1.04 (below the bid)
+        )
+
+        # Act
+        strategy.submit_order(buy_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(buy_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(buy_order))
+
+        strategy.submit_order(sell_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(sell_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(sell_order))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count > 0
+
+        # Verify both orders exist in the book, even though they're "crossed"
+        assert len(own_book.asks_to_dict()) == 1
+        assert len(own_book.bids_to_dict()) == 1
+
+        # Verify by price
+        assert len(own_book.asks_to_dict()[Decimal("1.04")]) == 1
+        assert len(own_book.bids_to_dict()[Decimal("1.05")]) == 1
+
+        # The own book doesn't enforce market integrity rules like not allowing crossed books
+        # because it's just tracking the orders, not matching them
+
+        # Check order status by status filtering
+        active_orders = self.cache.own_bid_orders(instrument.id, status={OrderStatus.ACCEPTED})
+        assert len(active_orders) == 1
+        assert Decimal("1.05") in active_orders
+
+        active_orders = self.cache.own_ask_orders(instrument.id, status={OrderStatus.ACCEPTED})
+        assert len(active_orders) == 1
+        assert Decimal("1.04") in active_orders
+
+    def test_own_book_with_contingent_orders(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create a bracket order with limit entry, limit TP and limit SL
+        bracket = strategy.order_factory.bracket(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            entry_order_type=OrderType.LIMIT,
+            entry_price=Price.from_str("1.00"),  # Limit entry price
+            tp_price=Price.from_str("1.10"),  # Take profit at 1.10
+            sl_trigger_price=Price.from_str(
+                "0.90",
+            ),  # Stop loss at 0.90 (using limit price not trigger)
+            quantity=Quantity.from_int(100_000),
+        )
+
+        # Act
+        strategy.submit_order_list(bracket)
+
+        # Process entry order events
+        entry_order = bracket.orders[0]
+        tp_order = bracket.orders[1]
+        sl_order = bracket.orders[2]
+
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+
+        # Assert - before entry fill
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count > 1
+
+        # Entry order should be in the book as a bid
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("1.00") in own_book.bids_to_dict()
+        assert len(own_book.bids_to_dict()[Decimal("1.00")]) == 1
+
+        # TP order should be in the book as an ask (submitted)
+        assert len(own_book.asks_to_dict()) == 1
+        assert Decimal("1.10") in own_book.asks_to_dict()
+        assert len(own_book.asks_to_dict()[Decimal("1.10")]) == 1
+
+        # Now fill the entry order
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, instrument))
+
+        # Process TP and SL orders - they should be submitted and accepted now
+        self.exec_engine.process(TestEventStubs.order_submitted(tp_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(tp_order))
+        self.exec_engine.process(TestEventStubs.order_submitted(sl_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(sl_order))
+
+        # Assert - after entry fill
+        own_book = self.cache.own_order_book(instrument.id)
+
+        # Entry order should be removed from the book as it's filled
+        assert len(own_book.bids_to_dict()) == 0
+
+        # TP should still be in the book
+        assert len(own_book.asks_to_dict()) == 1
+        assert Decimal("1.10") in own_book.asks_to_dict()
+
+        # Test that contingent orders are linked to the same position
+        position_id = self.cache.position_id(entry_order.client_order_id)
+        assert position_id is not None
+        assert self.cache.position_id(tp_order.client_order_id) == position_id
+        assert self.cache.position_id(sl_order.client_order_id) == position_id
+
+    @pytest.mark.parametrize(
+        ("status, price, process_steps, expected_in_book"),
+        [
+            (
+                OrderStatus.INITIALIZED,
+                "1.00",
+                [],  # No processing steps beyond submission
+                True,  # Should be in book
+            ),
+            (
+                OrderStatus.SUBMITTED,
+                "1.01",
+                [OrderStatus.SUBMITTED],  # Process submission
+                True,  # Should be in book
+            ),
+            (
+                OrderStatus.ACCEPTED,
+                "1.02",
+                [OrderStatus.SUBMITTED, OrderStatus.ACCEPTED],  # Process submission and acceptance
+                True,  # Should be in book
+            ),
+            (
+                OrderStatus.PARTIALLY_FILLED,
+                "1.03",
+                [
+                    OrderStatus.SUBMITTED,
+                    OrderStatus.ACCEPTED,
+                    OrderStatus.PARTIALLY_FILLED,
+                ],  # Partial fill
+                True,  # Should be in book
+            ),
+            (
+                OrderStatus.FILLED,
+                "1.04",
+                [OrderStatus.SUBMITTED, OrderStatus.ACCEPTED, OrderStatus.FILLED],  # Complete fill
+                False,  # Should not be in book (filled)
+            ),
+            (
+                OrderStatus.CANCELED,
+                "1.05",
+                [OrderStatus.SUBMITTED, OrderStatus.ACCEPTED, OrderStatus.CANCELED],  # Cancellation
+                False,  # Should not be in book (canceled)
+            ),
+        ],
+    )
+    def test_own_book_order_status_filtering_parameterized(
+        self,
+        status: OrderStatus,
+        price: str,
+        process_steps: list[OrderStatus],
+        expected_in_book: bool,
+    ) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create the order
+        order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str(price),
+        )
+
+        # Submit the order
+        strategy.submit_order(order)
+
+        # Process the order according to the steps
+        for step in process_steps:
+            if step == OrderStatus.SUBMITTED:
+                self.exec_engine.process(TestEventStubs.order_submitted(order))
+            elif step == OrderStatus.ACCEPTED:
+                self.exec_engine.process(TestEventStubs.order_accepted(order))
+            elif step == OrderStatus.PARTIALLY_FILLED:
+                self.exec_engine.process(
+                    TestEventStubs.order_filled(
+                        order,
+                        instrument,
+                        last_qty=Quantity.from_int(50_000),
+                    ),
+                )
+            elif step == OrderStatus.FILLED:
+                self.exec_engine.process(TestEventStubs.order_filled(order, instrument))
+            elif step == OrderStatus.CANCELED:
+                self.exec_engine.process(TestEventStubs.order_canceled(order))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+
+        # Check if the order is in the book as expected
+        if expected_in_book:
+            assert len(own_book.bids_to_dict()) > 0
+            assert Decimal(price) in own_book.bids_to_dict()
+            filtered_orders = self.cache.own_bid_orders(
+                instrument.id,
+                status={status},
+            )
+            assert Decimal(price) in filtered_orders
+        else:
+            # If we expect the order not to be in the book, check that the price level doesn't exist
+            # or that it doesn't contain our order
+            if Decimal(price) in own_book.bids_to_dict():
+                assert len(own_book.bids_to_dict()[Decimal(price)]) == 0
+
+    def test_own_book_combined_status_filtering(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create orders with different statuses
+        initialized_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00"),
+        )
+
+        submitted_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.01"),
+        )
+
+        accepted_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.02"),
+        )
+
+        partially_filled_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.03"),
+        )
+
+        # Process orders to achieve desired states
+        strategy.submit_order(initialized_order)
+
+        strategy.submit_order(submitted_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(submitted_order))
+
+        strategy.submit_order(accepted_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(accepted_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(accepted_order))
+
+        strategy.submit_order(partially_filled_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(partially_filled_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(partially_filled_order))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                partially_filled_order,
+                instrument,
+                last_qty=Quantity.from_int(50_000),
+            ),
+        )
+
+        # INITIALIZED + SUBMITTED
+        early_statuses = {OrderStatus.INITIALIZED, OrderStatus.SUBMITTED}
+        early_orders = self.cache.own_bid_orders(instrument.id, status=early_statuses)
+        early_order_count = sum(len(orders) for orders in early_orders.values())
+        assert early_order_count == 2
+        assert Decimal("1.00") in early_orders
+        assert Decimal("1.01") in early_orders
+
+        # ACCEPTED + PARTIALLY_FILLED
+        active_statuses = {OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED}
+        active_orders = self.cache.own_bid_orders(instrument.id, status=active_statuses)
+        active_order_count = sum(len(orders) for orders in active_orders.values())
+        assert active_order_count == 2
+        assert Decimal("1.02") in active_orders
+        assert Decimal("1.03") in active_orders
+
+        # ALL orders (no filter)
+        all_orders = self.cache.own_bid_orders(instrument.id)
+        all_order_count = sum(len(orders) for orders in all_orders.values())
+        assert all_order_count == 4
+        self.cache.audit_own_order_books()
+
+    def test_own_book_status_integrity_during_transitions(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create initial orders at different price levels
+        prices: list[str] = ["1.00", "1.01", "1.02"]
+        orders: list[Order] = []
+
+        for price in prices:
+            order = strategy.order_factory.limit(
+                instrument_id=instrument.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+                price=Price.from_str(price),
+            )
+            orders.append(order)
+
+            # Submit and process to ACCEPTED
+            strategy.submit_order(order)
+            self.exec_engine.process(TestEventStubs.order_submitted(order))
+            self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Verify initial state - all orders should be ACCEPTED
+        accepted_orders = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+        )
+        assert len(accepted_orders) == 3
+        for price, order in zip(prices, orders):
+            assert Decimal(price) in accepted_orders
+            assert order.client_order_id in [
+                o.client_order_id for o in accepted_orders[Decimal(price)]
+            ]
+
+        # Test case 1: Order transitions from ACCEPTED to PARTIALLY_FILLED
+        # Partially fill order 1
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                orders[1],
+                instrument,
+                last_qty=Quantity.from_int(50_000),
+                position_id=PositionId("1"),
+            ),
+        )
+
+        # Verify order is now PARTIALLY_FILLED and not ACCEPTED
+        partially_filled_orders = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.PARTIALLY_FILLED},
+        )
+        assert len(partially_filled_orders) == 1
+        assert Decimal(prices[1]) in partially_filled_orders
+
+        accepted_after_partial = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+        )
+        assert len(accepted_after_partial) == 2
+        assert Decimal(prices[1]) not in accepted_after_partial
+
+        # Test case 2: Order transitions from ACCEPTED to CANCELED
+        # Cancel order 2
+        self.exec_engine.process(TestEventStubs.order_canceled(orders[2]))
+
+        # Verify order is removed from book when CANCELED
+        canceled_orders = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.CANCELED},
+        )
+        assert len(canceled_orders) == 0  # Should not appear in the book
+
+        accepted_after_cancel = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+        )
+        assert len(accepted_after_cancel) == 1
+        assert Decimal(prices[2]) not in accepted_after_cancel
+
+        # Test case 3: Order transitions from ACCEPTED to PARTIALLY_FILLED to FILLED
+        # First partial fill
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                orders[0],
+                instrument,
+                last_qty=Quantity.from_int(50_000),
+                trade_id=TradeId("001"),
+            ),
+        )
+
+        # Verify status is now PARTIALLY_FILLED
+        partially_after_first = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.PARTIALLY_FILLED},
+        )
+        assert len(partially_after_first) == 2
+        assert Decimal(prices[0]) in partially_after_first
+
+        # Complete fill (failing test case)
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                orders[0],
+                instrument,
+                last_qty=Quantity.from_int(50_000),  # Remaining quantity
+                trade_id=TradeId("002"),
+            ),
+        )
+
+        partially_after_complete = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.PARTIALLY_FILLED},
+        )
+
+        assert len(partially_after_complete) == 1
+        assert orders[0].status == OrderStatus.FILLED, "Order should be FILLED"
+        assert orders[1].status == OrderStatus.PARTIALLY_FILLED, "Order should be PARTIALLY_FILLED"
+        assert orders[2].status == OrderStatus.CANCELED, "Order should be CANCELED"
+
+        # Check if order exists in own book with any status
+        all_orders = self.cache.own_bid_orders(instrument.id)
+        assert Decimal(prices[1]) in all_orders
+
+        filled_orders = self.cache.own_bid_orders(instrument.id, status={OrderStatus.FILLED})
+        assert len(filled_orders) == 0, "FILLED orders should not appear in the own book"
+
+    def test_own_book_race_conditions_and_edge_cases(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # === Test Case 1: Out of order events ===
+        # Create an order that receives events out of normal sequence
+        out_of_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00"),
+        )
+
+        # 1. Submit but send ACCEPTED before SUBMITTED
+        strategy.submit_order(out_of_order)
+        self.exec_engine.process(TestEventStubs.order_accepted(out_of_order))
+        self.exec_engine.process(TestEventStubs.order_submitted(out_of_order))
+
+        # Verify it's in the book with ACCEPTED status
+        accepted_orders = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+        )
+        assert len(accepted_orders) == 1
+        assert Decimal("1.00") in accepted_orders
+
+        # 2. Send FILLED before PARTIALLY_FILLED (should handle this gracefully)
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                out_of_order,
+                instrument,
+                last_qty=Quantity.from_int(100_000),  # Full fill
+                trade_id=TradeId("001"),
+            ),
+        )
+
+        # Order should be fully filled and removed from book
+        all_orders = self.cache.own_bid_orders(instrument.id)
+        assert Decimal("1.00") not in all_orders, "Filled order should be removed from book"
+
+        # === Test Case 2: Multiple orders at same price level ===
+        same_price_orders = []
+        for i in range(3):
+            order = strategy.order_factory.limit(
+                instrument_id=instrument.id,
+                order_side=OrderSide.SELL,
+                quantity=Quantity.from_int(100_000),
+                price=Price.from_str("1.20"),  # Same price for all
+            )
+            same_price_orders.append(order)
+
+            # Submit and process to ACCEPTED
+            strategy.submit_order(order)
+            self.exec_engine.process(TestEventStubs.order_submitted(order))
+            self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Verify all 3 orders at same price level
+        asks = self.cache.own_ask_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+        )
+        assert Decimal("1.20") in asks
+        assert len(asks[Decimal("1.20")]) == 3
+
+        # Process different status changes for each order
+        # Order 0: Partial fill
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                same_price_orders[0],
+                instrument,
+                last_qty=Quantity.from_int(50_000),
+                trade_id=TradeId("sp1"),
+            ),
+        )
+
+        # Order 1: Cancel
+        self.exec_engine.process(TestEventStubs.order_canceled(same_price_orders[1]))
+
+        # Order 2: Complete fill
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                same_price_orders[2],
+                instrument,
+                last_qty=Quantity.from_int(100_000),
+                trade_id=TradeId("sp2"),
+            ),
+        )
+
+        # Verify correct statuses at the price level
+        asks_after = self.cache.own_ask_orders(instrument.id)
+        assert Decimal("1.20") in asks_after
+
+        # Only the partially filled order should remain
+        assert len(asks_after[Decimal("1.20")]) == 1
+
+        # === Test Case 3: Overlapping bid/ask prices ===
+        # Create crossed book with buy higher than sell
+        crossed_buy = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.10"),  # Higher than sell
+        )
+
+        crossed_sell = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.05"),  # Lower than buy
+        )
+
+        # Submit and process to ACCEPTED
+        strategy.submit_order(crossed_buy)
+        self.exec_engine.process(TestEventStubs.order_submitted(crossed_buy))
+        self.exec_engine.process(TestEventStubs.order_accepted(crossed_buy))
+
+        strategy.submit_order(crossed_sell)
+        self.exec_engine.process(TestEventStubs.order_submitted(crossed_sell))
+        self.exec_engine.process(TestEventStubs.order_accepted(crossed_sell))
+
+        # Verify crossed book exists in own book (should allow this)
+        all_bids = self.cache.own_bid_orders(instrument.id)
+        all_asks = self.cache.own_ask_orders(instrument.id)
+
+        assert Decimal("1.10") in all_bids
+        assert Decimal("1.05") in all_asks
+
+        # === Test Case 4: Rapid order status transitions ===
+        # Create order that will undergo rapid state transitions
+        rapid_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.15"),
+        )
+
+        # Submit and accept
+        strategy.submit_order(rapid_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(rapid_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(rapid_order))
+
+        # Verify in book
+        transitioning_bids = self.cache.own_bid_orders(instrument.id)
+        assert Decimal("1.15") in transitioning_bids
+
+        # Rapid partial fills in sequence
+        fill_sizes = [25_000, 25_000, 25_000, 25_000]  # Four fills to complete the order
+
+        for i, size in enumerate(fill_sizes):
+            self.exec_engine.process(
+                TestEventStubs.order_filled(
+                    rapid_order,
+                    instrument,
+                    last_qty=Quantity.from_int(size),
+                    trade_id=TradeId(f"rapid{i}"),
+                ),
+            )
+
+        # Verify order status in Python object
+        assert rapid_order.status == OrderStatus.FILLED
+
+        # Check that order is no longer in the book
+        current_bids = self.cache.own_bid_orders(instrument.id)
+        assert Decimal("1.15") not in current_bids
+
+    def test_own_book_order_overfill_removes_from_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+
+        # Submit and accept the order
+        strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Verify order is in the own book
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.update_count == 3
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("1.00000") in own_book.bids_to_dict()
+
+        # Partially fill the order with 50% of quantity
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                instrument,
+                last_qty=Quantity.from_int(50_000),
+            ),
+        )
+
+        # Verify order is still in the book with updated status
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        own_book = self.cache.own_order_book(instrument.id)
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("1.00000") in own_book.bids_to_dict()
+
+        # Act - overfill the order (60K more when only 50K remains)
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                instrument,
+                last_qty=Quantity.from_int(60_000),
+                trade_id=TradeId("2"),
+            ),
+        )
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert order.status == OrderStatus.FILLED
+        assert (
+            len(own_book.bids_to_dict()) == 0
+        ), "Order should be removed from own book despite overfill"
+        assert (
+            self.cache.own_bid_orders(instrument.id) == {}
+        ), "Own book cache should be empty after overfill"
+
+    def test_own_book_order_denied_removes_from_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Submit an order which will be denied by the RiskEngine
+        order1 = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10_000_000_000),  # <-- Size exceeds maximum for instrument
+            price=Price.from_str("1.00000"),
+        )
+
+        strategy.submit_order(order1)
+
+        # Submit a valid order
+        order2 = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+
+        strategy.submit_order(order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book is not None
+        assert order1.status == OrderStatus.DENIED
+        assert order2.status == OrderStatus.SUBMITTED
+        assert len(own_book.bids_to_dict()) == 1
+        assert order2.client_order_id.value == own_book.bid_client_order_ids()[0].value

@@ -65,6 +65,7 @@ from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.config import StreamingConfig
+from nautilus_trader.portfolio.config import PortfolioConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.config import NautilusKernelConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
@@ -108,6 +109,7 @@ __all__ = [
     "NonNegativeFloat",
     "NonNegativeInt",
     "OrderEmulatorConfig",
+    "PortfolioConfig",
     "PositiveFloat",
     "PositiveInt",
     "RiskEngineConfig",

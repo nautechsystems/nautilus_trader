@@ -41,6 +41,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currencies import XRP
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -58,6 +59,7 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
@@ -69,6 +71,10 @@ from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.loaders import CSVTickDataLoader
 from nautilus_trader.persistence.loaders import ParquetBarDataLoader
 from nautilus_trader.persistence.loaders import ParquetTickDataLoader
+
+
+# Constants
+NANOSECONDS_IN_SECOND = 1_000_000_000  # 1 billion nanoseconds in a second
 
 
 class TestInstrumentProvider:
@@ -647,7 +653,7 @@ class TestInstrumentProvider:
     def eurusd_future(
         expiry_year: int,
         expiry_month: int,
-        venue_name: str = "GLBX",
+        venue_name: str = "XCME",
     ) -> FuturesContract:
         activation_date = first_friday_two_years_six_months_ago(expiry_year, expiry_month)
         expiration_date = third_friday_of_month(expiry_year, expiry_month)
@@ -1032,6 +1038,76 @@ class TestDataGenerator:
             )
             for idx, row in df.iterrows()
         ]
+
+    @staticmethod
+    def generate_monotonic_bars(
+        instrument: Instrument,
+        first_bar: Bar,
+        bar_count: int = 20,
+        time_change_nanos: int = 60 * NANOSECONDS_IN_SECOND,  # Default to 1 minute
+        price_change_ticks: int = 10,
+        increasing_series: bool = True,
+    ) -> list[Bar]:
+        """
+        Generate a sequence of bars with monotonic price progression.
+
+        This function creates a series of bars with consistent price progression
+        based on the specified parameters. Each subsequent bar's prices change
+        by a constant amount of ticks in the direction specified by `increasing_series`.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for which to generate bars
+        bar_type : BarType
+            The bar type specification for the generated bars
+        first_bar : Bar
+            The first bar in the sequence with initial OHLCV values
+        bar_count : int
+            The total number of bars to generate (including first_bar)
+        time_change_nanos : int
+            The time increment between consecutive bars in nanoseconds
+        price_change_ticks : int
+            The price increment between consecutive bars in ticks
+        increasing_series : bool
+            If True, generates a price series with increasing prices;
+            if False, generates a series with decreasing prices
+
+        Returns
+        -------
+        list[Bar]
+            The list of generated bars with the specified progression
+
+        """
+        # Calculate price change
+        tick_size = instrument.price_increment.as_double()
+        price_change = tick_size * price_change_ticks
+
+        # Increasing or decreasing series
+        if not increasing_series:
+            price_change = -price_change
+
+        # Collection of all generated artificial bars
+        bars = [first_bar]
+
+        # Generate subsequent bars
+        for i in range(bar_count - 1):  # -1 because we already have the first bar
+            prev_bar = bars[-1]  # Get the last bar
+            ts_event = prev_bar.ts_event + time_change_nanos
+            ts_init = prev_bar.ts_init + time_change_nanos
+            next_bar = Bar(
+                bar_type=first_bar.bar_type,
+                open=instrument.make_price(prev_bar.open + price_change),
+                high=instrument.make_price(prev_bar.high + price_change),
+                low=instrument.make_price(prev_bar.low + price_change),
+                close=instrument.make_price(prev_bar.close + price_change),
+                volume=prev_bar.volume,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            bars.append(next_bar)
+
+        return bars
 
 
 def get_test_data_large_path() -> Path:

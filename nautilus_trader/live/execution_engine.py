@@ -15,6 +15,7 @@
 
 import asyncio
 import math
+import traceback
 import uuid
 from asyncio import Queue
 from collections import Counter
@@ -32,6 +33,8 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.execution.reports import ExecutionMassStatus
@@ -40,6 +43,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
+from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -141,6 +145,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._cmd_queue_task: asyncio.Task | None = None
         self._evt_queue_task: asyncio.Task | None = None
         self._inflight_check_task: asyncio.Task | None = None
+        self._own_books_audit_task: asyncio.Task | None = None
         self._open_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
@@ -153,6 +158,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self.inflight_check_max_retries: int = config.inflight_check_retries
+        self.own_books_audit_interval_secs: float | None = config.own_books_audit_interval_secs
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
         self.open_check_open_only: float | None = config.open_check_open_only
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -164,6 +170,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.own_books_audit_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_open_only=}", LogColor.BLUE)
 
@@ -244,6 +251,17 @@ class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._inflight_check_task
+
+    def get_own_books_audit_task(self) -> asyncio.Task | None:
+        """
+        Return the own books audit task for the engine.
+
+        Returns
+        -------
+        asyncio.Task or ``None``
+
+        """
+        return self._own_books_audit_task
 
     def get_open_check_task(self) -> asyncio.Task | None:
         """
@@ -351,6 +369,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 self._log.debug(f"Scheduled task '{self._inflight_check_task.get_name()}'")
 
+        if self.own_books_audit_interval_secs and not self._own_books_audit_task:
+            self._own_books_audit_task = self._loop.create_task(
+                self._own_books_audit_loop(self.own_books_audit_interval_secs),
+                name="own_books_audit",
+            )
+
         if self.open_check_interval_secs and not self._open_check_task:
             self._open_check_task = self._loop.create_task(
                 self._open_check_loop(self.open_check_interval_secs),
@@ -362,6 +386,11 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug(f"Canceling task '{self._inflight_check_task.get_name()}'")
             self._inflight_check_task.cancel()
             self._inflight_check_task = None
+
+        if self._own_books_audit_task:
+            self._log.debug(f"Canceling task '{self._own_books_audit_task.get_name()}'")
+            self._own_books_audit_task.cancel()
+            self._own_books_audit_task = None
 
         if self._open_check_task:
             self._log.debug(f"Canceling task '{self._open_check_task.get_name()}'")
@@ -387,7 +416,7 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_cmd_queue'")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -408,7 +437,7 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_evt_queue'")
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.error(f"{e!r}\n{traceback.format_exc()}")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
@@ -423,7 +452,9 @@ class LiveExecutionEngine(ExecutionEngine):
                 try:
                     await self._check_inflight_orders()
                 except Exception as e:
-                    self._log.error(f"Failed to check in-flight orders: {e}")
+                    self._log.error(
+                        f"Failed to check in-flight orders: {e!r}\n{traceback.format_exc()}",
+                    )
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'inflight_check_loop'")
 
@@ -458,6 +489,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._execute_command(query)
                 self._inflight_check_retries[order.client_order_id] += 1
 
+    async def _own_books_audit_loop(self, interval_secs: float) -> None:
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                self._cache.audit_own_order_books()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'own_books_audit_loop'")
+        except Exception as e:
+            self._log.error(f"Error auditing own books: {e}")
+
     async def _open_check_loop(self, interval_secs: float) -> None:
         try:
             while True:
@@ -486,7 +527,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 clients = self.get_clients_for_orders(open_orders)
 
             tasks = [
-                c.generate_order_status_reports(open_only=self.open_check_open_only)
+                c.generate_order_status_reports(
+                    GenerateOrderStatusReports(
+                        instrument_id=None,
+                        start=None,
+                        end=None,
+                        open_only=self.open_check_open_only,
+                        command_id=UUID4(),
+                        ts_init=self._clock.timestamp_ns(),
+                    ),
+                )
                 for c in clients
             ]
             order_reports_all = await asyncio.gather(*tasks)
@@ -579,7 +629,16 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.debug(f"Position {instrument_id} for {client_id} already reconciled")
                     continue  # Already reconciled
                 self._log.info(f"{position} pending reconciliation")
-                report_tasks.append(client.generate_position_status_reports(instrument_id))
+                position_status_command = GeneratePositionStatusReports(
+                    instrument_id=instrument_id,
+                    start=None,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                report_tasks.append(
+                    client.generate_position_status_reports(position_status_command),
+                )
 
             if report_tasks:
                 # Reconcile specific internal open positions
@@ -736,6 +795,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True  # No further reconciliation
             # Add to cache without determining any position ID initially
             self._cache.add_order(order)
+            if self.manage_own_order_books and py_should_handle_own_book_order(order):
+                self._add_own_book_order(order)
 
         instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:

@@ -16,7 +16,6 @@
 import asyncio
 import decimal
 from decimal import Decimal
-from typing import Any
 
 import msgspec
 import pandas as pd
@@ -48,11 +47,29 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.aggregation import BarAggregator
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
 from nautilus_trader.data.aggregation import VolumeBarAggregator
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
+from nautilus_trader.data.messages import RequestQuoteTicks
+from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -276,17 +293,17 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    async def _subscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
+    async def _subscribe(self, command: SubscribeData) -> None:
+        instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
-                f"Cannot subscribe to `{data_type.type}` no instrument ID in `data_type` metadata",
+                f"Cannot subscribe to `{command.data_type.type}` no instrument ID in `data_type` metadata",
             )
             return
 
-        if data_type.type == BinanceTicker:
+        if command.data_type.type == BinanceTicker:
             await self._ws_client.subscribe_ticker(instrument_id.symbol.value)
-        elif data_type.type == BinanceFuturesMarkPriceUpdate:
+        elif command.data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
                     f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
@@ -296,20 +313,20 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
         else:
             self._log.error(
-                f"Cannot subscribe to {data_type.type} (not implemented)",
+                f"Cannot subscribe to {command.data_type.type} (not implemented)",
             )
 
-    async def _unsubscribe(self, data_type: DataType, params: dict[str, Any] | None = None) -> None:
-        instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
                 "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata",
             )
             return
 
-        if data_type.type == BinanceTicker:
+        if command.data_type.type == BinanceTicker:
             await self._ws_client.unsubscribe_ticker(instrument_id.symbol.value)
-        elif data_type.type == BinanceFuturesMarkPriceUpdate:
+        elif command.data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
                     "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
@@ -318,59 +335,25 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 return
         else:
             self._log.error(
-                f"Cannot unsubscribe from {data_type.type} (not implemented)",
+                f"Cannot unsubscribe from {command.data_type.type} (not implemented)",
             )
 
-    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         pass  # Do nothing further
 
-    async def _subscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         pass  # Do nothing further
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        update_speed: int | None = params.get("update_speed") if params else None
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        await self._subscribe_order_book(command)
 
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        await self._subscribe_order_book(command)
 
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        update_speed: int | None = params.get("update_speed") if params else None
+    async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
+        update_speed: int | None = command.params.get("update_speed")
 
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
-
-    async def _subscribe_order_book(  # (too complex)
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        update_speed: int | None = None,
-        depth: int | None = None,
-    ) -> None:
-        if book_type == BookType.L3_MBO:
+        if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
@@ -393,7 +376,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if not depth:
+        if not command.depth:
             # Reasonable default for full book, which works for Spot and Futures
             depth = 1000
 
@@ -406,19 +389,19 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
-                symbol=instrument_id.symbol.value,
+                symbol=command.vinstrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
             )
         else:
             await self._ws_client.subscribe_diff_book_depth(
-                symbol=instrument_id.symbol.value,
+                symbol=command.instrument_id.symbol.value,
                 speed=update_speed,
             )
 
-        self._book_depths[instrument_id] = depth
+        self._book_depths[command.instrument_id] = depth
 
-        await self._order_book_snapshot_then_deltas(instrument_id)
+        await self._order_book_snapshot_then_deltas(command.instrument_id)
 
     async def _order_book_snapshot_then_deltas(self, instrument_id: InstrumentId) -> None:
         # Add delta feed buffer
@@ -449,187 +432,133 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        await self._ws_client.subscribe_book_ticker(command.instrument_id.symbol.value)
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if self._use_agg_trade_ticks:
-            await self._ws_client.subscribe_agg_trades(instrument_id.symbol.value)
+            await self._ws_client.subscribe_agg_trades(command.instrument_id.symbol.value)
         else:
-            await self._ws_client.subscribe_trades(instrument_id.symbol.value)
+            await self._ws_client.subscribe_trades(command.instrument_id.symbol.value)
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         PyCondition.is_true(
-            bar_type.is_externally_aggregated(),
+            command.bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
         )
 
-        if not bar_type.spec.is_time_aggregated():
+        if not command.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance",
+                f"Cannot subscribe to {command.bar_type}: only time bars are aggregated by Binance",
             )
             return
 
-        resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
+        resolution = self._enum_parser.parse_nautilus_bar_aggregation(
+            command.bar_type.spec.aggregation,
+        )
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot subscribe to {bar_type}. "
+                f"Cannot subscribe to {command.bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures",
             )
         try:
-            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+            interval = BinanceKlineInterval(f"{command.bar_type.spec.step}{resolution}")
         except ValueError:
             self._log.error(
-                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance",
+                f"Bar interval {command.bar_type.spec.step}{resolution} not supported by Binance",
             )
             return
 
         await self._ws_client.subscribe_bars(
-            symbol=bar_type.instrument_id.symbol.value,
+            symbol=command.bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
 
-    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         pass  # Do nothing further
 
-    async def _unsubscribe_instrument(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         pass  # Do nothing further
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        await self._ws_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        await self._ws_client.unsubscribe_trades(instrument_id.symbol.value)
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if not bar_type.spec.is_time_aggregated():
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        if not command.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance",
+                f"Cannot unsubscribe from {command.bar_type}: only time bars are aggregated by Binance",
             )
             return
 
-        resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
+        resolution = self._enum_parser.parse_nautilus_bar_aggregation(
+            command.bar_type.spec.aggregation,
+        )
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}. "
+                f"Cannot unsubscribe from {command.bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures",
             )
         try:
-            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+            interval = BinanceKlineInterval(f"{command.bar_type.spec.step}{resolution}")
         except ValueError:
             self._log.error(
-                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance",
+                f"Bar interval {command.bar_type.spec.step}{resolution} not supported by Binance",
             )
             return
 
         await self._ws_client.unsubscribe_bars(
-            symbol=bar_type.instrument_id.symbol.value,
+            symbol=command.bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    async def _request_instrument(
-        self,
-        instrument_id: InstrumentId,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if start is not None:
+    async def _request_instrument(self, request: RequestInstrument) -> None:
+        if request.start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if end is not None:
+        if request.end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
+                f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+        instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}")
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, correlation_id, params)
+        self._handle_instrument(instrument, request.id, request.params)
 
-    async def _request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Binance",
         )
 
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        limit = request.limit
         if limit == 0 or limit > 1000:
             limit = 1000
 
         if not self._use_agg_trade_ticks:
-            if start is not None or end is not None:
+            if request.start is not None or request.end is not None:
                 self._log.warning(
                     "Trades have been requested with a from/to time range, "
                     f"however the request will be for the most recent {limit}: "
                     "consider using aggregated trades (`use_agg_trade_ticks`)",
                 )
             ticks = await self._http_market.request_trade_ticks(
-                instrument_id=instrument_id,
+                instrument_id=request.instrument_id,
                 limit=limit,
                 ts_init=self._clock.timestamp_ns(),
             )
@@ -637,128 +566,119 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             # Convert from timestamps to milliseconds
             start_time_ms = None
             end_time_ms = None
-            if start:
-                start_time_ms = int(start.timestamp() * 1000)
-            if end:
-                end_time_ms = int(end.timestamp() * 1000)
+            if request.start:
+                start_time_ms = int(request.start.timestamp() * 1000)
+            if request.end:
+                end_time_ms = int(request.end.timestamp() * 1000)
             ticks = await self._http_market.request_agg_trade_ticks(
-                instrument_id=instrument_id,
+                instrument_id=request.instrument_id,
                 limit=limit,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._handle_trade_ticks(instrument_id, ticks, correlation_id, params)
+        self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
 
-    async def _request_bars(  # (too complex)
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if bar_type.spec.price_type != PriceType.LAST:
+    async def _request_bars(self, request: RequestBars) -> None:
+        if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type} bars: "
+                f"Cannot request {request.bar_type} bars: "
                 f"only historical bars for LAST price type available from Binance",
             )
             return
 
         start_time_ms = None
-        if start is not None:
-            start_time_ms = secs_to_millis(start.timestamp())
+        if request.start is not None:
+            start_time_ms = secs_to_millis(request.start.timestamp())
 
         end_time_ms = None
-        if end is not None:
-            end_time_ms = secs_to_millis(end.timestamp())
+        if request.end is not None:
+            end_time_ms = secs_to_millis(request.end.timestamp())
 
-        if bar_type.is_externally_aggregated() or bar_type.spec.is_time_aggregated():
-            if not bar_type.spec.is_time_aggregated():
+        if (
+            request.bar_type.is_externally_aggregated()
+            or request.bar_type.spec.is_time_aggregated()
+        ):
+            if not request.bar_type.spec.is_time_aggregated():
                 self._log.error(
-                    f"Cannot request {bar_type} bars: only time bars are aggregated by Binance",
+                    f"Cannot request {request.bar_type} bars: only time bars are aggregated by Binance",
                 )
                 return
 
-            resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
+            resolution = self._enum_parser.parse_nautilus_bar_aggregation(
+                request.bar_type.spec.aggregation,
+            )
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
-                    f"Cannot request {bar_type} bars: "
+                    f"Cannot request {request.bar_type} bars: "
                     "second interval bars are not aggregated by Binance Futures",
                 )
             try:
-                interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+                interval = BinanceKlineInterval(f"{request.bar_type.spec.step}{resolution}")
             except ValueError:
                 self._log.error(
-                    f"Cannot create Binance Kline interval. {bar_type.spec.step}{resolution} "
+                    f"Cannot create Binance Kline interval. {request.bar_type.spec.step}{resolution} "
                     "not supported",
                 )
                 return
 
             bars = await self._http_market.request_binance_bars(
-                bar_type=bar_type,
+                bar_type=request.bar_type,
                 interval=interval,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
-                limit=limit if limit > 0 else None,
+                limit=request.limit if request.limit > 0 else None,
                 ts_init=self._clock.timestamp_ns(),
             )
 
-            if bar_type.is_internally_aggregated():
+            if request.bar_type.is_internally_aggregated():
                 self._log.info(
                     "Inferred INTERNAL time bars from EXTERNAL time bars",
                     LogColor.BLUE,
                 )
-        elif start and start < self._clock.utc_now() - pd.Timedelta(days=1):
+        elif request.start and request.start < self._clock.utc_now() - pd.Timedelta(days=1):
             bars = await self._aggregate_internal_from_minute_bars(
-                bar_type=bar_type,
+                bar_type=request.bar_type,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms,
-                limit=limit if limit > 0 else None,
+                limit=request.limit if request.limit > 0 else None,
             )
         else:
             bars = await self._aggregate_internal_from_agg_trade_ticks(
-                bar_type=bar_type,
+                bar_type=request.bar_type,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms,
-                limit=limit if limit > 0 else None,
+                limit=request.limit if request.limit > 0 else None,
             )
 
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id, params)
+        self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
 
-    async def _request_order_book_snapshot(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        params: dict | None = None,
-    ) -> None:
-        if limit not in [5, 10, 20, 50, 100, 500, 1000]:
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        if request.limit not in [5, 10, 20, 50, 100, 500, 1000]:
             self._log.error(
                 "Cannot get order book snapshots: "
-                f"invalid `limit`, was {limit}. "
+                f"invalid `limit`, was {request.limit}. "
                 "Valid limits are 5, 10, 20, 50, 100, 500 or 1000",
             )
             return
         else:
             snapshot: OrderBookDeltas = await self._http_market.request_order_book_snapshot(
-                instrument_id=instrument_id,
-                limit=limit,
+                instrument_id=request.instrument_id,
+                limit=request.limit,
                 ts_init=self._clock.timestamp_ns(),
             )
 
             data_type = DataType(
                 OrderBookDeltas,
-                metadata=({"instrument_id": instrument_id}),
+                metadata=({"instrument_id": request.instrument_id}),
             )
             self._handle_data_response(
                 data_type=data_type,
                 data=snapshot,
-                correlation_id=correlation_id,
-                params=params,
+                correlation_id=request.id,
+                params=request.params,
             )
 
     async def _aggregate_internal_from_minute_bars(

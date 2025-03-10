@@ -54,6 +54,9 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
       - name: Run nautilus_core tests
         run: make cargo-test
 
@@ -67,4 +70,4 @@ jobs:
         uses: CodSpeedHQ/action@v3.2.0
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: pytest tests/performance_tests --benchmark-disable-gc --codspeed
+          run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed

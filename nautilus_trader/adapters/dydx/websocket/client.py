@@ -22,7 +22,6 @@ from collections.abc import Callable
 from typing import Any
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
 from nautilus_trader.adapters.dydx.http.errors import should_retry
@@ -69,7 +68,6 @@ class DYDXWebsocketClient:
         handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
         subscription_rate_limit_per_second: int = 2,
-        max_reconnection_tries: int | None = 3,
         max_send_retries: int | None = None,
         retry_delay_secs: float | None = None,
     ) -> None:
@@ -86,9 +84,6 @@ class DYDXWebsocketClient:
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
         self._subscription_rate_limit_per_second = subscription_rate_limit_per_second
-        self._msg_timestamp = self._clock.utc_now()
-        self._msg_timeout_secs: int = 60
-        self._reconnect_task: asyncio.Task | None = None
         self._max_send_retries = max_send_retries
         self._retry_delay_secs = retry_delay_secs
 
@@ -161,7 +156,7 @@ class DYDXWebsocketClient:
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
-            handler=self._msg_handler,
+            handler=self._handler,
             heartbeat=10,
             headers=[],
             ping_handler=self._handle_ping,
@@ -173,24 +168,6 @@ class DYDXWebsocketClient:
         )
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
-
-        self._msg_timestamp = self._clock.utc_now()
-
-        if self._reconnect_task is None:
-            self._reconnect_task = self._loop.create_task(self._reconnect_guard())
-
-    def _msg_handler(self, raw: bytes) -> None:
-        """
-        Handle pushed websocket messages.
-
-        Parameters
-        ----------
-        raw : bytes
-            The received message in bytes.
-
-        """
-        self._msg_timestamp = self._clock.utc_now()
-        self._handler(raw)
 
     def _handle_ping(self, raw: bytes) -> None:
         """
@@ -207,8 +184,14 @@ class DYDXWebsocketClient:
     async def send_pong(self, raw: bytes) -> None:
         """
         Send the given raw payload to the server as a PONG message.
+
+        Parameters
+        ----------
+        raw : bytes
+            The pong message in bytes.
+
         """
-        if self._client is None:
+        if self._client is None or self._client.is_active() is False:
             return
 
         async with self._retry_manager_pool as retry_manager:
@@ -218,42 +201,6 @@ class DYDXWebsocketClient:
                 func=self._client.send_pong,
                 data=raw,
             )
-
-    async def _reconnect_guard(self) -> None:
-        """
-        Reconnect the websocket client when a message has not been received for some
-        time.
-        """
-        try:
-            while True:
-                await asyncio.sleep(1)
-                time_since_previous_msg = self._clock.utc_now() - self._msg_timestamp
-
-                if self.is_disconnected() or time_since_previous_msg > pd.Timedelta(
-                    seconds=self._msg_timeout_secs,
-                ):
-                    if self.is_disconnected():
-                        self._log.error("Websocket disconnected. Reconnecting.")
-
-                    # Print error if no message has been received for twice the timeout time
-                    # to reduce log noise.
-                    if time_since_previous_msg > pd.Timedelta(seconds=2 * self._msg_timeout_secs):
-                        self._log.error(
-                            f"{time_since_previous_msg} since previous received message. Reconnecting.",
-                        )
-
-                    try:
-                        await self.disconnect()
-                        await self.connect()
-                        self.reconnect()
-
-                        self._log.info("Websocket connected")
-                    except Exception as e:
-                        self._log.error(f"Failed to connect the websocket: {e}")
-                        self._client = None
-
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'reconnect_guard'")
 
     def reconnect(self) -> None:
         """
@@ -318,7 +265,6 @@ class DYDXWebsocketClient:
     async def subscribe_order_book(
         self,
         symbol: str,
-        bypass_subscription_validation: bool = False,
     ) -> None:
         """
         Subscribe to order book messages.
@@ -327,9 +273,6 @@ class DYDXWebsocketClient:
         ----------
         symbol : str
             Symbol of the instrument to subscribe to.
-        bypass_subscription_validation : bool, default False
-            Whether to bypass the subscription validation step before sending the
-            subscribe message to the venue.
 
         """
         if self._client is None:
@@ -337,7 +280,7 @@ class DYDXWebsocketClient:
             return
 
         subscription = ("v4_orderbook", symbol)
-        if subscription in self._subscriptions and bypass_subscription_validation is False:
+        if subscription in self._subscriptions:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
@@ -488,7 +431,7 @@ class DYDXWebsocketClient:
         msg = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
         await self._send(msg)
 
-    async def unsubscribe_order_book(self, symbol: str, remove_subscription: bool = True) -> None:
+    async def unsubscribe_order_book(self, symbol: str) -> None:
         """
         Unsubscribe from order book messages.
 
@@ -496,8 +439,6 @@ class DYDXWebsocketClient:
         ----------
         symbol : str
             Symbol of the instrument to unsubscribe from.
-        remove_subscription : bool, optional default True
-            Whether to remove the symbol from the list of subscriptions for order book updates.
 
         """
         if self._client is None:
@@ -509,8 +450,7 @@ class DYDXWebsocketClient:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
-        if remove_subscription:
-            self._subscriptions.remove(subscription)
+        self._subscriptions.remove(subscription)
 
         msg = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
         await self._send(msg)

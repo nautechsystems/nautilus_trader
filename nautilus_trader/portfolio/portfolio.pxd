@@ -26,6 +26,7 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -40,21 +41,32 @@ cdef class Portfolio(PortfolioFacade):
     cdef MessageBus _msgbus
     cdef Cache _cache
     cdef AccountsManager _accounts
+    cdef object _config
+    cdef bint _debug
+    cdef bint _use_mark_prices
+    cdef bint _use_mark_xrates
+    cdef bint _convert_to_account_base_currency
+    cdef str _log_price
+    cdef str _log_xrate
 
     cdef Venue _venue
     cdef dict[InstrumentId, Money] _unrealized_pnls
     cdef dict[InstrumentId, Money] _realized_pnls
     cdef dict[InstrumentId, Decimal] _net_positions
-    cdef dict[InstrumentId, object] _bet_positions
+    cdef dict[PositionId, object] _bet_positions
+    cdef object _index_bet_positions
     cdef set[InstrumentId] _pending_calcs
     cdef dict[InstrumentId, Price] _bar_close_prices
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_use_mark_prices(self, bint value)
+    cpdef void set_use_mark_xrates(self, bint value)
     cpdef void set_specific_venue(self, Venue venue)
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)
+    cpdef void update_mark_price(self, object mark_price)
     cpdef void update_bar(self, Bar bar)
     cpdef void update_account(self, AccountState event)
     cpdef void update_order(self, OrderEvent event)
@@ -68,4 +80,4 @@ cdef class Portfolio(PortfolioFacade):
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id)
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id, Price price=*)
     cdef Price _get_price(self, Position position)
-    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
+    cdef _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)

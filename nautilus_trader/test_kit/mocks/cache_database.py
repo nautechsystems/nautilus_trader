@@ -58,6 +58,16 @@ class MockCacheDatabase(CacheDatabaseFacade):
         self._index_order_position.clear()
         self._index_order_client.clear()
 
+    def load_all(self) -> dict:
+        return {
+            "currencies": self.currencies.copy(),
+            "instruments": self.instruments.copy(),
+            "synthetics": self.synthetics.copy(),
+            "accounts": self.accounts.copy(),
+            "orders": self.orders.copy(),
+            "positions": self.positions.copy(),
+        }
+
     def load(self) -> dict:
         return self.general.copy()
 

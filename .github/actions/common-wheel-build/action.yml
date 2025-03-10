@@ -16,27 +16,28 @@ runs:
 
     - name: Generate updated lock file
       shell: bash
-      run: poetry lock --no-update
+      run: uv lock --no-upgrade
 
-    - name: Build Python wheel
+    - name: Build Python wheel (Linux & Windows)
+      if: runner.os != 'macOS'
       shell: bash
       run: |
-        poetry build --format wheel
+        uv build --wheel
+        ls -lh dist/
+
+    - name: Build Python wheel (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        export PATH="$pythonLocation/bin:$PATH"
+        export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
+        export RUSTFLAGS="-C link-args=-L$pythonLocation/lib -lpython${{ inputs.python-version }}"
+        $PYO3_PYTHON --version
+        uv build --wheel
         ls -lh dist/
 
     - name: Install Python wheel
       shell: bash
       run: |
-        python -m pip install --upgrade poetry-plugin-export
-        poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-        python -m pip install -r requirements-test.txt
-        pip install "$(ls dist/*.whl)"
-
-    # TODO: Temporarily locate this here for now
-    - name: Cached test data
-      id: cached-testdata-large
-      uses: actions/cache@v4
-      with:
-        path: tests/test_data/large
-        key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-        restore-keys: ${{ runner.os }}-large-files-
+        uv sync --all-groups --all-extras --no-install-package nautilus_trader
+        uv pip install dist/*.whl

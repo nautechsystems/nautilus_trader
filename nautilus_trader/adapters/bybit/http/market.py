@@ -225,28 +225,49 @@ class BybitMarketHttpAPI:
         bar_type: BarType,
         interval: BybitKlineInterval,
         ts_init: int,
-        limit: int = 1000,
+        limit: int | None = None,
         start: int | None = None,
         end: int | None = None,
     ) -> list[Bar]:
-        all_bars = []
+        bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
+
+        all_bars: list[Bar] = []
+        prev_start: int | None = None
+        seen_timestamps: set[int] = set()
+
         while True:
-            bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
+            if prev_start is not None and prev_start == start:
+                break
+            prev_start = start
+
             klines = await self.fetch_klines(
                 symbol=bybit_symbol.raw_symbol,
                 product_type=bybit_symbol.product_type,
                 interval=interval,
-                limit=limit,
+                limit=1000,  # Limit for data size per page (maximum for the Bybit API)
                 start=start,
                 end=end,
             )
-            bars: list[Bar] = [kline.parse_to_bar(bar_type, ts_init) for kline in klines]
-            all_bars.extend(bars)
-            if klines:
-                next_start_time = int(klines[-1].startTime) + 1
-            else:
+
+            if not klines:
                 break
-            if end is None or ((limit and len(klines) < limit) or next_start_time > end):
+
+            klines.sort(key=lambda k: int(k.startTime))
+            new_bars = [
+                kline.parse_to_bar(bar_type, ts_init)
+                for kline in klines
+                if int(kline.startTime) not in seen_timestamps
+            ]
+
+            all_bars.extend(new_bars)
+            seen_timestamps.update(int(kline.startTime) for kline in klines)
+
+            start = int(klines[-1].startTime) + 1
+
+            if end is not None and start > end:
                 break
-            start = next_start_time
+
+        if limit is not None and len(all_bars) > limit:
+            return all_bars[-limit:]
+
         return all_bars

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
-from ibapi.common import NO_VALID_ID
+from ibapi.const import NO_VALID_ID
 from ibapi.errors import CONNECT_FAIL
 
 

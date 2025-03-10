@@ -20,9 +20,9 @@ runs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: true
-        android: false
-        dotnet: false
-        haskell: false
+        android: true
+        dotnet: true
+        haskell: true
         large-packages: true
         docker-images: true
         swap-storage: true
@@ -42,45 +42,39 @@ runs:
         sudo apt-get update --fix-missing
         sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
-    # > --------------------------------------------------
-    # > mold https://github.com/rui314/mold
-    # - name: Install mold
-    #   if: runner.os == 'Linux'
-    #   env:
-    #     MOLD_VERSION: 2.36.0
-    #   shell: bash
-    #   run: |
-    #     curl -sSL --retry 10 \
-    #       "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(uname -m)-linux.tar.gz" \
-    #       | sudo tar -C /usr/local --strip-components=1 -xzf -
-
     - name: Install mold
       uses: rui314/setup-mold@v1
 
     # > --------------------------------------------------
     # > Rust
-    - name: Set up Rust toolchain
+    # GitHub runners come with a pre-installed Rust toolchain, this step forces an update
+    # to ensure we have the latest version before setting our specific toolchain.
+    # setup-rust-toolchain should handle this with override: true, but doesn't seem to work.
+    - name: Reset and update Rust toolchain
       shell: bash
       run: |
-        rustup toolchain add --profile minimal stable --component clippy,rustfmt
+        if command -v rustup &> /dev/null; then
+          rustup update --force
+        fi
+
+    - name: Get Rust toolchain version
+      id: rust-toolchain
+      shell: bash
+      run: |
+        echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> $GITHUB_ENV
+
+    # https://github.com/actions-rust-lang/setup-rust-toolchain
+    - name: Set up Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ env.TOOLCHAIN }}
+        components: clippy,rustfmt
+        override: true
 
     - name: Install cargo-nextest
       uses: taiki-e/install-action@v2
       with:
         tool: nextest
-
-    - name: Cached cargo
-      id: cached-cargo
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
 
     # > --------------------------------------------------
     # > sccache
@@ -114,7 +108,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '**/poetry.lock') }}
+        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/poetry.lock') }}
         restore-keys: |
           sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
           sccache-${{ runner.os }}-${{ github.workflow }}-
@@ -133,8 +127,7 @@ runs:
     - name: Get Python version
       shell: bash
       run: |
-        version=$(bash scripts/python-version.sh)
-        echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+        echo "PYTHON_VERSION=$(bash scripts/python-version.sh)" >> $GITHUB_ENV
 
     - name: Cache Python site-packages
       id: cached-site-packages
@@ -145,37 +138,33 @@ runs:
         restore-keys: |
           ${{ runner.os }}-site-packages-
 
+    - name: Install pre-commit
+      shell: bash
+      run: pip install pre-commit==4.1.0
+
     # > --------------------------------------------------
-    # > Poetry
-    - name: Get Poetry version from poetry-version
+    # > UV
+    - name: Get uv version from uv-version
       shell: bash
       run: |
-        version=$(cat poetry-version)
-        echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+        echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
       with:
-        version: ${{ env.POETRY_VERSION }}
+        version: ${{ env.UV_VERSION }}
 
-    - name: Set poetry cache-dir
+    - name: Set uv cache-dir
       shell: bash
       run: |
-        echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
+        echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
 
-    - name: Cached poetry
-      id: cached-poetry
+    - name: Cached uv
+      id: cached-uv
       uses: actions/cache@v4
       with:
-        path: ${{ env.POETRY_CACHE_DIR }}
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
-
-    # > --------------------------------------------------
-    - name: Install build and dev dependencies
-      shell: bash
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
-        poetry install --only dev --no-root
+        path: ${{ env.UV_CACHE_DIR }}
+        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
 
     # > --------------------------------------------------
     # > pre-commit

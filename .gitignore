@@ -82,10 +82,12 @@ bench_data/
 /examples/notebooks/catalog/
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
+nautilus_trader.egg-info
 tests/test_data/catalog/
 tests/test_data/large/*
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
+tests/test_data/**/backtest/**
 
 # Exceptions
 !tests/test_data/large/checksums.json

@@ -885,7 +885,10 @@ cdef class ExecAlgorithm(Actor):
         display_qty : Quantity, optional
             The quantity of the spawned order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The spawned orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         tags : list[str], optional
             The custom user tags for the order.
         reduce_primary : bool, default True
@@ -969,7 +972,10 @@ cdef class ExecAlgorithm(Actor):
         display_qty : Quantity, optional
             The quantity of the spawned order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
-            The spawned orders emulation trigger.
+            The type of market price trigger to use for local order emulation.
+            - ``NO_TRIGGER`` (default): Disables local emulation; orders are sent directly to the venue.
+            - ``DEFAULT`` (the same as ``BID_ASK``): Enables local order emulation by triggering orders based on bid/ask prices.
+            Additional trigger types are available. See the "Emulated Orders" section in the documentation for more details.
         tags : list[str], optional
             The custom user tags for the order.
         reduce_primary : bool, default True
@@ -1221,10 +1227,11 @@ cdef class ExecAlgorithm(Actor):
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(
@@ -1388,10 +1395,11 @@ cdef class ExecAlgorithm(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(

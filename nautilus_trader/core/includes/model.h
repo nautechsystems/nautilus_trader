@@ -664,21 +664,28 @@ typedef enum PositionSide {
  */
 typedef enum PriceType {
     /**
-     * A quoted order price where a buyer is willing to buy a quantity of an instrument.
+     * The best quoted price at which buyers are willing to buy a quantity of an instrument.
+     * Often considered the best bid in the order book.
      */
     BID = 1,
     /**
-     * A quoted order price where a seller is willing to sell a quantity of an instrument.
+     * The best quoted price at which sellers are willing to sell a quantity of an instrument.
+     * Often considered the best ask in the order book.
      */
     ASK = 2,
     /**
-     * The midpoint between the best bid and best ask prices.
+     * The arithmetic midpoint between the best bid and ask quotes.
      */
     MID = 3,
     /**
-     * The last price at which a trade was made for an instrument.
+     * The price at which the last trade of an instrument was executed.
      */
     LAST = 4,
+    /**
+     * A reference price reflecting an instrument's fair value, often used for portfolio
+     * calculations and risk management.
+     */
+    MARK = 5,
 } PriceType;
 
 /**
@@ -838,8 +845,7 @@ typedef enum TriggerType {
 /**
  * Represents a discrete price level in an order book.
  *
- * The level maintains a collection of orders as well as tracking insertion order
- * to preserve FIFO queue dynamics.
+ * Orders are stored in an [`IndexMap`] which preserves FIFO (insertion) order.
  */
 typedef struct BookLevel BookLevel;
 
@@ -1307,7 +1313,7 @@ typedef struct Data_t {
             struct OrderBookDeltas_API deltas;
         };
         struct {
-            struct OrderBookDepth10_t depth10;
+            struct OrderBookDepth10_t *depth10;
         };
         struct {
             struct QuoteTick_t quote;
@@ -1946,6 +1952,8 @@ struct OrderBookDepth10_t orderbook_depth10_new(struct InstrumentId_t instrument
                                                 uint64_t sequence,
                                                 uint64_t ts_event,
                                                 uint64_t ts_init);
+
+struct OrderBookDepth10_t orderbook_depth10_clone(const struct OrderBookDepth10_t *depth);
 
 uint8_t orderbook_depth10_eq(const struct OrderBookDepth10_t *lhs,
                              const struct OrderBookDepth10_t *rhs);
@@ -2630,7 +2638,7 @@ uint64_t orderbook_sequence(const struct OrderBook_API *book);
 
 uint64_t orderbook_ts_last(const struct OrderBook_API *book);
 
-uint64_t orderbook_count(const struct OrderBook_API *book);
+uint64_t orderbook_update_count(const struct OrderBook_API *book);
 
 void orderbook_add(struct OrderBook_API *book,
                    struct BookOrder_t order,

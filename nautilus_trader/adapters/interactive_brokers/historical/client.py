@@ -46,7 +46,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class HistoricInteractiveBrokersClient:

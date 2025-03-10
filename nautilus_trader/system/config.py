@@ -30,6 +30,7 @@ from nautilus_trader.execution.config import ImportableExecAlgorithmConfig
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.config import StreamingConfig
+from nautilus_trader.portfolio.config import PortfolioConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableControllerConfig
 from nautilus_trader.trading.strategy import ImportableStrategyConfig
@@ -57,6 +58,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The execution engine configuration.
+    portfolio : PortfolioConfig, optional
+        The portfolio configuration.
     emulator : OrderEmulatorConfig, optional
         The order emulator configuration.
     streaming : StreamingConfig, optional
@@ -103,6 +106,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     data_engine: DataEngineConfig | None = None
     risk_engine: RiskEngineConfig | None = None
     exec_engine: ExecEngineConfig | None = None
+    portfolio: PortfolioConfig | None = None
     emulator: OrderEmulatorConfig | None = None
     streaming: StreamingConfig | None = None
     catalogs: list[DataCatalogConfig] = []

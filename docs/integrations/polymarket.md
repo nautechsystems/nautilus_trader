@@ -19,10 +19,10 @@ To install the latest `nautilus_trader` package along with the `polymarket` depe
 pip install -U "nautilus_trader[polymarket]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras polymarket
+uv sync --extra polymarket
 ```
 
 ## Examples

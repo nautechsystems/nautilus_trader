@@ -37,13 +37,16 @@ class GreeksData(Data):
 
     underlying_price: float = 0.0
     interest_rate: float = 0.0
+    cost_of_carry: float = 0.0
 
     vol: float = 0.0
+    pnl: float = 0.0
     price: float = 0.0
     delta: float = 0.0
     gamma: float = 0.0
     vega: float = 0.0
     theta: float = 0.0
+
     # in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
     itm_prob: float = 0.0
 
@@ -51,19 +54,25 @@ class GreeksData(Data):
         return (
             f"GreeksData(instrument_id={self.instrument_id}, "
             f"expiry={self.expiry}, itm_prob={self.itm_prob * 100:.2f}%, "
-            f"vol={self.vol * 100:.2f}%, price={self.price:,.2f}, delta={self.delta:,.2f}, "
+            f"vol={self.vol * 100:.2f}%, pnl={self.pnl:,.2f}, , price={self.price:,.2f}, delta={self.delta:,.2f}, "
             f"gamma={self.gamma:,.2f}, vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"quantity={self.quantity}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
 
     @classmethod
-    def from_multiplier(cls, instrument_id: InstrumentId, multiplier: float, ts_event: int = 0):
+    def from_delta(
+        cls,
+        instrument_id: InstrumentId,
+        delta: float,
+        multiplier: float,
+        ts_event: int = 0,
+    ):
         return GreeksData(
             ts_event,
             ts_event,
             instrument_id=instrument_id,
             multiplier=multiplier,
-            delta=multiplier,
+            delta=delta,
             quantity=1.0,
         )
 
@@ -80,7 +89,9 @@ class GreeksData(Data):
             self.quantity,
             self.underlying_price,
             self.interest_rate,
+            self.cost_of_carry,
             self.vol,
+            quantity * self.pnl,
             quantity * self.price,
             quantity * self.delta,
             quantity * self.gamma,
@@ -92,6 +103,7 @@ class GreeksData(Data):
 
 @customdataclass
 class PortfolioGreeks(Data):
+    pnl: float = 0.0
     price: float = 0.0
     delta: float = 0.0
     gamma: float = 0.0
@@ -100,7 +112,7 @@ class PortfolioGreeks(Data):
 
     def __repr__(self):
         return (
-            f"PortfolioGreeks(price={self.price:,.2f}, delta={self.delta:,.2f}, gamma={self.gamma:,.2f}, "
+            f"PortfolioGreeks(pnl={self.pnl:,.2f}, price={self.price:,.2f}, delta={self.delta:,.2f}, gamma={self.gamma:,.2f}, "
             f"vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )
@@ -109,6 +121,7 @@ class PortfolioGreeks(Data):
         return PortfolioGreeks(
             self.ts_event,
             self.ts_init,
+            self.pnl + other.pnl,
             self.price + other.price,
             self.delta + other.delta,
             self.gamma + other.gamma,
@@ -118,25 +131,25 @@ class PortfolioGreeks(Data):
 
 
 @customdataclass
-class InterestRateCurveData(Data):
+class YieldCurveData(Data):
     """
-    Represents an interest rate curve with associated tenors and rates.
+    Represents a yield curve with associated tenors and rates.
 
-    This class stores information about an interest rate curve (zero-rates, used for discount factors of the form
-    exp(- r * t) for example), including its name, tenors (time points), and corresponding interest rates.
+    This class stores information about an interest rate curve (zero-rates, used for example for discount factors of the form
+    exp(- r * t) for example), including its name, tenors (time points), and corresponding rates.
     It provides methods for interpolation and data conversion.
 
     Attributes:
-        curve_name (str): The name of the interest rate curve.
+        curve_name (str): The name of the yield curve.
         tenors (np.ndarray): An array of tenor points (in years).
         interest_rates (np.ndarray): An array of interest rates corresponding to the tenors.
 
     Methods:
-        __call__: Interpolates the interest rate for a given expiry time.
+        __call__: Interpolates the yield curve for a given expiry time.
 
     """
 
-    currency: str = "USD"
+    curve_name: str = "USD"
     tenors: np.ndarray = field(default_factory=lambda: np.array([0.5, 1.0, 1.5, 2.0, 2.5]))
     interest_rates: np.ndarray = field(
         default_factory=lambda: np.array([0.04, 0.04, 0.04, 0.04, 0.04]),
@@ -156,10 +169,10 @@ class InterestRateCurveData(Data):
 
     def to_dict(self, to_arrow=False):
         result = {
-            "currency": self.currency,
+            "curve_name": self.curve_name,
             "tenors": self.tenors.tobytes(),
             "interest_rates": self.interest_rates.tobytes(),
-            "type": "InterestRateCurveData",
+            "type": "YieldCurveData",
             "ts_event": self._ts_event,
             "ts_init": self._ts_init,
         }
@@ -177,4 +190,4 @@ class InterestRateCurveData(Data):
         data["tenors"] = np.frombuffer(data["tenors"])
         data["interest_rates"] = np.frombuffer(data["interest_rates"])
 
-        return InterestRateCurveData(**data)
+        return YieldCurveData(**data)

@@ -18,10 +18,9 @@ Provide a data client for the dYdX decentralized cypto exchange.
 
 import asyncio
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
@@ -47,7 +46,15 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeOrderBook
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model import DataType
 from nautilus_trader.model.book import OrderBook
@@ -157,10 +164,9 @@ class DYDXDataClient(LiveMarketDataClient):
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_orderbook_interval_secs: int = 60  # Once every 60 seconds (hard-coded for now)
         self._update_instruments_task: asyncio.Task | None = None
-        self._resubscribe_orderbook_task: asyncio.Task | None = None
+        self._fetch_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._orderbook_subscriptions: set[str] = set()
-        self._resubscribe_orderbook_lock = asyncio.Lock()
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -173,8 +179,8 @@ class DYDXDataClient(LiveMarketDataClient):
             self._update_instruments_task = self.create_task(
                 self._update_instruments(self._update_instruments_interval_mins),
             )
-        self._resubscribe_orderbook_task = self.create_task(
-            self._resubscribe_orderbooks_on_interval(),
+        self._fetch_orderbook_task = self.create_task(
+            self._fetch_orderbooks_on_interval(),
         )
 
         self._log.info("Initializing websocket connection")
@@ -188,10 +194,10 @@ class DYDXDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
-        if self._resubscribe_orderbook_task:
-            self._log.debug("Cancelling 'resubscribe_orderbook' task")
-            self._resubscribe_orderbook_task.cancel()
-            self._resubscribe_orderbook_task = None
+        if self._fetch_orderbook_task:
+            self._log.debug("Cancelling 'fetch_orderbook' task")
+            self._fetch_orderbook_task.cancel()
+            self._fetch_orderbook_task = None
 
         await self._ws_client.unsubscribe_markets()
         await self._ws_client.disconnect()
@@ -208,10 +214,10 @@ class DYDXDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
 
-    async def _resubscribe_orderbooks_on_interval(self) -> None:
+    async def _fetch_orderbooks_on_interval(self) -> None:
         """
-        Resubscribe to the orderbook on a fixed interval `update_orderbook_interval` to
-        ensure it does not become outdated.
+        Fetch the orderbook on a fixed interval `update_orderbook_interval` to ensure it
+        does not become outdated.
         """
         try:
             while True:
@@ -219,21 +225,47 @@ class DYDXDataClient(LiveMarketDataClient):
                     f"Scheduled `resubscribe_order_book` to run in {self._update_orderbook_interval_secs}s",
                 )
                 await asyncio.sleep(self._update_orderbook_interval_secs)
-                await self._resubscribe_orderbooks()
+                await self._fetch_orderbooks()
         except asyncio.CancelledError:
-            self._log.debug("Canceled task 'resubscribe_orderbook'")
+            self._log.debug("Canceled task 'fetch_orderbook'")
 
-    async def _resubscribe_orderbooks(self) -> None:
+    async def _fetch_orderbooks(self) -> None:
         """
-        Resubscribe to the orderbook.
+        Request a new orderbook snapshot for all order book subscriptions.
         """
-        async with self._resubscribe_orderbook_lock:
-            for symbol in self._orderbook_subscriptions:
-                await self._ws_client.unsubscribe_order_book(symbol, remove_subscription=False)
-                await self._ws_client.subscribe_order_book(
-                    symbol,
-                    bypass_subscription_validation=True,
+        tasks = []
+
+        for symbol in self._orderbook_subscriptions:
+            tasks.append(self._fetch_orderbook(symbol))
+
+        await asyncio.gather(*tasks)
+
+    async def _fetch_orderbook(self, symbol: str) -> None:
+        """
+        Request a new orderbook snapshot.
+        """
+        msg = await self._http_market.get_orderbook(symbol=symbol)
+
+        if msg is not None:
+            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+            instrument = self._cache.instrument(instrument_id)
+
+            if instrument is None:
+                self._log.error(
+                    f"Cannot parse orderbook snapshot: no instrument for {instrument_id}",
                 )
+                return
+
+            ts_init = self._clock.timestamp_ns()
+            deltas = msg.parse_to_snapshot(
+                instrument_id=instrument_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+                ts_event=ts_init,
+                ts_init=ts_init,
+            )
+
+            self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -743,86 +775,66 @@ class DYDXDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
 
-    async def _subscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
         await self._ws_client.subscribe_trades(dydx_symbol.raw_symbol)
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: int | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        if book_type in (BookType.L1_MBP, BookType.L3_MBO):
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type in (BookType.L1_MBP, BookType.L3_MBO):
             self._log.error(
                 "Cannot subscribe to order book deltas: L3_MBO data is not published by dYdX. The only valid book type is L2_MBP",
             )
             return
 
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is already subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
         self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
 
-        if instrument_id not in self._books:
-            self._books[instrument_id] = OrderBook(instrument_id, book_type)
+        if command.instrument_id not in self._books:
+            self._books[command.instrument_id] = OrderBook(command.instrument_id, command.book_type)
 
         if not self._ws_client.has_subscription(subscription):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
 
-    async def _subscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         self._log.debug(
-            f"Subscribing deltas {instrument_id} (quotes are not available)",
+            f"Subscribing deltas {command.instrument_id} (quotes are not available)",
             LogColor.MAGENTA,
         )
         book_type = BookType.L2_MBP
 
         # Check if the websocket client is already subscribed.
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
         if not self._ws_client.has_subscription(subscription):
-            await self._subscribe_order_book_deltas(
-                instrument_id=instrument_id,
+            order_book_command = SubscribeOrderBook(
+                command_id=command.id,
+                instrument_id=command.instrument_id,
                 book_type=book_type,
+                client_id=command.client_id,
+                venue=command.venue,
+                ts_init=command.ts_init,
+                params=command.params,
             )
+            await self._subscribe_order_book_deltas(order_book_command)
 
-    async def _subscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        self._log.info(f"Subscribe to {bar_type} bars")
-        dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
-        candles_resolution = get_interval_from_bar_type(bar_type)
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        self._log.info(f"Subscribe to {command.bar_type} bars")
+        dydx_symbol = DYDXSymbol(command.bar_type.instrument_id.symbol.value)
+        candles_resolution = get_interval_from_bar_type(command.bar_type)
         topic = f"{dydx_symbol.raw_symbol}/{candles_resolution.value}"
-        self._topic_bar_type[topic] = bar_type
+        self._topic_bar_type[topic] = command.bar_type
         await self._ws_client.subscribe_klines(dydx_symbol.raw_symbol, candles_resolution)
 
-    async def _unsubscribe_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
         await self._ws_client.unsubscribe_trades(dydx_symbol.raw_symbol)
 
-    async def _unsubscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
@@ -833,26 +845,27 @@ class DYDXDataClient(LiveMarketDataClient):
         if self._ws_client.has_subscription(subscription):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
 
-    async def _unsubscribe_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
         if self._ws_client.has_subscription(subscription):
-            await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
+            order_book_command = UnsubscribeOrderBook(
+                command_id=command.id,
+                instrument_id=command.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                ts_init=command.ts_init,
+                params=command.params,
+                only_deltas=True,  # not used
+            )
+            await self._unsubscribe_order_book_deltas(order_book_command)
 
-    async def _unsubscribe_bars(
-        self,
-        bar_type: BarType,
-        params: dict[str, Any] | None = None,
-    ) -> None:
-        dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
-        candles_resolution = get_interval_from_bar_type(bar_type)
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        dydx_symbol = DYDXSymbol(command.bar_type.instrument_id.symbol.value)
+        candles_resolution = get_interval_from_bar_type(command.bar_type)
         await self._ws_client.unsubscribe_klines(dydx_symbol.raw_symbol, candles_resolution)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
@@ -860,39 +873,31 @@ class DYDXDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = dydx_symbol.to_instrument_id()
         return nautilus_instrument_id
 
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> None:
+    async def _request_bars(self, request: RequestBars) -> None:
         max_bars = 100
-
+        limit = request.limit
         if limit == 0 or limit > max_bars:
             limit = max_bars
 
-        if bar_type.is_internally_aggregated():
+        if request.bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: only historical bars with EXTERNAL aggregation available from dYdX",
+                f"Cannot request {request.bar_type} bars: only historical bars with EXTERNAL aggregation available from dYdX",
             )
             return
 
-        if not bar_type.spec.is_time_aggregated():
+        if not request.bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type} bars: only time bars are aggregated by dYdX",
+                f"Cannot request {request.bar_type} bars: only time bars are aggregated by dYdX",
             )
             return
 
-        if bar_type.spec.price_type != PriceType.LAST:
+        if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type} bars: only historical bars for LAST price type available from dYdX",
+                f"Cannot request {request.bar_type} bars: only historical bars for LAST price type available from dYdX",
             )
             return
 
-        symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
+        symbol = DYDXSymbol(request.bar_type.instrument_id.symbol.value)
         instrument_id: InstrumentId = symbol.to_instrument_id()
 
         instrument = self._cache.instrument(instrument_id)
@@ -903,10 +908,10 @@ class DYDXDataClient(LiveMarketDataClient):
 
         candles = await self._http_market.get_candles(
             symbol=symbol,
-            resolution=self._enum_parser.parse_dydx_kline(bar_type),
+            resolution=self._enum_parser.parse_dydx_kline(request.bar_type),
             limit=limit,
-            start=start,
-            end=end,
+            start=request.start,
+            end=request.end,
         )
 
         if candles is not None:
@@ -914,7 +919,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
             bars = [
                 candle.parse_to_bar(
-                    bar_type=bar_type,
+                    bar_type=request.bar_type,
                     price_precision=instrument.price_precision,
                     size_precision=instrument.size_precision,
                     ts_init=ts_init,
@@ -923,4 +928,4 @@ class DYDXDataClient(LiveMarketDataClient):
             ]
 
             partial: Bar = bars.pop()
-            self._handle_bars(bar_type, bars, partial, correlation_id, params)
+            self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
