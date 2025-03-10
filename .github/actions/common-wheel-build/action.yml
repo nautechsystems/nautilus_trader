@@ -31,7 +31,6 @@ runs:
       run: |
         export PATH="$pythonLocation/bin:$PATH"
         export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
-        export RUSTFLAGS="-C link-args=-undefined -C link-args=dynamic_lookup"
         $PYO3_PYTHON --version
         uv build --wheel
         ls -lh dist/
