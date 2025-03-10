@@ -13,9 +13,10 @@ import tomllib
 with open('$PYPROJECT_FILE', 'rb') as f:
     data = tomllib.load(f)
 print(data['project']['version'])
-"
+" | tr -d '\n\r '
 else
     # Fallback: grep & sed one-liner
     grep -E '^version\s*=' "$PYPROJECT_FILE" \
-      | sed -E 's/^version\s*=\s*\"([^\"]*)\".*/\1/'
+      | sed -E 's/^version\s*=\s*\"([^\"]*)\".*/\1/' \
+      | tr -d '\n\r '
 fi
