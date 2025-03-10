@@ -123,7 +123,11 @@ class VolatilityMarketMaker(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.atr)
 
         # Get historical data
-        self.request_bars(self.config.bar_type, client_id=self.client_id)
+        self.request_bars(
+            self.config.bar_type,
+            client_id=self.client_id,
+            start=self.clock.utc_now() - pd.Timedelta(days=1),
+        )
 
         # Subscribe to live data
         self.subscribe_bars(self.config.bar_type, client_id=self.client_id)

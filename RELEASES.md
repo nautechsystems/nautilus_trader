@@ -115,6 +115,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed subscribe composite bars (#2390), thanks @faysou
 - Fixed invalid link in IB docs (#2401), thanks @stefansimik
 - Fixed cache index loading to ensure persisted data remains available after startup, thanks for reporting @Saransh-28
+- Fixed bars pagination, ordering and limit for Bybit
 
 ### Documentation Updates
 - Added documentation for messaging styles (#2410), thanks @stefansimik

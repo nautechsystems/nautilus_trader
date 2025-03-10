@@ -473,10 +473,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
 
     async def _request_bars(self, request: RequestBars) -> None:
-        limit = request.limit
-        if limit == 0 or limit > 1000:
-            limit = 1000
-
         if request.bar_type.is_internally_aggregated():
             self._log.error(
                 f"Cannot request {request.bar_type} bars: "
@@ -505,12 +501,14 @@ class BybitDataClient(LiveMarketDataClient):
         if request.end is not None:
             end_time_ms = secs_to_millis(request.end.timestamp())
 
+        self._log.debug(f"Requesting klines {start_time_ms=}, {end_time_ms=}, {request.limit=}")
+
         bars = await self._http_market.request_bybit_bars(
             bar_type=request.bar_type,
             interval=bybit_interval,
             start=start_time_ms,
             end=end_time_ms,
-            limit=limit,
+            limit=request.limit if request.limit else None,
             ts_init=self._clock.timestamp_ns(),
         )
         partial: Bar = bars.pop()
