@@ -19,6 +19,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -139,8 +140,8 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
         Additional parameters for the command.
-    log_received : bool, default True
-        Whether the client should log receipt of the reports.
+    log_receipt_level : LogLevel, default 'INFO'
+        The log level for logging received reports. Must be either `LogLevel.DEBUG` or `LogLevel.INFO`.
     """
 
     def __init__(
@@ -152,7 +153,7 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-        bint log_received = True,
+        LogLevel log_receipt_level = LogLevel.INFO,
     ) -> None:
         super().__init__(
             instrument_id,
@@ -164,7 +165,7 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         )
 
         self.open_only = open_only
-        self.log_received = log_received
+        self.log_receipt_level = log_receipt_level
 
 
 cdef class GenerateFillReports(TradingReportCommand):

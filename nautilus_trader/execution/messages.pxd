@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -52,8 +53,8 @@ cdef class GenerateOrderStatusReport(TradingReportCommand):
 cdef class GenerateOrderStatusReports(TradingReportCommand):
     cdef readonly bint open_only
     """If the request is only for open orders.\n\n:returns: `bool`"""
-    cdef readonly bint log_received
-    """Whether the client should log receipt of the reports.\n\n:returns: `bool`"""
+    cdef readonly LogLevel log_receipt_level
+    """The log level for logging received reports.\n\n:returns: `LogLevel`"""
 
 
 cdef class GenerateFillReports(TradingReportCommand):

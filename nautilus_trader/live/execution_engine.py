@@ -26,6 +26,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -535,7 +536,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         open_only=self.open_check_open_only,
                         command_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
-                        log_received=False,
+                        log_receipt_level=LogLevel.DEBUG,
                     ),
                 )
                 for c in clients
