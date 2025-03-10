@@ -366,7 +366,7 @@ See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#
 A *Limit-If-Touched* order is a conditional order which once triggered will immediately place
 a *Limit* order at the specified price.
 
-In the following example we create a *Stop-Limit* order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
+In the following example we create a *Limit-If-Touched* order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
 Binance Futures exchange at a limit price of 30,100 USDT (once the market hits the trigger price of 30,150 USDT),
 active until midday 6th June, 2022 (UTC):
 
