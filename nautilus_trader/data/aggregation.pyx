@@ -245,6 +245,10 @@ cdef class BarBuilder:
             self._low = self._last_close
             self._close = self._last_close
 
+
+        self._low._mem.raw = min(self._close._mem.raw, self._low._mem.raw)
+        self._high._mem.raw = max(self._close._mem.raw, self._high._mem.raw)
+
         cdef Bar bar = Bar(
             bar_type=self._bar_type,
             open=self._open,
