@@ -65,6 +65,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
@@ -579,10 +580,14 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate OrderStatusReports")
 
-        if command.log_received:
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+        if command.log_receipt_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
         return reports
 

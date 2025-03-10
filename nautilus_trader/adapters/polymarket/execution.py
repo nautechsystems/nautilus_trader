@@ -57,6 +57,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.stats import basis_points_as_percentage
@@ -475,10 +476,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Generated from fill report: {report}")
                 reports.append(report)
 
-        if command.log_received:
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+        if command.log_receipt_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
         return reports
 
