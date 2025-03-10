@@ -906,6 +906,8 @@ cdef class Cache(CacheFacade):
             # 10: Build _index_orders_open -> {ClientOrderId}
             if order.is_open_c():
                 self._index_orders_open.add(client_order_id)
+                if self._own_order_books:
+                    self._index_orders_open_pyo3.add(nautilus_pyo3.ClientOrderId(client_order_id.value))
 
             # 11: Build _index_orders_closed -> {ClientOrderId}
             if order.is_closed_c():
