@@ -650,6 +650,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         ts_event = await self._ib_bar_to_ts_event(bar, bar_type)
         # used to be _convert_ib_bar_date_to_unix_nanos
 
+        # handle fractional quantity that likely caused by stock reverse split
+        if instrument.size_precision == 0 and instrument.size_increment >= 1 and bar.volume < 1:
+            bar.volume = round(bar.volume)
+
         return Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
