@@ -47,7 +47,7 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
-indexmap = { version = "2.7.1", features = ["serde"] }
+indexmap = { version = "2.8.0", features = ["serde"] }
 itertools = "0.13.0"
 itoa = "1.0.15"
 log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
