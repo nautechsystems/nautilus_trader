@@ -51,6 +51,9 @@ cdef class GenerateOrderStatusReport(TradingReportCommand):
 
 cdef class GenerateOrderStatusReports(TradingReportCommand):
     cdef readonly bint open_only
+    """If the request is only for open orders.\n\n:returns: `bool`"""
+    cdef readonly bint log_received
+    """Whether the client should log receipt of the reports.\n\n:returns: `bool`"""
 
 
 cdef class GenerateFillReports(TradingReportCommand):

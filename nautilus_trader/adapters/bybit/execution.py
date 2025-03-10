@@ -346,9 +346,10 @@ class BybitExecutionClient(LiveExecutionClient):
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        if command.log_received:
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
 
         return reports
 
