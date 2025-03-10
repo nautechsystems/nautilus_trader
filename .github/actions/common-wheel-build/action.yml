@@ -31,6 +31,11 @@ runs:
       run: |
         export PATH="$pythonLocation/bin:$PATH"
         export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
+        PYTHON_LIB_DIR=$(dirname $(dirname $PYO3_PYTHON))/lib
+        export LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$LIBRARY_PATH"
+        export LD_LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$LD_LIBRARY_PATH"
+        export DYLD_LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$DYLD_LIBRARY_PATH"
+
         $PYO3_PYTHON --version
         uv build --wheel
         ls -lh dist/
