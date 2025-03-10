@@ -141,6 +141,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed typo in docs/concepts/actors.md (#2422), thanks @lsamaciel
 - Fixed singular noun in docs/concepts/instruments.md (#2424), thanks @lsamaciel
 - Fixed typo in docs/concepts/data.md (#2426), thanks @lsamaciel
+- Fixed Limit-If-Touched example in docs/concepts/orders.md (#2429), thanks @lsamaciel
 
 ### Deprecations
 None
