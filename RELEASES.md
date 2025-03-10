@@ -104,7 +104,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
 - Fixed docstrings for dYdX factories (#2415), thanks @davidsblom
-- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
+- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @faysou
 - Fixed composite bars subscription (#2337), thanks @faysou
 - Fixed sub command issue in some adapters (#2343), thanks @faysou
 - Fixed `bypass_logging` fixture to keep log guard alive for entire test session
