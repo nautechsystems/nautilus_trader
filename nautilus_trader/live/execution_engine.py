@@ -535,6 +535,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         open_only=self.open_check_open_only,
                         command_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
+                        log_received=False,
                     ),
                 )
                 for c in clients

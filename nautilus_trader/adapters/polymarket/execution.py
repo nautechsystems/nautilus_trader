@@ -475,9 +475,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Generated from fill report: {report}")
                 reports.append(report)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        if command.log_received:
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
 
         return reports
 

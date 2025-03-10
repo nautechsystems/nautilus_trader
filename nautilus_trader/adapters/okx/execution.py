@@ -499,9 +499,10 @@ class OKXExecutionClient(LiveExecutionClient):
                 filter(lambda r: unix_nanos_to_dt(r.ts_accepted) <= command.end, reports),
             )
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        if command.log_received:
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
 
         return reports
 
