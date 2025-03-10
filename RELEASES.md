@@ -1,6 +1,6 @@
 # NautilusTrader 1.212.0 Beta
 
-Released on TBD (UTC).
+Released on 10th March 2025 (UTC).
 
 This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
 
