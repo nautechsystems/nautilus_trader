@@ -104,7 +104,7 @@ def on_each_10th_bar(self, event: Each10thBarEvent):
 
 #### Full example
 
-[MessageBus Example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/example_09_custom_event_with_msgbus)
+[MessageBus Example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/example_09_messaging_with_msgbus)
 
 ### Actor-based publish/subscribe data
 
