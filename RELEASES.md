@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
 
 ### Breaking Changes
 None
@@ -11,9 +11,13 @@ None
 ### Internal Improvements
 - Added additional precision validations for `OrderMatchingEngine`
 - Improved order denied reason message for balance impact
+- Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
+- Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.24.0
 
 ### Fixes
 - Fixed logger name for `Strategy` custom `strategy_id`s
+- Fixed unbound variable for Bybit (#2433), thanks @davidsblom
 
 ### Documentation Updates
 None
@@ -30,7 +34,7 @@ Released on 11th March 2025 (UTC).
 This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
 
 ### Enhancements
-- Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
+- Added `OwnOrderBook` and `OwnBookOrder` to track own orders and prevent self-trades in market making
 - Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
 - Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
