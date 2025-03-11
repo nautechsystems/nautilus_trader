@@ -19,6 +19,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -67,7 +68,7 @@ cdef class TradingReportCommand(Command):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(command_id, ts_init)
 
         self.instrument_id = instrument_id
@@ -104,7 +105,7 @@ cdef class GenerateOrderStatusReport(TradingReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             instrument_id,
             None,
@@ -132,13 +133,15 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         The end datetime (UTC) of request time range.
         The inclusiveness depends on individual data client implementation.
     open_only : bool
-        If True then only open orders will be returned.
+        If True then only open orders will be requested.
     command_id : UUID4
         The commands ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
         Additional parameters for the command.
+    log_receipt_level : LogLevel, default 'INFO'
+        The log level for logging received reports. Must be either `LogLevel.DEBUG` or `LogLevel.INFO`.
     """
 
     def __init__(
@@ -150,7 +153,8 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-    ):
+        LogLevel log_receipt_level = LogLevel.INFO,
+    ) -> None:
         super().__init__(
             instrument_id,
             start,
@@ -161,6 +165,7 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         )
 
         self.open_only = open_only
+        self.log_receipt_level = log_receipt_level
 
 
 cdef class GenerateFillReports(TradingReportCommand):
@@ -195,7 +200,7 @@ cdef class GenerateFillReports(TradingReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             instrument_id,
             start,
@@ -237,7 +242,7 @@ cdef class GeneratePositionStatusReports(TradingReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             instrument_id,
             start,
@@ -283,7 +288,7 @@ cdef class TradingCommand(Command):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(command_id, ts_init)
 
         self.client_id = client_id
@@ -331,7 +336,7 @@ cdef class SubmitOrder(TradingCommand):
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -469,7 +474,7 @@ cdef class SubmitOrderList(TradingCommand):
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -620,7 +625,7 @@ cdef class ModifyOrder(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -775,7 +780,7 @@ cdef class CancelOrder(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         if client_id is None:
             client_id = ClientId(instrument_id.venue.value)
         super().__init__(
@@ -907,7 +912,7 @@ cdef class CancelAllOrders(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -1038,7 +1043,7 @@ cdef class BatchCancelOrders(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         Condition.not_empty(cancels, "cancels")
         Condition.list_type(cancels, CancelOrder, "cancels")
         super().__init__(
@@ -1167,7 +1172,7 @@ cdef class QueryOrder(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
-    ):
+    ) -> None:
         if client_id is None:
             client_id = ClientId(instrument_id.venue.value)
         super().__init__(

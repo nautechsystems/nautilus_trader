@@ -1,6 +1,6 @@
 # NautilusTrader 1.212.0 Beta
 
-Released on 10th March 2025 (UTC).
+Released on 11th March 2025 (UTC).
 
 This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
 
@@ -104,7 +104,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
 - Fixed docstrings for dYdX factories (#2415), thanks @davidsblom
-- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
+- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @faysou
 - Fixed composite bars subscription (#2337), thanks @faysou
 - Fixed sub command issue in some adapters (#2343), thanks @faysou
 - Fixed `bypass_logging` fixture to keep log guard alive for entire test session
@@ -116,6 +116,7 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Fixed invalid link in IB docs (#2401), thanks @stefansimik
 - Fixed cache index loading to ensure persisted data remains available after startup, thanks for reporting @Saransh-28
 - Fixed bars pagination, ordering and limit for Bybit
+- Fixed `update_bar` aggregation function to guarantee high and low price invariants (#2430), thanks @hjander and @faysou
 
 ### Documentation Updates
 - Added documentation for messaging styles (#2410), thanks @stefansimik
