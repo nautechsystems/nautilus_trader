@@ -1,3 +1,28 @@
+# NautilusTrader 1.213.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Added additional precision validations for `OrderMatchingEngine`
+- Improved order denied reason message for balance impact
+
+### Fixes
+- Fixed logger name for `Strategy` custom `strategy_id`s
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
 # NautilusTrader 1.212.0 Beta
 
 Released on 11th March 2025 (UTC).
@@ -8,7 +33,6 @@ This release introduces [uv](https://docs.astral.sh/uv) as the Python project an
 - Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
 - Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
 - Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
-- Added `ts_accepted` timestamp property for orders
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added pnl information to greeks data (#2378), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
