@@ -283,7 +283,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_order_book_deltas(self, UnsubscribeOrderBook command):
         Condition.not_none(command.instrument_id, "instrument_id")
-        print("toto")
+
         self._remove_subscription_order_book_deltas(command.instrument_id)
         # Do nothing else for backtest
 
