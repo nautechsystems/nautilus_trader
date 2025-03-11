@@ -1487,6 +1487,7 @@ cdef class OrderMatchingEngine:
         cdef list fills = self._book.simulate_fills(
             order,
             price_prec=self.instrument.price_precision,
+            size_prec=self.instrument.size_precision,
             is_aggressive=False,
         )
 
@@ -1581,6 +1582,7 @@ cdef class OrderMatchingEngine:
         cdef list fills = self._book.simulate_fills(
             order,
             price_prec=self.instrument.price_precision,
+            size_prec=self.instrument.size_precision,
             is_aggressive=True,
         )
 
