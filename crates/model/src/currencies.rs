@@ -86,6 +86,7 @@ static DOT_LOCK: OnceLock<Currency> = OnceLock::new();
 static EOS_LOCK: OnceLock<Currency> = OnceLock::new();
 static ETH_LOCK: OnceLock<Currency> = OnceLock::new();
 static ETHW_LOCK: OnceLock<Currency> = OnceLock::new();
+static FDUSD_LOCK: OnceLock<Currency> = OnceLock::new();
 static JOE_LOCK: OnceLock<Currency> = OnceLock::new();
 static LINK_LOCK: OnceLock<Currency> = OnceLock::new();
 static LTC_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -112,7 +113,7 @@ static ZEC_LOCK: OnceLock<Currency> = OnceLock::new();
 
 impl Currency {
     ///////////////////////////////////////////////////////////////////////////
-    // Crypto currencies
+    // Fiat currencies
     ///////////////////////////////////////////////////////////////////////////
     #[allow(non_snake_case)]
     #[must_use]
@@ -495,6 +496,9 @@ impl Currency {
         })
     }
 
+    ///////////////////////////////////////////////////////////////////////////
+    // Crypto currencies
+    ///////////////////////////////////////////////////////////////////////////
     #[allow(non_snake_case)]
     #[must_use]
     pub fn ONEINCH() -> Self {
@@ -719,6 +723,18 @@ impl Currency {
             precision: 8,
             iso4217: 0,
             name: Ustr::from("EthereumPoW"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
+    pub fn FDUSD() -> Self {
+        *FDUSD_LOCK.get_or_init(|| Self {
+            code: Ustr::from("FDUSD"),
+            precision: 8,
+            iso4217: 0,
+            name: Ustr::from("First Digital USD"),
             currency_type: CurrencyType::Crypto,
         })
     }
@@ -1057,6 +1073,7 @@ pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::
     map.insert(Currency::EOS().code.to_string(), Currency::EOS());
     map.insert(Currency::ETH().code.to_string(), Currency::ETH());
     map.insert(Currency::ETHW().code.to_string(), Currency::ETHW());
+    map.insert(Currency::FDUSD().code.to_string(), Currency::FDUSD());
     map.insert(Currency::JOE().code.to_string(), Currency::JOE());
     map.insert(Currency::LINK().code.to_string(), Currency::LINK());
     map.insert(Currency::LTC().code.to_string(), Currency::LTC());
