@@ -431,31 +431,36 @@ class DYDXExecutionClient(LiveExecutionClient):
         Create an order status report for a specific order.
         """
         self._log.debug("Requesting OrderStatusReport...")
+
+        instrument_id = command.instrument_id
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
+
         PyCondition.is_false(
-            command.client_order_id is None and command.venue_order_id is None,
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
         max_retries = 3
-        retries = self._generate_order_status_retries.get(command.client_order_id, 0)
+        retries = self._generate_order_status_retries.get(client_order_id, 0)
 
         if retries > max_retries:
             self._log.error(
                 f"Reached maximum retries {retries}/{max_retries} for generating OrderStatusReport for "
-                f"{repr(command.client_order_id) if command.client_order_id else ''} "
-                f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
+                f"{repr(client_order_id) if client_order_id else ''} "
+                f"{repr(venue_order_id) if venue_order_id else ''}",
             )
             return None
 
         self._log.info(
-            f"Generating OrderStatusReport for {repr(command.client_order_id) if command.client_order_id else ''} {repr(command.venue_order_id) if command.venue_order_id else ''}",  # noqa: E501
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
 
         report = None
         order = None
 
-        if command.client_order_id is None:
-            client_order_id = self._cache.client_order_id(command.venue_order_id)
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(venue_order_id)
 
         if client_order_id:
             order = self._cache.order(client_order_id)
@@ -468,12 +473,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return None  # Nothing else to do
 
-        if command.venue_order_id is None:
+        if venue_order_id is None:
             venue_order_id = order.venue_order_id
 
         try:
             report = await self._get_order_status_report(
-                instrument_id=command.instrument_id,
+                instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 order_side=order.side,
@@ -495,7 +500,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 # so that there are no longer subsequent retries (we don't expect many of these).
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
-                    instrument_id=command.instrument_id,
+                    instrument_id=instrument_id,
                     client_order_id=client_order_id,
                     reason=str(e.message),
                     ts_event=self._clock.timestamp_ns(),
@@ -676,12 +681,14 @@ class DYDXExecutionClient(LiveExecutionClient):
             status=[DYDXPerpetualPositionStatus.OPEN],
         )
 
+        instrument_id = command.instrument_id
+
         if dydx_positions is not None:
-            if command.instrument_id:
+            if instrument_id:
                 for dydx_position in dydx_positions.positions:
                     current_instrument_id = DYDXSymbol(dydx_position.market).to_instrument_id()
 
-                    if current_instrument_id == command.instrument_id:
+                    if current_instrument_id == instrument_id:
                         instrument = self._cache.instrument(current_instrument_id)
 
                         if instrument is None:
@@ -703,7 +710,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                     now = self._clock.timestamp_ns()
                     report = PositionStatusReport(
                         account_id=self.account_id,
-                        instrument_id=command.instrument_id,
+                        instrument_id=instrument_id,
                         position_side=PositionSide.FLAT,
                         quantity=Quantity.zero(),
                         report_id=UUID4(),
@@ -742,27 +749,29 @@ class DYDXExecutionClient(LiveExecutionClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
+            ws_channel = ws_message.channel
+            ws_type = ws_message.type
 
-            if ws_message.channel == "v4_block_height" and ws_message.type == "channel_data":
+            if ws_channel == "v4_block_height" and ws_type == "channel_data":
                 self._handle_block_height_channel_data(raw)
-            elif ws_message.channel == "v4_subaccounts" and ws_message.type == "channel_data":
+            elif ws_channel == "v4_subaccounts" and ws_type == "channel_data":
                 self._handle_subaccounts_channel_data(raw)
-            elif ws_message.channel == "v4_markets" and ws_message.type == "channel_data":
+            elif ws_channel == "v4_markets" and ws_type == "channel_data":
                 self._handle_markets(raw)
-            elif ws_message.channel == "v4_block_height" and ws_message.type == "subscribed":
+            elif ws_channel == "v4_block_height" and ws_type == "subscribed":
                 self._handle_block_height_subscribed(raw)
-            elif ws_message.channel == "v4_subaccounts" and ws_message.type == "subscribed":
+            elif ws_channel == "v4_subaccounts" and ws_type == "subscribed":
                 self._handle_subaccounts_subscribed(raw)
-            elif ws_message.channel == "v4_markets" and ws_message.type == "subscribed":
+            elif ws_channel == "v4_markets" and ws_type == "subscribed":
                 self._handle_markets_subscribed(raw)
-            elif ws_message.type == "unsubscribed":
+            elif ws_type == "unsubscribed":
                 self._log.info(
-                    f"Unsubscribed from channel {ws_message.channel} for {ws_message.id}",
+                    f"Unsubscribed from channel {ws_channel} for {ws_message.id}",
                 )
-            elif ws_message.type == "connected":
+            elif ws_type == "connected":
                 self._log.info("Websocket connected")
             else:
-                self._log.error(f"Unknown message `{ws_message.type}`: {raw.decode()}")
+                self._log.error(f"Unknown message `{ws_type}`: {raw.decode()}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
@@ -1164,18 +1173,19 @@ class DYDXExecutionClient(LiveExecutionClient):
         price = 0
         trigger_price = None
 
-        if order.order_type == OrderType.LIMIT:
+        order_type = order.order_type
+        if order_type == OrderType.LIMIT:
             price = order.price.as_double()
-        elif order.order_type == OrderType.MARKET:
+        elif order_type == OrderType.MARKET:
             price = (
                 dydx_order_tags.market_order_price.as_double()
                 if dydx_order_tags.market_order_price is not None
                 else 0
             )
-        elif order.order_type == OrderType.STOP_LIMIT:
+        elif order_type == OrderType.STOP_LIMIT:
             price = order.price.as_double()
             trigger_price = order.trigger_price.as_double()
-        elif order.order_type == OrderType.STOP_MARKET:
+        elif order_type == OrderType.STOP_MARKET:
             price = (
                 dydx_order_tags.market_order_price.as_double()
                 if dydx_order_tags.market_order_price is not None
@@ -1183,9 +1193,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             trigger_price = order.trigger_price.as_double()
         else:
-            rejection_reason = (
-                f"Cannot submit order: order type `{order.order_type}` not (yet) supported"
-            )
+            rejection_reason = f"Cannot submit order: order type `{order_type}` not (yet) supported"
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -1197,7 +1205,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         order_msg = order_builder.create_order(
             order_id=order_id,
-            order_type=order_type_map[order.order_type],
+            order_type=order_type_map[order_type],
             side=order_side_map[order.side],
             size=order.quantity.as_double(),
             price=price,

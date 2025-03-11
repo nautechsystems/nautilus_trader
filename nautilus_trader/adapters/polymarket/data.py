@@ -231,6 +231,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        instrument_id = command.instrument_id
         if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
@@ -240,10 +241,10 @@ class PolymarketDataClient(LiveMarketDataClient):
             return
 
         if self._config.compute_effective_deltas:
-            local_book = OrderBook(command.instrument_id, book_type=BookType.L2_MBP)
-            self._local_books[command.instrument_id] = local_book
+            local_book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
+            self._local_books[instrument_id] = local_book
 
-        await self._subscribe_asset_book(command.instrument_id)
+        await self._subscribe_asset_book(instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         await self._subscribe_asset_book(command.instrument_id)

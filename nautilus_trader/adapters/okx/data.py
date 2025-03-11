@@ -250,24 +250,27 @@ class OKXDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
-        if command.book_type == BookType.L3_MBO:
+        book_type = command.book_type
+        instrument_id = command.instrument_id
+        depth = command.depth
+
+        if book_type == BookType.L3_MBO:
             self._log.error(
-                "Cannot subscribe to order book snapshot/deltas: OKX adapter currently only "
-                "supports L1_MBP and L2_MBP book subscriptions.",
+                "Cannot subscribe to order book snapshot/deltas: OKX adapter currently only supports L1_MBP and L2_MBP book subscriptions.",
             )
             return
 
-        if command.depth == 1 and command.book_type != BookType.L1_MBP:
+        if depth == 1 and book_type != BookType.L1_MBP:
             self._log.error(
                 "Inconsistent argument for `book_type` provided for order book subscription with "
-                f"`depth` argument of 1. `book_type` should be {BookType.L1_MBP}, was {command.book_type}",
+                f"`depth` argument of 1. `book_type` should be {BookType.L1_MBP}, was {book_type}",
             )
             return
 
-        if command.depth == 1 or command.book_type == BookType.L1_MBP:
+        if depth == 1 or book_type == BookType.L1_MBP:
             quote_ticks_subscription = SubscribeQuoteTicks(
                 command_id=command.id,
-                instrument_id=command.instrument_id,
+                instrument_id=instrument_id,
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
@@ -276,29 +279,28 @@ class OKXDataClient(LiveMarketDataClient):
             await self._subscribe_quote_ticks(quote_ticks_subscription)
             return
 
-        if command.depth is None:
+        if depth is None:
             self._log.warning(
-                "Depth not prescribed for order book snapshots/deltas subscription for "
-                f"{command.instrument_id}. Using default depth of 50.",
+                f"Depth not prescribed for order book snapshots/deltas subscription for {instrument_id}. Using default depth of 50.",
             )
             depth = 50
 
-        if command.instrument_id in self._depth_client_map:
-            _depth, _ws_client = self._depth_client_map[command.instrument_id]
+        if instrument_id in self._depth_client_map:
+            _depth, _ws_client = self._depth_client_map[instrument_id]
             if _depth == depth:
                 self._log.warning(
-                    f"Already subscribed to {command.instrument_id} order books of depth {depth}",
+                    f"Already subscribed to {instrument_id} order books of depth {depth}",
                 )
                 return
             else:
                 self._log.warning(
-                    f"Already subscribed to {command.instrument_id} order books of depth {_depth} but "
+                    f"Already subscribed to {instrument_id} order books of depth {_depth} but "
                     f"requested subscription for depth {depth}. Replacing subscription of "
                     f"depth {_depth} with depth {depth}.",
                 )
                 order_book_unsubscription = UnsubscribeOrderBook(
                     command_id=command.id,
-                    instrument_id=command.instrument_id,
+                    instrument_id=instrument_id,
                     client_id=command.client_id,
                     venue=command.venue,
                     ts_init=command.ts_init,
@@ -309,45 +311,49 @@ class OKXDataClient(LiveMarketDataClient):
         ws_client = await self._get_ws_client(OKXWsBaseUrlType.PUBLIC, tbt_books=True)
 
         # Cache the instrument/depth/client combo for unsubscribing
-        self._depth_client_map[command.instrument_id] = (depth, ws_client)
+        self._depth_client_map[instrument_id] = (depth, ws_client)
 
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
-        await ws_client.subscribe_order_book(okx_symbol.raw_symbol, depth)  # type:ignore
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
+        await ws_client.subscribe_order_book(okx_symbol.raw_symbol, depth)
 
         # Start book buffer for instrument in case we receive updates before snapshots
-        self._book_buffer[command.instrument_id] = []
+        self._book_buffer[instrument_id] = []
 
     # Copy subscribe method for book deltas to book snapshots (same logic)
     _subscribe_order_book_snapshots = _subscribe_order_book_deltas
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
-        if command.instrument_id in self._tob_client_map:
+        instrument_id = command.instrument_id
+
+        if instrument_id in self._tob_client_map:
             self._log.warning(
-                f"Already subscribed to {command.instrument_id} top-of-book (quotes)",
+                f"Already subscribed to {instrument_id} top-of-book (quotes)",
                 LogColor.MAGENTA,
             )
             return
 
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
         ws_client = await self._get_ws_client(OKXWsBaseUrlType.PUBLIC, tbt_books=True)
         self._log.debug(
-            f"Subscribing quotes {command.instrument_id} via order book deltas",
+            f"Subscribing quotes {instrument_id} via order book deltas",
             LogColor.MAGENTA,
         )
         # Cache the instrument/depth/client combos for unsubscribing
-        self._tob_client_map[command.instrument_id] = ws_client
+        self._tob_client_map[instrument_id] = ws_client
         await ws_client.subscribe_order_book(okx_symbol.raw_symbol, 1)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
-        if command.instrument_id in self._trades_client_map:
+        instrument_id = command.instrument_id
+
+        if instrument_id in self._trades_client_map:
             self._log.warning(
-                f"Already subscribed to {command.instrument_id} trades",
+                f"Already subscribed to {instrument_id} trades",
                 LogColor.MAGENTA,
             )
             return
         ws_client = await self._get_ws_client(OKXWsBaseUrlType.PUBLIC, tbt_books=False)
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
-        self._trades_client_map[command.instrument_id] = ws_client
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
+        self._trades_client_map[instrument_id] = ws_client
         await ws_client.subscribe_trades(okx_symbol.raw_symbol)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
@@ -358,43 +364,49 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.error("OKX bar subscriptions are not yet implemented")
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        instrument_id = command.instrument_id
+
         self._log.debug(
-            f"Unsubscribing {command.instrument_id} from order book deltas/snapshots",
+            f"Unsubscribing {instrument_id} from order book deltas/snapshots",
             LogColor.MAGENTA,
         )
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
         for iid, (depth, ws_client) in self._depth_client_map.items():
-            if iid == command.instrument_id:
+            if iid == instrument_id:
                 await ws_client.unsubscribe_order_book(okx_symbol.raw_symbol, depth)  # type:ignore
                 break
-        self._depth_client_map.pop(command.instrument_id, None)
+        self._depth_client_map.pop(instrument_id, None)
 
     # Copy unsubscribe method for book deltas to book snapshots (same logic)
     _unsubscribe_order_book_snapshots = _unsubscribe_order_book_deltas
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        instrument_id = command.instrument_id
+
         self._log.debug(
-            f"Unsubscribing {command.instrument_id} from quotes (top-of-book)",
+            f"Unsubscribing {instrument_id} from quotes (top-of-book)",
             LogColor.MAGENTA,
         )
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
         for iid, ws_client in self._tob_client_map.items():
-            if iid == command.instrument_id:
+            if iid == instrument_id:
                 await ws_client.unsubscribe_order_book(okx_symbol.raw_symbol, 1)
                 break
-        self._tob_client_map.pop(command.instrument_id, None)
+        self._tob_client_map.pop(instrument_id, None)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        self._log.debug(f"Unsubscribing {command.instrument_id} from trades", LogColor.MAGENTA)
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
+        instrument_id = command.instrument_id
+
+        self._log.debug(f"Unsubscribing {instrument_id} from trades", LogColor.MAGENTA)
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
         for iid, ws_client in self._trades_client_map.items():
-            if iid == command.instrument_id:
+            if iid == instrument_id:
                 await ws_client.unsubscribe_trades(okx_symbol.raw_symbol)
                 break
-        self._tob_client_map.pop(command.instrument_id, None)
+        self._tob_client_map.pop(instrument_id, None)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         self._log.error("OKX bar subscriptions are not yet implemented")

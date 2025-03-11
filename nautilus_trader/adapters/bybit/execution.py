@@ -381,9 +381,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 client_order_id = None
 
         self._log.info(
-            f"Generating OrderStatusReport for "
-            f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
         try:
             bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -426,7 +424,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        instrument_id = command.instrument_id
+        instrument_id: InstrumentId | None = command.instrument_id
 
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
@@ -467,7 +465,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        instrument_id = command.instrument_id
+        instrument_id: InstrumentId | None = command.instrument_id
 
         reports: list[PositionStatusReport] = []
 
@@ -590,8 +588,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(
-                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
+                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
             )
             return
 
@@ -622,12 +619,14 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         # https://bybit-exchange.github.io/docs/v5/order/batch-cancel
 
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        instrument_id: InstrumentId = command.instrument_id
+
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         max_batch = 20 if product_type == BybitProductType.OPTION else 10
 
         # Check open orders for instrument
-        open_order_ids = self._cache.client_order_ids_open(instrument_id=command.instrument_id)
+        open_order_ids = self._cache.client_order_ids_open(instrument_id=instrument_id)
 
         # Filter orders that are actually open
         valid_cancels: list[(CancelOrder)] = []
@@ -638,7 +637,7 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
 
         if not valid_cancels:
-            self._log.warning(f"No orders open for {command.instrument_id} batch cancel")
+            self._log.warning(f"No orders open for {instrument_id} batch cancel")
             return
 
         for i in range(0, len(valid_cancels), max_batch):
@@ -676,7 +675,9 @@ class BybitExecutionClient(LiveExecutionClient):
                         )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        instrument_id: InstrumentId = command.instrument_id
+
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
@@ -687,7 +688,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 symbol=bybit_symbol.raw_symbol,
             )
             if not retry_manager.result:
-                orders_open = self._cache.orders_open(instrument_id=command.instrument_id)
+                orders_open = self._cache.orders_open(instrument_id=instrument_id)
                 for order in orders_open:
                     if order.is_closed:
                         continue
@@ -701,24 +702,30 @@ class BybitExecutionClient(LiveExecutionClient):
                     )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        order: Order | None = self._cache.order(command.client_order_id)
+        client_order_id: ClientOrderId = command.client_order_id
+        venue_order_id: VenueOrderId | None = command.venue_order_id
+
+        quantity: Quantity | None = command.quantity
+        price: Price | None = command.price
+        trigger_price: Price | None = command.trigger_price
+
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id!r} not found in cache")
+            self._log.error(f"{client_order_id!r} not found in cache")
             return
 
         if order.is_closed:
             self._log.warning(
-                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
+                f"`ModifyOrder` command for {client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
             )
             return
 
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        client_order_id = command.client_order_id.value
-        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
-        price = str(command.price) if command.price else None
-        trigger_price = str(command.trigger_price) if command.trigger_price else None
-        quantity = str(command.quantity) if command.quantity else None
+        client_order_id = client_order_id.value
+        venue_order_id = str(venue_order_id) if venue_order_id else None
+        price = str(price) if price else None
+        trigger_price = str(trigger_price) if trigger_price else None
+        quantity = str(quantity) if quantity else None
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
@@ -745,6 +752,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
+
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
             return
@@ -764,7 +772,7 @@ class BybitExecutionClient(LiveExecutionClient):
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
                 "submit_order",
-                [command.order.client_order_id],
+                [order.client_order_id],
                 self._submit_order_methods[order.order_type],
                 order,
             )
@@ -778,12 +786,13 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        orders = command.order_list.orders
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         max_batch = 20 if product_type == BybitProductType.OPTION else 10
 
-        for i in range(0, len(command.order_list.orders), max_batch):
-            batch_submits = command.order_list.orders[i : i + max_batch]
+        for i in range(0, len(orders), max_batch):
+            batch_submits = orders[i : i + max_batch]
             submit_orders: list[BybitBatchPlaceOrder] = []
 
             for order in batch_submits:
@@ -1053,8 +1062,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if client_order_id is None:
             self._log.debug(
-                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found "
-                "(most likely due to being an external order)",
+                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
             )
             return
 

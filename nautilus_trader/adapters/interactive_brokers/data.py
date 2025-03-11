@@ -205,19 +205,21 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        if not (instrument := self._cache.instrument(command.bar_type.instrument_id)):
-            self._log.error(f"Cannot subscribe to {command.bar_type} bars: instrument not found")
+        bar_type = command.bar_type
+
+        if not (instrument := self._cache.instrument(bar_type.instrument_id)):
+            self._log.error(f"Cannot subscribe to {bar_type} bars: instrument not found")
             return
 
-        if command.bar_type.spec.timedelta.total_seconds() == 5:
+        if bar_type.spec.timedelta.total_seconds() == 5:
             await self._client.subscribe_realtime_bars(
-                bar_type=command.bar_type,
+                bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
             )
         else:
             await self._client.subscribe_historical_bars(
-                bar_type=command.bar_type,
+                bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,

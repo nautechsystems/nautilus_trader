@@ -221,18 +221,21 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        PyCondition.type_or_none(command.client_order_id, ClientOrderId, "client_order_id")
-        PyCondition.type_or_none(command.venue_order_id, VenueOrderId, "venue_order_id")
-        if not (command.client_order_id or command.venue_order_id):
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
+
+        PyCondition.type_or_none(client_order_id, ClientOrderId, "client_order_id")
+        PyCondition.type_or_none(venue_order_id, VenueOrderId, "venue_order_id")
+        if not (client_order_id or venue_order_id):
             self._log.debug("Both `client_order_id` and `venue_order_id` cannot be None")
             return None
 
         report = None
         ib_orders = await self._client.get_open_orders(self.account_id.get_id())
         for ib_order in ib_orders:
-            if (command.client_order_id and command.client_order_id.value == ib_order.orderRef) or (
-                command.venue_order_id
-                and command.venue_order_id.value
+            if (client_order_id and client_order_id.value == ib_order.orderRef) or (
+                venue_order_id
+                and venue_order_id.value
                 == str(
                     ib_order.orderId,
                 )
@@ -241,10 +244,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 break
         if report is None:
             self._log.warning(
-                f"Order {command.client_order_id=}, {command.venue_order_id} not found, canceling",
+                f"Order {client_order_id=}, {venue_order_id} not found, canceling",
             )
             self._on_order_status(
-                order_ref=command.client_order_id.value,
+                order_ref=client_order_id.value,
                 order_status="Cancelled",
                 reason="Not found in query",
             )
@@ -496,15 +499,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
+        order = command.order
+
         try:
-            ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
+            ib_order: IBOrder = self._transform_order_to_ib_order(order)
             ib_order.orderId = self._client.next_order_id()
             self._client.place_order(ib_order)
-            self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
+            self._handle_order_event(status=OrderStatus.SUBMITTED, order=order)
         except ValueError as e:
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
-                order=command.order,
+                order=order,
                 reason=str(e),
             )
 
@@ -515,8 +520,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         client_id_to_orders = {}
         ib_orders = []
 
+        orders = command.order_list.orders
+
         # Translate orders
-        for order in command.order_list.orders:
+        for order in orders:
             order_id_map[order.client_order_id.value] = self._client.next_order_id()
             client_id_to_orders[order.client_order_id.value] = order
 
@@ -527,7 +534,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 ib_orders.append(ib_order)
             except ValueError as e:
                 # All orders in the list are declined to prevent unintended side effects
-                for o in command.order_list.orders:
+                for o in orders:
                     if o == order:
                         self._handle_order_event(
                             status=OrderStatus.REJECTED,
@@ -560,7 +567,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         PyCondition.not_none(command, "command")
-        if not (command.quantity or command.price or command.trigger_price):
+
+        quantity = command.quantity
+        price = command.price
+        trigger_price = command.trigger_price
+
+        if not (quantity or price or trigger_price):
             return
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
@@ -582,16 +594,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 ib_order.parentId = int(parent_nautilus_order.venue_order_id.value)
             else:
                 ib_order.parentId = 0
-        if command.quantity and command.quantity != ib_order.totalQuantity:
-            ib_order.totalQuantity = command.quantity.as_double()
-        if command.price and command.price.as_double() != getattr(ib_order, "lmtPrice", None):
-            ib_order.lmtPrice = command.price.as_double()
-        if command.trigger_price and command.trigger_price.as_double() != getattr(
+        if quantity and quantity != ib_order.totalQuantity:
+            ib_order.totalQuantity = quantity.as_double()
+        if price and price.as_double() != getattr(ib_order, "lmtPrice", None):
+            ib_order.lmtPrice = price.as_double()
+        if trigger_price and trigger_price.as_double() != getattr(
             ib_order,
             "auxPrice",
             None,
         ):
-            ib_order.auxPrice = command.trigger_price.as_double()
+            ib_order.auxPrice = trigger_price.as_double()
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
 

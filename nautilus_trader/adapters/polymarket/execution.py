@@ -319,9 +319,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
-        if command.instrument_id is not None:
-            condition_id = get_polymarket_condition_id(command.instrument_id)
-            asset_id = get_polymarket_token_id(command.instrument_id)
+        instrument_id = command.instrument_id
+
+        if instrument_id is not None:
+            condition_id = get_polymarket_condition_id(instrument_id)
+            asset_id = get_polymarket_token_id(instrument_id)
             params = OpenOrderParams(market=condition_id, asset_id=asset_id)
         else:
             params = None
@@ -330,7 +332,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         async with self._retry_manager_pool as retry_manager:
             response: list[JSON] | None = await retry_manager.run(
                 "generate_order_status_reports",
-                [command.instrument_id],
+                [instrument_id],
                 asyncio.to_thread,
                 self._http_client.get_orders,
                 params=params,
@@ -492,9 +494,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         await self._maintain_active_market(command.instrument_id)
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
 
-        if command.venue_order_id is None:
-            venue_order_id = self._cache.venue_order_id(command.client_order_id)
+        if venue_order_id is None:
+            venue_order_id = self._cache.venue_order_id(client_order_id)
             if venue_order_id is None:
                 self._log.error(
                     "Cannot generate an order status report for Polymarket without the venue order ID",
@@ -502,15 +506,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 return None  # Failed
 
         self._log.info(
-            f"Generating OrderStatusReport for "
-            f"{repr(command.client_order_id) if command.client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
 
         async with self._retry_manager_pool as retry_manager:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [command.client_order_id, venue_order_id],
+                [client_order_id, venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
                 order_id=venue_order_id.value,
@@ -535,7 +537,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return polymarket_order.parse_to_order_status_report(
                 account_id=self.account_id,
                 instrument=instrument,
-                client_order_id=command.client_order_id,
+                client_order_id=client_order_id,
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -546,16 +548,17 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
+        instrument_id = command.instrument_id
         params = TradeParams()
-        if command.instrument_id:
-            condition_id = get_polymarket_condition_id(command.instrument_id)
-            asset_id = get_polymarket_token_id(command.instrument_id)
+        if instrument_id:
+            condition_id = get_polymarket_condition_id(instrument_id)
+            asset_id = get_polymarket_token_id(instrument_id)
             params.market = condition_id
             params.asset_id = asset_id
 
         details = []
-        if command.instrument_id:
-            details.append(command.instrument_id)
+        if instrument_id:
+            details.append(instrument_id)
 
         async with self._retry_manager_pool as retry_manager:
             response: JSON | None = await retry_manager.run(
@@ -695,8 +698,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # https://docs.polymarket.com/#cancel-orders
         await self._maintain_active_market(command.instrument_id)
 
+        instrument_id = command.instrument_id
+
         # Check open orders for instrument
-        open_order_ids = self._cache.client_order_ids_open(instrument_id=command.instrument_id)
+        open_order_ids = self._cache.client_order_ids_open(instrument_id=instrument_id)
 
         # Filter orders that are actually open
         valid_cancels: list[CancelOrder] = []
@@ -707,14 +712,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
 
         if not valid_cancels:
-            self._log.warning(f"No orders open for {command.instrument_id} batch cancel")
+            self._log.warning(f"No orders open for {instrument_id} batch cancel")
             return
 
         async with self._retry_manager_pool as retry_manager:
             order_ids = [o.venue_order_id.value for o in valid_cancels]
             response: JSON | None = await retry_manager.run(
                 "batch_cancel_orders",
-                [command.instrument_id],
+                [instrument_id],
                 asyncio.to_thread,
                 self._http_client.cancel_orders,
                 order_ids=order_ids,
@@ -730,7 +735,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if client_order_id:
                     self.generate_order_cancel_rejected(
                         strategy_id=command.strategy_id,
-                        instrument_id=command.instrument_id,
+                        instrument_id=instrument_id,
                         client_order_id=client_order_id,
                         venue_order_id=venue_order_id,
                         reason=str(reason),
@@ -741,8 +746,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # https://docs.polymarket.com/#cancel-orders
         await self._maintain_active_market(command.instrument_id)
 
+        instrument_id = command.instrument_id
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
-            instrument_id=command.instrument_id,
+            instrument_id=instrument_id,
             strategy_id=command.strategy_id,
         )
         if not open_orders_strategy:
@@ -753,7 +760,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             order_ids = [o.venue_order_id.value for o in open_orders_strategy]
             response: JSON | None = await retry_manager.run(
                 "cancel_all_orders",
-                [command.instrument_id],
+                [instrument_id],
                 asyncio.to_thread,
                 self._http_client.cancel_orders,
                 order_ids=order_ids,
@@ -769,7 +776,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if client_order_id:
                     self.generate_order_cancel_rejected(
                         strategy_id=command.strategy_id,
-                        instrument_id=command.instrument_id,
+                        instrument_id=instrument_id,
                         client_order_id=client_order_id,
                         venue_order_id=venue_order_id,
                         reason=str(reason),

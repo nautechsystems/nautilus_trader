@@ -515,26 +515,30 @@ class OKXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
+        instrument_id = command.instrument_id
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
+
         PyCondition.is_false(
-            command.client_order_id is None and command.venue_order_id is None,
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
-        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
+        okx_symbol = OKXSymbol(instrument_id.symbol.value)
         okx_client_order_id = self._client_order_id_generator.get_okx_client_order_id(
-            command.client_order_id,
+            client_order_id,
         )
 
-        id_str = f"{command.instrument_id!r}"
-        id_str += f", {command.client_order_id!r}" if command.client_order_id else ""
-        id_str += f", {command.venue_order_id!r}" if command.venue_order_id else ""
+        id_str = f"{instrument_id!r}"
+        id_str += f", {client_order_id!r}" if client_order_id else ""
+        id_str += f", {venue_order_id!r}" if venue_order_id else ""
         id_str += f", {okx_client_order_id=!r}" if okx_client_order_id else ""
         self._log.info(f"Generating OrderStatusReport for {id_str}")
 
         try:
             order_details = await self._http_trade.fetch_order_details(
                 instId=okx_symbol.raw_symbol,
-                ordId=command.venue_order_id.value if command.venue_order_id else None,
+                ordId=venue_order_id.value if venue_order_id else None,
                 clOrdId=okx_client_order_id,
             )
             if len(order_details.data) == 0:
@@ -555,7 +559,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
             order_report = target_order.parse_to_order_status_report(
                 account_id=self.account_id,
-                instrument_id=command.instrument_id,
+                instrument_id=instrument_id,
                 report_id=UUID4(),
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
@@ -576,7 +580,10 @@ class OKXExecutionClient(LiveExecutionClient):
         reports: list[FillReport] = []
         billIds: list[str] = []  # for possible pagination
 
-        _symbol = command.instrument_id.symbol.value if command.instrument_id is not None else None
+        instrument_id = command.instrument_id
+        venue_order_id = command.venue_order_id
+
+        _symbol = instrument_id.symbol.value if instrument_id is not None else None
         symbol = OKXSymbol(_symbol) if _symbol is not None else None
         try:
             if symbol:
@@ -584,7 +591,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 fills_response = await self._http_trade.fetch_fills_history(
                     instType=symbol.instrument_type,
                     instId=symbol.raw_symbol,
-                    ordId=command.venue_order_id.value if command.venue_order_id else None,
+                    ordId=venue_order_id.value if venue_order_id else None,
                 )
                 for fill_data in fills_response.data:
                     client_order_id = self._client_order_id_generator.get_client_order_id(
@@ -614,7 +621,7 @@ class OKXExecutionClient(LiveExecutionClient):
                         fills_response = await self._http_trade.fetch_fills_history(
                             instType=symbol.instrument_type,
                             instId=symbol.raw_symbol,
-                            ordId=command.venue_order_id.value if command.venue_order_id else None,
+                            ordId=venue_order_id.value if venue_order_id else None,
                             after=billIds[-1],
                         )
                         for fill_data in fills_response.data:
@@ -639,7 +646,7 @@ class OKXExecutionClient(LiveExecutionClient):
                     # Gets latest 3 months of fills, up to a max of 100 records per request
                     fills_response = await self._http_trade.fetch_fills_history(
                         instType=instrument_type,
-                        ordId=command.venue_order_id.value if command.venue_order_id else None,
+                        ordId=venue_order_id.value if venue_order_id else None,
                     )
                     for fill_data in fills_response.data:
                         okx_symbol = OKXSymbol.from_raw_symbol(
@@ -672,9 +679,7 @@ class OKXExecutionClient(LiveExecutionClient):
                         ):  # -1 is oldest
                             fills_response = await self._http_trade.fetch_fills_history(
                                 instType=instrument_type,
-                                ordId=(
-                                    command.venue_order_id.value if command.venue_order_id else None
-                                ),
+                                ordId=(venue_order_id.value if venue_order_id else None),
                                 after=_billIds[-1],
                             )
                             for fill_data in fills_response.data:
@@ -720,9 +725,10 @@ class OKXExecutionClient(LiveExecutionClient):
         reports: list[PositionStatusReport] = []
 
         try:
-            if command.instrument_id:
-                self._log.debug(f"Requesting PositionStatusReport for {command.instrument_id}")
-                okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
+            instrument_id = command.instrument_id
+            if instrument_id:
+                self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
+                okx_symbol = OKXSymbol(instrument_id.symbol.value)
                 positions_response = await self._http_account.fetch_positions(
                     instType=okx_symbol.instrument_type,
                     instId=okx_symbol.raw_symbol,
@@ -730,7 +736,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 for position in positions_response.data:
                     position_report = position.parse_to_position_status_report(
                         account_id=self.account_id,
-                        instrument_id=command.instrument_id,
+                        instrument_id=instrument_id,
                         report_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                     )
@@ -873,29 +879,31 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
         okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
 
-        order: Order | None = self._cache.order(command.client_order_id)
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id=} not found in cache to enable modifying")
+            self._log.error(f"{client_order_id=} not found in cache to enable modifying")
             return
         if not self._check_order_validity(order, okx_symbol.instrument_type):
             return
 
-        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
+        venue_order_id = str(venue_order_id) if venue_order_id else None
         price = str(command.price) if command.price else None
         # trigger_price = str(command.trigger_price) if command.trigger_price else None
         quantity = str(command.quantity) if command.quantity else None
 
         okx_client_order_id = self._client_order_id_generator.get_okx_client_order_id(
-            command.client_order_id,
+            client_order_id,
         )
 
         msg_id = self._create_okx_order_msg_id()
         self._unhandled_order_msgs[msg_id] = (
             okx_symbol,
-            command.venue_order_id,
-            command.client_order_id,
+            venue_order_id,
+            client_order_id,
             command.strategy_id,
         )
 
@@ -915,26 +923,28 @@ class OKXExecutionClient(LiveExecutionClient):
         )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
         okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
 
-        order: Order | None = self._cache.order(command.client_order_id)
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id=} not found in cache to enable canceling")
+            self._log.error(f"{client_order_id=} not found in cache to enable canceling")
             return
         if not self._check_order_validity(order, okx_symbol.instrument_type):
             return
 
-        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
+        venue_order_id = str(venue_order_id) if venue_order_id else None
 
         okx_client_order_id = self._client_order_id_generator.get_okx_client_order_id(
-            command.client_order_id,
+            client_order_id,
         )
 
         msg_id = self._create_okx_order_msg_id()
         self._unhandled_order_msgs[msg_id] = (
             okx_symbol,
-            command.venue_order_id,
-            command.client_order_id,
+            venue_order_id,
+            client_order_id,
             command.strategy_id,
         )
 

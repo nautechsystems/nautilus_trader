@@ -299,8 +299,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled task 'ping_listen_keys' to run in "
-                    f"{self._ping_listen_keys_interval}s",
+                    f"Scheduled task 'ping_listen_keys' to run in {self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
                 if self._listen_key:
@@ -328,51 +327,51 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
+        instrument_id: InstrumentId | None = command.instrument_id
+        client_order_id: ClientOrderId | None = command.client_order_id
+        venue_order_id: VenueOrderId | None = command.venue_order_id
+
         PyCondition.is_false(
-            command.client_order_id is None and command.venue_order_id is None,
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
-        retries = self._generate_order_status_retries.get(command.client_order_id, 0)
+        retries = self._generate_order_status_retries.get(client_order_id, 0)
         if retries > 3:
             self._log.error(
                 f"Reached maximum retries 3/3 for generating OrderStatusReport for "
-                f"{repr(command.client_order_id) if command.client_order_id else ''} "
-                f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
+                f"{repr(client_order_id) if client_order_id else ''} "
+                f"{repr(venue_order_id) if venue_order_id else ''}",
             )
             return None
 
         self._log.info(
-            f"Generating OrderStatusReport for "
-            f"{repr(command.client_order_id) if command.client_order_id else ''} "
-            f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
 
         try:
-            if command.venue_order_id:
+            if venue_order_id:
                 binance_order = await self._http_account.query_order(
-                    symbol=command.instrument_id.symbol.value,
-                    order_id=int(command.venue_order_id.value),
+                    symbol=instrument_id.symbol.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 binance_order = await self._http_account.query_order(
-                    symbol=command.instrument_id.symbol.value,
+                    symbol=instrument_id.symbol.value,
                     orig_client_order_id=(
-                        command.client_order_id.value
-                        if command.client_order_id is not None
-                        else None
+                        client_order_id.value if client_order_id is not None else None
                     ),
                 )
         except BinanceError as e:
             retries += 1
             self._log.error(
-                f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {client_order_id!r}: {e.message}. Retry {retries}/3",
             )
-            self._generate_order_status_retries[command.client_order_id] = retries
-            if not command.client_order_id:
+            self._generate_order_status_retries[client_order_id] = retries
+            if not client_order_id:
                 self._log.warning("Cannot retry without a client order ID")
             else:
-                order: Order | None = self._cache.order(command.client_order_id)
+                order: Order | None = self._cache.order(client_order_id)
                 if order is None:
                     self._log.warning("Order not found in cache")
                     return None
@@ -385,8 +384,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     # so that there are no longer subsequent retries (we don't expect many of these).
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
-                        instrument_id=command.instrument_id,
-                        client_order_id=command.client_order_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
                         reason=str(e.message),
                         ts_event=self._clock.timestamp_ns(),
                     )
@@ -395,8 +394,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if not binance_order or (binance_order.origQty and Decimal(binance_order.origQty) == 0):
             # Cannot proceed to generating report
             self._log.error(
-                f"Cannot generate `OrderStatusReport` for {command.client_order_id=!r}, {command.venue_order_id=!r}: "
-                "order not found",
+                f"Cannot generate `OrderStatusReport` for {client_order_id=!r}, {venue_order_id=!r}: order not found",
             )
             return None
 
@@ -562,16 +560,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
+        instrument_id: InstrumentId | None = command.instrument_id
+
         try:
-            if command.instrument_id:
-                self._log.info(f"Requesting PositionStatusReport for {command.instrument_id}")
-                symbol = command.instrument_id.symbol.value
+            if instrument_id:
+                self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
+                symbol = instrument_id.symbol.value
                 reports = await self._get_binance_position_status_reports(symbol)
                 if not reports:
                     now = self._clock.timestamp_ns()
                     report = PositionStatusReport(
                         account_id=self.account_id,
-                        instrument_id=command.instrument_id,
+                        instrument_id=instrument_id,
                         position_side=PositionSide.FLAT,
                         quantity=Quantity.zero(),
                         report_id=UUID4(),
@@ -766,8 +766,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type = "MARK_PRICE"
         else:
             self._log.error(
-                f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}. {order}",
+                f"Cannot submit order: invalid `order.trigger_type`, was {trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
@@ -817,8 +816,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type = "MARK_PRICE"
         else:
             self._log.error(
-                f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"Cannot submit order: invalid `order.trigger_type`, was {trigger_type_to_str(order.trigger_price)}, {order}",
             )
             return
 
@@ -849,8 +847,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type = "MARK_PRICE"
         else:
             self._log.error(
-                f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"Cannot submit order: invalid `order.trigger_type`, was {trigger_type_to_str(order.trigger_price)}, {order}",
             )
             return
 
@@ -926,15 +923,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        order: Order | None = self._cache.order(command.client_order_id)
+        client_order_id: ClientOrderId = command.client_order_id
+
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id!r} not found to modify")
+            self._log.error(f"{client_order_id!r} not found to modify")
             return
 
         if order.order_type != OrderType.LIMIT:
             self._log.error(
-                "Cannot modify order: "
-                f"only LIMIT orders supported by the venue (was {order.type_string()})",
+                f"Cannot modify order: only LIMIT orders supported by the venue (was {order.type_string()})",
             )
             return
 
@@ -953,50 +951,56 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self.generate_order_modify_reject(
                     command.strategy_id,
                     command.instrument_id,
-                    command.client_order_id,
+                    client_order_id,
                     command.venue_order_id,
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
+        instrument_id: InstrumentId = command.instrument_id
+        client_order_id: ClientOrderId = command.client_order_id
+        venue_order_id: VenueOrderId | None = command.venue_order_id
+
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
                 "cancel_order",
-                [command.client_order_id, command.venue_order_id],
+                [client_order_id, venue_order_id],
                 self._cancel_order_single,
-                instrument_id=command.instrument_id,
-                client_order_id=command.client_order_id,
-                venue_order_id=command.venue_order_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
             )
             if not retry_manager.result:
                 self.generate_order_cancel_rejected(
                     command.strategy_id,
-                    command.instrument_id,
-                    command.client_order_id,
-                    command.venue_order_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        instrument_id: InstrumentId = command.instrument_id
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
-            instrument_id=command.instrument_id,
+            instrument_id=instrument_id,
             strategy_id=command.strategy_id,
         )
 
         # Check total orders for instrument
         open_orders_total_count = self._cache.orders_open_count(
-            instrument_id=command.instrument_id,
+            instrument_id=instrument_id,
         )
 
         if open_orders_total_count == len(open_orders_strategy):
             async with self._retry_manager_pool as retry_manager:
                 await retry_manager.run(
                     "cancel_all_open_orders",
-                    [command.instrument_id],
+                    [instrument_id],
                     self._http_account.cancel_all_open_orders,
-                    symbol=command.instrument_id.symbol.value,
+                    symbol=instrument_id.symbol.value,
                 )
                 if not retry_manager.result:
                     if retry_manager.message is not None:
@@ -1054,8 +1058,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(
-                f"CancelOrder command for {client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
+                f"CancelOrder command for {client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
             )
             return
 

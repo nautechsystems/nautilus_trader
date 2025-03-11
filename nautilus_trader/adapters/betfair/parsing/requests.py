@@ -96,7 +96,9 @@ def nautilus_limit_to_place_instructions(
     command: SubmitOrder,
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
-    assert isinstance(command.order, NautilusLimitOrder)
+    order = command.order
+
+    assert isinstance(order, NautilusLimitOrder)
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
         selection_id=int(instrument.selection_id),
@@ -105,19 +107,19 @@ def nautilus_limit_to_place_instructions(
             if instrument.selection_handicap != null_handicap()
             else None
         ),
-        side=OrderSideParser.to_betfair(command.order.side),
+        side=OrderSideParser.to_betfair(order.side),
         limit_order=LimitOrder(
-            price=command.order.price.as_double(),
-            size=command.order.quantity.as_double(),
+            price=order.price.as_double(),
+            size=order.quantity.as_double(),
             persistence_type=N2B_PERSISTENCE.get(
-                command.order.time_in_force,
+                order.time_in_force,
                 PersistenceType.LAPSE,
             ),
-            time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
-            min_fill_size=min_fill_size(command.order.time_in_force),
+            time_in_force=N2B_TIME_IN_FORCE.get(order.time_in_force),
+            min_fill_size=min_fill_size(order.time_in_force),
         ),
         customer_order_ref=make_customer_order_ref(
-            client_order_id=command.order.client_order_id,
+            client_order_id=order.client_order_id,
         ),
     )
     return instructions
@@ -127,7 +129,9 @@ def nautilus_limit_on_close_to_place_instructions(
     command: SubmitOrder,
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
-    assert isinstance(command.order, NautilusLimitOrder)
+    order = command.order
+
+    assert isinstance(order, NautilusLimitOrder)
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT_ON_CLOSE,
         selection_id=int(instrument.selection_id),
@@ -136,13 +140,13 @@ def nautilus_limit_on_close_to_place_instructions(
             if instrument.selection_handicap != null_handicap()
             else None
         ),
-        side=OrderSideParser.to_betfair(command.order.side),
+        side=OrderSideParser.to_betfair(order.side),
         limit_on_close_order=LimitOnCloseOrder(
-            price=command.order.price.as_double(),
-            liability=command.order.quantity.as_double(),
+            price=order.price.as_double(),
+            liability=order.quantity.as_double(),
         ),
         customer_order_ref=make_customer_order_ref(
-            client_order_id=command.order.client_order_id,
+            client_order_id=order.client_order_id,
         ),
     )
     return instructions
@@ -152,8 +156,10 @@ def nautilus_market_to_place_instructions(
     command: SubmitOrder,
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
-    assert isinstance(command.order, NautilusMarketOrder)
-    price = MIN_BET_PRICE if command.order.side == OrderSide.BUY else MAX_BET_PRICE
+    order = command.order
+
+    assert isinstance(order, NautilusMarketOrder)
+    price = MIN_BET_PRICE if order.side == OrderSide.BUY else MAX_BET_PRICE
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
         selection_id=int(instrument.selection_id),
@@ -162,19 +168,19 @@ def nautilus_market_to_place_instructions(
             if instrument.selection_handicap != null_handicap()
             else None
         ),
-        side=OrderSideParser.to_betfair(command.order.side),
+        side=OrderSideParser.to_betfair(order.side),
         limit_order=LimitOrder(
             price=price.as_double(),
-            size=command.order.quantity.as_double(),
+            size=order.quantity.as_double(),
             persistence_type=N2B_PERSISTENCE.get(
-                command.order.time_in_force,
+                order.time_in_force,
                 PersistenceType.LAPSE,
             ),
-            time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
-            min_fill_size=min_fill_size(command.order.time_in_force),
+            time_in_force=N2B_TIME_IN_FORCE.get(order.time_in_force),
+            min_fill_size=min_fill_size(order.time_in_force),
         ),
         customer_order_ref=make_customer_order_ref(
-            client_order_id=command.order.client_order_id,
+            client_order_id=order.client_order_id,
         ),
     )
     return instructions
@@ -184,7 +190,9 @@ def nautilus_market_on_close_to_place_instructions(
     command: SubmitOrder,
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
-    assert isinstance(command.order, NautilusMarketOrder)
+    order = command.order
+
+    assert isinstance(order, NautilusMarketOrder)
     instructions = PlaceInstruction(
         order_type=OrderType.MARKET_ON_CLOSE,
         selection_id=int(instrument.selection_id),
@@ -193,12 +201,12 @@ def nautilus_market_on_close_to_place_instructions(
             if instrument.selection_handicap != null_handicap()
             else None
         ),
-        side=OrderSideParser.to_betfair(command.order.side),
+        side=OrderSideParser.to_betfair(order.side),
         market_on_close_order=MarketOnCloseOrder(
-            liability=command.order.quantity.as_double(),
+            liability=order.quantity.as_double(),
         ),
         customer_order_ref=make_customer_order_ref(
-            client_order_id=command.order.client_order_id,
+            client_order_id=order.client_order_id,
         ),
     )
     return instructions
@@ -208,8 +216,10 @@ def nautilus_order_to_place_instructions(
     command: SubmitOrder,
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
-    if isinstance(command.order, NautilusLimitOrder):
-        if command.order.time_in_force in (
+    order = command.order
+
+    if isinstance(order, NautilusLimitOrder):
+        if order.time_in_force in (
             NautilusTimeInForce.AT_THE_OPEN,
             NautilusTimeInForce.AT_THE_CLOSE,
         ):
@@ -219,8 +229,8 @@ def nautilus_order_to_place_instructions(
             )
         else:
             return nautilus_limit_to_place_instructions(command=command, instrument=instrument)
-    elif isinstance(command.order, NautilusMarketOrder):
-        if command.order.time_in_force in (
+    elif isinstance(order, NautilusMarketOrder):
+        if order.time_in_force in (
             NautilusTimeInForce.AT_THE_OPEN,
             NautilusTimeInForce.AT_THE_CLOSE,
         ):
@@ -231,7 +241,7 @@ def nautilus_order_to_place_instructions(
         else:
             return nautilus_market_to_place_instructions(command=command, instrument=instrument)
     else:
-        raise TypeError(f"Unknown order type: {type(command.order)}")
+        raise TypeError(f"Unknown order type: {type(order)}")
 
 
 def order_submit_to_place_order_params(
