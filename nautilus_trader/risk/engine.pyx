@@ -705,7 +705,7 @@ cdef class RiskEngine(Component):
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, notional={order_balance_impact}",
+                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, balance_impact={order_balance_impact}",
                 )
                 return False  # Denied
 
