@@ -21,6 +21,7 @@ use futures::future::join_all;
 use indexmap::IndexMap;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::orders::Order;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
@@ -634,12 +635,14 @@ impl DatabaseQueries {
                                 order.is_quote_quantity(),
                                 order.contingency_type(),
                                 order.order_list_id(),
-                                order.linked_order_ids(),
+                                order.linked_order_ids().map(|ids| ids.to_vec()),
                                 order.parent_order_id(),
                                 order.exec_algorithm_id(),
-                                order.exec_algorithm_params(),
+                                order
+                                    .exec_algorithm_params()
+                                    .map(|index_map| index_map.to_owned()),
                                 order.exec_spawn_id(),
-                                order.tags(),
+                                order.tags().map(|tags| tags.to_vec()),
                             );
 
                             let original_events = order.events();
@@ -647,7 +650,7 @@ impl DatabaseQueries {
                                 transformed.events.insert(0, event.clone());
                             }
 
-                            order = OrderAny::from_market(transformed);
+                            order = OrderAny::from(transformed);
                         }
                         OrderType::Limit => {
                             let price = order_initialized.price.unwrap_or(order.price().unwrap());
@@ -673,12 +676,14 @@ impl DatabaseQueries {
                                 Some(trigger_instrument_id),
                                 order.contingency_type(),
                                 order.order_list_id(),
-                                order.linked_order_ids(),
+                                order.linked_order_ids().map(|ids| ids.to_vec()),
                                 order.parent_order_id(),
                                 order.exec_algorithm_id(),
-                                order.exec_algorithm_params(),
+                                order
+                                    .exec_algorithm_params()
+                                    .map(|index_map| index_map.to_owned()),
                                 order.exec_spawn_id(),
-                                order.tags(),
+                                order.tags().map(|tags| tags.to_vec()),
                                 UUID4::new(),
                                 order.ts_init(),
                             ) {
@@ -701,7 +706,7 @@ impl DatabaseQueries {
                                 transformed.events.insert(0, event.clone());
                             }
 
-                            order = OrderAny::from_limit(transformed);
+                            order = OrderAny::from(transformed);
                         }
                         _ => {
                             anyhow::bail!(
