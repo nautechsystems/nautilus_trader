@@ -24,10 +24,7 @@ use crate::{
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::{
-        MarketIfTouchedOrder,
-        base::{Order, str_indexmap_to_ustr},
-    },
+    orders::{MarketIfTouchedOrder, Order, str_indexmap_to_ustr},
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::{Price, Quantity},
 };
