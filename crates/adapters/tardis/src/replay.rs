@@ -104,7 +104,7 @@ async fn gather_instruments_info(
 
 pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> anyhow::Result<()> {
     tracing::info!("Starting replay");
-    tracing::info!("Config filepath: {}", config_filepath.display());
+    tracing::info!("Config filepath: {config_filepath:?}");
 
     let config_data = fs::read_to_string(config_filepath).expect("Failed to read config file");
     let config: TardisReplayConfig =
@@ -122,7 +122,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         })
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
-    tracing::info!("Output path: {}", path.display());
+    tracing::info!("Output path: {path:?}");
 
     let normalize_symbols = config.normalize_symbols.unwrap_or(true);
     tracing::info!("normalize_symbols={normalize_symbols}");
@@ -416,9 +416,9 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
-    match write_batch_to_parquet(batch, &filepath, None) {
-        Ok(()) => tracing::info!("File written: {}", filepath.display()),
-        Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
+    match write_batch_to_parquet(batch, &filepath, None, None) {
+        Ok(()) => tracing::info!("File written: {filepath:?}"),
+        Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
     }
 }
 
@@ -449,9 +449,9 @@ fn write_batch(
     path: &Path,
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
-    match write_batch_to_parquet(batch, &filepath, None) {
-        Ok(()) => tracing::info!("File written: {}", filepath.display()),
-        Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
+    match write_batch_to_parquet(batch, &filepath, None, None) {
+        Ok(()) => tracing::info!("File written: {filepath:?}"),
+        Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
     }
 }
 
