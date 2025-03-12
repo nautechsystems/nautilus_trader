@@ -33,7 +33,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
@@ -268,12 +267,8 @@ class BybitDataClient(LiveMarketDataClient):
                     f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                 )
                 await asyncio.sleep(interval_mins * 60)
-
-                try:
-                    await self._instrument_provider.initialize(reload=True)
-                    self._send_all_instruments_to_data_engine()
-                except BybitError as e:
-                    self._log.error(f"Failed to update the instruments: {e}")
+                await self._instrument_provider.initialize(reload=True)
+                self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
 
