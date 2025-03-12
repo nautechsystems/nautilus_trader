@@ -23,6 +23,7 @@ from nautilus_trader.core.nautilus_pyo3 import AssetClass
 from nautilus_trader.core.nautilus_pyo3 import BettingInstrument
 from nautilus_trader.core.nautilus_pyo3 import BinaryOption
 from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import CryptoOption
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
@@ -304,6 +305,37 @@ class TestInstrumentProviderPyo3:
             min_notional=Money(10.0, _USDT),
             max_price=Price.from_str("1000000.0"),
             min_price=Price.from_str("0.01"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def btcusd_option_deribit() -> CryptoOption:
+        return CryptoOption(
+            id=InstrumentId.from_str("BTC-13JAN23-16000-P.DERIBIT"),
+            raw_symbol=Symbol("BTC-13JAN23-16000-P"),
+            underlying=_BTC,
+            quote_currency=_USD,
+            settlement_currency=_BTC,
+            is_inverse=False,
+            option_kind=OptionKind.PUT,
+            strike_price=Price.from_str("16000.00"),
+            activation_ns=1671696002000000000,
+            expiration_ns=1673596800000000000,
+            price_precision=2,
+            size_precision=1,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.1"),
+            maker_fee=Decimal("0.0003"),
+            taker_fee=Decimal("0.0003"),
+            margin_init=Decimal("0"),  # TBD
+            margin_maint=Decimal("0"),  # TBD
+            max_quantity=Quantity.from_str("9000"),
+            min_quantity=Quantity.from_str("0.1"),
+            max_notional=None,
+            min_notional=Money.from_str("10.00 USD"),
+            max_price=None,
+            min_price=None,
             ts_event=0,
             ts_init=0,
         )

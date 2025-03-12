@@ -148,6 +148,7 @@ cdef class BinaryOption(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
         self.outcome = outcome
         self.description = description
         self.activation_ns = activation_ns

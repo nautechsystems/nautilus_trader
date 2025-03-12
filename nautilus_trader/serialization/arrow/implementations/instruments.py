@@ -21,6 +21,7 @@ from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.model.instruments import Commodity
 from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
@@ -138,14 +139,16 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
     ),
-    CryptoPerpetual: pa.schema(
+    CryptoFuture: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),
-            "base_currency": pa.dictionary(pa.int16(), pa.string()),
+            "underlying": pa.dictionary(pa.int16(), pa.string()),
             "quote_currency": pa.dictionary(pa.int16(), pa.string()),
             "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
             "is_inverse": pa.bool_(),
+            "activation_ns": pa.uint64(),
+            "expiration_ns": pa.uint64(),
             "price_precision": pa.uint8(),
             "size_precision": pa.uint8(),
             "price_increment": pa.dictionary(pa.int16(), pa.string()),
@@ -166,7 +169,7 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
     ),
-    CryptoFuture: pa.schema(
+    CryptoOption: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),
@@ -174,8 +177,38 @@ SCHEMAS = {
             "quote_currency": pa.dictionary(pa.int16(), pa.string()),
             "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
             "is_inverse": pa.bool_(),
+            "option_kind": pa.uint8(),
+            "strike_price": pa.string(),
             "activation_ns": pa.uint64(),
             "expiration_ns": pa.uint64(),
+            "price_precision": pa.uint8(),
+            "size_precision": pa.uint8(),
+            "price_increment": pa.dictionary(pa.int16(), pa.string()),
+            "size_increment": pa.dictionary(pa.int16(), pa.string()),
+            "multiplier": pa.dictionary(pa.int16(), pa.string()),
+            "max_quantity": pa.dictionary(pa.int16(), pa.string()),
+            "min_quantity": pa.dictionary(pa.int16(), pa.string()),
+            "max_notional": pa.dictionary(pa.int16(), pa.string()),
+            "min_notional": pa.dictionary(pa.int16(), pa.string()),
+            "max_price": pa.dictionary(pa.int16(), pa.string()),
+            "min_price": pa.dictionary(pa.int16(), pa.string()),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
+            "info": pa.binary(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+    ),
+    CryptoPerpetual: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "raw_symbol": pa.string(),
+            "base_currency": pa.dictionary(pa.int16(), pa.string()),
+            "quote_currency": pa.dictionary(pa.int16(), pa.string()),
+            "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
+            "is_inverse": pa.bool_(),
             "price_precision": pa.uint8(),
             "size_precision": pa.uint8(),
             "price_increment": pa.dictionary(pa.int16(), pa.string()),
@@ -370,6 +403,7 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
         b"CurrencyPair": CurrencyPair,
         b"CryptoPerpetual": CryptoPerpetual,
         b"CryptoFuture": CryptoFuture,
+        b"CryptoOption": CryptoOption,
         b"Equity": Equity,
         b"FuturesContract": FuturesContract,
         b"FuturesSpread": FuturesSpread,

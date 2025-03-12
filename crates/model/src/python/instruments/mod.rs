@@ -21,11 +21,13 @@ use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python};
 use crate::instruments::{
     BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
     FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
+    crypto_option::CryptoOption,
 };
 
 pub mod betting;
 pub mod binary_option;
 pub mod crypto_future;
+pub mod crypto_option;
 pub mod crypto_perpetual;
 pub mod currency_pair;
 pub mod equity;
@@ -39,6 +41,7 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
         InstrumentAny::Betting(inst) => inst.into_py_any(py),
         InstrumentAny::BinaryOption(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoFuture(inst) => inst.into_py_any(py),
+        InstrumentAny::CryptoOption(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoPerpetual(inst) => inst.into_py_any(py),
         InstrumentAny::CurrencyPair(inst) => inst.into_py_any(py),
         InstrumentAny::Equity(inst) => inst.into_py_any(py),
@@ -59,6 +62,9 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<
         )),
         stringify!(CryptoFuture) => Ok(InstrumentAny::CryptoFuture(
             instrument.extract::<CryptoFuture>(py)?,
+        )),
+        stringify!(CryptoOption) => Ok(InstrumentAny::CryptoOption(
+            instrument.extract::<CryptoOption>(py)?,
         )),
         stringify!(CryptoPerpetual) => Ok(InstrumentAny::CryptoPerpetual(
             instrument.extract::<CryptoPerpetual>(py)?,
