@@ -152,8 +152,7 @@ async fn stream_from_websocket(
                             tracing::debug!("Connection closed normally: {reason}");
                         } else {
                             tracing::error!(
-                                "Connection closed abnormally with code: {:?}, reason: {reason}",
-                                frame.code
+                                "Connection closed abnormally with code: {:?}, reason: {reason}", frame.code
                             );
                             yield Err(Error::ConnectionClosed { reason });
                         }

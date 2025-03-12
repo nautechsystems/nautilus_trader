@@ -1456,9 +1456,8 @@ impl Cache {
         if let Some(database) = &mut self.database {
             database.snapshot_position_state(position).map_err(|e| {
                 log::error!(
-                    "Failed to snapshot position state for {}: {:?}",
-                    position.id,
-                    e
+                    "Failed to snapshot position state for {}: {e:?}",
+                    position.id
                 );
                 e
             })?;

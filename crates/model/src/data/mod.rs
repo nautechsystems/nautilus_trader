@@ -605,8 +605,8 @@ mod tests {
         let data_type = DataType::new("ExampleType", metadata.clone());
 
         assert_eq!(
-            format!("{:?}", data_type),
-            format!("DataType(type_name=ExampleType, metadata={:?})", metadata)
+            format!("{data_type:?}"),
+            format!("DataType(type_name=ExampleType, metadata={metadata:?})")
         );
     }
 

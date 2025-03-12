@@ -75,13 +75,11 @@ fn create_csv_reader<P: AsRef<Path>>(
                 Err(e) => {
                     if attempt == max_retries {
                         anyhow::bail!(
-                            "Failed to open file '{}' after {max_retries} attempts: {e}",
-                            path_ref.display(),
+                            "Failed to open file '{path_ref:?}' after {max_retries} attempts: {e}"
                         );
                     }
                     eprintln!(
-                        "Attempt {attempt}/{max_retries} failed to open file '{}': {e}. Retrying after {delay_ms}ms...",
-                        path_ref.display(),
+                        "Attempt {attempt}/{max_retries} failed to open file '{path_ref:?}': {e}. Retrying after {delay_ms}ms..."
                     );
                     std::thread::sleep(Duration::from_millis(delay_ms));
                 }
@@ -116,13 +114,11 @@ fn create_csv_reader<P: AsRef<Path>>(
             Err(e) => {
                 if attempt == MAX_RETRIES {
                     anyhow::bail!(
-                        "Failed to read gzip header from '{}' after {MAX_RETRIES} attempts: {e}",
-                        filepath_ref.display(),
+                        "Failed to read gzip header from '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
                     );
                 }
                 eprintln!(
-                    "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{}': {e}. Retrying after {DELAY_MS}ms...",
-                    filepath_ref.display(),
+                    "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
             }
@@ -130,10 +126,7 @@ fn create_csv_reader<P: AsRef<Path>>(
     }
 
     if header_buf[0] != 0x1f || header_buf[1] != 0x8b {
-        anyhow::bail!(
-            "File '{}' has .gz extension but invalid gzip header",
-            filepath_ref.display(),
-        );
+        anyhow::bail!("File '{filepath_ref:?}' has .gz extension but invalid gzip header");
     }
 
     for attempt in 1..=MAX_RETRIES {
@@ -142,13 +135,11 @@ fn create_csv_reader<P: AsRef<Path>>(
             Err(e) => {
                 if attempt == MAX_RETRIES {
                     anyhow::bail!(
-                        "Failed to reset file position for '{}' after {MAX_RETRIES} attempts: {e}",
-                        filepath_ref.display(),
+                        "Failed to reset file position for '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
                     );
                 }
                 eprintln!(
-                    "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{}': {e}. Retrying after {DELAY_MS}ms...",
-                    filepath_ref.display(),
+                    "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
             }
