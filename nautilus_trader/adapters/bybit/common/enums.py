@@ -54,6 +54,16 @@ class BybitMarginMode(Enum):
 
 
 @unique
+class BybitPositionMode(Enum):
+    """
+    https://bybit-exchange.github.io/docs/v5/position/position-mode
+    """
+
+    MERGED_SINGLE = 0
+    BOTH_SIDES = 3
+
+
+@unique
 class BybitPositionIdx(Enum):
     # One-way mode position
     ONE_WAY = 0
