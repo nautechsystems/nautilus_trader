@@ -172,7 +172,7 @@ impl FromStr for Money {
         let amount = parts[0]
             .replace('_', "")
             .parse::<f64>()
-            .map_err(|e| format!("Error parsing amount '{}' as `f64`: {:?}", parts[0], e))?;
+            .map_err(|e| format!("Error parsing amount '{}' as `f64`: {e:?}", parts[0]))?;
 
         // Parse currency
         let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
@@ -404,7 +404,7 @@ mod tests {
     #[rstest]
     fn test_debug() {
         let money = Money::new(1010.12, Currency::USD());
-        let result = format!("{:?}", money);
+        let result = format!("{money:?}");
         let expected = "Money(1010.12, USD)";
         assert_eq!(result, expected);
     }
