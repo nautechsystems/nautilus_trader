@@ -16,6 +16,7 @@
 use std::path::PathBuf;
 
 use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
+use nautilus_serialization::parquet::ParquetWriteMode;
 use pyo3::prelude::*;
 
 use crate::backend::catalog::ParquetDataCatalog;
@@ -41,23 +42,46 @@ impl PyParquetDataCatalogV2 {
     // TODO: Cannot pass mixed data across pyo3 as a single type
     // pub fn write_data(mut slf: PyRefMut<'_, Self>, data_type: NautilusDataType, data: Vec<Data>) {}
 
-    pub fn write_quote_ticks(&self, data: Vec<QuoteTick>) {
-        let _ = self.inner.write_to_parquet(data, None, None, None);
+    #[pyo3(signature = (data, write_mode=None))]
+    pub fn write_quote_ticks(&self, data: Vec<QuoteTick>, write_mode: Option<ParquetWriteMode>) {
+        let _ = self
+            .inner
+            .write_to_parquet(data, None, None, None, write_mode);
     }
 
-    pub fn write_trade_ticks(&self, data: Vec<TradeTick>) {
-        let _ = self.inner.write_to_parquet(data, None, None, None);
+    #[pyo3(signature = (data, write_mode=None))]
+    pub fn write_trade_ticks(&self, data: Vec<TradeTick>, write_mode: Option<ParquetWriteMode>) {
+        let _ = self
+            .inner
+            .write_to_parquet(data, None, None, None, write_mode);
     }
 
-    pub fn write_order_book_deltas(&self, data: Vec<OrderBookDelta>) {
-        let _ = self.inner.write_to_parquet(data, None, None, None);
+    #[pyo3(signature = (data, write_mode=None))]
+    pub fn write_order_book_deltas(
+        &self,
+        data: Vec<OrderBookDelta>,
+        write_mode: Option<ParquetWriteMode>,
+    ) {
+        let _ = self
+            .inner
+            .write_to_parquet(data, None, None, None, write_mode);
     }
 
-    pub fn write_bars(&self, data: Vec<Bar>) {
-        let _ = self.inner.write_to_parquet(data, None, None, None);
+    #[pyo3(signature = (data, write_mode=None))]
+    pub fn write_bars(&self, data: Vec<Bar>, write_mode: Option<ParquetWriteMode>) {
+        let _ = self
+            .inner
+            .write_to_parquet(data, None, None, None, write_mode);
     }
 
-    pub fn write_order_book_depths(&self, data: Vec<OrderBookDepth10>) {
-        let _ = self.inner.write_to_parquet(data, None, None, None);
+    #[pyo3(signature = (data, write_mode=None))]
+    pub fn write_order_book_depths(
+        &self,
+        data: Vec<OrderBookDepth10>,
+        write_mode: Option<ParquetWriteMode>,
+    ) {
+        let _ = self
+            .inner
+            .write_to_parquet(data, None, None, None, write_mode);
     }
 }

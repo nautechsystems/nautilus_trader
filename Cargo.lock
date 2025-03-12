@@ -3355,6 +3355,7 @@ dependencies = [
 name = "nautilus-persistence"
 version = "0.43.0"
 dependencies = [
+ "anyhow",
  "binary-heap-plus",
  "compare",
  "criterion",
@@ -3382,6 +3383,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
+ "walkdir",
 ]
 
 [[package]]
@@ -3446,6 +3448,7 @@ dependencies = [
 name = "nautilus-serialization"
 version = "0.43.0"
 dependencies = [
+ "anyhow",
  "arrow",
  "criterion",
  "nautilus-core",

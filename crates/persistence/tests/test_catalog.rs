@@ -468,7 +468,8 @@ fn test_catalog_export_functionality() {
 
     // Write back to parquet
     let parquet_path = temp_dir.path().join("temp.parquet");
-    let parquet_path = catalog.write_to_parquet(quotes_from_json, Some(parquet_path), None, None);
+    let parquet_path =
+        catalog.write_to_parquet(quotes_from_json, Some(parquet_path), None, None, None);
 
     // Read parquet and verify data
     let final_result = catalog
