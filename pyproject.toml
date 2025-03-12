@@ -26,7 +26,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "click>=8.1.8,<9.0.0",
-    "fsspec>=2025.2.0,<2026.0.0",
+    "fsspec>=2025.3.0,<2026.0.0",
     "msgspec>=0.19.0,<1.0.0",
     "numpy>=1.26.4",
     "pandas>=2.2.3,<3.0.0",
@@ -112,7 +112,7 @@ dev = [
     "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
-    "coverage>=7.6.11,<8.0.0",
+    "coverage>=7.6.12,<8.0.0",
     "pytest>=7.4.4,<8.0.0",
     "pytest-aiohttp>=1.1.0,<2.0.0",
     "pytest-asyncio==0.21.1",
@@ -125,7 +125,7 @@ test = [
 docs = [
     "numpydoc>=1.8.0,<2.0.0",
     "linkify-it-py>=2.0.3,<3.0.0",
-    "myst-parser>=4.0.0,<5.0.0",
+    "myst-parser>=4.0.1,<5.0.0",
     "sphinx-comments>=0.0.3,<1.0.0",
     "sphinx-markdown-builder>=0.6.8,<1.0.0",
 ]
