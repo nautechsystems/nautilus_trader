@@ -107,6 +107,8 @@ cdef class Cache(CacheFacade):
     cdef set _index_strategies
     cdef set _index_exec_algorithms
     cdef bint _drop_instruments_on_reset
+    cdef bint _drop_accounts_on_reset
+    cdef bint _drop_positions_on_reset
 
     cdef readonly bint has_backing
     """If the cache has a database backing.\n\n:returns: `bool`"""

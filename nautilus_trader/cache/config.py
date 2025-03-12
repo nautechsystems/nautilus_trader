@@ -45,6 +45,10 @@ class CacheConfig(NautilusConfig, frozen=True):
         If database should be flushed on start.
     drop_instruments_on_reset : bool, default True
         If instruments data should be dropped from the caches memory on reset.
+    drop_accounts_on_reset : bool, default True
+        If accounts data should be dropped from the caches memory on reset.
+    drop_positions_on_reset : bool, default True
+        If positions data should be dropped from the caches memory on reset.
     tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
@@ -60,5 +64,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     use_instance_id: bool = False
     flush_on_start: bool = False
     drop_instruments_on_reset: bool = True
+    drop_accounts_on_reset: bool = True
+    drop_positions_on_reset: bool = True
     tick_capacity: PositiveInt = 10_000
     bar_capacity: PositiveInt = 10_000
