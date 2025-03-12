@@ -19,7 +19,7 @@ use chrono::{DateTime, Utc};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::Symbol,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;

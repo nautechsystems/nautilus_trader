@@ -47,7 +47,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::{OrderBook, own::OwnOrderBook},
     orders::{Order, OrderAny, OrderList},
     position::Position,
@@ -2610,7 +2610,7 @@ impl Cache {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
-            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(u)))
+            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(*u)))
             .collect()
     }
 

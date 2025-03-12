@@ -35,7 +35,7 @@ use nautilus_model::{
     enums::{OrderSide, OrderType, PositionSide, PriceType},
     events::{AccountState, OrderEventAny, position::PositionEvent},
     identifiers::{InstrumentId, Venue},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
     types::{Currency, Money, Price},

@@ -31,7 +31,7 @@ use crate::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -532,7 +532,7 @@ mod tests {
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::OrderFilled,
         identifiers::{AccountId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4},
-        instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny, stubs::*},
+        instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*},
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         stubs::*,

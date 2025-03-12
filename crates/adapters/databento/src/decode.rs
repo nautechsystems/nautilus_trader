@@ -1217,6 +1217,7 @@ mod tests {
 
     use databento::dbn::decode::{DecodeStream, dbn::Decoder};
     use fallible_streaming_iterator::FallibleStreamingIterator;
+    use nautilus_model::instruments::Instrument;
     use rstest::*;
 
     use super::*;

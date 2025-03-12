@@ -22,7 +22,7 @@ use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::AccountId,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };

@@ -47,7 +47,7 @@ use nautilus_model::{
         PositionOpened,
     },
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnOrderBook, should_handle_own_book_order},
     orders::{Order, OrderAny, OrderError},
     position::Position,
