@@ -294,7 +294,7 @@ impl RiskEngine {
     // Renamed from `execute_command`
     fn handle_command(&mut self, command: TradingCommand) {
         if self.config.debug {
-            log::debug!("{}{} {:?}", CMD, RECV, command);
+            log::debug!("{CMD}{RECV} {command:?}");
         }
 
         match command {
@@ -604,7 +604,7 @@ impl RiskEngine {
         };
         let free = cash_account.balance_free(Some(instrument.quote_currency()));
         if self.config.debug {
-            log::debug!("Free cash: {:?}", free);
+            log::debug!("Free cash: {free:?}");
         }
 
         let mut cum_notional_buy: Option<Money> = None;
@@ -666,7 +666,7 @@ impl RiskEngine {
                 instrument.calculate_notional_value(order.quantity(), last_px, Some(true));
 
             if self.config.debug {
-                log::debug!("Notional: {:?}", notional);
+                log::debug!("Notional: {notional:?}");
             }
 
             // Check MAX notional per order limit
@@ -751,7 +751,7 @@ impl RiskEngine {
                 }
 
                 if self.config.debug {
-                    log::debug!("Cumulative notional BUY: {:?}", cum_notional_buy);
+                    log::debug!("Cumulative notional BUY: {cum_notional_buy:?}");
                 }
 
                 if let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy) {
@@ -774,7 +774,7 @@ impl RiskEngine {
                         }
                     }
                     if self.config.debug {
-                        log::debug!("Cumulative notional SELL: {:?}", cum_notional_sell);
+                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
 
                     if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell) {
@@ -797,7 +797,7 @@ impl RiskEngine {
                     );
 
                     if self.config.debug {
-                        log::debug!("Cash value: {:?}", cash_value);
+                        log::debug!("Cash value: {cash_value:?}");
                         log::debug!(
                             "Total: {:?}",
                             cash_account.balance_total(Some(base_currency))
@@ -817,7 +817,7 @@ impl RiskEngine {
                     }
 
                     if self.config.debug {
-                        log::debug!("Cumulative notional SELL: {:?}", cum_notional_sell);
+                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
                     if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell) {
                         if cum_notional_sell.raw > free.raw {

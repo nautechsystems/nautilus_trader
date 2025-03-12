@@ -444,7 +444,7 @@ mod tests {
         for (name, data_type) in field_data {
             for i in 0..DEPTH10_LEN {
                 let field = schema_map.get(&format!("{}_{i}", name)).map(String::as_str);
-                assert_eq!(field, Some(format!("{:?}", data_type).as_str()));
+                assert_eq!(field, Some(format!("{data_type:?}").as_str()));
             }
         }
 

@@ -140,8 +140,7 @@ fn domain(request: &Request) -> Result<String, Error> {
 pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> anyhow::Result<rustls::ClientConfig> {
     if !certs_dir.is_dir() {
         return Err(anyhow::anyhow!(
-            "Certificate path is not a directory: {}",
-            certs_dir.display()
+            "Certificate path is not a directory: {certs_dir:?}"
         ));
     }
 
@@ -168,7 +167,7 @@ pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> anyhow::Result<rust
                 } else {
                     for cert in certs {
                         if let Err(e) = root_store.add(cert) {
-                            eprintln!("Warning: Invalid certificate in {}: {e}", path.display());
+                            eprintln!("Warning: Invalid certificate in {path:?}: {e}");
                         }
                     }
                 }
@@ -207,10 +206,7 @@ fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
         return Ok(key.into());
     }
 
-    Err(anyhow::anyhow!(
-        "No valid private key found in {}",
-        path.display()
-    ))
+    Err(anyhow::anyhow!("No valid private key found in {path:?}"))
 }
 
 fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {

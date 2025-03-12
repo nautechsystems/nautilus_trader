@@ -238,7 +238,7 @@ impl OrderEmulator {
             TradingCommand::ModifyOrder(command) => self.handle_modify_order(command),
             TradingCommand::CancelOrder(command) => self.handle_cancel_order(command),
             TradingCommand::CancelAllOrders(command) => self.handle_cancel_all_orders(command),
-            _ => log::error!("Cannot handle command: unrecognized {:?}", command),
+            _ => log::error!("Cannot handle command: unrecognized {command:?}"),
         }
     }
 
@@ -251,7 +251,7 @@ impl OrderEmulator {
             OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
-        log::info!("Creating matching core for {:?}", instrument_id);
+        log::info!("Creating matching core for {instrument_id:?}");
         matching_core
     }
 
@@ -275,10 +275,7 @@ impl OrderEmulator {
             emulation_trigger,
             Some(TriggerType::Default | TriggerType::BidAsk | TriggerType::LastPrice)
         ) {
-            log::error!(
-                "Cannot emulate order: `TriggerType` {:?} not supported",
-                emulation_trigger
-            );
+            log::error!("Cannot emulate order: `TriggerType` {emulation_trigger:?} not supported");
             self.manager.cancel_order(&order);
             return;
         }
@@ -376,7 +373,7 @@ impl OrderEmulator {
                 }
             }
             _ => {
-                log::error!("Invalid TriggerType: {:?}", emulation_trigger);
+                log::error!("Invalid TriggerType: {emulation_trigger:?}");
                 return;
             }
         }
@@ -392,7 +389,7 @@ impl OrderEmulator {
 
         // Hold in matching core
         if let Err(e) = matching_core.add_order(PassiveOrderAny::from(order.clone())) {
-            log::error!("Cannot add order: {:?}", e);
+            log::error!("Cannot add order: {e:?}");
             return;
         }
 
@@ -409,12 +406,12 @@ impl OrderEmulator {
             );
 
             if let Err(e) = order.apply(OrderEventAny::Emulated(event)) {
-                log::error!("Cannot apply order event: {:?}", e);
+                log::error!("Cannot apply order event: {e:?}");
                 return;
             }
 
             if let Err(e) = self.cache.borrow_mut().update_order(&order) {
-                log::error!("Cannot update order: {:?}", e);
+                log::error!("Cannot update order: {e:?}");
                 return;
             }
 
@@ -593,11 +590,11 @@ impl OrderEmulator {
         );
 
         if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
-            log::error!("Cannot apply order event: {:?}", e);
+            log::error!("Cannot apply order event: {e:?}");
             return;
         }
         if let Err(e) = self.cache.borrow_mut().update_order(order) {
-            log::error!("Cannot update order: {:?}", e);
+            log::error!("Cannot update order: {e:?}");
             return;
         }
 
@@ -715,7 +712,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Cannot delete order: {:?}", e);
+                log::error!("Cannot delete order: {e:?}");
             }
         }
 
@@ -799,7 +796,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Error deleting order: {:?}", e);
+                log::error!("Error deleting order: {e:?}");
             }
 
             let emulation_trigger = TriggerType::NoTrigger;
@@ -939,7 +936,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Cannot delete order: {:?}", e);
+                log::error!("Cannot delete order: {e:?}");
             }
 
             order.set_emulation_trigger(Some(TriggerType::NoTrigger));

@@ -38,7 +38,7 @@ pub fn ensure_file_exists_or_download_http(
     checksums: Option<&Path>,
 ) -> anyhow::Result<()> {
     if filepath.exists() {
-        println!("File already exists: {}", filepath.display());
+        println!("File already exists: {filepath:?}");
 
         if let Some(checksums_file) = checksums {
             if verify_sha256_checksum(filepath, checksums_file)? {
@@ -65,7 +65,7 @@ pub fn ensure_file_exists_or_download_http(
 }
 
 fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
-    println!("Downloading file from {url} to {}", filepath.display());
+    println!("Downloading file from {url} to {filepath:?}");
 
     if let Some(parent) = filepath.parent() {
         std::fs::create_dir_all(parent)?;
@@ -79,7 +79,7 @@ fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
     let mut out = File::create(filepath)?;
     copy(&mut response, &mut out)?;
 
-    println!("File downloaded to {}", filepath.display());
+    println!("File downloaded to {filepath:?}");
     Ok(())
 }
 

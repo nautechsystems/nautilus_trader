@@ -277,7 +277,7 @@ impl From<OrderEventAny> for OrderFilled {
     fn from(event: OrderEventAny) -> OrderFilled {
         match event {
             OrderEventAny::Filled(event) => event,
-            _ => panic!("Invalid `OrderEventAny` not `OrderFilled`, was {:?}", event),
+            _ => panic!("Invalid `OrderEventAny` not `OrderFilled`, was {event:?}"),
         }
     }
 }

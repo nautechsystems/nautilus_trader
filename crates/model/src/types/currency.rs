@@ -256,7 +256,7 @@ mod tests {
     fn test_debug() {
         let currency = Currency::AUD();
         assert_eq!(
-            format!("{:?}", currency),
+            format!("{currency:?}"),
             format!(
                 "Currency(code='AUD', precision=2, iso4217=36, name='Australian dollar', currency_type=FIAT)"
             )
