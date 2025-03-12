@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from asyncio import TaskGroup
 from typing import TYPE_CHECKING
 
 import msgspec
@@ -83,6 +84,7 @@ from nautilus_trader.model.orders import TrailingStopMarketOrder
 if TYPE_CHECKING:
     import asyncio
 
+    from nautilus_trader.adapters.bybit.common.enums import BybitPositionMode
     from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
     from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
@@ -177,6 +179,10 @@ class BybitExecutionClient(LiveExecutionClient):
         self._use_ws_execution_fast = config.use_ws_execution_fast
         self._use_http_batch_api = config.use_http_batch_api
 
+        self._futures_leverages = config.futures_leverages
+        self._margin_mode = config.margin_mode
+        self._position_mode = config.position_mode
+
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
@@ -187,6 +193,9 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.futures_leverages=}", LogColor.BLUE)
+        self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
+        self._log.info(f"{config.position_mode=}", LogColor.BLUE)
 
         self._enum_parser = BybitEnumParser()
 
@@ -579,6 +588,72 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
             except Exception as e:
                 self._log.error(f"Failed to generate AccountState: {e}")
+
+        # Set Leverages
+        if self._futures_leverages:
+            async with TaskGroup() as tg:
+                [
+                    tg.create_task(self.set_leverage(symbol=symbol, leverage=leverage))
+                    for symbol, leverage in self._futures_leverages.items()
+                    if symbol.is_linear or symbol.is_inverse
+                ]
+
+        # Set Position Mode
+        if self._position_mode:
+            async with TaskGroup() as tg:
+                [
+                    tg.create_task(self.set_position_mode(symbol=symbol, mode=mode))
+                    for symbol, mode in self._position_mode.items()
+                    if symbol.is_linear
+                ]
+
+        # Set Margin Mode
+        if self._margin_mode:
+            res_set_margin_mode = await self._http_account.set_margin_mode(self._margin_mode)
+            self._log.info(f"Set account margin mode result: {res_set_margin_mode.retMsg}")
+
+    async def set_leverage(
+        self,
+        symbol: BybitSymbol,
+        leverage: int,
+    ) -> None:
+        try:
+            res = await self._http_account.set_leverage(
+                category=symbol.product_type,
+                symbol=symbol.raw_symbol,
+                buy_leverage=str(leverage),
+                sell_leverage=str(leverage),
+            )
+            self._log.info(f"Set symbol `{symbol}` leverage to `{leverage}` result: {res.retMsg}")
+        except BybitError as e:
+            if e.code == 110043:  # Set leverage has not been modified. (already set)
+                self._log.info(
+                    f"Set symbol `{symbol}` leverage to `{leverage}` result: {e.message}",
+                )
+                return
+
+            raise e
+
+    async def set_position_mode(
+        self,
+        symbol: BybitSymbol,
+        mode: BybitPositionMode,
+    ) -> None:
+        try:
+            res = await self._http_account.switch_mode(
+                category=symbol.product_type,
+                symbol=symbol.raw_symbol,
+                mode=mode,
+            )
+            self._log.info(f"Set symbol `{symbol}` position mode to `{mode}` result: {res.retMsg}")
+        except BybitError as e:  # Position mode has not been modified. (already set)
+            if e.code == 110025:
+                self._log.info(
+                    f"Set symbol `{symbol}` position mode to `{mode}` result: {e.message}",
+                )
+                return
+
+            raise e
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
