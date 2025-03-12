@@ -7,6 +7,8 @@ Released on TBD (UTC).
 - Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
 - Added `Cache.prices(...)` to return a map of latest price per instrument for a price type
 - Added FDUSD (First Digital USD) crypto `Currency` constant
+- Added initial leverage, `margin_mode` and `position_mode` config options for Bybit (#2441), thanks @sunlei
+- Updated parquet catalog in Rust with recent features (#2442), thanks @faysou
 
 ### Breaking Changes
 None
@@ -16,6 +18,7 @@ None
 - Improved order denied reason message for balance impact
 - Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
 - Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
+- Refactored some Rust logs to use named parameters in format strings (#2443), thanks @faysou
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.24.0
 
 ### Fixes
