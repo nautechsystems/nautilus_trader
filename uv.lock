@@ -96,11 +96,11 @@ wheels = [
 
 [[package]]
 name = "attrs"
-version = "25.1.0"
+version = "25.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/49/7c/fdf464bcc51d23881d110abd74b512a42b3d5d376a55a831b44c603ae17f/attrs-25.1.0.tar.gz", hash = "sha256:1c97078a80c814273a76b2a298a932eb681c87415c11dee0a6921de7f1b02c3e", size = 810562 }
+sdist = { url = "https://files.pythonhosted.org/packages/69/82/3c4e1d44f3cbaa2a578127d641fe385ba3bff6c38b789447ae11a21fa413/attrs-25.2.0.tar.gz", hash = "sha256:18a06db706db43ac232cce80443fcd9f2500702059ecf53489e3c5a3f417acaf", size = 812038 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/30/d4986a882011f9df997a55e6becd864812ccfcd821d64aac8570ee39f719/attrs-25.1.0-py3-none-any.whl", hash = "sha256:c75a69e28a550a7e93789579c22aa26b0f5b83b75dc4e08fe092980051e1090a", size = 63152 },
+    { url = "https://files.pythonhosted.org/packages/03/33/7a7388b9ef94aab40539939d94461ec682afbd895458945ed25be07f03f6/attrs-25.2.0-py3-none-any.whl", hash = "sha256:611344ff0a5fed735d86d7784610c84f8126b95e549bcad9ff61b4242f2d386b", size = 64016 },
 ]
 
 [[package]]
@@ -1146,7 +1146,7 @@ requires-dist = [
     { name = "defusedxml", marker = "extra == 'ib'", specifier = ">=0.7.1,<1.0.0" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.1.0,<8.0.0" },
     { name = "ecdsa", marker = "extra == 'dydx'", specifier = ">=0.19.0,<1.0.0" },
-    { name = "fsspec", specifier = ">=2025.3.0,<2026.0.0" },
+    { name = "fsspec", specifier = ">=2025.2.0,<2026.0.0" },
     { name = "grpcio", marker = "extra == 'dydx'", specifier = "==1.68.1" },
     { name = "msgspec", specifier = ">=0.19.0,<1.0.0" },
     { name = "nautilus-ibapi", marker = "extra == 'ib'", specifier = "==10.30.1" },
