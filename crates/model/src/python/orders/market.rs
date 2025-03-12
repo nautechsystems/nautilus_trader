@@ -33,10 +33,7 @@ use crate::{
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::{
-        MarketOrder,
-        base::{Order, OrderCore, str_indexmap_to_ustr},
-    },
+    orders::{MarketOrder, Order, OrderCore, str_indexmap_to_ustr},
     python::{
         common::commissions_from_indexmap,
         events::order::{order_event_to_pyobject, pyobject_to_order_event},
