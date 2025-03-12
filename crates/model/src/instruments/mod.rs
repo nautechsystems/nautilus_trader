@@ -32,6 +32,7 @@ pub mod synthetic;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
+use enum_dispatch::enum_dispatch;
 use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -51,6 +52,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+#[enum_dispatch(InstrumentAny)]
 pub trait Instrument: 'static + Send {
     fn into_any(self) -> InstrumentAny;
     fn id(&self) -> InstrumentId;

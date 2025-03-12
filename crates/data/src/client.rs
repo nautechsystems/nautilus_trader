@@ -38,7 +38,7 @@ use nautilus_model::{
     data::{Bar, BarType, DataType, QuoteTick, TradeTick},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
 };
 
 pub trait DataClient {

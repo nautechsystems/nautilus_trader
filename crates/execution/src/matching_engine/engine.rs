@@ -47,7 +47,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
         VenueOrderId,
     },
-    instruments::{EXPIRING_INSTRUMENT_TYPES, InstrumentAny},
+    instruments::{EXPIRING_INSTRUMENT_TYPES, Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::{Order, OrderAny, PassiveOrderAny, StopOrderAny},
     position::Position,

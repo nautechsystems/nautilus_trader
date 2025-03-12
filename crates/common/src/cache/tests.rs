@@ -22,7 +22,7 @@ use nautilus_model::{
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
     events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Venue},
-    instruments::{CurrencyPair, InstrumentAny, SyntheticInstrument, stubs::*},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::OrderBook,
     orders::{
         Order,

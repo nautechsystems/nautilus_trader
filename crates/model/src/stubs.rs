@@ -22,7 +22,7 @@ use crate::{
     data::order::BookOrder,
     enums::{BookType, LiquiditySide, OrderSide, OrderType},
     identifiers::InstrumentId,
-    instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     orderbook::OrderBook,
     orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,

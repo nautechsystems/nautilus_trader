@@ -34,7 +34,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,

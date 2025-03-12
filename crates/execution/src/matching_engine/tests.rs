@@ -40,7 +40,7 @@ use nautilus_model::{
         TraderId, VenueOrderId, stubs::account_id,
     },
     instruments::{
-        CryptoPerpetual, Equity, InstrumentAny,
+        CryptoPerpetual, Equity, Instrument, InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
     orders::{

@@ -44,7 +44,7 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::PassiveOrderAny,
     types::{AccountBalance, Currency, Money, Price},
