@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
+- Added `Cache.prices(...)` to return a map of latest price per instrument for a price type
 - Added FDUSD (First Digital USD) crypto `Currency` constant
 
 ### Breaking Changes

@@ -55,6 +55,7 @@ cdef class CacheFacade:
     cpdef list trade_ticks(self, InstrumentId instrument_id)
     cpdef list bars(self, BarType bar_type)
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
+    cpdef dict[InstrumentId, Price] prices(self, PriceType price_type)
     cpdef OrderBook order_book(self, InstrumentId instrument_id)
     cpdef object own_order_book(self, InstrumentId instrument_id)
     cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status=*)
