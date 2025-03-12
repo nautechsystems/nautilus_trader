@@ -26,7 +26,7 @@ use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::base::{Account, BaseAccount},
+    accounts::{Account, base::BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},

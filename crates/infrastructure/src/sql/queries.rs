@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
-    accounts::{any::AccountAny, base::Account},
+    accounts::{Account, AccountAny},
     data::{Bar, DataType, QuoteTick, TradeTick},
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderSnapshot,
