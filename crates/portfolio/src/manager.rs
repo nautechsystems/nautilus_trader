@@ -20,7 +20,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
+    accounts::{Account, AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
     events::{AccountState, OrderFilled},
     instruments::{Instrument, InstrumentAny},

@@ -23,7 +23,7 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::base::{Account, BaseAccount},
+    accounts::{Account, base::BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::AccountId,
@@ -260,7 +260,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        accounts::{base::Account, cash::CashAccount, stubs::*},
+        accounts::{Account, CashAccount, stubs::*},
         enums::{AccountType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*},
         identifiers::{AccountId, position_id::PositionId},
