@@ -68,7 +68,7 @@ outdated:
 
 .PHONY: update cargo-update
 update: cargo-update
-	uv lock
+	uv lock --upgrade
 
 .PHONY: docs
 docs: docs-python docs-rust
