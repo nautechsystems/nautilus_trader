@@ -134,6 +134,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::BettingInstrument>()?;
     m.add_class::<crate::instruments::BinaryOption>()?;
     m.add_class::<crate::instruments::CryptoFuture>()?;
+    m.add_class::<crate::instruments::CryptoOption>()?;
     m.add_class::<crate::instruments::CryptoPerpetual>()?;
     m.add_class::<crate::instruments::CurrencyPair>()?;
     m.add_class::<crate::instruments::Equity>()?;

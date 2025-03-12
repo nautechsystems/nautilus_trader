@@ -129,7 +129,6 @@ cdef class OptionSpread(Instrument):
         dict info = None,
     ) -> None:
         Condition.valid_string(strategy_type, "strategy_type")
-        Condition.positive_int(multiplier, "multiplier")
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
         super().__init__(
@@ -159,6 +158,7 @@ cdef class OptionSpread(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
         self.exchange = exchange
         self.underlying = underlying
         self.strategy_type = strategy_type
@@ -178,7 +178,6 @@ cdef class OptionSpread(Instrument):
             f"strategy_type={self.strategy_type}, "
             f"activation={format_iso8601(self.activation_utc, nanos_precision=False)}, "
             f"expiration={format_iso8601(self.expiration_utc, nanos_precision=False)}, "
-            f"price_precision={self.price_precision}, "
             f"price_increment={self.price_increment}, "
             f"multiplier={self.multiplier}, "
             f"lot_size={self.lot_size}, "

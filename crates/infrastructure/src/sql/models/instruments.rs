@@ -24,8 +24,8 @@ use nautilus_model::{
     enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::{
-        BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
-        FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
+        BettingInstrument, BinaryOption, CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair,
+        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -39,6 +39,7 @@ pub struct InstrumentAnyModel(pub InstrumentAny);
 pub struct BettingInstrumentModel(pub BettingInstrument);
 pub struct BinaryOptionModel(pub BinaryOption);
 pub struct CryptoFutureModel(pub CryptoFuture);
+pub struct CryptoOptionModel(pub CryptoOption);
 pub struct CryptoPerpetualModel(pub CryptoPerpetual);
 pub struct CurrencyPairModel(pub CurrencyPair);
 pub struct EquityModel(pub Equity);
@@ -47,7 +48,6 @@ pub struct FuturesSpreadModel(pub FuturesSpread);
 pub struct OptionContractModel(pub OptionContract);
 pub struct OptionSpreadModel(pub OptionSpread);
 
-// TBD
 impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let kind = row.get::<String, _>("kind");
@@ -62,6 +62,10 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
         } else if kind == "CRYPTO_FUTURE" {
             Ok(InstrumentAnyModel(InstrumentAny::CryptoFuture(
                 CryptoFutureModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "CRYPTO_OPTION" {
+            Ok(InstrumentAnyModel(InstrumentAny::CryptoOption(
+                CryptoOptionModel::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_PERPETUAL" {
             Ok(InstrumentAnyModel(InstrumentAny::CryptoPerpetual(
@@ -432,6 +436,113 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             ts_init,
         );
         Ok(CryptoFutureModel(inst))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let underlying = row.try_get::<String, _>("underlying").map(Currency::from)?;
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let settlement_currency = row
+            .try_get::<String, _>("settlement_currency")
+            .map(Currency::from)?;
+        let is_inverse = row.try_get::<bool, _>("is_inverse")?;
+        let option_kind = row
+            .try_get::<String, _>("option_kind")
+            .map(|res| OptionKind::from_str(res.as_str()).unwrap())?;
+        let strike_price = row
+            .try_get::<String, _>("strike_price")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let activation_ns = row
+            .try_get::<String, _>("activation_ns")
+            .map(UnixNanos::from)?;
+        let expiration_ns = row
+            .try_get::<String, _>("expiration_ns")
+            .map(UnixNanos::from)?;
+        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let multiplier = row
+            .try_get::<String, _>("multiplier")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = CryptoOption::new(
+            id,
+            raw_symbol,
+            underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            option_kind,
+            strike_price,
+            activation_ns,
+            expiration_ns,
+            price_precision as u8,
+            size_precision as u8,
+            price_increment,
+            size_increment,
+            Some(multiplier),
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_event,
+            ts_init,
+        );
+        Ok(CryptoOptionModel(inst))
     }
 }
 

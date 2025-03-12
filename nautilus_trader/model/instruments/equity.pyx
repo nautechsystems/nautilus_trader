@@ -128,6 +128,7 @@ cdef class Equity(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
         self.isin = isin
 
     @staticmethod
