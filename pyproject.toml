@@ -55,6 +55,8 @@ build-backend = "poetry.core.masonry.api"
 include = [
     # Rust source must be included in the source distributions
     { path = "crates/*", format = "sdist" },
+    { path = "Cargo.lock", format = "sdist" },
+    { path = "Cargo.toml", format = "sdist" },
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
     { path = "nautilus_trader/**/*.pyd", format = "wheel" },

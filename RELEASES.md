@@ -18,6 +18,7 @@ None
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.24.0
 
 ### Fixes
+- Fixed source distribution (sdist) packaging
 - Fixed logger name for `Strategy` custom `strategy_id`s
 - Fixed unbound variable for Bybit (#2433), thanks @davidsblom
 
