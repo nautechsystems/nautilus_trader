@@ -720,7 +720,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_ids=order_ids,
             )
             if not response or not retry_manager.result:
-                reason_map = {order_id: retry_manager.message for order_id in order_ids}
+                reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
                 reason_map = response.get("not_canceled", {})
 
@@ -759,7 +759,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_ids=order_ids,
             )
             if not response or not retry_manager.result:
-                reason_map = {order_id: retry_manager.message for order_id in order_ids}
+                reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
                 reason_map = response.get("not_canceled", {})
 
