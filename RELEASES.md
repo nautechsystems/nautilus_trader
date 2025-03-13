@@ -16,6 +16,7 @@ None
 ### Internal Improvements
 - Added `timeout_secs` parameter to `HttpClient` for default timeouts
 - Added additional precision validations for `OrderMatchingEngine`
+- Added symmetric comparison impls between `u64` and `UnixNanos`
 - Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
 - Improved order denied reason message for balance impact
 - Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
