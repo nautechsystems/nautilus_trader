@@ -69,7 +69,7 @@ pub struct NautilusKernelConfig {
 }
 
 impl NautilusKernelConfig {
-    #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         environment: Environment,
         trader_id: TraderId,

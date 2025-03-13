@@ -34,7 +34,7 @@ pub struct NautilusKernel {
 impl NautilusKernel {
     #[must_use]
     pub fn new(name: Ustr, config: NautilusKernelConfig) -> Self {
-        let instance_id = config.instance_id.unwrap_or_else(|| UUID4::new());
+        let instance_id = config.instance_id.unwrap_or_default();
         let data_engine = Self::initialize_data_engine();
         Self {
             name,

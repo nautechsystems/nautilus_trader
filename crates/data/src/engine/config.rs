@@ -48,6 +48,7 @@ pub struct DataEngineConfig {
 }
 
 impl DataEngineConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         time_bars_build_with_no_updates: bool,
         time_bars_timestamp_on_close: bool,

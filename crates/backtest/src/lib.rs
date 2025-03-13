@@ -35,13 +35,14 @@
 // Uncomment once we've added trivial `Debug` impls everywhere
 // #![warn(missing_debug_implementations)]
 
+pub mod accumulator;
+pub mod config;
 pub mod data_client;
 pub mod engine;
 pub mod exchange;
 pub mod execution_client;
 pub mod modules;
 pub mod runner;
-pub mod accumulator;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
