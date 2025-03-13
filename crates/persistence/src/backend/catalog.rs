@@ -371,9 +371,9 @@ impl ParquetDataCatalog {
         }
 
         if is_last {
-            Ok(timestamps.iter().max().cloned())
+            Ok(timestamps.iter().max().copied())
         } else {
-            Ok(timestamps.iter().min().cloned())
+            Ok(timestamps.iter().min().copied())
         }
     }
 

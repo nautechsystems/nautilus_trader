@@ -38,7 +38,7 @@ pub struct DataEngineConfig {
     pub time_bars_origins: HashMap<BarAggregation, Duration>,
     /// If data objects timestamp sequencing will be validated and handled.
     pub validate_data_sequence: bool,
-    /// If order book deltas should be buffered until the F_LAST flag is set for a delta.
+    /// If order book deltas should be buffered until the `F_LAST` flag is set for a delta.
     pub buffer_deltas: bool,
     /// The client IDs declared for external stream processing.
     /// The data engine will not attempt to send data commands to these client IDs.
@@ -49,7 +49,8 @@ pub struct DataEngineConfig {
 
 impl DataEngineConfig {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         time_bars_build_with_no_updates: bool,
         time_bars_timestamp_on_close: bool,
         time_bars_interval_type: BarIntervalType,
@@ -61,10 +62,10 @@ impl DataEngineConfig {
         debug: bool,
     ) -> Self {
         Self {
-            time_bars_interval_type,
+            time_bars_build_with_no_updates,
             time_bars_timestamp_on_close,
             time_bars_skip_first_non_full_bar,
-            time_bars_build_with_no_updates,
+            time_bars_interval_type,
             time_bars_origins,
             validate_data_sequence,
             buffer_deltas,
