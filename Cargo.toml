@@ -53,8 +53,8 @@ itertools = "0.13.0"
 itoa = "1.0.15"
 log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 parquet = "54.2.1"  # Keep major version in line with datafusion
-pyo3 = { version = "0.23.5", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
-pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime", "tokio", "attributes"] }
+pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
+pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
 reqwest = { version = "0.12.14", features = ["blocking"] }
 ring = "0.17.14"
