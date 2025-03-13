@@ -390,9 +390,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 client_order_id = None
 
         self._log.info(
-            f"Generating OrderStatusReport for "
-            f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
         try:
             bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -665,8 +663,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(
-                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
+                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
             )
             return
 
@@ -783,8 +780,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(
-                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
+                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} (will not send to exchange)",
             )
             return
 
@@ -820,6 +816,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
+
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
             return
@@ -839,7 +836,7 @@ class BybitExecutionClient(LiveExecutionClient):
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
                 "submit_order",
-                [command.order.client_order_id],
+                [order.client_order_id],
                 self._submit_order_methods[order.order_type],
                 order,
             )
@@ -855,10 +852,11 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
+        command_orders = command.order_list.orders
         max_batch = 20 if product_type == BybitProductType.OPTION else 10
 
-        for i in range(0, len(command.order_list.orders), max_batch):
-            batch_submits = command.order_list.orders[i : i + max_batch]
+        for i in range(0, len(command_orders), max_batch):
+            batch_submits = command_orders[i : i + max_batch]
             submit_orders: list[BybitBatchPlaceOrder] = []
 
             for order in batch_submits:
@@ -884,13 +882,12 @@ class BybitExecutionClient(LiveExecutionClient):
 
                 submit_orders.append(batch_order)
 
-            now_ns = self._clock.timestamp_ns()
             for order in batch_submits:
                 self.generate_order_submitted(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    ts_event=now_ns,
+                    ts_event=self._clock.timestamp_ns(),
                 )
 
             async with self._retry_manager_pool as retry_manager:
@@ -1066,7 +1063,7 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     def _handle_ws_message_trade(self, raw: bytes) -> None:
-        pass
+        return
 
     def _handle_ws_message_private(self, raw: bytes) -> None:
         try:
@@ -1128,8 +1125,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if client_order_id is None:
             self._log.debug(
-                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found "
-                "(most likely due to being an external order)",
+                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
             )
             return
 
