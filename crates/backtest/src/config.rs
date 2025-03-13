@@ -106,6 +106,7 @@ pub struct BacktestVenueConfig {
 
 impl BacktestVenueConfig {
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         name: Ustr,
         oms_type: OmsType,
@@ -176,6 +177,7 @@ pub struct BacktestDataConfig {
 
 impl BacktestDataConfig {
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub const fn new(
         catalog_path: String,
         catalog_fs_protocol: Option<String>,

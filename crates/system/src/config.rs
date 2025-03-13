@@ -44,7 +44,7 @@ pub struct NautilusKernelConfig {
     pub timeout_connection: u32,
     /// The timeout (seconds) for execution state to reconcile.
     pub timeout_reconciliation: u32,
-    /// The timeout (seconds) for portfolio to initialize margins and unrealized PnLs.
+    /// The timeout (seconds) for portfolio to initialize margins and unrealized pnls.
     pub timeout_portfolio: u32,
     /// The timeout (seconds) for all engine clients to disconnect.
     pub timeout_disconnection: u32,
@@ -70,6 +70,7 @@ pub struct NautilusKernelConfig {
 
 impl NautilusKernelConfig {
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         environment: Environment,
         trader_id: TraderId,

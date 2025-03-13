@@ -58,6 +58,7 @@ pub struct BacktestEngine {
 }
 
 impl BacktestEngine {
+    #[must_use]
     pub fn new(config: BacktestEngineConfig) -> Self {
         let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone());
         Self {
