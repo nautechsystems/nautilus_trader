@@ -19,9 +19,13 @@ None
 - Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
 - Improved order denied reason message for balance impact
 - Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
+- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidblom
 - Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
 - Refactored some Rust logs to use named parameters in format strings (#2443), thanks @faysou
+- Some minor performance optimizations for Bybit and dYdX adapters (#2448), thanks @sunlei
+- Ported backtest engine and kernel to Rust (#2449), thanks @filipmacek
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.24.0
+- Upgraded `tokio` crate to v1.44.1
 
 ### Fixes
 - Fixed source distribution (sdist) packaging
@@ -30,7 +34,7 @@ None
 - Fixed unbound variable for Bybit (#2433), thanks @davidsblom
 
 ### Documentation Updates
-None
+- Clarify docs for timestamp properties in `Data` (#2450), thanks @stefansimik
 
 ### Deprecations
 None
