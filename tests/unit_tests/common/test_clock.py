@@ -660,6 +660,20 @@ class TestLiveClock:
         assert isinstance(result, datetime)
         assert str(result).endswith("+11:00") or str(result).endswith("+10:00")
 
+    def test_set_time_alert_in_the_past(self):
+        # Arrange
+        name = "TEST_ALERT"
+        interval = timedelta(hours=1)
+        alert_time = self.clock.utc_now() - interval
+
+        # Act - will fire immediately
+        self.clock.set_time_alert(name, alert_time)
+        time.sleep(1.0)
+
+        # Assert
+        assert len(self.handler) == 1
+        assert isinstance(self.handler[0], TimeEvent)
+
     def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
