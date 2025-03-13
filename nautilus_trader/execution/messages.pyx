@@ -35,9 +35,9 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 
 
-cdef class TradingReportCommand(Command):
+cdef class ExecutionReportCommand(Command):
     """
-    The base class for all trading report related commands.
+    The base class for all execution report commands.
 
     Parameters
     ----------
@@ -77,7 +77,7 @@ cdef class TradingReportCommand(Command):
         self.params = params or {}
 
 
-cdef class GenerateOrderStatusReport(TradingReportCommand):
+cdef class GenerateOrderStatusReport(ExecutionReportCommand):
     """
     Command to generate an order status report.
 
@@ -119,7 +119,7 @@ cdef class GenerateOrderStatusReport(TradingReportCommand):
         self.venue_order_id = venue_order_id
 
 
-cdef class GenerateOrderStatusReports(TradingReportCommand):
+cdef class GenerateOrderStatusReports(ExecutionReportCommand):
     """
     Command to generate order status reports.
 
@@ -168,7 +168,7 @@ cdef class GenerateOrderStatusReports(TradingReportCommand):
         self.log_receipt_level = log_receipt_level
 
 
-cdef class GenerateFillReports(TradingReportCommand):
+cdef class GenerateFillReports(ExecutionReportCommand):
     """
     Command to generate fill reports.
 
@@ -213,7 +213,7 @@ cdef class GenerateFillReports(TradingReportCommand):
         self.venue_order_id = venue_order_id
 
 
-cdef class GeneratePositionStatusReports(TradingReportCommand):
+cdef class GeneratePositionStatusReports(ExecutionReportCommand):
     """
     Command to generate position status reports.
 
