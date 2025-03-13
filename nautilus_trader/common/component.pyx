@@ -586,7 +586,13 @@ cdef class TestClock(Clock):
 
     @property
     def timer_names(self) -> list[str]:
-        return sorted(<list>test_clock_timer_names(&self._mem))
+        cdef str timer_names = cstr_to_pystr(test_clock_timer_names(&self._mem))
+        if not timer_names:
+            return []
+
+        # For simplicity we split a string on a reasonably unique delimiter.
+        # This is a temporary solution pending the removal of Cython.
+        return sorted(timer_names.split("<,>"))
 
     @property
     def timer_count(self) -> int:
@@ -754,7 +760,13 @@ cdef class LiveClock(Clock):
 
     @property
     def timer_names(self) -> list[str]:
-        return sorted(<list>live_clock_timer_names(&self._mem))
+        cdef str timer_names = cstr_to_pystr(live_clock_timer_names(&self._mem))
+        if not timer_names:
+            return []
+
+        # For simplicity we split a string on a reasonably unique delimiter.
+        # This is a temporary solution pending the removal of Cython.
+        return sorted(timer_names.split("<,>"))
 
     @property
     def timer_count(self) -> int:

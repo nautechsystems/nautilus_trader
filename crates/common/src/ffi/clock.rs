@@ -21,13 +21,13 @@ use std::{
 use nautilus_core::{
     UnixNanos,
     correctness::FAILED,
-    ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_as_str},
+    ffi::{
+        cvec::CVec,
+        parsing::u8_as_bool,
+        string::{cstr_as_str, str_to_cstr},
+    },
 };
-use pyo3::{
-    ffi,
-    prelude::*,
-    types::{PyList, PyString},
-};
+use pyo3::{ffi, prelude::*};
 
 use super::timer::TimeEventHandler;
 use crate::{
@@ -114,18 +114,10 @@ pub extern "C" fn test_clock_timestamp_ns(clock: &TestClock_API) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_clock_timer_names(clock: &TestClock_API) -> *mut ffi::PyObject {
-    Python::with_gil(|py| -> Py<PyList> {
-        let names: Vec<Py<PyString>> = clock
-            .get_timers()
-            .keys()
-            .map(|k| PyString::new(py, k).into())
-            .collect();
-        PyList::new(py, names)
-            .expect("Invalid `ExactSizeIterator`")
-            .into()
-    })
-    .as_ptr()
+pub extern "C" fn test_clock_timer_names(clock: &TestClock_API) -> *const c_char {
+    // For simplicity we join a string with a reasonably unique delimiter.
+    // This is a temporary solution pending the removal of Cython.
+    str_to_cstr(&clock.timer_names().join("<,>"))
 }
 
 #[unsafe(no_mangle)]
@@ -326,18 +318,10 @@ pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn live_clock_timer_names(clock: &LiveClock_API) -> *mut ffi::PyObject {
-    Python::with_gil(|py| -> Py<PyList> {
-        let names: Vec<Py<PyString>> = clock
-            .get_timers()
-            .keys()
-            .map(|k| PyString::new(py, k).into())
-            .collect();
-        PyList::new(py, names)
-            .expect("Invalid `ExactSizeIterator`")
-            .into()
-    })
-    .as_ptr()
+pub extern "C" fn live_clock_timer_names(clock: &LiveClock_API) -> *const c_char {
+    // For simplicity we join a string with a reasonably unique delimiter.
+    // This is a temporary solution pending the removal of Cython.
+    str_to_cstr(&clock.timer_names().join("<,>"))
 }
 
 #[unsafe(no_mangle)]

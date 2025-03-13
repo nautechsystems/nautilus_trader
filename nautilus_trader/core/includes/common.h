@@ -356,7 +356,7 @@ uint64_t test_clock_timestamp_us(const struct TestClock_API *clock);
 
 uint64_t test_clock_timestamp_ns(const struct TestClock_API *clock);
 
-PyObject *test_clock_timer_names(const struct TestClock_API *clock);
+const char *test_clock_timer_names(const struct TestClock_API *clock);
 
 uintptr_t test_clock_timer_count(struct TestClock_API *clock);
 
@@ -428,7 +428,7 @@ uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
 
 uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
 
-PyObject *live_clock_timer_names(const struct LiveClock_API *clock);
+const char *live_clock_timer_names(const struct LiveClock_API *clock);
 
 uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
 

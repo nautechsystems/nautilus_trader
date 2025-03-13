@@ -25,6 +25,7 @@ None
 
 ### Fixes
 - Fixed source distribution (sdist) packaging
+- Fixed `Clock.timer_names()` memory issue resulting in an empty list
 - Fixed logger name for `Strategy` custom `strategy_id`s
 - Fixed unbound variable for Bybit (#2433), thanks @davidsblom
 
