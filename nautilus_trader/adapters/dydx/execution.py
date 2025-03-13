@@ -752,6 +752,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     self._handle_subaccounts_channel_data(raw)
                 elif ws_message_channel == "v4_markets":
                     self._handle_markets(raw)
+                else:
+                    self._log.error(f"Unknown message `{ws_message_type}`: {raw.decode()}")
             elif ws_message_type == "subscribed":
                 if ws_message_channel == "v4_block_height":
                     self._handle_block_height_subscribed(raw)
@@ -759,6 +761,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     self._handle_subaccounts_subscribed(raw)
                 elif ws_message_channel == "v4_markets":
                     self._handle_markets_subscribed(raw)
+                else:
+                    self._log.error(f"Unknown message `{ws_message_type}`: {raw.decode()}")
             elif ws_message_type == "unsubscribed":
                 self._log.info(
                     f"Unsubscribed from channel {ws_message_channel} for {ws_message.id}",
