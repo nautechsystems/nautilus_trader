@@ -3481,6 +3481,7 @@ class HttpClient:
         header_keys: list[str] | None = None,
         keyed_quotas: list[tuple[str, Quota]] | None = None,
         default_quota: Quota | None = None,
+        timeout_secs: int | None = None,
     ) -> None: ...
     async def request(
         self,

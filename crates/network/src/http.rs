@@ -209,6 +209,7 @@ impl HttpClient {
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
+        timeout_secs: Option<u64>,
     ) -> Self {
         // Build default headers
         let mut header_map = HeaderMap::new();
@@ -218,8 +219,12 @@ impl HttpClient {
             header_map.insert(header_name, header_value);
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(header_map)
+        let mut client_builder = reqwest::Client::builder().default_headers(header_map);
+        if let Some(timeout_secs) = timeout_secs {
+            client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
+        }
+
+        let client = client_builder
             .build()
             .expect("Failed to build reqwest client");
 
