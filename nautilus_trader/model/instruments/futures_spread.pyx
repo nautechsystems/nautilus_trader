@@ -177,6 +177,7 @@ cdef class FuturesSpread(Instrument):
             f"strategy_type={self.strategy_type}, "
             f"activation={format_iso8601(self.activation_utc, nanos_precision=False)}, "
             f"expiration={format_iso8601(self.expiration_utc, nanos_precision=False)}, "
+            f"price_precision={self.price_precision}, "
             f"price_increment={self.price_increment}, "
             f"multiplier={self.multiplier}, "
             f"lot_size={self.lot_size}, "
