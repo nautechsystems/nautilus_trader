@@ -33,6 +33,7 @@
 // #![deny(clippy::missing_errors_doc)]
 
 pub mod backend;
+pub mod config;
 
 #[cfg(feature = "python")]
 pub mod python;

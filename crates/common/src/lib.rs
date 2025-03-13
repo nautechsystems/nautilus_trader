@@ -35,6 +35,14 @@
 // Uncomment once we've added trivial `Debug` impls everywhere
 // #![warn(missing_debug_implementations)]
 
+/// Represents the environment context for a Nautilus system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Environment {
+    Backtest,
+    Sandbox,
+    Live,
+}
+
 pub mod actor;
 pub mod cache;
 pub mod clock;
