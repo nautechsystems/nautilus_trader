@@ -233,12 +233,15 @@ class DYDXDataClient(LiveMarketDataClient):
         """
         Request a new orderbook snapshot for all order book subscriptions.
         """
-        tasks = []
+        try:
+            tasks = []
 
-        for symbol in self._orderbook_subscriptions:
-            tasks.append(self._fetch_orderbook(symbol))
+            for symbol in self._orderbook_subscriptions:
+                tasks.append(self._fetch_orderbook(symbol))
 
-        await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            self._log.error(f"Failed to fetch the orderbooks: {e}")
 
     async def _fetch_orderbook(self, symbol: str) -> None:
         """
