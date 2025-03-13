@@ -129,7 +129,7 @@ The Data publish/subscribe approach excels when you need:
 #### Inheriting from `Data` vs. using `@customdataclass`
 
 **Inheriting from `Data` class:**
-- Adds the required `ts_event` and `ts_init` attributes and their getters. These ensure proper data ordering in backtests based on timestamps.
+- Defines abstract properties `ts_event` and `ts_init` that must be implemented by the subclass. These ensure proper data ordering in backtests based on timestamps.
 
 **The `@customdataclass` decorator:**
 - Adds `ts_event` and `ts_init` attributes if they are not already present.
