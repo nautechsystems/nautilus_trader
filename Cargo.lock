@@ -3042,6 +3042,7 @@ dependencies = [
  "nautilus-data",
  "nautilus-execution",
  "nautilus-model",
+ "nautilus-system",
  "pyo3",
  "rand 0.9.0",
  "rstest",
@@ -3459,6 +3460,22 @@ dependencies = [
  "pyo3",
  "rstest",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "nautilus-system"
+version = "0.43.0"
+dependencies = [
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-execution",
+ "nautilus-model",
+ "nautilus-persistence",
+ "nautilus-portfolio",
+ "nautilus-risk",
+ "pyo3",
+ "ustr",
 ]
 
 [[package]]

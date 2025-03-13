@@ -1,0 +1,34 @@
+[package]
+name = "nautilus-system"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_system"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+extension-module = [
+    "pyo3/extension-module",
+]
+python = [
+    "pyo3",
+]
+
+[dependencies]
+nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-common = { path = "../common" }
+nautilus-core = { path = "../core" }
+nautilus-data = { path = "../data" }
+nautilus-risk = { path = "../risk" }
+nautilus-execution = { path = "../execution" }
+nautilus-portfolio = { path = "../portfolio" }
+nautilus-persistence = { path = "../persistence" }
+pyo3 = { workspace = true, optional = true }
+ustr = { workspace = true }
+
+[dev-dependencies]
