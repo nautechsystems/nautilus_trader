@@ -14,6 +14,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Added `timeout_secs` parameter to `HttpClient` for default timeouts
 - Added additional precision validations for `OrderMatchingEngine`
 - Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
 - Improved order denied reason message for balance impact
