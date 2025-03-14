@@ -255,6 +255,14 @@ class BybitExecutionClient(LiveExecutionClient):
             OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market,
         }
 
+        self._batch_order_create_handlers = {
+            OrderType.MARKET: self._create_market_batch_order,
+            OrderType.LIMIT: self._create_limit_batch_order,
+            OrderType.LIMIT_IF_TOUCHED: self._create_limit_if_touched_batch_order,
+            OrderType.STOP_MARKET: self._create_stop_market_batch_order,
+            OrderType.MARKET_IF_TOUCHED: self._create_market_if_touched_batch_order,
+        }
+
         # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
         # self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
@@ -864,30 +872,23 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._log.error(f"Error on {command}")
                     return  # Do not submit batch
 
-                match order.order_type:
-                    case OrderType.MARKET:
-                        batch_order = self._create_market_batch_order(order)
-                    case OrderType.LIMIT:
-                        batch_order = self._create_limit_batch_order(order)
-                    case OrderType.LIMIT_IF_TOUCHED:
-                        batch_order = self._create_limit_if_touched_batch_order(order)
-                    case OrderType.STOP_MARKET:
-                        batch_order = self._create_stop_market_batch_order(order)
-                    case OrderType.MARKET_IF_TOUCHED:
-                        batch_order = self._create_market_if_touched_batch_order(order)
-                    case _:
-                        self._log.error(f"Unsupported order type for 'submit_order_list': {order}")
-                        self._log.error(f"Error on {command}")
-                        return
+                try:
+                    batch_order = self._batch_order_create_handlers[order.order_type](order)
+                except KeyError:
+                    self._log.error(
+                        f"Error on {command} - Unsupported order type for 'submit_order_list': {order}",
+                    )
+                    return
 
                 submit_orders.append(batch_order)
 
+            now_ns = self._clock.timestamp_ns()
             for order in batch_submits:
                 self.generate_order_submitted(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    ts_event=self._clock.timestamp_ns(),
+                    ts_event=now_ns,
                 )
 
             async with self._retry_manager_pool as retry_manager:
