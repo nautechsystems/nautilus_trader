@@ -15,7 +15,16 @@ The following steps are for UNIX-like systems, and only need to be completed onc
 
 1. Follow the [installation guide](../getting_started/installation.md) to set up the project with a modification to the final command to install development and test dependencies:
 
-       uv sync --all-groups --all-extras
+       uv sync --active --all-groups --all-extras
+
+   or
+
+       make install
+
+   If you're developing and iterating frequently, then compiling in debug mode is often sufficient and *significantly* faster than a fully optimized build.
+   To install in debug mode, use:
+
+       make install-debug
 
 2. Set up the pre-commit hook which will then run automatically at commit:
 
