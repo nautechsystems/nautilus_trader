@@ -12,6 +12,11 @@ jobs:
     outputs:
       develop_status: ${{ steps.check-workflow.outputs.status }}
     steps:
+      - name: Security audit
+        uses: step-security/harden-runner@2.11.0
+        with:
+          egress-policy: audit
+
       - name: Install jq
         run: sudo apt-get install -y jq
 
@@ -90,6 +95,11 @@ jobs:
     if: needs.check-develop-status.outputs.develop_status == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Security audit
+        uses: step-security/harden-runner@2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
