@@ -1,6 +1,6 @@
 # NautilusTrader 1.213.0 Beta
 
-Released on TBD (UTC).
+Released on 16th March 2025 (UTC).
 
 ### Enhancements
 - Added `CryptoOption` instrument, supporting inverse and fractional sizes
@@ -37,6 +37,7 @@ None
 
 ### Documentation Updates
 - Clarify docs for timestamp properties in `Data` (#2450), thanks @stefansimik
+- Updated environment setup document (#2452), thanks @faysou
 
 ### Deprecations
 None
