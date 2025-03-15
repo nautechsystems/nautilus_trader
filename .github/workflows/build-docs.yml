@@ -8,6 +8,11 @@ jobs:
   build-docs:
     runs-on: ubuntu-latest
     steps:
+      - name: Security audit
+        uses: step-security/harden-runner@2.11.0
+        with:
+          egress-policy: audit
+
       - name: Fire event to nautilus_docs
         run: |
           curl -L \

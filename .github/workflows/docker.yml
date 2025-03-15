@@ -12,6 +12,11 @@ jobs:
       BUILD_MODE: release
 
     steps:
+      - name: Security audit
+        uses: step-security/harden-runner@2.11.0
+        with:
+          egress-policy: audit
+
       - name: Free disk space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -43,7 +48,8 @@ jobs:
 
       - name: Get branch name
         id: branch-name
-        uses: tj-actions/branch-names@v8.0.1
+        run: |
+          echo "current_branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
 
       - name: Build nautilus_trader image (nightly)
         if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
