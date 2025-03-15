@@ -5,7 +5,6 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
     PIP_DEFAULT_TIMEOUT=100 \
     PYO3_PYTHON="/usr/local/bin/python3" \
-    UV_VERSION=0.6.6 \
     PYSETUP_PATH="/opt/pysetup" \
     RUST_TOOLCHAIN="stable" \
     BUILD_MODE="release" \
@@ -25,7 +24,8 @@ RUN apt-get update && \
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 
 # Install UV
-RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
+COPY uv-version ./
+RUN UV_VERSION=$(cat uv-version) && curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
 
 # Install package requirements (split step and with --no-root to enable caching)
 COPY uv.lock pyproject.toml build.py ./
