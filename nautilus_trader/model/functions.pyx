@@ -281,6 +281,17 @@ cpdef str trigger_type_to_str(TriggerType value):
     return cstr_to_pystr(trigger_type_to_cstr(value))
 
 
+cpdef order_side_to_pyo3(OrderSide value):
+    if value == OrderSide.BUY:
+        return nautilus_pyo3.OrderSide.BUY
+    if value == OrderSide.SELL:
+        return nautilus_pyo3.OrderSide.SELL
+    if value == OrderSide.NO_ORDER_SIDE:
+        return nautilus_pyo3.OrderSide.NO_ORDER_SIDE
+
+    raise ValueError(f"Unsupported `OrderSide`, was '{order_side_to_str(value)}'")
+
+
 cpdef order_type_to_pyo3(OrderType value):
     if value == OrderType.MARKET:
         return nautilus_pyo3.OrderType.MARKET

@@ -120,6 +120,7 @@ cpdef str trailing_offset_type_to_str(TrailingOffsetType value)
 cpdef TriggerType trigger_type_from_str(str value)
 cpdef str trigger_type_to_str(TriggerType value)
 
+cpdef order_side_to_pyo3(OrderSide value)
 cpdef order_type_to_pyo3(OrderType value)
 cpdef order_status_to_pyo3(OrderStatus value)
 cpdef time_in_force_to_pyo3(TimeInForce value)
