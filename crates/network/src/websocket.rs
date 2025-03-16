@@ -664,6 +664,11 @@ impl WebSocketClient {
             tracing::debug!("Started task 'controller'");
 
             let check_interval = Duration::from_millis(10);
+            let reconnect_mutex = Arc::new(Mutex::new(()));
+
+            fn should_reconnect(mode: ConnectionMode, is_alive: bool) -> bool {
+                mode.is_reconnect() || (mode.is_active() && !is_alive)
+            }
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -689,28 +694,40 @@ impl WebSocketClient {
                     break; // Controller finished
                 }
 
-                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
-                    match inner.reconnect().await {
-                        Ok(()) => {
-                            tracing::debug!("Reconnected successfully");
-                            inner.backoff.reset();
+                if should_reconnect(mode, inner.is_alive()) {
+                    // Acquire the mutex to ensure only one reconnection happens at a time
+                    let _lock = reconnect_mutex.lock().await;
 
-                            if let Some(ref handler) = post_reconnection {
-                                Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
-                                    Err(e) => tracing::error!(
-                                        "Error calling `post_reconnection` handler: {e}"
-                                    ),
-                                });
+                    // Check if still need to reconnect after aquiring lock
+                    let mode = ConnectionMode::from_atomic(&connection_mode);
+                    if should_reconnect(mode, inner.is_alive()) {
+                        match inner.reconnect().await {
+                            Ok(()) => {
+                                tracing::debug!("Reconnected successfully");
+                                inner.backoff.reset();
+
+                                if let Some(ref handler) = post_reconnection {
+                                    Python::with_gil(|py| match handler.call0(py) {
+                                        Ok(_) => {
+                                            tracing::debug!("Called `post_reconnection` handler")
+                                        }
+                                        Err(e) => tracing::error!(
+                                            "Error calling `post_reconnection` handler: {e}"
+                                        ),
+                                    });
+                                }
                             }
-                        }
-                        Err(e) => {
-                            let duration = inner.backoff.next_duration();
-                            tracing::warn!("Reconnect attempt failed: {e}");
-                            if !duration.is_zero() {
-                                tracing::warn!("Backing off for {}s...", duration.as_secs_f64());
+                            Err(e) => {
+                                let duration = inner.backoff.next_duration();
+                                tracing::warn!("Reconnect attempt failed: {e}");
+                                if !duration.is_zero() {
+                                    tracing::warn!(
+                                        "Backing off for {}s...",
+                                        duration.as_secs_f64()
+                                    );
+                                }
+                                tokio::time::sleep(duration).await;
                             }
-                            tokio::time::sleep(duration).await;
                         }
                     }
                 }
