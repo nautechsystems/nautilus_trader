@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
 
 ### Documentation Updates
 None
