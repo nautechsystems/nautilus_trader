@@ -4,8 +4,9 @@ Released on 16th March 2025 (UTC).
 
 ### Enhancements
 - Added `CryptoOption` instrument, supporting inverse and fractional sizes
-- Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
 - Added `Cache.prices(...)` to return a map of latest price per instrument for a price type
+- Added `use_uuid_client_order_ids` config option for `StrategyConfig`
+- Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
 - Added FDUSD (First Digital USD) crypto `Currency` constant
 - Added initial leverage, `margin_mode` and `position_mode` config options for Bybit (#2441), thanks @sunlei
 - Updated parquet catalog in Rust with recent features (#2442), thanks @faysou

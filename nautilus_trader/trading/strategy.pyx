@@ -144,6 +144,7 @@ cdef class Strategy(Actor):
         component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
+        self.use_uuid_client_order_ids = config.use_uuid_client_order_ids
         self._log = Logger(name=component_id)
 
         oms_type = config.oms_type or OmsType.UNSPECIFIED
@@ -287,6 +288,7 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             clock=clock,
             cache=cache,
+            use_uuid_client_order_ids=self.use_uuid_client_order_ids
         )
 
         self._manager = OrderManager(
