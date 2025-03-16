@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::instruments::Instrument;
 use nautilus_tardis::{enums::Exchange, http::client::TardisHttpClient};
 
 #[tokio::main]

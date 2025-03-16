@@ -233,39 +233,45 @@ class DYDXDataClient(LiveMarketDataClient):
         """
         Request a new orderbook snapshot for all order book subscriptions.
         """
-        tasks = []
+        try:
+            tasks = []
 
-        for symbol in self._orderbook_subscriptions:
-            tasks.append(self._fetch_orderbook(symbol))
+            for symbol in self._orderbook_subscriptions:
+                tasks.append(self._fetch_orderbook(symbol))
 
-        await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            self._log.error(f"Failed to fetch the orderbooks: {e}")
 
     async def _fetch_orderbook(self, symbol: str) -> None:
         """
         Request a new orderbook snapshot.
         """
-        msg = await self._http_market.get_orderbook(symbol=symbol)
+        try:
+            msg = await self._http_market.get_orderbook(symbol=symbol)
 
-        if msg is not None:
-            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
-            instrument = self._cache.instrument(instrument_id)
+            if msg is not None:
+                instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+                instrument = self._cache.instrument(instrument_id)
 
-            if instrument is None:
-                self._log.error(
-                    f"Cannot parse orderbook snapshot: no instrument for {instrument_id}",
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot parse orderbook snapshot: no instrument for {instrument_id}",
+                    )
+                    return
+
+                ts_init = self._clock.timestamp_ns()
+                deltas = msg.parse_to_snapshot(
+                    instrument_id=instrument_id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
                 )
-                return
 
-            ts_init = self._clock.timestamp_ns()
-            deltas = msg.parse_to_snapshot(
-                instrument_id=instrument_id,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-                ts_event=ts_init,
-                ts_init=ts_init,
-            )
-
-            self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
+                self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
+        except Exception as e:
+            self._log.error(f"Failed to fetch the orderbook for {symbol}: {e}")
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():

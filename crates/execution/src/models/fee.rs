@@ -15,7 +15,7 @@
 
 use nautilus_model::{
     enums::LiquiditySide,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Money, Price, Quantity},
 };
@@ -127,7 +127,7 @@ impl FeeModel for MakerTakerFeeModel {
 mod tests {
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
-        instruments::{InstrumentAny, stubs::audusd_sim},
+        instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{
             Order,
             builder::OrderTestBuilder,

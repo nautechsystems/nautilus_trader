@@ -311,20 +311,26 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert (
             command.venue_order_id is not None or command.client_order_id is not None
         ), "Require one of venue_order_id or client_order_id"
-        if command.venue_order_id is not None:
-            bet_id = command.venue_order_id.value
-            orders = await self._client.list_current_orders(bet_ids={bet_id})
-        else:
-            customer_order_ref = make_customer_order_ref(command.client_order_id)
-            orders = await self._client.list_current_orders(
-                customer_order_refs={customer_order_ref},
-            )
+
+        try:
+            if command.venue_order_id is not None:
+                bet_id = command.venue_order_id.value
+                orders = await self._client.list_current_orders(bet_ids={bet_id})
+            else:
+                customer_order_ref = make_customer_order_ref(command.client_order_id)
+                orders = await self._client.list_current_orders(
+                    customer_order_refs={customer_order_ref},
+                )
+        except BetfairError as e:
+            self._log.warning(str(e))
+            return None
 
         if not orders:
             self._log.warning(
                 f"Could not find order for {command.venue_order_id=} {command.client_order_id=}",
             )
             return None
+
         # We have a response, check list length and grab first entry
         assert (
             len(orders) == 1

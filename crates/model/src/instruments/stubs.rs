@@ -21,8 +21,8 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    betting::BettingInstrument, binary_option::BinaryOption, futures_spread::FuturesSpread,
-    option_spread::OptionSpread, synthetic::SyntheticInstrument,
+    CryptoOption, betting::BettingInstrument, binary_option::BinaryOption,
+    futures_spread::FuturesSpread, option_spread::OptionSpread, synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -88,6 +88,50 @@ pub fn crypto_future_btcusdt(
         None,
         None,
         None,
+        0.into(),
+        0.into(),
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// CryptoOption
+////////////////////////////////////////////////////////////////////////////////
+
+#[fixture]
+pub fn crypto_option_btc_deribit(
+    #[default(3)] price_precision: u8,
+    #[default(1)] size_precision: u8,
+    #[default(Price::from("0.001"))] price_increment: Price,
+    #[default(Quantity::from("0.1"))] size_increment: Quantity,
+) -> CryptoOption {
+    let activation = UnixNanos::from(1_671_696_002_000_000_000);
+    let expiration = UnixNanos::from(1_673_596_800_000_000_000);
+    CryptoOption::new(
+        InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"),
+        Symbol::from("BTC-13JAN23-16000-P"),
+        Currency::from("BTC"),
+        Currency::from("USD"),
+        Currency::from("BTC"),
+        false,
+        OptionKind::Put,
+        Price::from("16000.000"),
+        activation,
+        expiration,
+        price_precision,
+        size_precision,
+        price_increment,
+        size_increment,
+        Some(Quantity::from(1)),
+        Some(Quantity::from("9000.0")),
+        Some(Quantity::from("0.1")),
+        None,
+        Some(Money::new(10.00, Currency::from("USD"))),
+        None,
+        None,
+        None,
+        None,
+        Some(dec!(0.0003)),
+        Some(dec!(0.0003)),
         0.into(),
         0.into(),
     )

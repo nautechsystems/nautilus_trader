@@ -21,7 +21,7 @@ use nautilus_core::{
     ffi::{cvec::CVec, parsing::u8_as_bool},
 };
 
-use crate::engine::TimeEventAccumulator;
+use crate::accumulator::TimeEventAccumulator;
 
 #[repr(C)]
 pub struct TimeEventAccumulatorAPI(Box<TimeEventAccumulator>);

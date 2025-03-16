@@ -1139,7 +1139,7 @@ mod tests {
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
-        instruments::{CurrencyPair, Equity, InstrumentAny, stubs::*},
+        instruments::{CurrencyPair, Equity, Instrument, InstrumentAny, stubs::*},
         types::{Price, Quantity},
     };
     use rstest::rstest;

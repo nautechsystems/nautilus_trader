@@ -60,7 +60,7 @@ class TestParquetTickDataLoaders:
         ticks = ParquetTickDataLoader.load(path)
 
         # Assert
-        assert len(ticks), 2001
+        assert len(ticks) == 2001
         assert "trade_id" in ticks.columns
         assert "price" in ticks.columns
         assert "quantity" in ticks.columns
@@ -73,7 +73,7 @@ class TestParquetTickDataLoaders:
         ticks = ParquetTickDataLoader.load(path)
 
         # Assert
-        assert len(ticks), 451
+        assert len(ticks) == 451
         assert "symbol" in ticks.columns
         assert "ask_size" in ticks.columns
         assert "ask" in ticks.columns

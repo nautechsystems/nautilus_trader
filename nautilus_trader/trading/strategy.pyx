@@ -37,6 +37,7 @@ from nautilus_trader.common.component cimport EVT
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
+from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.factories cimport OrderFactory
@@ -143,6 +144,8 @@ cdef class Strategy(Actor):
         component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
+        self.use_uuid_client_order_ids = config.use_uuid_client_order_ids
+        self._log = Logger(name=component_id)
 
         oms_type = config.oms_type or OmsType.UNSPECIFIED
         if isinstance(oms_type, str):
@@ -159,7 +162,7 @@ cdef class Strategy(Actor):
 
         # Public components
         self.clock = self._clock
-        self.cache: Cache = None          # Initialized when registered
+        self.cache: Cache = None   # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
 
@@ -285,6 +288,7 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             clock=clock,
             cache=cache,
+            use_uuid_client_order_ids=self.use_uuid_client_order_ids
         )
 
         self._manager = OrderManager(

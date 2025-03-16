@@ -47,7 +47,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::{OrderBook, own::OwnOrderBook},
     orders::{Order, OrderAny, OrderList},
     position::Position,
@@ -1456,9 +1456,8 @@ impl Cache {
         if let Some(database) = &mut self.database {
             database.snapshot_position_state(position).map_err(|e| {
                 log::error!(
-                    "Failed to snapshot position state for {}: {:?}",
-                    position.id,
-                    e
+                    "Failed to snapshot position state for {}: {e:?}",
+                    position.id
                 );
                 e
             })?;
@@ -2611,7 +2610,7 @@ impl Cache {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
-            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(u)))
+            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(*u)))
             .collect()
     }
 

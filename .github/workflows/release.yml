@@ -73,16 +73,27 @@ jobs:
           python-version: "3.11"
           free-disk-space: "true"
 
-      - name: Install / Build
+      - name: Build sdist
         run: |
           uv build --sdist
 
       - name: Set release output
         id: vars
         run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+          if [ ! -d "./dist" ]; then
+            echo "Error: dist directory not found"
+            exit 1
+          fi
+
+          ASSET_PATH=$(find ./dist -name "*.whl" -type f | xargs ls -t 2>/dev/null | head -n 1)
+
+          if [ -z "$ASSET_PATH" ]; then
+            echo "Error: No .whl files found in dist directory"
+            exit 1
+          fi
+
+          echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
+          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
       - name: Upload release asset
         id: upload-release-asset
@@ -126,16 +137,28 @@ jobs:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
 
-      - name: Install / Build
-        run: |
-          uv build --wheel
+      - name: Build wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Set release output
         id: vars
         run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
-          cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
+          if [ ! -d "./dist" ]; then
+            echo "Error: dist directory not found"
+            exit 1
+          fi
+
+          ASSET_PATH=$(find ./dist -name "*.whl" -type f | xargs ls -t 2>/dev/null | head -n 1)
+
+          if [ -z "$ASSET_PATH" ]; then
+            echo "Error: No .whl files found in dist directory"
+            exit 1
+          fi
+
+          echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
+          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
       - name: Upload release asset
         id: upload-release-asset-unix

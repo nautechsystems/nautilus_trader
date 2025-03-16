@@ -108,6 +108,20 @@ class TestCache:
         # Arrange, Act, Assert
         assert self.cache.price(AUDUSD_SIM.id, price_type) is None
 
+    @pytest.mark.parametrize(
+        ("price_type"),
+        [
+            PriceType.BID,
+            PriceType.ASK,
+            PriceType.MID,
+            PriceType.LAST,
+            PriceType.MARK,
+        ],
+    )
+    def test_prices_when_no_prices_returns_empty_map(self, price_type: PriceType):
+        # Arrange, Act, Assert
+        assert self.cache.prices(price_type) == {}
+
     def test_quote_tick_when_no_ticks_returns_none(self):
         # Arrange, Act, Assert
         assert self.cache.quote_tick(AUDUSD_SIM.id) is None
@@ -266,6 +280,19 @@ class TestCache:
 
         # Assert
         assert result == mark_price
+
+    def test_add_mark_price_as_map(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        mark_price = Price(10_000, 2)
+
+        self.cache.add_mark_price(instrument_id, mark_price)
+
+        # Act
+        result = self.cache.prices(PriceType.MARK)
+
+        # Assert
+        assert result == {instrument_id: mark_price}
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
@@ -470,6 +497,18 @@ class TestCache:
         # Assert
         assert result == Price.from_str("1.00000")
 
+    def test_prices_given_last_when_trade_tick(self):
+        # Arrange
+        tick = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.prices(PriceType.LAST)
+
+        # Assert
+        assert result == {AUDUSD_SIM.id: Price.from_str("1.00000")}
+
     @pytest.mark.parametrize(
         ("price_type", "expected"),
         [
@@ -497,6 +536,34 @@ class TestCache:
 
         # Assert
         assert result == expected
+
+    @pytest.mark.parametrize(
+        ("price_type", "expected"),
+        [
+            [PriceType.BID, Price.from_str("1.00001")],
+            [PriceType.ASK, Price.from_str("1.00003")],
+            [PriceType.MID, Price.from_str("1.000020")],
+        ],
+    )
+    def test_prices_given_various_quote_price_types(
+        self,
+        price_type,
+        expected,
+    ):
+        # Arrange
+        tick = TestDataStubs.quote_tick(
+            instrument=AUDUSD_SIM,
+            bid_price=1.00001,
+            ask_price=1.00003,
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.prices(price_type)
+
+        # Assert
+        assert result == {AUDUSD_SIM.id: expected}
 
     @pytest.mark.parametrize(
         ("price_type", "expected"),

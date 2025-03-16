@@ -57,6 +57,8 @@ cdef class OrderFactory:
     """The order factories trader ID.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
+    cdef readonly bint use_uuid_client_order_ids
+    """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
 
     cpdef void set_client_order_id_count(self, int count)
     cpdef void set_order_list_id_count(self, int count)

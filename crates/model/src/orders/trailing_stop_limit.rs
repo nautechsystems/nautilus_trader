@@ -21,10 +21,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{
-    any::OrderAny,
-    base::{Order, OrderCore, OrderError},
-};
+use super::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,

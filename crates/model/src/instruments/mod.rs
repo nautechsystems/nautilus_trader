@@ -19,6 +19,7 @@ pub mod any;
 pub mod betting;
 pub mod binary_option;
 pub mod crypto_future;
+pub mod crypto_option;
 pub mod crypto_perpetual;
 pub mod currency_pair;
 pub mod equity;
@@ -31,6 +32,7 @@ pub mod synthetic;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
+use enum_dispatch::enum_dispatch;
 use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -39,9 +41,10 @@ use ustr::Ustr;
 // Re-exports
 pub use crate::instruments::{
     any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
-    crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
-    equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    option_contract::OptionContract, option_spread::OptionSpread, synthetic::SyntheticInstrument,
+    crypto_future::CryptoFuture, crypto_option::CryptoOption, crypto_perpetual::CryptoPerpetual,
+    currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+    futures_spread::FuturesSpread, option_contract::OptionContract, option_spread::OptionSpread,
+    synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
@@ -49,6 +52,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
+#[enum_dispatch(InstrumentAny)]
 pub trait Instrument: 'static + Send {
     fn into_any(self) -> InstrumentAny;
     fn id(&self) -> InstrumentId;

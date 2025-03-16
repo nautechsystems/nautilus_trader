@@ -157,6 +157,7 @@ cdef class FuturesSpread(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
         self.exchange = exchange
         self.underlying = underlying
         self.strategy_type = strategy_type

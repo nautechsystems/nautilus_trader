@@ -63,17 +63,9 @@ cdef class OrderFactory:
         The clock for the factory.
     cache : CacheFacade, optional
         The cache facade for the order factory.
-    initial_order_id_count : int, optional
-        The initial order ID count for the factory.
-    initial_order_list_id_count : int, optional
-        The initial order list ID count for the factory.
+    use_uuid_client_order_ids : bool, default False
+        If UUID4's should be used for client order ID values.
 
-    Raises
-    ------
-    ValueError
-        If `initial_order_id_count` is negative (< 0).
-    ValueError
-        If `initial_order_list_id_count` is negative (< 0).
     """
 
     def __init__(
@@ -82,25 +74,23 @@ cdef class OrderFactory:
         StrategyId strategy_id not None,
         Clock clock not None,
         CacheFacade cache: CacheFacade | None = None,
-        int initial_order_id_count=0,
-        int initial_order_list_id_count=0,
-    ):
+        bint use_uuid_client_order_ids = False,
+    ) -> None:
         self._clock = clock
         self._cache = cache
         self.trader_id = trader_id
         self.strategy_id = strategy_id
+        self.use_uuid_client_order_ids = use_uuid_client_order_ids
 
         self._order_id_generator = ClientOrderIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
             clock=clock,
-            initial_count=initial_order_id_count,
         )
         self._order_list_id_generator = OrderListIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
             clock=clock,
-            initial_count=initial_order_list_id_count,
         )
 
     cpdef void set_client_order_id_count(self, int count):
@@ -146,7 +136,11 @@ cdef class OrderFactory:
         ClientOrderId
 
         """
+        if self.use_uuid_client_order_ids:
+            return ClientOrderId(UUID4().value)
+
         cdef ClientOrderId client_order_id = self._order_id_generator.generate()
+
         if self._cache is not None:
             while self._cache.order(client_order_id) is not None:
                 client_order_id = self._order_id_generator.generate()
@@ -263,7 +257,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return MarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -362,7 +356,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return LimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -466,7 +460,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return StopMarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -580,7 +574,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return StopLimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -670,7 +664,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return MarketToLimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -769,7 +763,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return MarketIfTouchedOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -883,7 +877,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return LimitIfTouchedOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -996,7 +990,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return TrailingStopMarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -1125,7 +1119,7 @@ cdef class OrderFactory:
 
         """
         if client_order_id is None:
-            client_order_id = self._order_id_generator.generate()
+            client_order_id = self.generate_client_order_id()
         return TrailingStopLimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
@@ -1284,11 +1278,11 @@ cdef class OrderFactory:
         cdef OrderListId order_list_id = self._order_list_id_generator.generate()
 
         if entry_client_order_id is None:
-            entry_client_order_id = self._order_id_generator.generate()
+            entry_client_order_id = self.generate_client_order_id()
         if sl_client_order_id is None:
-            sl_client_order_id = self._order_id_generator.generate()
+            sl_client_order_id = self.generate_client_order_id()
         if tp_client_order_id is None:
-            tp_client_order_id = self._order_id_generator.generate()
+            tp_client_order_id = self.generate_client_order_id()
 
         ########################################################################
         # ENTRY ORDER

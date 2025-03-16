@@ -54,8 +54,7 @@ use crate::runtime::get_runtime;
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `interval_ns` is zero.
+/// This function panics if `interval_ns` is zero.
 #[must_use]
 pub const fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(interval_ns).expect("`interval_ns` must be positive")
@@ -249,11 +248,10 @@ impl TestTimer {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `name` is not a valid string.
+    /// This function panics if `name` is not a valid string.
     #[must_use]
     pub fn new(
-        name: &str,
+        name: Ustr,
         interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
@@ -261,7 +259,7 @@ impl TestTimer {
         check_valid_string(name, stringify!(name)).expect(FAILED);
 
         Self {
-            name: Ustr::from(name),
+            name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
@@ -369,13 +367,11 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `name` is not a valid string.
-    /// - If `interval_ns` is zero.
+    /// This function panics if `name` is not a valid string.
     #[must_use]
     #[cfg(not(feature = "clock_v2"))]
     pub fn new(
-        name: &str,
+        name: Ustr,
         interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
@@ -385,7 +381,7 @@ impl LiveTimer {
 
         log::debug!("Creating timer '{name}'");
         Self {
-            name: Ustr::from(name),
+            name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
@@ -399,13 +395,11 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `name` is not a valid string.
-    /// - If `interval_ns` is zero.
+    /// This function panics if `name` is not a valid string.
     #[must_use]
     #[cfg(feature = "clock_v2")]
     pub fn new(
-        name: &str,
+        name: Ustr,
         interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
@@ -416,7 +410,7 @@ impl LiveTimer {
 
         log::debug!("Creating timer '{name}'");
         Self {
-            name: Ustr::from(name),
+            name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
@@ -453,22 +447,36 @@ impl LiveTimer {
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
-        let next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
-        let next_time_atomic = self.next_time_ns.clone();
         let interval_ns = self.interval_ns.get();
+        let callback = self.callback.clone();
+
+        // Get current time
+        let clock = get_atomic_clock_realtime();
+        let now_ns = clock.get_time_ns();
+
+        // Check if the timer's alert time is in the past and adjust if needed
+        let mut next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
+        if next_time_ns <= now_ns {
+            log::warn!(
+                "Timer '{}' alert time {} was in the past, adjusted to current time for immediate fire",
+                event_name,
+                next_time_ns,
+            );
+            next_time_ns = now_ns.into();
+            self.next_time_ns
+                .store(now_ns.as_u64(), atomic::Ordering::SeqCst);
+        }
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
+        let next_time_atomic = self.next_time_ns.clone();
 
         #[cfg(feature = "clock_v2")]
         let heap = self.heap.clone();
 
-        let callback = self.callback.clone();
         let rt = get_runtime();
-
         let handle = rt.spawn(async move {
             let clock = get_atomic_clock_realtime();
-            let now_ns = clock.get_time_ns();
 
             // 1-millisecond delay to account for the overhead of initializing a tokio timer
             let overhead = Duration::from_millis(1);
@@ -561,13 +569,14 @@ mod tests {
 
     use nautilus_core::UnixNanos;
     use rstest::*;
+    use ustr::Ustr;
 
     use super::{TestTimer, TimeEvent};
 
     #[rstest]
     fn test_test_timer_pop_event() {
         let mut timer = TestTimer::new(
-            "test_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::from(1),
             None,
@@ -582,7 +591,7 @@ mod tests {
     #[rstest]
     fn test_test_timer_advance_within_next_time_ns() {
         let mut timer = TestTimer::new(
-            "test_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(5).unwrap(),
             UnixNanos::default(),
             None,
@@ -598,7 +607,7 @@ mod tests {
     #[rstest]
     fn test_test_timer_advance_up_to_next_time_ns() {
         let mut timer = TestTimer::new(
-            "test_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             None,
@@ -610,7 +619,7 @@ mod tests {
     #[rstest]
     fn test_test_timer_advance_up_to_next_time_ns_with_stop_time() {
         let mut timer = TestTimer::new(
-            "test_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(2)),
@@ -622,7 +631,7 @@ mod tests {
     #[rstest]
     fn test_test_timer_advance_beyond_next_time_ns() {
         let mut timer = TestTimer::new(
-            "test_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
@@ -634,7 +643,7 @@ mod tests {
     #[rstest]
     fn test_test_timer_advance_beyond_stop_time() {
         let mut timer = TestTimer::new(
-            "test_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
@@ -646,7 +655,7 @@ mod tests {
     #[rstest]
     fn test_test_timer_advance_exact_boundary() {
         let mut timer = TestTimer::new(
-            "boundary_timer",
+            Ustr::from("TEST_TIMER"),
             NonZeroU64::new(5).unwrap(),
             UnixNanos::from(0),
             None,

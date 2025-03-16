@@ -1,3 +1,50 @@
+# NautilusTrader 1.213.0 Beta
+
+Released on 16th March 2025 (UTC).
+
+### Enhancements
+- Added `CryptoOption` instrument, supporting inverse and fractional sizes
+- Added `Cache.prices(...)` to return a map of latest price per instrument for a price type
+- Added `use_uuid_client_order_ids` config option for `StrategyConfig`
+- Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
+- Added FDUSD (First Digital USD) crypto `Currency` constant
+- Added initial leverage, `margin_mode` and `position_mode` config options for Bybit (#2441), thanks @sunlei
+- Updated parquet catalog in Rust with recent features (#2442), thanks @faysou
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Added `timeout_secs` parameter to `HttpClient` for default timeouts
+- Added additional precision validations for `OrderMatchingEngine`
+- Added symmetric comparison impls between `u64` and `UnixNanos`
+- Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
+- Improved order denied reason message for balance impact
+- Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
+- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidblom
+- Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
+- Refactored some Rust logs to use named parameters in format strings (#2443), thanks @faysou
+- Some minor performance optimizations for Bybit and dYdX adapters (#2448), thanks @sunlei
+- Ported backtest engine and kernel to Rust (#2449), thanks @filipmacek
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.24.0
+- Upgraded `tokio` crate to v1.44.1
+
+### Fixes
+- Fixed source distribution (sdist) packaging
+- Fixed `Clock.timer_names()` memory issue resulting in an empty list
+- Fixed underflow panic when setting a time alert in the past (#2446), thanks for reporting @uxbux
+- Fixed logger name for `Strategy` custom `strategy_id`s
+- Fixed unbound variable for Bybit (#2433), thanks @davidsblom
+
+### Documentation Updates
+- Clarify docs for timestamp properties in `Data` (#2450), thanks @stefansimik
+- Updated environment setup document (#2452), thanks @faysou
+
+### Deprecations
+None
+
+---
+
 # NautilusTrader 1.212.0 Beta
 
 Released on 11th March 2025 (UTC).
@@ -5,10 +52,9 @@ Released on 11th March 2025 (UTC).
 This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
 
 ### Enhancements
-- Added `OwnOrderBook` and `OwnOrder` to track own orders and prevent self-trades in market making
+- Added `OwnOrderBook` and `OwnBookOrder` to track own orders and prevent self-trades in market making
 - Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
 - Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
-- Added `ts_accepted` timestamp property for orders
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
 - Added pnl information to greeks data (#2378), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional

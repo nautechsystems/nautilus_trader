@@ -218,7 +218,7 @@ cdef extern from "../includes/common.h":
 
     uint64_t test_clock_timestamp_ns(const TestClock_API *clock);
 
-    PyObject *test_clock_timer_names(const TestClock_API *clock);
+    const char *test_clock_timer_names(const TestClock_API *clock);
 
     uintptr_t test_clock_timer_count(TestClock_API *clock);
 
@@ -278,7 +278,7 @@ cdef extern from "../includes/common.h":
 
     uint64_t live_clock_timestamp_ns(LiveClock_API *clock);
 
-    PyObject *live_clock_timer_names(const LiveClock_API *clock);
+    const char *live_clock_timer_names(const LiveClock_API *clock);
 
     uintptr_t live_clock_timer_count(LiveClock_API *clock);
 

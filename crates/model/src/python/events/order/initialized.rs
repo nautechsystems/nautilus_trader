@@ -32,7 +32,7 @@ use crate::{
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::base::str_indexmap_to_ustr,
+    orders::str_indexmap_to_ustr,
     types::{Price, Quantity},
 };
 
@@ -122,7 +122,7 @@ impl OrderInitialized {
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn __str__(&self) -> String {

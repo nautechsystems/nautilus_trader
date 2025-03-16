@@ -115,6 +115,18 @@ impl PartialOrd<Option<u64>> for UnixNanos {
     }
 }
 
+impl PartialEq<UnixNanos> for u64 {
+    fn eq(&self, other: &UnixNanos) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialOrd<UnixNanos> for u64 {
+    fn partial_cmp(&self, other: &UnixNanos) -> Option<Ordering> {
+        self.partial_cmp(&other.0)
+    }
+}
+
 impl From<u64> for UnixNanos {
     fn from(value: u64) -> Self {
         Self(value)

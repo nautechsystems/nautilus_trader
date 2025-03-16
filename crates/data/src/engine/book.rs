@@ -29,6 +29,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::Data,
     identifiers::{InstrumentId, Venue},
+    instruments::Instrument,
 };
 use ustr::Ustr;
 

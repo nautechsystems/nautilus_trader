@@ -162,7 +162,7 @@ mod tests {
 
     use futures::StreamExt;
     use nautilus_common::{
-        clock::{LiveClock, TestClock},
+        clock::LiveClock,
         timer::{TimeEvent, TimeEventCallback},
     };
 

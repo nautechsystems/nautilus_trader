@@ -2296,6 +2296,47 @@ cdef class Cache(CacheFacade):
             if bar is not None:
                 return bar.close
 
+    cpdef dict[InstrumentId, Price] prices(self, PriceType price_type):
+        """
+        Return a map of latest prices per instrument ID for the given price type.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the price.
+        price_type : PriceType
+            The price type for the query.
+
+        Returns
+        -------
+        dict[InstrumentId, Price]
+            Includes key value pairs for prices which exist.
+
+        """
+        cdef set[InstrumentId] instrument_ids = {b.instrument_id for b in self._bars.keys()}
+
+        if price_type == PriceType.LAST:
+            instrument_ids.update(self._trade_ticks.keys())
+        elif price_type == PriceType.BID or price_type == PriceType.ASK or price_type == PriceType.MID:
+            instrument_ids.update(self._quote_ticks.keys())
+        elif price_type == PriceType.MARK:
+            instrument_ids.update(self._mark_prices.keys())
+        else:
+            # Unreachable unless code changes
+            raise ValueError(f"Invalid `PriceType`, was {price_type}")
+
+        cdef dict[InstrumentId, Price] prices_map = {}
+
+        cdef:
+            InstrumentId instrument_id
+            Price price
+        for instrument_id in sorted(instrument_ids):
+            price = self.price(instrument_id, price_type)
+            if price is not None:
+                prices_map[instrument_id] = price
+
+        return prices_map
+
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
         Return the order book for the given instrument ID (if found).

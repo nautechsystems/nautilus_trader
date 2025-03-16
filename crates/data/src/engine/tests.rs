@@ -42,7 +42,7 @@ use nautilus_model::{
     },
     enums::BookType,
     identifiers::{ClientId, TraderId, Venue},
-    instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
 };
 use rstest::*;
 

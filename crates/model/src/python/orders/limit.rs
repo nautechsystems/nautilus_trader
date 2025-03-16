@@ -35,10 +35,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    orders::{
-        LimitOrder,
-        base::{Order, OrderCore, str_indexmap_to_ustr},
-    },
+    orders::{LimitOrder, Order, OrderCore, str_indexmap_to_ustr},
     python::{common::commissions_from_indexmap, events::order::pyobject_to_order_event},
     types::{Price, Quantity},
 };

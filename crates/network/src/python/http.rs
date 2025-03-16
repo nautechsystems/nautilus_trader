@@ -112,15 +112,22 @@ impl HttpClient {
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[new]
-    #[pyo3(signature = (default_headers = HashMap::new(), header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
+    #[pyo3(signature = (default_headers=HashMap::new(), header_keys=Vec::new(), keyed_quotas=Vec::new(), default_quota=None, timeout_secs=None))]
     #[must_use]
     pub fn py_new(
         default_headers: HashMap<String, String>,
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
+        timeout_secs: Option<u64>,
     ) -> Self {
-        Self::new(default_headers, header_keys, keyed_quotas, default_quota)
+        Self::new(
+            default_headers,
+            header_keys,
+            keyed_quotas,
+            default_quota,
+            timeout_secs,
+        )
     }
 
     /// Sends an HTTP request.

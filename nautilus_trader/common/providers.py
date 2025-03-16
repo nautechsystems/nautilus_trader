@@ -167,19 +167,24 @@ class InstrumentProvider:
         self._loading = True
         self._log.info("Initializing instruments...")
 
-        if self._load_all_on_start:
-            await self.load_all_async(self._filters)
-        elif self._load_ids_on_start:
-            instrument_ids = [
-                i if isinstance(i, InstrumentId) else InstrumentId.from_str(i)
-                for i in self._load_ids_on_start
-            ]
+        try:
+            if self._load_all_on_start:
+                await self.load_all_async(self._filters)
+            elif self._load_ids_on_start:
+                instrument_ids = [
+                    i if isinstance(i, InstrumentId) else InstrumentId.from_str(i)
+                    for i in self._load_ids_on_start
+                ]
 
-            instruments_str = ", ".join([i.value for i in instrument_ids])
-            filters_str = "..." if not self._filters else f" with filters {self._filters}..."
-            self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
+                instruments_str = ", ".join([i.value for i in instrument_ids])
+                filters_str = "..." if not self._filters else f" with filters {self._filters}..."
+                self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
 
-            await self.load_ids_async(instrument_ids, self._filters)
+                await self.load_ids_async(instrument_ids, self._filters)
+        except Exception as e:
+            # Catch unexpected exception to ensure that the self._loading flag
+            # is reset to False
+            self._log.error(f"Failed to load the instruments: {e}")
 
         if self._instruments:
             self._log.info(f"Loaded {self.count} instruments")

@@ -118,9 +118,8 @@ where
     }
 
     println!(
-        "Successfully wrote {} records to {}",
-        data.len(),
-        parquet_path.display()
+        "Successfully wrote {} records to {parquet_path:?}",
+        data.len()
     );
     Ok(())
 }

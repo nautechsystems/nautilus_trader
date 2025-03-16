@@ -29,7 +29,7 @@ mod serial_tests {
     use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
-        accounts::{any::AccountAny, cash::CashAccount},
+        accounts::{AccountAny, CashAccount},
         data::{
             DataType,
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},

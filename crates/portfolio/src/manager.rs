@@ -20,10 +20,10 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
+    accounts::{Account, AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
     events::{AccountState, OrderFilled},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
     types::{AccountBalance, Money},
@@ -148,6 +148,12 @@ impl AccountsManager {
                     None,
                 ),
                 InstrumentAny::CryptoFuture(i) => account.calculate_maintenance_margin(
+                    i,
+                    position.quantity,
+                    instrument.make_price(position.avg_px_open),
+                    None,
+                ),
+                InstrumentAny::CryptoOption(i) => account.calculate_maintenance_margin(
                     i,
                     position.quantity,
                     instrument.make_price(position.avg_px_open),
@@ -373,6 +379,9 @@ impl AccountsManager {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
                 InstrumentAny::CryptoFuture(i) => {
+                    account.calculate_initial_margin(i, order.quantity(), price?, None)
+                }
+                InstrumentAny::CryptoOption(i) => {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
                 InstrumentAny::CryptoPerpetual(i) => {

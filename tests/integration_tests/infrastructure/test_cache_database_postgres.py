@@ -19,7 +19,7 @@ import sys
 
 import pytest
 
-from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
+from nautilus_trader.cache.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.signal import generate_signal_class
