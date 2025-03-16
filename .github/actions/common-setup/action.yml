@@ -14,13 +14,6 @@ runs:
   using: "composite"
   steps:
     # > --------------------------------------------------
-    # Security
-    - name: Security audit
-      uses: step-security/harden-runner@8a09271fed8277ab7fb02dbb5917c8d0e78323b4  # 2.11.0
-      with:
-        egress-policy: audit
-
-    # > --------------------------------------------------
     # > OS
     - name: Free disk space (Ubuntu)
       if: inputs.free-disk-space == 'true' && runner.os == 'Linux'

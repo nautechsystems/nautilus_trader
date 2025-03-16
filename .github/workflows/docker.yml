@@ -12,11 +12,6 @@ jobs:
       BUILD_MODE: release
 
     steps:
-      - name: Security audit
-        uses: step-security/harden-runner@8a09271fed8277ab7fb02dbb5917c8d0e78323b4  # 2.11.0
-        with:
-          egress-policy: audit
-
       - name: Free disk space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:

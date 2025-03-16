@@ -17,11 +17,6 @@ jobs:
         language: ['python']
 
     steps:
-      - name: Security audit
-        uses: step-security/harden-runner@8a09271fed8277ab7fb02dbb5917c8d0e78323b4  # 2.11.0
-        with:
-          egress-policy: audit
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
