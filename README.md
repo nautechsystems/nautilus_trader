@@ -2,6 +2,7 @@
 
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
+![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
@@ -23,6 +24,7 @@
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
 - **Support**: [support@nautilustrader.io](mailto:support@nautilustrader.io)
+- **Packages**: https://packages.nautechsystems.io/simple/nautilus-trader/index.html
 
 ## Introduction
 
@@ -388,13 +390,17 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 
 ### Testing with Rust
 
-[cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
+[cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader.
+Its key benefit is isolating each test in its own process, ensuring test reliability
+by avoiding interference.
+
+You can install cargo-nextest by running:
 
     cargo install cargo-nextest
 
 > [!TIP]
 >
-> Run Rust tests with `make cargo-test`, as they only pass via **cargo-nextest**.
+> Run Rust tests with `make cargo-test`, which uses **cargo-nextest** with an efficient profile.
 
 ## Contributing
 
