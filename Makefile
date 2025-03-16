@@ -61,13 +61,14 @@ pre-commit:
 ruff:
 	uv run --active --no-sync ruff check . --fix
 
-# Requires cargo-outdated v0.16.0+ (currently broken waiting for 2024 edition update)
+# Requires cargo-outdated (currently broken waiting for 2024 edition update)
 .PHONY: outdated
 outdated:
 	cargo outdated
 
 .PHONY: update cargo-update
 update: cargo-update
+	uv self update
 	uv lock --upgrade
 
 .PHONY: docs
