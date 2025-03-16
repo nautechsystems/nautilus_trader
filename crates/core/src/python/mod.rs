@@ -85,6 +85,16 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
+#[pyfunction]
+fn is_pycapsule(obj: PyObject) -> PyResult<bool> {
+    let result = unsafe {
+        // PyCapsule_CheckExact checks if the object is exactly a PyCapsule
+        pyo3::ffi::PyCapsule_CheckExact(obj.as_ptr()) != 0
+    };
+
+    Ok(result)
+}
+
 /// Loaded as nautilus_pyo3.core
 ///
 /// # Errors
@@ -100,6 +110,7 @@ pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(NANOSECONDS_IN_MILLISECOND), NANOSECONDS_IN_MILLISECOND)?;
     m.add(stringify!(NANOSECONDS_IN_MICROSECOND), NANOSECONDS_IN_MICROSECOND)?;
     m.add_class::<UUID4>()?;
+    m.add_function(wrap_pyfunction!(is_pycapsule, m)?)?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;
