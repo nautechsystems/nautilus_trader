@@ -27,7 +27,7 @@ members = [
 
 [workspace.package]
 rust-version = "1.85.0"
-version = "0.43.0"
+version = "0.44.0"
 edition = "2024"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"

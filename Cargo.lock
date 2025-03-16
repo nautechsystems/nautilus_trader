@@ -3018,7 +3018,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3031,7 +3031,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3054,7 +3054,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3104,7 +3104,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3127,7 +3127,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -3146,7 +3146,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3163,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -3191,7 +3191,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3218,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -3230,7 +3230,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3262,7 +3262,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3287,7 +3287,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3319,7 +3319,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3354,7 +3354,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3389,7 +3389,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "criterion",
  "log",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -3429,7 +3429,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "criterion",
  "log",
@@ -3447,7 +3447,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -3480,7 +3480,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3519,7 +3519,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-test-kit"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3538,7 +3538,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "chrono",
  "chrono-tz",
