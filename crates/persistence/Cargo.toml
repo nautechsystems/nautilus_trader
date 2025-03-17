@@ -56,7 +56,7 @@ datafusion = { version = "46.0.0", default-features = false, features = [
   "regex_expressions",
   "unicode_expressions",
 ] }
-object_store = "0.11.2"
+object_store = "0.11.2"  # Keep in line with datafusion
 walkdir = "2.5.0"
 
 [dev-dependencies]
