@@ -256,35 +256,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._active_markets.add(condition_id)
 
-    async def _update_allowances(self, instrument_ids: list[InstrumentId]) -> None:
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.COLLATERAL,
-            signature_type=self._config.signature_type,
-        )
-        self._log.info(f"Updating {params}")
-        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
-        for instrument_id in instrument_ids:
-            token_id = get_polymarket_token_id(instrument_id)
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            self._log.info(f"Updating {params}")
-            await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            response: dict[str, Any] = await asyncio.to_thread(
-                self._http_client.get_balance_allowance,
-                params,
-            )
-            self._log.info(str(response))
-
     async def _update_account_state(self) -> None:
         self._log.info("Checking account balance")
 
