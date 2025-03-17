@@ -15,7 +15,7 @@
 
 #![allow(clippy::missing_errors_doc)] // Allow missing errors docs for Python modules at this stage
 
-//! Python bindings from `pyo3`.
+//! Python bindings from [PyO3](https://pyo3.rs).
 
 use pyo3::prelude::*;
 

@@ -13,6 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! C foreign function interface (FFI) from `cbindgen`.
+//! C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 
 pub mod engine;

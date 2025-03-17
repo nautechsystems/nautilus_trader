@@ -127,7 +127,7 @@ pub fn init_tracing() -> anyhow::Result<()> {
 /// Initialize logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
-/// the components in the main `nautilus_trader` package.
+/// the components in the [nautilus_trader](https://pypi.org/project/nautilus_trader) package.
 /// Logging can be configured to filter components and write up to a specific level only
 /// by passing a configuration using the `NAUTILUS_LOG` environment variable.
 ///
