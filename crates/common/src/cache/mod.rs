@@ -1422,8 +1422,8 @@ impl Cache {
         let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
         copied_position.id = PositionId::new(new_id);
 
-        // Serialize the position
-        let position_serialized = bincode::serialize(&copied_position)?;
+        // Serialize the position (TODO: temporily just to JSON to remove a dependency)
+        let position_serialized = serde_json::to_vec(&copied_position)?;
 
         let snapshots: Option<&Bytes> = self.position_snapshots.get(&position_id);
         let new_snapshots = match snapshots {
