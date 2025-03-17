@@ -85,10 +85,10 @@ jobs:
             exit 1
           fi
 
-          ASSET_PATH=$(find ./dist -name "*.whl" -type f | xargs ls -t 2>/dev/null | head -n 1)
+          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f | xargs ls -t 2>/dev/null | head -n 1)
 
           if [ -z "$ASSET_PATH" ]; then
-            echo "Error: No .whl files found in dist directory"
+            echo "Error: No .tar.gz files found in dist directory"
             exit 1
           fi
 
@@ -104,7 +104,7 @@ jobs:
           upload_url: ${{ needs.tag-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/zip
+          asset_content_type: application/gzip
 
       - name: Publish to PyPI
         env:
