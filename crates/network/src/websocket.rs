@@ -91,7 +91,7 @@ pub struct WebSocketConfig {
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
     Update(MessageWriter),
-    /// Send the message to the server.
+    /// Send message to the server.
     Send(Message),
     /// Shutdown the writer task.
     Shutdown,
@@ -219,6 +219,13 @@ impl WebSocketClientInner {
 
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
                 tracing::error!("{e}");
+            }
+
+            if let Some(ref read_task) = self.read_task.take() {
+                if !read_task.is_finished() {
+                    read_task.abort();
+                    tracing::debug!("Aborted task 'read'");
+                }
             }
 
             // Spawn new read task
@@ -457,7 +464,6 @@ impl Drop for WebSocketClientInner {
 
         self.write_task.abort(); // TODO: Improve this
 
-        // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();

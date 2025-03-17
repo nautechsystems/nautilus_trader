@@ -94,7 +94,7 @@ pub struct SocketConfig {
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
     Update(TcpWriter),
-    /// Send the data to the server.
+    /// Send data to the server.
     Send(Bytes),
     /// Shutdown the writer task.
     Shutdown,
@@ -106,8 +106,8 @@ pub(crate) enum WriterCommand {
 /// read and write ends:
 /// - The read end is passed to the task that keeps receiving
 ///   messages from the server and passing them to a handler.
-/// - The write end is wrapped in an `Arc<Mutex>` and used to send messages
-///   or heart beats.
+/// - The write end is passed to a task which receives messages over a channel
+///   to send to the server.
 ///
 /// The heartbeat is optional and can be configured with an interval and data to
 /// send.
@@ -172,7 +172,6 @@ impl SocketClientInner {
             Self::spawn_heartbeat_task(
                 connection_mode.clone(),
                 heartbeat.clone(),
-                suffix.clone(),
                 writer_tx.clone(),
             )
         });
@@ -215,14 +214,12 @@ impl SocketClientInner {
 
     /// Reconnect with server.
     ///
-    /// Make a new connection with server. Use the new read and write halves
-    /// to update the shared writer and the read and heartbeat tasks.
+    /// Makes a new connection with server, uses the new read and write halves
+    /// to update the reader and writer.
     async fn reconnect(&mut self) -> Result<(), Error> {
         tracing::debug!("Reconnecting");
 
         tokio::time::timeout(self.reconnect_timeout, async {
-            // Clean up existing tasks
-
             let SocketConfig {
                 url,
                 mode,
@@ -242,6 +239,11 @@ impl SocketClientInner {
 
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
                 tracing::error!("{e}");
+            }
+
+            if !self.read_task.is_finished() {
+                self.read_task.abort();
+                tracing::debug!("Aborted task 'read'");
             }
 
             // Spawn new read task
@@ -420,15 +422,13 @@ impl SocketClientInner {
     fn spawn_heartbeat_task(
         connection_state: Arc<AtomicU8>,
         heartbeat: (u64, Vec<u8>),
-        suffix: Vec<u8>,
         writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'heartbeat'");
-        let (interval_secs, mut message) = heartbeat;
+        let (interval_secs, message) = heartbeat;
 
         tokio::task::spawn(async move {
             let interval = Duration::from_secs(interval_secs);
-            message.extend(suffix);
 
             loop {
                 tokio::time::sleep(interval).await;
@@ -462,7 +462,6 @@ impl Drop for SocketClientInner {
 
         self.write_task.abort(); // TODO: Improve this
 
-        // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
