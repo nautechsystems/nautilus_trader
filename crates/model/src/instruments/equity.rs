@@ -112,7 +112,7 @@ impl Equity {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )?;
-        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment, stringify!(price_increment))?;
 
         Ok(Self {
             id,

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(clippy::missing_errors_doc)] // Allow missing errors docs for Python modules at this stage
+
 //! Python bindings from `pyo3`.
 
 use pyo3::prelude::*;

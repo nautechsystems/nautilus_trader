@@ -149,9 +149,9 @@ impl CryptoOption {
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )?;
-        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment, stringify!(price_increment))?;
         if let Some(multiplier) = multiplier {
-            check_positive_quantity(multiplier.raw, stringify!(multiplier.raw))?;
+            check_positive_quantity(multiplier, stringify!(multiplier))?;
         }
 
         Ok(Self {
