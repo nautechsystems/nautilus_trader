@@ -19,12 +19,13 @@
 | `macOS (arm64)`    | 1.85.0+ | 3.11, 3.12  |
 | `Windows (x86_64)` | 1.85.0+ | 3.11, 3.12  |
 
+[Package Index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)
+
 [![](https://dcbadge.limes.pink/api/server/nautilustrader)](https://discord.gg/NautilusTrader)
 
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
 - **Support**: [support@nautilustrader.io](mailto:support@nautilustrader.io)
-- **Packages**: https://packages.nautechsystems.io/simple/nautilus-trader/index.html
 
 ## Introduction
 
