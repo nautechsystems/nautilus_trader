@@ -19,14 +19,13 @@
 //! **Key features**:
 //! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED)
 //! - Synchronized reconnection with backoff
-//! - Clean shutdown sequence
 //! - Split read/write architecture
 //! - Python callback integration
 //!
 //! **Design**:
 //! - Single reader, multiple writer model
 //! - Read half runs in dedicated task
-//! - Write half protected by `Arc<Mutex>`
+//! - Write half runs in dedicated task connected with channel
 //! - Controller task manages lifecycle
 
 use std::{
@@ -44,7 +43,7 @@ use futures_util::{
 use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
-use tokio::{net::TcpStream, sync::Mutex};
+use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
@@ -56,8 +55,6 @@ use crate::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
-type SharedMessageWriter =
-    Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 #[derive(Debug, Clone)]
@@ -90,6 +87,16 @@ pub struct WebSocketConfig {
     pub reconnect_jitter_ms: Option<u64>,
 }
 
+/// Message types that can be sent to the writer task
+pub(crate) enum WriterCommand {
+    /// Update the writer reference with a new one after reconnection.
+    Update(MessageWriter),
+    /// Send the message to the server.
+    Send(Message),
+    /// Shutdown the writer task.
+    Shutdown,
+}
+
 /// `WebSocketClient` connects to a websocket server to read and send messages.
 ///
 /// The client is opinionated about how messages are read and written. It
@@ -108,8 +115,9 @@ pub struct WebSocketConfig {
 struct WebSocketClientInner {
     config: WebSocketConfig,
     read_task: Option<tokio::task::JoinHandle<()>>,
+    write_task: tokio::task::JoinHandle<()>,
+    writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
-    writer: SharedMessageWriter,
     connection_mode: Arc<AtomicU8>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
@@ -135,7 +143,6 @@ impl WebSocketClientInner {
             reconnect_jitter_ms,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
-        let writer = Arc::new(Mutex::new(writer));
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
@@ -144,13 +151,17 @@ impl WebSocketClientInner {
             .as_ref()
             .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
 
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+
+        let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
+
         // Optionally spawn a heartbeat task to periodically ping server
         let heartbeat_task = heartbeat.as_ref().map(|heartbeat_secs| {
             Self::spawn_heartbeat_task(
                 connection_mode.clone(),
                 *heartbeat_secs,
                 heartbeat_msg.clone(),
-                writer.clone(),
+                writer_tx.clone(),
             )
         });
 
@@ -166,8 +177,9 @@ impl WebSocketClientInner {
         Ok(Self {
             config,
             read_task,
+            write_task,
+            writer_tx,
             heartbeat_task,
-            writer,
             connection_mode,
             reconnect_timeout,
             backoff,
@@ -202,20 +214,11 @@ impl WebSocketClientInner {
         tracing::debug!("Reconnecting");
 
         tokio::time::timeout(self.reconnect_timeout, async {
-            shutdown(
-                self.read_task.take(),
-                self.heartbeat_task.take(),
-                self.writer.clone(),
-            )
-            .await;
-
             let (new_writer, reader) =
                 Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
 
-            {
-                let mut guard = self.writer.lock().await;
-                *guard = new_writer;
-                drop(guard);
+            if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
+                tracing::error!("{e}");
             }
 
             // Spawn new read task
@@ -226,16 +229,6 @@ impl WebSocketClientInner {
                     self.config.ping_handler.clone(),
                 ));
             }
-
-            // Optionally spawn new heartbeat task
-            self.heartbeat_task = self.config.heartbeat.as_ref().map(|heartbeat_secs| {
-                Self::spawn_heartbeat_task(
-                    self.connection_mode.clone(),
-                    *heartbeat_secs,
-                    self.config.heartbeat_msg.clone(),
-                    self.writer.clone(),
-                )
-            });
 
             self.connection_mode
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
@@ -336,30 +329,112 @@ impl WebSocketClientInner {
         })
     }
 
+    fn spawn_write_task(
+        connection_state: Arc<AtomicU8>,
+        writer: MessageWriter,
+        mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
+    ) -> tokio::task::JoinHandle<()> {
+        tracing::debug!("Started task 'write'");
+
+        // Interval between checking the connection mode
+        let check_interval = Duration::from_millis(10);
+
+        tokio::task::spawn(async move {
+            let mut active_writer = writer;
+
+            loop {
+                match tokio::time::timeout(check_interval, writer_rx.recv()).await {
+                    Ok(Some(msg)) => {
+                        let mode = ConnectionMode::from_atomic(&connection_state);
+
+                        match msg {
+                            WriterCommand::Shutdown => {
+                                tracing::debug!("Received shutdown message");
+                                if let Err(e) = active_writer.close().await {
+                                    tracing::error!("Failed to send close message: {e}");
+                                } else {
+                                    tracing::debug!("Sent close message");
+                                }
+                                break;
+                            }
+                            WriterCommand::Update(new_writer) => {
+                                tracing::debug!("Received update message");
+
+                                // Delay before closing connection
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                                if let Err(e) = active_writer.close().await {
+                                    tracing::error!("Failed to send close message: {e}");
+                                } else {
+                                    tracing::debug!("Sent close message");
+                                }
+
+                                active_writer = new_writer;
+                                tracing::debug!("Updated writer");
+                            }
+                            // For all other messages, check connection state first
+                            _ if mode.is_reconnect() => {
+                                tracing::warn!("Skipping message while reconnecting");
+                                continue;
+                            }
+                            _ if mode.is_disconnect() || mode.is_closed() => {
+                                // Exit if disconnected or closed
+                                break;
+                            }
+                            WriterCommand::Send(msg) => {
+                                if let Err(e) = active_writer.send(msg).await {
+                                    tracing::error!("Failed to send message: {e}");
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // Channel closed - writer task should terminate
+                        tracing::debug!("Writer channel closed, terminating writer task");
+                        break;
+                    }
+                    Err(_) => {
+                        // Timeout - just continue the loop
+                        continue;
+                    }
+                }
+            }
+
+            // Attempt to close the writer gracefully before exiting
+            if let Err(e) = active_writer.close().await {
+                tracing::warn!("Failed to close writer stream: {e}");
+            }
+
+            tracing::debug!("Completed task 'write'");
+        })
+    }
+
     fn spawn_heartbeat_task(
         connection_state: Arc<AtomicU8>,
         heartbeat_secs: u64,
         message: Option<String>,
-        writer: SharedMessageWriter,
+        writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'heartbeat'");
 
         tokio::task::spawn(async move {
             let interval = Duration::from_secs(heartbeat_secs);
+
             loop {
                 tokio::time::sleep(interval).await;
 
                 match ConnectionMode::from_u8(connection_state.load(Ordering::SeqCst)) {
                     ConnectionMode::Active => {
-                        let mut guard = writer.lock().await;
-                        let guard_send_response = match message.clone() {
-                            Some(msg) => guard.send(Message::Text(msg.into())).await,
-                            None => guard.send(Message::Ping(vec![].into())).await,
+                        let msg = match &message {
+                            Some(text) => WriterCommand::Send(Message::Text(text.clone().into())),
+                            None => WriterCommand::Send(Message::Ping(vec![].into())),
                         };
 
-                        match guard_send_response {
-                            Ok(()) => tracing::trace!("Sent ping"),
-                            Err(e) => tracing::error!("Error sending ping: {e}"),
+                        match writer_tx.send(msg) {
+                            Ok(_) => tracing::trace!("Sent heartbeat to writer task"),
+                            Err(e) => {
+                                tracing::error!("Failed to send heartbeat to writer task: {e}")
+                            }
                         }
                     }
                     ConnectionMode::Reconnect => continue,
@@ -372,63 +447,6 @@ impl WebSocketClientInner {
     }
 }
 
-/// Shutdown websocket connection.
-///
-/// Performs orderly WebSocket shutdown:
-/// 1. Sends close frame to server
-/// 2. Waits briefly for frame delivery
-/// 3. Aborts read/heartbeat tasks
-/// 4. Closes underlying connection
-///
-/// This sequence ensures proper protocol compliance and clean resource cleanup.
-async fn shutdown(
-    read_task: Option<tokio::task::JoinHandle<()>>,
-    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
-    writer: SharedMessageWriter,
-) {
-    tracing::debug!("Closing");
-
-    let timeout = Duration::from_secs(5);
-    if tokio::time::timeout(timeout, async {
-        // Send close frame first
-        let mut write_half = writer.lock().await;
-        if let Err(e) = write_half.send(Message::Close(None)).await {
-            // Close frame errors during shutdown are expected
-            tracing::debug!("Error sending close frame: {e}");
-        }
-        drop(write_half);
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Abort tasks
-        if let Some(task) = read_task {
-            if !task.is_finished() {
-                task.abort();
-                tracing::debug!("Aborted read task");
-            }
-        }
-        if let Some(task) = heartbeat_task {
-            if !task.is_finished() {
-                task.abort();
-                tracing::debug!("Aborted heartbeat task");
-            }
-        }
-
-        // Final close of writer
-        let mut write_half = writer.lock().await;
-        if let Err(e) = write_half.close().await {
-            tracing::error!("Error closing writer: {e}");
-        }
-    })
-    .await
-    .is_err()
-    {
-        tracing::error!("Shutdown timed out after {}s", timeout.as_secs());
-    }
-
-    tracing::debug!("Closed");
-}
-
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
         if let Some(ref read_task) = self.read_task.take() {
@@ -436,6 +454,8 @@ impl Drop for WebSocketClientInner {
                 read_task.abort();
             }
         }
+
+        self.write_task.abort(); // TODO: Improve this
 
         // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
@@ -455,9 +475,9 @@ impl Drop for WebSocketClientInner {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketClient {
-    pub(crate) writer: SharedMessageWriter,
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
+    pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
 }
 
@@ -474,12 +494,11 @@ impl WebSocketClient {
         default_quota: Option<Quota>,
     ) -> Result<(MessageReader, Self), Error> {
         let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
-        let (writer, reader) = ws_stream.split();
-        let writer = Arc::new(Mutex::new(writer));
-
+        let (_, reader) = ws_stream.split();
         let inner = WebSocketClientInner::connect_url(config).await?;
         let connection_mode = inner.connection_mode.clone();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+        let writer_tx = inner.writer_tx.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
@@ -491,9 +510,9 @@ impl WebSocketClient {
         Ok((
             reader,
             Self {
-                writer: writer.clone(),
                 controller_task,
                 connection_mode,
+                writer_tx,
                 rate_limiter,
             },
         ))
@@ -517,8 +536,8 @@ impl WebSocketClient {
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config.clone()).await?;
-        let writer = inner.writer.clone();
         let connection_mode = inner.connection_mode.clone();
+        let writer_tx = inner.writer_tx.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
@@ -536,9 +555,9 @@ impl WebSocketClient {
         };
 
         Ok(Self {
-            writer,
             controller_task,
             connection_mode,
+            writer_tx,
             rate_limiter,
         })
     }
@@ -611,7 +630,7 @@ impl WebSocketClient {
 
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
-                tracing::debug!("Aborted controller task");
+                tracing::debug!("Aborted task 'controller'");
             }
         })
         .await
@@ -628,9 +647,16 @@ impl WebSocketClient {
     /// Sends the given text `data` to the server.
     pub async fn send_text(&self, data: String, keys: Option<Vec<String>>) {
         self.rate_limiter.await_keys_ready(keys).await;
+
+        if !self.is_active() {
+            tracing::error!("Cannot send data - connection not active");
+            return;
+        }
+
         tracing::trace!("Sending text: {data:?}");
-        let mut guard = self.writer.lock().await;
-        if let Err(e) = guard.send(Message::Text(data.into())).await {
+
+        let msg = Message::Text(data.into());
+        if let Err(e) = self.writer_tx.send(WriterCommand::Send(msg)) {
             tracing::error!("Error sending message: {e}");
         }
     }
@@ -638,19 +664,30 @@ impl WebSocketClient {
     /// Sends the given bytes `data` to the server.
     pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<Vec<String>>) {
         self.rate_limiter.await_keys_ready(keys).await;
+
+        if !self.is_active() {
+            tracing::error!("Cannot send data - connection not active");
+            return;
+        }
+
         tracing::trace!("Sending bytes: {data:?}");
-        let mut guard = self.writer.lock().await;
-        if let Err(e) = guard.send(Message::Binary(data.into())).await {
+
+        let msg = Message::Binary(data.into());
+        if let Err(e) = self.writer_tx.send(WriterCommand::Send(msg)) {
             tracing::error!("Error sending message: {e}");
         }
     }
 
     /// Sends a close message to the server.
     pub async fn send_close_message(&self) {
-        let mut guard = self.writer.lock().await;
-        match guard.send(Message::Close(None)).await {
-            Ok(()) => tracing::debug!("Sent close message"),
-            Err(e) => tracing::error!("Error sending close message: {e}"),
+        if !self.is_active() {
+            tracing::error!("Cannot send close message - connection not active");
+            return;
+        }
+
+        let msg = Message::Close(None);
+        if let Err(e) = self.writer_tx.send(WriterCommand::Send(msg)) {
+            tracing::error!("Error sending close message: {e}");
         }
     }
 
@@ -664,11 +701,6 @@ impl WebSocketClient {
             tracing::debug!("Started task 'controller'");
 
             let check_interval = Duration::from_millis(10);
-            let reconnect_mutex = Arc::new(Mutex::new(()));
-
-            fn should_reconnect(mode: ConnectionMode, is_alive: bool) -> bool {
-                mode.is_reconnect() || (mode.is_active() && !is_alive)
-            }
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -676,12 +708,37 @@ impl WebSocketClient {
 
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
-                    shutdown(
-                        inner.read_task.take(),
-                        inner.heartbeat_task.take(),
-                        inner.writer.clone(),
-                    )
-                    .await;
+
+                    let timeout = Duration::from_secs(5);
+                    if tokio::time::timeout(timeout, async {
+                        if let Err(e) = inner.writer_tx.send(WriterCommand::Shutdown) {
+                            tracing::error!("{e}");
+                        }
+
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+
+                        // Abort tasks
+                        if let Some(task) = &inner.read_task {
+                            if !task.is_finished() {
+                                task.abort();
+                                tracing::debug!("Aborted task 'read'");
+                            }
+                        }
+
+                        if let Some(task) = &inner.heartbeat_task {
+                            if !task.is_finished() {
+                                task.abort();
+                                tracing::debug!("Aborted task 'heartbeat'");
+                            }
+                        }
+                    })
+                    .await
+                    .is_err()
+                    {
+                        tracing::error!("Shutdown timed out after {}s", timeout.as_secs());
+                    }
+
+                    tracing::debug!("Closed");
 
                     if let Some(ref handler) = post_disconnection {
                         Python::with_gil(|py| match handler.call0(py) {
@@ -694,40 +751,30 @@ impl WebSocketClient {
                     break; // Controller finished
                 }
 
-                if should_reconnect(mode, inner.is_alive()) {
-                    // Acquire the mutex to ensure only one reconnection happens at a time
-                    let _lock = reconnect_mutex.lock().await;
+                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
+                    match inner.reconnect().await {
+                        Ok(()) => {
+                            tracing::debug!("Reconnected successfully");
+                            inner.backoff.reset();
 
-                    // Check if still need to reconnect after aquiring lock
-                    let mode = ConnectionMode::from_atomic(&connection_mode);
-                    if should_reconnect(mode, inner.is_alive()) {
-                        match inner.reconnect().await {
-                            Ok(()) => {
-                                tracing::debug!("Reconnected successfully");
-                                inner.backoff.reset();
-
-                                if let Some(ref handler) = post_reconnection {
-                                    Python::with_gil(|py| match handler.call0(py) {
-                                        Ok(_) => {
-                                            tracing::debug!("Called `post_reconnection` handler")
-                                        }
-                                        Err(e) => tracing::error!(
-                                            "Error calling `post_reconnection` handler: {e}"
-                                        ),
-                                    });
-                                }
+                            if let Some(ref handler) = post_reconnection {
+                                Python::with_gil(|py| match handler.call0(py) {
+                                    Ok(_) => {
+                                        tracing::debug!("Called `post_reconnection` handler")
+                                    }
+                                    Err(e) => tracing::error!(
+                                        "Error calling `post_reconnection` handler: {e}"
+                                    ),
+                                });
                             }
-                            Err(e) => {
-                                let duration = inner.backoff.next_duration();
-                                tracing::warn!("Reconnect attempt failed: {e}");
-                                if !duration.is_zero() {
-                                    tracing::warn!(
-                                        "Backing off for {}s...",
-                                        duration.as_secs_f64()
-                                    );
-                                }
-                                tokio::time::sleep(duration).await;
+                        }
+                        Err(e) => {
+                            let duration = inner.backoff.next_duration();
+                            tracing::warn!("Reconnect attempt failed: {e}");
+                            if !duration.is_zero() {
+                                tracing::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
+                            tokio::time::sleep(duration).await;
                         }
                     }
                 }
