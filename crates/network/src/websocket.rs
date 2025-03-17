@@ -87,7 +87,7 @@ pub struct WebSocketConfig {
     pub reconnect_jitter_ms: Option<u64>,
 }
 
-/// Message types that can be sent to the writer task
+/// Represents a command for the writer task.
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
     Update(MessageWriter),

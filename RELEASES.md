@@ -9,7 +9,7 @@ None
 None
 
 ### Internal Improvements
-- Improved `WebSocketClient` design with dedicated writer task and message channel
+- Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
 
 ### Fixes
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
