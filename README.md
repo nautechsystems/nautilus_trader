@@ -107,7 +107,7 @@ Rust’s rich type system and ownership model guarantees memory-safety and threa
 eliminating many classes of bugs at compile-time.
 
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
-Cython and [PyO3](https://pyo3.rs/latest), with static libraries linked at compile-time before the wheel binaries are packaged, so a user
+Cython and [PyO3](https://pyo3.rs), with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
