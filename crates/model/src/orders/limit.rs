@@ -36,7 +36,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::OrderError,
-    types::{Currency, Money, Price, Quantity, quantity::check_quantity_positive},
+    types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,7 +83,7 @@ impl LimitOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_quantity_positive(quantity)?;
+        check_positive_quantity(quantity, stringify!(quantity))?;
         if time_in_force == TimeInForce::Gtd {
             if expire_time.is_none() {
                 anyhow::bail!("Condition failed: `expire_time` is required for `GTD` order")
@@ -544,7 +544,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    #[should_panic(
+        expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
+    )]
     fn test_positive_quantity_condition(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(audusd_sim.id)

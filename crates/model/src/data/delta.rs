@@ -81,7 +81,7 @@ impl OrderBookDelta {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         if matches!(action, BookAction::Add | BookAction::Update) {
-            check_positive_quantity(order.size.raw, "order.size.raw")?;
+            check_positive_quantity(order.size, stringify!(order.size))?;
         }
 
         Ok(Self {

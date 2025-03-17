@@ -78,7 +78,7 @@ impl TradeTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_positive_quantity(size.raw, "size.raw")?;
+        check_positive_quantity(size, stringify!(size))?;
 
         Ok(Self {
             instrument_id,
@@ -188,7 +188,7 @@ mod tests {
 
     #[cfg(feature = "high-precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
-    #[should_panic(expected = "invalid u128 for 'size.raw' not positive, was 0")]
+    #[should_panic(expected = "invalid `Quantity` for 'size' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
