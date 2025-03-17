@@ -20,12 +20,11 @@ use std::{
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
-use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use crate::{
     mode::ConnectionMode,
-    socket::{SocketClient, SocketConfig},
+    socket::{SocketClient, SocketConfig, WriterCommand},
 };
 
 #[pymethods]
@@ -136,13 +135,13 @@ impl SocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&mode) {
                 ConnectionMode::Reconnect => {
-                    tracing::warn!("Cannot reconnect: socket already reconnecting");
+                    tracing::warn!("Cannot reconnect - socket already reconnecting");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("Cannot reconnect: socket disconnecting");
+                    tracing::warn!("Cannot reconnect - socket disconnecting");
                 }
                 ConnectionMode::Closed => {
-                    tracing::warn!("Cannot reconnect: socket closed");
+                    tracing::warn!("Cannot reconnect - socket closed");
                 }
                 _ => {
                     mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
@@ -199,14 +198,13 @@ impl SocketClient {
     #[pyo3(name = "send")]
     fn py_send<'py>(
         slf: PyRef<'_, Self>,
-        mut data: Vec<u8>,
+        data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        data.extend(&slf.suffix);
         tracing::trace!("Sending {}", String::from_utf8_lossy(&data));
 
-        let writer = slf.writer.clone();
         let mode = slf.connection_mode.clone();
+        let writer_tx = slf.writer_tx.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if ConnectionMode::from_atomic(&mode).is_closed() {
@@ -242,14 +240,14 @@ impl SocketClient {
                     Ok(Ok(())) => tracing::debug!("Client now active"),
                     Ok(Err(e)) => {
                         tracing::error!(
-                            "Cannot send data ({}): {e}",
+                            "Failed sending data ({}): {e}",
                             String::from_utf8_lossy(&data)
                         );
                         return Ok(());
                     }
                     Err(_) => {
                         tracing::error!(
-                            "Cannot send data ({}): timeout waiting to become ACTIVE",
+                            "Failed sending data ({}): timeout waiting to become ACTIVE",
                             String::from_utf8_lossy(&data)
                         );
                         return Ok(());
@@ -257,8 +255,10 @@ impl SocketClient {
                 }
             }
 
-            let mut writer = writer.lock().await;
-            writer.write_all(&data).await?;
+            let msg = WriterCommand::Send(data.into());
+            if let Err(e) = writer_tx.send(msg) {
+                tracing::error!("{e}");
+            }
             Ok(())
         })
     }
