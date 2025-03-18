@@ -97,6 +97,9 @@ cdef class Position:
     """The current realized PnL for the position (including commissions).\n\n:returns: `Money` or ``None``"""
 
     cpdef str info(self)
+
+    @staticmethod
+    cdef Position from_pyo3_c(pyo3_order) # from pyo3_create
     cpdef dict to_dict(self)
 
     cdef list client_order_ids_c(self)

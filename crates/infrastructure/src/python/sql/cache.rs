@@ -242,17 +242,17 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add")]
-    fn py_add(&self, key: String, value: Vec<u8>) -> PyResult<()> {
+    fn py_add(&mut self, key: String, value: Vec<u8>) -> PyResult<()> {
         self.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_currency")]
-    fn py_add_currency(&self, currency: Currency) -> PyResult<()> {
+    fn py_add_currency(&mut self, currency: Currency) -> PyResult<()> {
         self.add_currency(&currency).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: PyObject) -> PyResult<()> {
+    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(&instrument_any)
             .map_err(to_pyruntime_err)
@@ -261,7 +261,7 @@ impl PostgresCacheDatabase {
     #[pyo3(name = "add_order")]
     #[pyo3(signature = (order, client_id=None))]
     fn py_add_order(
-        &self,
+        &mut self,
         py: Python,
         order: PyObject,
         client_id: Option<ClientId>,
@@ -283,7 +283,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_account")]
-    fn py_add_account(&self, py: Python, account: PyObject) -> PyResult<()> {
+    fn py_add_account(&mut self, py: Python, account: PyObject) -> PyResult<()> {
         let account_any = pyobject_to_account_any(py, account)?;
         self.add_account(&account_any).map_err(to_pyruntime_err)
     }
@@ -314,13 +314,13 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "update_order")]
-    fn py_update_order(&self, py: Python, order_event: PyObject) -> PyResult<()> {
+    fn py_update_order(&mut self, py: Python, order_event: PyObject) -> PyResult<()> {
         let event = pyobject_to_order_event(py, order_event)?;
         self.update_order(&event).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_account")]
-    fn py_update_account(&self, py: Python, order: PyObject) -> PyResult<()> {
+    fn py_update_account(&mut self, py: Python, order: PyObject) -> PyResult<()> {
         let order_any = pyobject_to_account_any(py, order)?;
         self.update_account(&order_any).map_err(to_pyruntime_err)
     }

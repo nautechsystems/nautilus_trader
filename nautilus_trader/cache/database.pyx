@@ -19,9 +19,15 @@ import msgspec
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.transformers import transform_account_from_pyo3
+from nautilus_trader.cache.transformers import transform_account_to_pyo3
 from nautilus_trader.cache.transformers import transform_currency_from_pyo3
+from nautilus_trader.cache.transformers import transform_currency_to_pyo3
 from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
+from nautilus_trader.cache.transformers import transform_instrument_to_pyo3
 from nautilus_trader.cache.transformers import transform_order_from_pyo3
+from nautilus_trader.cache.transformers import transform_order_to_pyo3
+from nautilus_trader.cache.transformers import transform_position_from_pyo3
+from nautilus_trader.cache.transformers import transform_position_to_pyo3
 from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.core import nautilus_pyo3
 
@@ -237,19 +243,53 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef dict orders_dict = raw_data.get("orders", {})
         cdef dict positions_dict = raw_data.get("positions", {})
 
-        result["currencies"] = {
-            key: transform_currency_from_pyo3(value) for key, value in currencies_dict.items()
-        }
-        result["instruments"] = {
-            key: transform_instrument_from_pyo3(value) for key, value in instruments_dict.items()
-        }
+        # Transform currencies
+        try:
+            result["currencies"] = {
+                key: transform_currency_from_pyo3(value) for key, value in currencies_dict.items()
+            }
+        except Exception as e:
+            self._log.error(f"Error transforming currencies: {e}")
+            result["currencies"] = {}
+
+        # Transform instruments
+        try:
+            result["instruments"] = {
+                key: transform_instrument_from_pyo3(value) for key, value in instruments_dict.items()
+            }
+        except Exception as e:
+            self._log.error(f"Error transforming instruments: {e}")
+            result["instruments"] = {}
+
         result["synthetics"] = synthetics_dict
-        result["accounts"] = {
-            key: transform_account_from_pyo3(value) for key, value in accounts_dict.items()
-        }
-        result["orders"] = {
-            key: transform_order_from_pyo3(value) for key, value in orders_dict.items()
-        }
+
+        # Transform accounts
+        try:
+            result["accounts"] = {
+                key: transform_account_from_pyo3(value) for key, value in accounts_dict.items()
+            }
+        except Exception as e:
+            self._log.error(f"Error transforming accounts: {e}")
+            result["accounts"] = {}
+
+        # Transform orders with better error handling
+        self._log.debug("Loading orders from orders_dict...")
+        self._log.debug(f"Orders dictionary keys: {list(orders_dict.keys())}")
+
+        cdef dict transformed_orders = {}
+        cdef Order order
+
+        for key, value in orders_dict.items():
+            try:
+                order = transform_order_from_pyo3(value)
+                transformed_orders[key] = order
+                self._log.debug(f"Successfully loaded order ID: {key}")
+            except Exception as e:
+                self._log.error(f"Error transforming order {key}: {e}")
+
+        result["orders"] = transformed_orders
+        self._log.info(f"Total orders loaded: {len(result['orders'])} of {len(orders_dict)} available.")
+
         result["positions"] = positions_dict
 
         return result
@@ -500,21 +540,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(code, "code")
 
-        cdef str key = f"{_CURRENCIES}:{code}"
-        cdef list result = self._backing.read(key)
-
-        if not result:
-            return None
-
-        cdef dict c_map = self._serializer.deserialize(result[0])
-
-        return Currency(
-            code=code,
-            precision=int(c_map["precision"]),
-            iso4217=int(c_map["iso4217"]),
-            name=c_map["name"],
-            currency_type=currency_type_from_str(c_map["currency_type"]),
-        )
+        # TODO: Format is Different?
+        currency_pyo3 = self._backing.load_currency(code)
+        if currency_pyo3:
+            return transform_currency_from_pyo3(currency_pyo3)
+        return None
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """
@@ -533,14 +563,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef str key = f"{_INSTRUMENTS}:{instrument_id.to_str()}"
-        cdef list result = self._backing.read(key)
-        if not result:
-            return None
-
-        cdef bytes instrument_bytes = result[0]
-
-        return self._serializer.deserialize(instrument_bytes)
+        instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        instrument_pyo3 = self._backing.load_instrument(instrument_id_pyo3)
+        if instrument_pyo3:
+            return transform_instrument_from_pyo3(instrument_pyo3)
+        return None
 
     cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id):
         """
@@ -590,19 +617,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(account_id, "account_id")
 
-        cdef str key = f"{_ACCOUNTS}:{account_id.to_str()}"
-        cdef list result = self._backing.read(key)
-        if not result:
-            return None
-
-        cdef bytes initial_event = result.pop(0)
-        cdef Account account = AccountFactory.create_c(self._serializer.deserialize(initial_event))
-
-        cdef bytes event
-        for event in result:
-            account.apply(event=self._serializer.deserialize(event))
-
-        return account
+        account_id_pyo3 = nautilus_pyo3.AccountId.from_str(str(account_id))
+        account_pyo3 = self._backing.load_account(account_id_pyo3)
+        if account_pyo3:
+            return transform_account_from_pyo3(account_pyo3)
+        return None
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
@@ -620,41 +639,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef str key = f"{_ORDERS}:{client_order_id.to_str()}"
-        cdef list result = self._backing.read(key)
-
-        # Check there is at least one event to pop
-        if not result:
-            return None
-
-        cdef OrderInitialized init = self._serializer.deserialize(result.pop(0))
-        cdef Order order = OrderUnpacker.from_init_c(init)
-
-        cdef int event_count = 0
-        cdef bytes event_bytes
-        cdef OrderEvent event
-        for event_bytes in result:
-            event = self._serializer.deserialize(event_bytes)
-
-            # Check event integrity
-            if event in order._events:
-                raise RuntimeError(f"Corrupt cache with duplicate event for order {event}")
-
-            if event_count > 0 and isinstance(event, OrderInitialized):
-                if event.order_type == OrderType.MARKET:
-                    order = MarketOrder.transform(order, event.ts_init)
-                elif event.order_type == OrderType.LIMIT:
-                    price = Price.from_str_c(event.options["price"])
-                    order = LimitOrder.transform(order, event.ts_init, price)
-                else:
-                    raise RuntimeError(  # pragma: no cover (design-time error)
-                        f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
-                    )
-            else:
-                order.apply(event)
-            event_count += 1
-
-        return order
+        client_order_id_pyo3 = nautilus_pyo3.ClientOrderId.from_str(str(client_order_id))
+        order_pyo3 = self._backing.load_order(client_order_id_pyo3)
+        if order_pyo3:
+            return transform_order_from_pyo3(order_pyo3)
+        return None
 
     cpdef Position load_position(self, PositionId position_id):
         """
@@ -672,37 +661,10 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(position_id, "position_id")
 
-        cdef str key = f"{_POSITIONS}:{position_id.to_str()}"
-        cdef list result = self._backing.read(key)
-
-        # Check there is at least one event to pop
-        if not result:
-            return None
-
-        cdef OrderFilled initial_fill = self._serializer.deserialize(result.pop(0))
-        cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot load position: "
-                f"no instrument found for {initial_fill.instrument_id}",
-            )
-            return
-
-        cdef Position position = Position(instrument, initial_fill)
-
-        cdef:
-            bytes event_bytes
-            OrderFilled fill
-        for event_bytes in result:
-            event = self._serializer.deserialize(event_bytes)
-
-            # Check event integrity
-            if event in position._events:
-                raise RuntimeError(f"Corrupt cache with duplicate event for position {event}")
-
-            position.apply(event)
-
-        return position
+        position_pyo3 = self._backing.load_position(position_id)
+        if position_pyo3:
+            return transform_position_from_pyo3(position_pyo3)
+        return None
 
     cpdef dict load_actor(self, ComponentId component_id):
         """
@@ -799,7 +761,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.not_none(key, "key")
         Condition.not_none(value, "value")
 
-        self._backing.insert(f"{_GENERAL}:{key}", [value])
+        self._backing.add(key, value)
         self._log.debug(f"Added general object {key}")
 
     cpdef void add_currency(self, Currency currency):
@@ -814,16 +776,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(currency, "currency")
 
-        cdef dict currency_map = {
-            "precision": currency.precision,
-            "iso4217": currency.iso4217,
-            "name": currency.name,
-            "currency_type": currency_type_to_str(currency.currency_type)
-        }
-
-        cdef key = f"{_CURRENCIES}:{currency.code}"
-        cdef list payload = [self._serializer.serialize(currency_map)]
-        self._backing.insert(key, payload)
+        cdef currency_pyo3 = transform_currency_to_pyo3(currency)
+        self._backing.add_currency(currency_pyo3)
 
         self._log.debug(f"Added currency {currency.code}")
 
@@ -839,9 +793,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(instrument, "instrument")
 
-        cdef str key = f"{_INSTRUMENTS}:{instrument.id.to_str()}"
-        cdef list payload = [self._serializer.serialize(instrument)]
-        self._backing.insert(key, payload)
+        cdef instrument_pyo3 = transform_instrument_to_pyo3(instrument)
+        self._backing.add_instrument(instrument_pyo3)
 
         self._log.debug(f"Added instrument {instrument.id}")
 
@@ -875,9 +828,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(account, "account")
 
-        cdef str key = f"{_ACCOUNTS}:{account.id.value}"
-        cdef list payload = [self._serializer.serialize(account.last_event_c())]
-        self._backing.insert(key, payload)
+        cdef account_pyo3 = transform_account_to_pyo3(account)
+        self._backing.add_account(account_pyo3)
 
         self._log.debug(f"Added {account}")
 
@@ -897,26 +849,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(order, "order")
 
-        cdef client_order_id_str = order.client_order_id.to_str()
-        cdef str key = f"{_ORDERS}:{client_order_id_str}"
-        cdef list payload = [self._serializer.serialize(order.last_event_c())]
-        self._backing.insert(key, payload)
-
-        cdef bytes client_order_id_bytes = client_order_id_str.encode()
-        payload = [client_order_id_bytes]
-        self._backing.insert(_INDEX_ORDERS, payload)
-
-        if order.emulation_trigger != TriggerType.NO_TRIGGER:
-            self._backing.insert(_INDEX_ORDERS_EMULATED, payload)
+        cdef order_pyo3 = transform_order_to_pyo3(order)
+        self._backing.add_order(order_pyo3, position_id, client_id)
 
         self._log.debug(f"Added {order}")
 
-        if position_id is not None:
-            self.index_order_position(order.client_order_id, position_id)
-        if client_id is not None:
-            payload = [client_order_id_bytes, client_id.to_str().encode()]
-            self._backing.insert(_INDEX_ORDER_CLIENT, payload)
-            self._log.debug(f"Indexed {order.client_order_id!r} -> {client_id!r}")
 
     cpdef void add_position(self, Position position):
         """
@@ -930,14 +867,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(position, "position")
 
-        cdef str position_id_str = position.id.to_str()
-        cdef str key = f"{_POSITIONS}:{position_id_str}"
-        cdef list payload = [self._serializer.serialize(position.last_event_c())]
-        self._backing.insert(key, payload)
-
-        cdef bytes position_id_bytes = position_id_str.encode()
-        self._backing.insert(_INDEX_POSITIONS, [position_id_bytes])
-        self._backing.insert(_INDEX_POSITIONS_OPEN, [position_id_bytes])
+        cdef position_pyo3 = transform_position_to_pyo3(position)
+        self._backing.add_position(position_pyo3)
 
         self._log.debug(f"Added {position}")
 
@@ -1050,36 +981,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(order, "order")
 
-        cdef str client_order_id_str = order.client_order_id.to_str()
-        cdef str key = f"{_ORDERS}:{client_order_id_str}"
-        cdef list payload = [self._serializer.serialize(order.last_event_c())]
-        self._backing.update(key, payload)
-
-        if order.venue_order_id is not None:
-            # Assumes order_id does not change
-            self.index_venue_order_id(order.client_order_id, order.venue_order_id)
-
-        payload = [client_order_id_str.encode()]
-
-        # Update in-flight state
-        if order.is_inflight_c():
-            self._backing.insert(_INDEX_ORDERS_INFLIGHT, payload)
-        else:
-            self._backing.delete(_INDEX_ORDERS_INFLIGHT, payload)
-
-        # Update open/closed state
-        if order.is_open_c():
-            self._backing.delete(_INDEX_ORDERS_CLOSED, payload)
-            self._backing.insert(_INDEX_ORDERS_OPEN, payload)
-        elif order.is_closed_c():
-            self._backing.delete(_INDEX_ORDERS_OPEN, payload)
-            self._backing.insert(_INDEX_ORDERS_CLOSED, payload)
-
-        # Update emulation state
-        if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            self._backing.delete(_INDEX_ORDERS_EMULATED, payload)
-        else:
-            self._backing.insert(_INDEX_ORDERS_EMULATED, payload)
+        cdef order_pyo3 = transform_order_to_pyo3(order)
+        self._backing.update_order(order_pyo3)
 
         self._log.debug(f"Updated {order}")
 

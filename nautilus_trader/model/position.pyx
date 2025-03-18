@@ -22,7 +22,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport position_side_from_str
 from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -121,6 +123,40 @@ cdef class Position:
         """
         cdef str quantity = " " if self.quantity._mem.raw == 0 else f" {self.quantity.to_formatted_str()} "
         return f"{position_side_to_str(self.side)}{quantity}{self.instrument_id}"
+
+    @staticmethod
+    cdef Position from_pyo3_c(pyo3_order):
+        return Position(
+            id=PositionId(str(pyo3_order.id)),
+            trader_id=TraderId(str(pyo3_order.trader_id)),
+            strategy_id=StrategyId(str(pyo3_order.strategy_id)),
+            instrument_id=InstrumentId.from_str_c(str(pyo3_order.instrument_id)),
+            account_id=AccountId(str(pyo3_order.account_id)),
+            opening_order_id=ClientOrderId(str(pyo3_order.opening_order_id)),
+            closing_order_id=ClientOrderId(str(pyo3_order.closing_order_id)),
+            entry=order_side_from_str(str(pyo3_order.entry)),
+            side=position_side_from_str(str(pyo3_order.side)),
+            signed_qty=pyo3_order.signed_qty,
+            quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
+            peak_qty=Quantity.from_raw_c(pyo3_order.peak_qty.raw, pyo3_order.peak_qty.precision),
+            ts_init=pyo3_order.ts_init,
+            ts_opened=pyo3_order.ts_opened,
+            ts_last=pyo3_order.ts_last,
+            ts_closed=pyo3_order.ts_closed,
+            duration_ns=pyo3_order.duration_ns,
+            avg_px_open=pyo3_order.avg_px_open,
+            avg_px_close=pyo3_order.avg_px_close,
+            quote_currency=pyo3_order.quote_currency,
+            base_currency=pyo3_order.base_currency,
+            settlement_currency=pyo3_order.settlement_currency,
+            commissions=pyo3_order.commissions,
+            realized_return=pyo3_order.realized_return,
+            realized_pnl=pyo3_order.realized_pnl,
+        )
+
+    @staticmethod
+    def from_pyo3(pyo3_order):
+        return Position.from_pyo3_c(pyo3_order)
 
     cpdef dict to_dict(self):
         """

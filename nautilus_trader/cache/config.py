@@ -53,7 +53,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     """
 
     database: DatabaseConfig | None = None
-    encoding: str = "msgpack"
+    encoding: str = "json"
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
     use_trader_prefix: bool = True

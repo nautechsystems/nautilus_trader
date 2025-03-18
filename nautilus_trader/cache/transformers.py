@@ -136,6 +136,18 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
 
 
 ################################################################################
+# Position
+################################################################################
+def transform_position_to_pyo3(position: Position):
+    position_dict = Position.to_dict(position)
+    return nautilus_pyo3.Position.from_dict(position_dict)  # fix
+
+
+def transform_position_from_pyo3(position_pyo3) -> Position | None:
+    return Position.from_pyo3(position_pyo3)
+
+
+################################################################################
 # Orders
 ################################################################################
 def transform_order_event_to_pyo3(order_event):  # noqa: C901
