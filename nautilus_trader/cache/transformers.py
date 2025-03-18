@@ -191,7 +191,7 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
     elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_LIMIT:
         return nautilus_pyo3.StopLimitOrder.create(order_event_pyo3)
     else:
-        raise ValueError(f"Unknown order type: {order_event_pyo3.event_type}")
+        raise ValueError(f"Unknown order type: {order_event_pyo3.order_type}")
 
 
 def from_order_initialized_pyo3_to_order_cython(order_event):

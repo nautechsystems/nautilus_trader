@@ -24,9 +24,9 @@ extension-module = [
   "nautilus-persistence/extension-module",
   "nautilus-serialization/extension-module",
   "nautilus-test-kit/extension-module",
+  "nautilus-trading/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-tardis/extension-module",
-  "nautilus-trading/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -52,6 +52,7 @@ nautilus-persistence = { path = "../persistence" , features = ["python"] }
 nautilus-serialization = { path = "../serialization" , features = ["python"] }
 nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
 nautilus-trading = { path = "../trading", features = ["python"] }
+# Adapters
 nautilus-databento = { path = "../adapters/databento", features = ["python"] }
 nautilus-tardis = { path = "../adapters/tardis", features = ["python"] }
 pyo3 = { workspace = true }

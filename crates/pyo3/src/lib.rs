@@ -122,6 +122,8 @@ fn nautilus_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
+    // Adapters
+
     let n = "databento";
     let submodule = pyo3::wrap_pymodule!(nautilus_databento::python::databento);
     m.add_wrapped(submodule)?;
