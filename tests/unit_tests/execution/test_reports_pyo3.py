@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core.nautilus_pyo3 import UUID4
 from nautilus_trader.core.nautilus_pyo3 import AccountId
 from nautilus_trader.core.nautilus_pyo3 import ClientId
@@ -65,7 +67,7 @@ def test_instantiate_order_status_report():
         trigger_price=Price.from_str("0.90100"),
         trigger_type=TriggerType.DEFAULT,
         limit_offset=None,
-        trailing_offset=Price.from_str("0.00010"),
+        trailing_offset=Decimal("0.00010"),
         trailing_offset_type=TrailingOffsetType.PRICE,
         quantity=Quantity.from_int(1_000_000),
         filled_qty=Quantity.from_int(0),
@@ -257,7 +259,7 @@ def test_add_order_status_reports():
         trigger_price=Price.from_str("0.90100"),
         trigger_type=TriggerType.DEFAULT,
         limit_offset=None,
-        trailing_offset=Price.from_str("0.00010"),
+        trailing_offset=Decimal("0.00010"),
         trailing_offset_type=TrailingOffsetType.PRICE,
         quantity=Quantity.from_int(1_000_000),
         filled_qty=Quantity.from_int(0),
