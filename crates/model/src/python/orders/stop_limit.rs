@@ -19,15 +19,18 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
+    },
     events::order::initialized::OrderInitialized,
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::{Order, StopLimitOrder, str_indexmap_to_ustr},
+    orders::{Order, OrderCore, StopLimitOrder, str_indexmap_to_ustr},
     python::{
         common::commissions_from_indexmap,
         events::order::{order_event_to_pyobject, pyobject_to_order_event},
@@ -121,6 +124,24 @@ impl StopLimitOrder {
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
         Ok(StopLimitOrder::from(init))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "opposite_side")]
+    fn py_opposite_side(side: OrderSide) -> OrderSide {
+        OrderCore::opposite_side(side)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "closing_side")]
+    fn py_closing_side(side: PositionSide) -> OrderSide {
+        OrderCore::closing_side(side)
+    }
+
+    #[getter]
+    #[pyo3(name = "status")]
+    fn py_status(&self) -> OrderStatus {
+        self.status
     }
 
     #[getter]
@@ -355,117 +376,20 @@ impl StopLimitOrder {
             .collect()
     }
 
-    #[pyo3(name = "to_dict")]
-    fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
-        dict.set_item("trader_id", self.trader_id.to_string())?;
-        dict.set_item("strategy_id", self.strategy_id.to_string())?;
-        dict.set_item("instrument_id", self.instrument_id.to_string())?;
-        dict.set_item("client_order_id", self.client_order_id.to_string())?;
-        dict.set_item("side", self.side.to_string())?;
-        dict.set_item("type", self.order_type.to_string())?;
-        dict.set_item("side", self.side.to_string())?;
-        dict.set_item("quantity", self.quantity.to_string())?;
-        dict.set_item("status", self.status.to_string())?;
-        dict.set_item("price", self.price.to_string())?;
-        dict.set_item("trigger_price", self.trigger_price.to_string())?;
-        dict.set_item("trigger_type", self.trigger_type.to_string())?;
-        dict.set_item("filled_qty", self.filled_qty.to_string())?;
-        dict.set_item("time_in_force", self.time_in_force.to_string())?;
-        dict.set_item("is_post_only", self.is_post_only)?;
-        dict.set_item("is_reduce_only", self.is_reduce_only)?;
-        dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
-        dict.set_item("init_id", self.init_id.to_string())?;
-        dict.set_item(
-            "expire_time_ns",
-            self.expire_time.filter(|&t| t != 0).map(|t| t.as_u64()),
-        )?;
-        dict.set_item("ts_init", self.ts_init.as_u64())?;
-        dict.set_item("ts_last", self.ts_last.as_u64())?;
-        dict.set_item(
-            "commissions",
-            commissions_from_indexmap(py, self.commissions().clone())?,
-        )?;
-        self.last_trade_id.map_or_else(
-            || dict.set_item("last_trade_id", py.None()),
-            |x| dict.set_item("last_trade_id", x.to_string()),
-        )?;
-        self.avg_px.map_or_else(
-            || dict.set_item("avg_px", py.None()),
-            |x| dict.set_item("avg_px", x),
-        )?;
-        self.position_id.map_or_else(
-            || dict.set_item("position_id", py.None()),
-            |x| dict.set_item("position_id", x.to_string()),
-        )?;
-        self.liquidity_side.map_or_else(
-            || dict.set_item("liquidity_side", py.None()),
-            |x| dict.set_item("liquidity_side", x.to_string()),
-        )?;
-        self.slippage.map_or_else(
-            || dict.set_item("slippage", py.None()),
-            |x| dict.set_item("slippage", x),
-        )?;
-        self.account_id.map_or_else(
-            || dict.set_item("account_id", py.None()),
-            |x| dict.set_item("account_id", x.to_string()),
-        )?;
-        self.venue_order_id.map_or_else(
-            || dict.set_item("venue_order_id", py.None()),
-            |x| dict.set_item("venue_order_id", x.to_string()),
-        )?;
-        self.display_qty.map_or_else(
-            || dict.set_item("display_qty", py.None()),
-            |x| dict.set_item("display_qty", x.to_string()),
-        )?;
-        self.emulation_trigger.map_or_else(
-            || dict.set_item("emulation_trigger", py.None()),
-            |x| dict.set_item("emulation_trigger", x.to_string()),
-        )?;
-        dict.set_item("trigger_instrument_id", self.trigger_instrument_id)?;
-        self.contingency_type.map_or_else(
-            || dict.set_item("contingency_type", py.None()),
-            |x| dict.set_item("contingency_type", x.to_string()),
-        )?;
-        self.order_list_id.map_or_else(
-            || dict.set_item("order_list_id", py.None()),
-            |x| dict.set_item("order_list_id", x.to_string()),
-        )?;
-        dict.set_item(
-            "linked_order_ids",
-            self.linked_order_ids.as_ref().map(|x| {
-                x.iter()
-                    .map(std::string::ToString::to_string)
-                    .collect::<Vec<String>>()
-            }),
-        )?;
-        self.parent_order_id.map_or_else(
-            || dict.set_item("parent_order_id", py.None()),
-            |x| dict.set_item("parent_order_id", x.to_string()),
-        )?;
-        self.exec_algorithm_id.map_or_else(
-            || dict.set_item("exec_algorithm_id", py.None()),
-            |x| dict.set_item("exec_algorithm_id", x.to_string()),
-        )?;
-        dict.set_item(
-            "exec_algorithm_params",
-            self.exec_algorithm_params.as_ref().map(|x| {
-                x.iter()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect::<IndexMap<String, String>>()
-            }),
-        )?;
-        self.exec_spawn_id.map_or_else(
-            || dict.set_item("exec_spawn_id", py.None()),
-            |x| dict.set_item("exec_spawn_id", x.to_string()),
-        )?;
-        dict.set_item(
-            "tags",
-            self.tags
-                .as_ref()
-                .map(|vec| vec.iter().map(|s| s.to_string()).collect::<Vec<String>>()),
-        )?;
-        Ok(dict.into())
+    #[pyo3(name = "signed_decimal_qty")]
+    fn py_signed_decimal_qty(&self) -> Decimal {
+        self.signed_decimal_qty()
+    }
+
+    #[pyo3(name = "would_reduce_only")]
+    fn py_would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.would_reduce_only(side, position_qty)
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+        let event_any = pyobject_to_order_event(py, event).unwrap();
+        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 
     #[staticmethod]
@@ -638,9 +562,116 @@ impl StopLimitOrder {
         Ok(stop_limit_order)
     }
 
-    #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
-        let event_any = pyobject_to_order_event(py, event).unwrap();
-        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
+    #[pyo3(name = "to_dict")]
+    fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        dict.set_item("trader_id", self.trader_id.to_string())?;
+        dict.set_item("strategy_id", self.strategy_id.to_string())?;
+        dict.set_item("instrument_id", self.instrument_id.to_string())?;
+        dict.set_item("client_order_id", self.client_order_id.to_string())?;
+        dict.set_item("side", self.side.to_string())?;
+        dict.set_item("type", self.order_type.to_string())?;
+        dict.set_item("side", self.side.to_string())?;
+        dict.set_item("quantity", self.quantity.to_string())?;
+        dict.set_item("status", self.status.to_string())?;
+        dict.set_item("price", self.price.to_string())?;
+        dict.set_item("trigger_price", self.trigger_price.to_string())?;
+        dict.set_item("trigger_type", self.trigger_type.to_string())?;
+        dict.set_item("filled_qty", self.filled_qty.to_string())?;
+        dict.set_item("time_in_force", self.time_in_force.to_string())?;
+        dict.set_item("is_post_only", self.is_post_only)?;
+        dict.set_item("is_reduce_only", self.is_reduce_only)?;
+        dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
+        dict.set_item("init_id", self.init_id.to_string())?;
+        dict.set_item(
+            "expire_time_ns",
+            self.expire_time.filter(|&t| t != 0).map(|t| t.as_u64()),
+        )?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("ts_last", self.ts_last.as_u64())?;
+        dict.set_item(
+            "commissions",
+            commissions_from_indexmap(py, self.commissions().clone())?,
+        )?;
+        self.last_trade_id.map_or_else(
+            || dict.set_item("last_trade_id", py.None()),
+            |x| dict.set_item("last_trade_id", x.to_string()),
+        )?;
+        self.avg_px.map_or_else(
+            || dict.set_item("avg_px", py.None()),
+            |x| dict.set_item("avg_px", x),
+        )?;
+        self.position_id.map_or_else(
+            || dict.set_item("position_id", py.None()),
+            |x| dict.set_item("position_id", x.to_string()),
+        )?;
+        self.liquidity_side.map_or_else(
+            || dict.set_item("liquidity_side", py.None()),
+            |x| dict.set_item("liquidity_side", x.to_string()),
+        )?;
+        self.slippage.map_or_else(
+            || dict.set_item("slippage", py.None()),
+            |x| dict.set_item("slippage", x),
+        )?;
+        self.account_id.map_or_else(
+            || dict.set_item("account_id", py.None()),
+            |x| dict.set_item("account_id", x.to_string()),
+        )?;
+        self.venue_order_id.map_or_else(
+            || dict.set_item("venue_order_id", py.None()),
+            |x| dict.set_item("venue_order_id", x.to_string()),
+        )?;
+        self.display_qty.map_or_else(
+            || dict.set_item("display_qty", py.None()),
+            |x| dict.set_item("display_qty", x.to_string()),
+        )?;
+        self.emulation_trigger.map_or_else(
+            || dict.set_item("emulation_trigger", py.None()),
+            |x| dict.set_item("emulation_trigger", x.to_string()),
+        )?;
+        dict.set_item("trigger_instrument_id", self.trigger_instrument_id)?;
+        self.contingency_type.map_or_else(
+            || dict.set_item("contingency_type", py.None()),
+            |x| dict.set_item("contingency_type", x.to_string()),
+        )?;
+        self.order_list_id.map_or_else(
+            || dict.set_item("order_list_id", py.None()),
+            |x| dict.set_item("order_list_id", x.to_string()),
+        )?;
+        dict.set_item(
+            "linked_order_ids",
+            self.linked_order_ids.as_ref().map(|x| {
+                x.iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<String>>()
+            }),
+        )?;
+        self.parent_order_id.map_or_else(
+            || dict.set_item("parent_order_id", py.None()),
+            |x| dict.set_item("parent_order_id", x.to_string()),
+        )?;
+        self.exec_algorithm_id.map_or_else(
+            || dict.set_item("exec_algorithm_id", py.None()),
+            |x| dict.set_item("exec_algorithm_id", x.to_string()),
+        )?;
+        dict.set_item(
+            "exec_algorithm_params",
+            self.exec_algorithm_params.as_ref().map(|x| {
+                x.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect::<IndexMap<String, String>>()
+            }),
+        )?;
+        self.exec_spawn_id.map_or_else(
+            || dict.set_item("exec_spawn_id", py.None()),
+            |x| dict.set_item("exec_spawn_id", x.to_string()),
+        )?;
+        dict.set_item(
+            "tags",
+            self.tags
+                .as_ref()
+                .map(|vec| vec.iter().map(|s| s.to_string()).collect::<Vec<String>>()),
+        )?;
+        Ok(dict.into())
     }
 }
