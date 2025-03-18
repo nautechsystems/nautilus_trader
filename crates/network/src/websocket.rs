@@ -55,7 +55,7 @@ use crate::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
-pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(
