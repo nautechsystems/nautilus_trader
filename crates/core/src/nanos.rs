@@ -245,14 +245,14 @@ impl From<UnixNanos> for DateTime<Utc> {
 
 impl<'de> Deserialize<'de> for UnixNanos {
     /// Deserializes a `UnixNanos` from various formats:
-    /// * Integer values are interpreted as nanoseconds since the UNIX epoch
-    /// * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds)
+    /// * Integer values are interpreted as nanoseconds since the UNIX epoch.
+    /// * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds).
     /// * String values may be:
     ///   - A numeric string (interpreted as nanoseconds).
     ///   - A floating-point string (interpreted as seconds, converted to nanoseconds).
     ///   - An RFC 3339 formatted timestamp (ISO 8601 with timezone).
     ///
-    /// Negative timestamps are rejected with an error.
+    /// Negative timestamps are invalid and will result in an error.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
