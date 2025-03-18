@@ -19,23 +19,28 @@
 
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, VecDeque},
+    rc::Rc,
+};
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
     types::{Currency, Money},
 };
 use nautilus_system::kernel::NautilusKernel;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
     accumulator::TimeEventAccumulator, config::BacktestEngineConfig, exchange::SimulatedExchange,
-    modules::SimulationModule,
+    execution_client::BacktestExecutionClient, modules::SimulationModule,
 };
 
 pub struct BacktestEngine {
@@ -45,7 +50,7 @@ pub struct BacktestEngine {
     accumulator: TimeEventAccumulator,
     run_config_id: Option<UUID4>,
     run_id: Option<UUID4>,
-    venues: HashMap<Venue, SimulatedExchange>,
+    venues: HashMap<Venue, Rc<RefCell<SimulatedExchange>>>,
     has_data: HashSet<InstrumentId>,
     has_book_data: HashSet<InstrumentId>,
     data: VecDeque<Data>,
@@ -83,33 +88,87 @@ impl BacktestEngine {
 
     #[allow(clippy::too_many_arguments)]
     pub fn add_venue(
-        &self,
-        _venue: Venue,
-        _oms_type: OmsType,
-        _account_type: AccountType,
-        _book_type: BookType,
-        _starting_balances: Vec<Money>,
-        _base_currency: Option<Currency>,
-        _default_leverage: Option<f64>,
-        _leverages: Option<HashMap<Currency, f64>>,
-        _modules: Vec<Box<dyn SimulationModule>>,
-        _fill_model: Option<FillModel>,
-        _fee_model: Option<FeeModelAny>,
-        _latency_model: Option<LatencyModel>,
-        _routing: Option<bool>,
-        _frozen_account: Option<bool>,
-        _reject_stop_orders: Option<bool>,
-        _support_gtd_orders: Option<bool>,
-        _support_contingent_orders: Option<bool>,
-        _use_position_ids: Option<bool>,
-        _use_random_ids: Option<bool>,
-        _use_reduce_only: Option<bool>,
-        _use_message_queue: Option<bool>,
-        _bar_execution: Option<bool>,
-        _bar_adaptive_high_low_ordering: Option<bool>,
-        _trade_execution: Option<bool>,
+        &mut self,
+        venue: Venue,
+        oms_type: OmsType,
+        account_type: AccountType,
+        book_type: BookType,
+        starting_balances: Vec<Money>,
+        base_currency: Option<Currency>,
+        default_leverage: Option<Decimal>,
+        leverages: HashMap<InstrumentId, Decimal>,
+        modules: Vec<Box<dyn SimulationModule>>,
+        fill_model: FillModel,
+        fee_model: FeeModelAny,
+        latency_model: Option<LatencyModel>,
+        routing: Option<bool>,
+        frozen_account: Option<bool>,
+        reject_stop_orders: Option<bool>,
+        support_gtd_orders: Option<bool>,
+        support_contingent_orders: Option<bool>,
+        use_position_ids: Option<bool>,
+        use_random_ids: Option<bool>,
+        use_reduce_only: Option<bool>,
+        use_message_queue: Option<bool>,
+        bar_execution: Option<bool>,
+        bar_adaptive_high_low_ordering: Option<bool>,
+        trade_execution: Option<bool>,
     ) {
-        todo!("implement add_venue")
+        let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
+            if account_type == AccountType::Margin {
+                Decimal::from(10)
+            } else {
+                Decimal::from(0)
+            }
+        });
+
+        let exchange = SimulatedExchange::new(
+            venue,
+            oms_type,
+            account_type,
+            starting_balances,
+            base_currency,
+            default_leverage,
+            leverages,
+            modules,
+            self.kernel.cache.clone(),
+            self.kernel.clock.clone(),
+            fill_model,
+            fee_model,
+            book_type,
+            latency_model,
+            frozen_account,
+            bar_execution,
+            reject_stop_orders,
+            support_gtd_orders,
+            support_contingent_orders,
+            use_position_ids,
+            use_random_ids,
+            use_reduce_only,
+            use_message_queue,
+        )
+        .unwrap();
+        let exchange = Rc::new(RefCell::new(exchange));
+        self.venues.insert(venue, exchange.clone());
+
+        let account_id = AccountId::from(format!("{}-001", venue).as_str());
+        let exec_client = BacktestExecutionClient::new(
+            self.kernel.config.trader_id,
+            account_id,
+            exchange.clone(),
+            self.kernel.cache.clone(),
+            self.kernel.clock.clone(),
+            routing,
+            frozen_account,
+        );
+        let exec_client = Rc::new(exec_client);
+
+        exchange.borrow_mut().register_client(exec_client.clone());
+        self.kernel
+            .exec_engine
+            .register_client(exec_client)
+            .unwrap();
+        log::info!("Adding exchange {} to engine", venue);
     }
 
     pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {
