@@ -21,7 +21,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock, msgbus::MessageBus};
+use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::UnixNanos;
 use nautilus_execution::{
     client::{ExecutionClient, base::BaseExecutionClient},
@@ -56,7 +56,6 @@ impl BacktestExecutionClient {
         account_id: AccountId,
         exchange: Rc<RefCell<SimulatedExchange>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         clock: Rc<RefCell<dyn Clock>>,
         routing: Option<bool>,
         frozen_account: Option<bool>,
@@ -74,7 +73,6 @@ impl BacktestExecutionClient {
             exchange.borrow().base_currency,
             clock.clone(),
             cache,
-            msgbus,
         );
 
         if !frozen_account {
