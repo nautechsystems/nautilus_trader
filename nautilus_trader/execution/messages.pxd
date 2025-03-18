@@ -36,9 +36,9 @@ cdef class ExecutionReportCommand(Command):
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the command.\n\n:returns: `InstrumentId`"""
     cdef readonly datetime start
-    """The start datetime (UTC) of request time range (inclusive)."""
+    """The start datetime (UTC) of request time range (inclusive).\n\n:returns `datetime` or ``None``"""
     cdef readonly datetime end
-    """The end datetime (UTC) of request time range."""
+    """The end datetime (UTC) of request time range.\n\n:returns `datetime` or ``None``"""
     cdef readonly dict[str, object] params
     """Additional specific parameters for the command.\n\n:returns: `dict[str, object]` or ``None``"""
 
