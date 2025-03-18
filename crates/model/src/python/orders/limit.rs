@@ -23,6 +23,7 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -36,8 +37,11 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::{LimitOrder, Order, OrderCore, str_indexmap_to_ustr},
-    python::{common::commissions_from_indexmap, events::order::pyobject_to_order_event},
-    types::{Price, Quantity},
+    python::{
+        common::commissions_from_indexmap,
+        events::order::{order_event_to_pyobject, pyobject_to_order_event},
+    },
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -123,6 +127,18 @@ impl LimitOrder {
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
         Ok(LimitOrder::from(init))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "opposite_side")]
+    fn py_opposite_side(side: OrderSide) -> OrderSide {
+        OrderCore::opposite_side(side)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "closing_side")]
+    fn py_closing_side(side: PositionSide) -> OrderSide {
+        OrderCore::closing_side(side)
     }
 
     #[getter]
@@ -243,6 +259,16 @@ impl LimitOrder {
     #[pyo3(name = "is_quote_quantity")]
     fn py_is_quote_quantity(&self) -> bool {
         self.is_quote_quantity
+    }
+
+    #[pyo3(name = "commission")]
+    fn py_commission(&self, currency: &Currency) -> Option<Money> {
+        self.commission(currency)
+    }
+
+    #[pyo3(name = "commissions")]
+    fn py_commissions(&self) -> IndexMap<Currency, Money> {
+        self.commissions().clone()
     }
 
     #[getter]
@@ -411,16 +437,29 @@ impl LimitOrder {
         self.ts_last.as_u64()
     }
 
-    #[staticmethod]
-    #[pyo3(name = "opposite_side")]
-    fn py_opposite_side(side: OrderSide) -> OrderSide {
-        OrderCore::opposite_side(side)
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        self.events()
+            .into_iter()
+            .map(|event| order_event_to_pyobject(py, event.clone()))
+            .collect()
     }
 
-    #[staticmethod]
-    #[pyo3(name = "closing_side")]
-    fn py_closing_side(side: PositionSide) -> OrderSide {
-        OrderCore::closing_side(side)
+    #[pyo3(name = "signed_decimal_qty")]
+    fn py_signed_decimal_qty(&self) -> Decimal {
+        self.signed_decimal_qty()
+    }
+
+    #[pyo3(name = "would_reduce_only")]
+    fn py_would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.would_reduce_only(side, position_qty)
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+        let event_any = pyobject_to_order_event(py, event).unwrap();
+        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 
     #[staticmethod]
@@ -683,11 +722,5 @@ impl LimitOrder {
             |x| dict.set_item("avg_px", x),
         )?;
         Ok(dict.into())
-    }
-
-    #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
-        let event_any = pyobject_to_order_event(py, event).unwrap();
-        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 }
