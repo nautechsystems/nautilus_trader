@@ -3372,7 +3372,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.12",
  "tokio",
  "walkdir",
 ]
@@ -3449,6 +3448,9 @@ dependencies = [
  "pretty_assertions",
  "pyo3",
  "rstest",
+ "serde",
+ "serde_json",
+ "strum",
  "thiserror 2.0.12",
 ]
 

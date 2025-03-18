@@ -26,30 +26,23 @@ use parquet::{
     },
 };
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.serialization.enums"
-    )
-)]
-pub enum ParquetWriteMode {
-    Append = 0,
-    Prepend = 1,
-    Overwrite = 2,
-    NewFile = 3,
-}
+use crate::enums::ParquetWriteMode;
 
 /// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
 pub fn write_batch_to_parquet(
     batch: RecordBatch,
     filepath: &PathBuf,
     compression: Option<parquet::basic::Compression>,
+    max_row_group_size: Option<usize>,
     write_mode: Option<ParquetWriteMode>,
 ) -> Result<()> {
-    write_batches_to_parquet(&[batch], filepath, compression, None, write_mode)
+    write_batches_to_parquet(
+        &[batch],
+        filepath,
+        compression,
+        max_row_group_size,
+        write_mode,
+    )
 }
 
 pub fn write_batches_to_parquet(
@@ -75,30 +68,17 @@ pub fn write_batches_to_parquet(
         let existing_batches: Vec<RecordBatch> = reader.build()?.collect::<Result<Vec<_>, _>>()?;
 
         if !existing_batches.is_empty() {
-            // Get the schema of the existing data.
-            let existing_schema = existing_batches[0].schema();
-
-            // Cast new batches to the existing schema.
-            let mut cast_batches: Vec<RecordBatch> = Vec::with_capacity(batches.len());
-
-            for batch in batches {
-                if batch.schema() != existing_schema {
-                    let cast_batch = batch.clone().with_schema(existing_schema.clone())?; // Attempt to cast.
-                    cast_batches.push(cast_batch);
-                } else {
-                    cast_batches.push(batch.clone()); // No cast needed, just clone.
-                }
-            }
+            let mut combined = Vec::with_capacity(existing_batches.len() + batches.len());
+            let batches: Vec<RecordBatch> = batches.to_vec();
 
             // Combine batches in the appropriate order
             let combined_batches = if used_write_mode == ParquetWriteMode::Append {
-                let mut combined = existing_batches;
-                combined.extend(cast_batches);
+                combined.extend(existing_batches);
+                combined.extend(batches);
                 combined
             } else {
                 // Prepend mode
-                let mut combined = Vec::with_capacity(cast_batches.len() + existing_batches.len());
-                combined.extend(cast_batches);
+                combined.extend(batches.clone());
                 combined.extend(existing_batches);
                 combined
             };

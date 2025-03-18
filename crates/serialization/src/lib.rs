@@ -35,6 +35,7 @@
 // #![deny(clippy::missing_errors_doc)]
 
 pub mod arrow;
+pub mod enums;
 pub mod parquet;
 
 #[cfg(feature = "python")]

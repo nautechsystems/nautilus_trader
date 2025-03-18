@@ -932,6 +932,12 @@ class OrderType(Enum):
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
     TRAILING_STOP_LIMIT = "TRAILING_STOP_LIMIT"
 
+class ParquetWriteMode(Enum):
+    APPEND = "APPEND"
+    PREPEND = "PREPEND"
+    OVERWRITE = "OVERWRITE"
+    NEWFILE = "NEWFILE"
+
 class PositionSide(Enum):
     FLAT = "FLAT"
     LONG = "LONG"
@@ -3479,6 +3485,48 @@ class PostgresCacheDatabase:
     def add_custom_data(self, data: CustomData) -> None: ...
     def update_order(self, order: object) -> None: ...
     def update_account(self, account: Account) -> None: ...
+
+
+class ParquetDataCatalogV2:
+    def __init__(self, base_path: str, batch_size: int | None = None) -> None: ...
+    def write_quote_ticks(
+        self,
+        data: list[QuoteTick],
+        write_mode: ParquetWriteMode | None = None
+    ) -> str: ...
+    def write_trade_ticks(
+        self,
+        data: list[TradeTick],
+        write_mode: ParquetWriteMode | None = None
+    ) -> str: ...
+    def write_order_book_deltas(
+        self,
+        data: list[OrderBookDelta],
+        write_mode: ParquetWriteMode | None = None
+    ) -> str: ...
+    def write_bars(
+        self,
+        data: list[Bar],
+        write_mode: ParquetWriteMode | None = None
+    ) -> str: ...
+    def write_order_book_depths(
+        self,
+        data: list[OrderBookDepth10],
+        write_mode: ParquetWriteMode | None = None
+    ) -> str: ...
+    def consolidate_catalog(self) -> None: ...
+    def consolidate_data(self, type_name: str, instrument_id: str | None = None) -> None: ...
+    def query_timestamp_bound(
+        self,
+        data_cls: str,
+        instrument_id: str | None = None,
+        is_last: bool = True
+    ) -> int | None: ...
+    def query_parquet_files(
+        self,
+        type_name: str,
+        instrument_id: str | None = None
+    ) -> list[str]: ...
 
 ###################################################################################################
 # Network
