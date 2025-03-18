@@ -29,9 +29,10 @@ use std::{
 use chrono::TimeDelta;
 use nautilus_common::{
     cache::Cache,
-    msgbus::{MessageBus, send},
+    clock::Clock,
+    msgbus::{self},
 };
-use nautilus_core::{AtomicTime, UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, order::BookOrder},
     enums::{
@@ -84,8 +85,7 @@ pub struct OrderMatchingEngine {
     pub market_status: MarketStatus,
     /// The config for the matching engine.
     pub config: OrderMatchingEngineConfig,
-    clock: &'static AtomicTime,
-    msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
     pub core: OrderMatchingCore,
@@ -113,8 +113,7 @@ impl OrderMatchingEngine {
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,
-        clock: &'static AtomicTime,
-        msgbus: Rc<RefCell<MessageBus>>,
+        clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
@@ -145,7 +144,6 @@ impl OrderMatchingEngine {
             oms_type,
             account_type,
             clock,
-            msgbus,
             cache,
             book,
             core,
@@ -498,7 +496,7 @@ impl OrderMatchingEngine {
             // Check for instrument expiration or activation
             if EXPIRING_INSTRUMENT_TYPES.contains(&self.instrument.instrument_class()) {
                 if let Some(activation_ns) = self.instrument.activation_ns() {
-                    if self.clock.get_time_ns() < activation_ns {
+                    if self.clock.borrow().timestamp_ns() < activation_ns {
                         self.generate_order_rejected(
                             order,
                             format!(
@@ -512,7 +510,7 @@ impl OrderMatchingEngine {
                     }
                 }
                 if let Some(expiration_ns) = self.instrument.expiration_ns() {
-                    if self.clock.get_time_ns() >= expiration_ns {
+                    if self.clock.borrow().timestamp_ns() >= expiration_ns {
                         self.generate_order_rejected(
                             order,
                             format!(
@@ -1048,7 +1046,7 @@ impl OrderMatchingEngine {
     /// Iterate the matching engine by processing the bid and ask order sides
     /// and advancing time up to the given UNIX `timestamp_ns`.
     pub fn iterate(&mut self, timestamp_ns: UnixNanos) {
-        self.clock.set_time(timestamp_ns);
+        // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
         // Check for updates in orderbook and set bid and ask in order matching core and iterate
         if self.book.has_bid() {
@@ -2107,7 +2105,7 @@ impl OrderMatchingEngine {
     // -- EVENT GENERATORS -----------------------------------------------------
 
     fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
@@ -2124,12 +2122,11 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
     }
 
     fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
@@ -2145,8 +2142,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2163,7 +2159,7 @@ impl OrderMatchingEngine {
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
     ) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
             trader_id,
             strategy_id,
@@ -2177,8 +2173,7 @@ impl OrderMatchingEngine {
             venue_order_id,
             account_id,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2192,7 +2187,7 @@ impl OrderMatchingEngine {
         venue_order_id: VenueOrderId,
         reason: Ustr,
     ) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::CancelRejected(OrderCancelRejected::new(
             trader_id,
             strategy_id,
@@ -2206,8 +2201,7 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             Some(account_id),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     fn generate_order_updated(
@@ -2217,7 +2211,7 @@ impl OrderMatchingEngine {
         price: Option<Price>,
         trigger_price: Option<Price>,
     ) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::Updated(OrderUpdated::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2233,15 +2227,14 @@ impl OrderMatchingEngine {
             price,
             trigger_price,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
     }
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::Canceled(OrderCanceled::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2254,12 +2247,11 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             order.account_id(),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::Triggered(OrderTriggered::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2272,12 +2264,11 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let event = OrderEventAny::Expired(OrderExpired::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2290,8 +2281,7 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2306,7 +2296,7 @@ impl OrderMatchingEngine {
         commission: Money,
         liquidity_side: LiquiditySide,
     ) {
-        let ts_now = self.clock.get_time_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
@@ -2331,8 +2321,7 @@ impl OrderMatchingEngine {
             venue_position_id,
             Some(commission),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");

@@ -17,8 +17,16 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::{cell::RefCell, rc::Rc};
+
+use nautilus_common::{
+    cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
+    clock::Clock,
+};
 use nautilus_core::UUID4;
 use nautilus_data::engine::DataEngine;
+use nautilus_execution::engine::ExecutionEngine;
+use nautilus_model::identifiers::TraderId;
 use ustr::Ustr;
 
 use crate::config::NautilusKernelConfig;
@@ -27,8 +35,11 @@ use crate::config::NautilusKernelConfig;
 pub struct NautilusKernel {
     pub name: Ustr,
     pub instance_id: UUID4,
+    pub config: NautilusKernelConfig,
     pub data_engine: DataEngine,
-    config: NautilusKernelConfig,
+    pub exec_engine: ExecutionEngine,
+    pub cache: Rc<RefCell<Cache>>,
+    pub clock: Rc<RefCell<dyn Clock>>,
 }
 
 impl NautilusKernel {
@@ -36,16 +47,47 @@ impl NautilusKernel {
     pub fn new(name: Ustr, config: NautilusKernelConfig) -> Self {
         let instance_id = config.instance_id.unwrap_or_default();
         let data_engine = Self::initialize_data_engine();
+        let exec_engine = Self::initialize_exec_engine();
+        let cache = Self::initialize_cache(config.trader_id, &instance_id, config.cache.clone());
+        let clock = Self::initialize_clock();
         Self {
             name,
             instance_id,
             data_engine,
+            exec_engine,
             config,
+            cache,
+            clock,
         }
+    }
+
+    fn initialize_clock() -> Rc<RefCell<dyn Clock>> {
+        todo!("initialize_clock")
+    }
+
+    fn initialize_cache(
+        trader_id: TraderId,
+        instance_id: &UUID4,
+        cache_config: Option<CacheConfig>,
+    ) -> Rc<RefCell<Cache>> {
+        let cache_config = cache_config.unwrap_or_default();
+        let cache_database: Option<Box<dyn CacheDatabaseAdapter>> =
+            if let Some(cache_database_config) = &cache_config.database {
+                todo!("initialize_cache_database")
+            } else {
+                None
+            };
+
+        let cache = Cache::new(Some(cache_config), cache_database);
+        Rc::new(RefCell::new(cache))
     }
 
     fn initialize_data_engine() -> DataEngine {
         todo!("initialize_data_engine")
+    }
+
+    fn initialize_exec_engine() -> ExecutionEngine {
+        todo!("initialize_exec_engine")
     }
 
     fn start(&self) {

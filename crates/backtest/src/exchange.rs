@@ -25,9 +25,9 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_common::{cache::Cache, msgbus::MessageBus};
+use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{
-    AtomicTime, UnixNanos,
+    UnixNanos,
     correctness::{FAILED, check_equal},
 };
 use nautilus_execution::{
@@ -105,8 +105,7 @@ pub struct SimulatedExchange {
     matching_engines: HashMap<InstrumentId, OrderMatchingEngine>,
     leverages: HashMap<InstrumentId, Decimal>,
     modules: Vec<Box<dyn SimulationModule>>,
-    clock: &'static AtomicTime,
-    msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
@@ -134,9 +133,8 @@ impl SimulatedExchange {
         default_leverage: Decimal,
         leverages: HashMap<InstrumentId, Decimal>,
         modules: Vec<Box<dyn SimulationModule>>,
-        msgbus: Rc<RefCell<MessageBus>>, // TODO add portfolio
         cache: Rc<RefCell<Cache>>,
-        clock: &'static AtomicTime,
+        clock: Rc<RefCell<dyn Clock>>,
         fill_model: FillModel,
         fee_model: FeeModelAny,
         book_type: BookType,
@@ -175,7 +173,6 @@ impl SimulatedExchange {
             leverages,
             modules,
             clock,
-            msgbus,
             cache,
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
@@ -252,8 +249,7 @@ impl SimulatedExchange {
             self.book_type,
             self.oms_type,
             self.account_type,
-            self.clock,
-            Rc::clone(&self.msgbus),
+            self.clock.clone(),
             Rc::clone(&self.cache),
             matching_engine_config,
         );
@@ -384,7 +380,7 @@ impl SimulatedExchange {
                                     vec![current_balance],
                                     margins.values().copied().collect(),
                                     true,
-                                    self.clock.get_time_ns(),
+                                    self.clock.borrow().timestamp_ns(),
                                 )
                                 .unwrap();
                         }
@@ -610,7 +606,7 @@ impl SimulatedExchange {
     }
 
     pub fn process(&mut self, ts_now: UnixNanos) {
-        self.clock.set_time(ts_now);
+        // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
         // Process inflight commands
         while let Some(inflight) = self.inflight_queue.peek() {
@@ -688,7 +684,7 @@ impl SimulatedExchange {
 
         if let Some(exec_client) = &self.exec_client {
             exec_client
-                .generate_account_state(balances, vec![], true, self.clock.get_time_ns())
+                .generate_account_state(balances, vec![], true, self.clock.borrow().timestamp_ns())
                 .unwrap();
         }
 
@@ -767,12 +763,10 @@ mod tests {
         venue: Venue,
         account_type: AccountType,
         book_type: BookType,
-        msgbus: Option<Rc<RefCell<MessageBus>>>,
         cache: Option<Rc<RefCell<Cache>>>,
     ) -> Rc<RefCell<SimulatedExchange>> {
-        let msgbus = msgbus.unwrap_or(Rc::new(RefCell::new(MessageBus::default())));
         let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
-
+        let clock = Rc::new(RefCell::new(TestClock::new()));
         let exchange = Rc::new(RefCell::new(
             SimulatedExchange::new(
                 venue,
@@ -783,9 +777,8 @@ mod tests {
                 1.into(),
                 HashMap::new(),
                 vec![],
-                msgbus.clone(),
                 cache.clone(),
-                &ATOMIC_TIME,
+                clock,
                 FillModel::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
                 book_type,
@@ -809,7 +802,6 @@ mod tests {
             AccountId::default(),
             exchange.clone(),
             cache.clone(),
-            msgbus.clone(),
             Rc::new(RefCell::new(clock)),
             None,
             None,
@@ -857,7 +849,6 @@ mod tests {
             AccountType::Margin,
             BookType::L1_MBP,
             None,
-            None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -871,7 +862,6 @@ mod tests {
             AccountType::Cash,
             BookType::L1_MBP,
             None,
-            None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -883,7 +873,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L1_MBP,
-            None,
             None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -920,7 +909,6 @@ mod tests {
             AccountType::Margin,
             BookType::L1_MBP,
             None,
-            None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
@@ -955,7 +943,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L1_MBP,
-            None,
             None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -993,7 +980,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L1_MBP,
-            None,
             None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1045,7 +1031,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L2_MBP,
-            None,
             None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1106,7 +1091,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L2_MBP,
-            None,
             None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1180,7 +1164,6 @@ mod tests {
             AccountType::Margin,
             BookType::L2_MBP,
             None,
-            None,
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
 
@@ -1246,7 +1229,6 @@ mod tests {
             Venue::new("SIM"),
             account_type,
             BookType::L2_MBP,
-            Some(msgbus.clone()),
             Some(Rc::new(RefCell::new(cache))),
         );
         exchange.borrow_mut().initialize_account();
@@ -1319,7 +1301,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L2_MBP,
-            Some(msgbus.clone()),
             None,
         );
 
@@ -1356,7 +1337,6 @@ mod tests {
             Venue::new("BINANCE"),
             AccountType::Margin,
             BookType::L2_MBP,
-            Some(msgbus.clone()),
             None,
         );
         exchange.borrow_mut().set_latency_model(latency_model);
