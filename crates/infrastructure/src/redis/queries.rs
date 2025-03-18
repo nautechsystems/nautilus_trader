@@ -20,17 +20,15 @@ use chrono::{DateTime, Utc};
 use futures::future::join_all;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::orders::Order;
-use nautilus_model::types::Price;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OrderType, TimeInForce, TriggerType},
     events::{OrderEventAny, OrderFilled},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
-    orders::{LimitOrder, MarketOrder, OrderAny},
+    orders::{LimitOrder, MarketOrder, Order, OrderAny},
     position::Position,
-    types::Currency,
+    types::{Currency, Price},
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::Serialize;
