@@ -689,26 +689,26 @@ class TestCacheDatabaseAdapter:
         assert result == order
         assert result.exec_algorithm_params
 
-    # @pytest.mark.asyncio
-    # async def test_load_order_when_limit_order_in_database_returns_order(self):
-    #     # Arrange
-    #     order = self.strategy.order_factory.limit(
-    #         _AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100_000),
-    #         Price.from_str("1.00000"),
-    #     )
+    @pytest.mark.asyncio
+    async def test_load_order_when_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
 
-    #     self.database.add_order(order)
+        self.database.add_order(order)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_order(order.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
-    #     # Act
-    #     result = self.database.load_order(order.client_order_id)
+        # Act
+        result = self.database.load_order(order.client_order_id)
 
-    #     # Assert
-    #     assert result == order
+        # Assert
+        assert result == order
 
     # @pytest.mark.asyncio
     # async def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
@@ -781,31 +781,30 @@ class TestCacheDatabaseAdapter:
         assert result == order
 
     # Key Error: 'last_event': TODO: error in conversion to pyo3 i think
-    # @pytest.mark.asyncio
-    # async def test_load_order_when_stop_limit_order_in_database_returns_order(self):
-    #     # Arrange
-    #     order = self.strategy.order_factory.stop_limit(
-    #         _AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100_000),
-    #         price=Price.from_str("1.00000"),
-    #         trigger_price=Price.from_str("1.00010"),
-    #     )
+    @pytest.mark.asyncio
+    async def test_load_order_when_stop_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_limit(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+            trigger_price=Price.from_str("1.00010"),
+        )
 
-    #     self.database.add_order(order)
+        self.database.add_order(order)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_order(order.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
-    #     # Act
-    #     result = self.database.load_order(order.client_order_id)
+        # Act
+        result = self.database.load_order(order.client_order_id)
 
-    #     # Assert
-    #     assert result == order
-    #     assert result.price == order.price
-    #     assert result.trigger_price == order.trigger_price
+        # Assert
+        assert result == order
+        assert result.price == order.price
+        assert result.trigger_price == order.trigger_price
 
-    # TODO: error in conversion to position
     # @pytest.mark.asyncio
     # async def test_load_position_when_no_position_in_database_returns_none(self):
     #     # Arrange

@@ -13,10 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
 use bytes::Bytes;
-use nautilus_common::cache::database::CacheDatabaseAdapter;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -38,6 +36,8 @@ use pyo3::{
     types::{PyBytes, PyDict},
 };
 use ustr::Ustr;
+
+use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
 
 #[pymethods]
 impl RedisCacheDatabase {
