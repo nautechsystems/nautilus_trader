@@ -25,9 +25,9 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_common::cache::Cache;
+use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{
-    AtomicTime, UnixNanos,
+    UnixNanos,
     correctness::{FAILED, check_equal},
 };
 use nautilus_execution::{
@@ -105,7 +105,7 @@ pub struct SimulatedExchange {
     matching_engines: HashMap<InstrumentId, OrderMatchingEngine>,
     leverages: HashMap<InstrumentId, Decimal>,
     modules: Vec<Box<dyn SimulationModule>>,
-    clock: &'static AtomicTime,
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
@@ -134,7 +134,7 @@ impl SimulatedExchange {
         leverages: HashMap<InstrumentId, Decimal>,
         modules: Vec<Box<dyn SimulationModule>>,
         cache: Rc<RefCell<Cache>>,
-        clock: &'static AtomicTime,
+        clock: Rc<RefCell<dyn Clock>>,
         fill_model: FillModel,
         fee_model: FeeModelAny,
         book_type: BookType,
@@ -249,7 +249,7 @@ impl SimulatedExchange {
             self.book_type,
             self.oms_type,
             self.account_type,
-            self.clock,
+            self.clock.clone(),
             Rc::clone(&self.cache),
             matching_engine_config,
         );
@@ -380,7 +380,7 @@ impl SimulatedExchange {
                                     vec![current_balance],
                                     margins.values().copied().collect(),
                                     true,
-                                    self.clock.get_time_ns(),
+                                    self.clock.borrow().timestamp_ns(),
                                 )
                                 .unwrap();
                         }
@@ -606,7 +606,7 @@ impl SimulatedExchange {
     }
 
     pub fn process(&mut self, ts_now: UnixNanos) {
-        self.clock.set_time(ts_now);
+        // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
         // Process inflight commands
         while let Some(inflight) = self.inflight_queue.peek() {
@@ -684,7 +684,7 @@ impl SimulatedExchange {
 
         if let Some(exec_client) = &self.exec_client {
             exec_client
-                .generate_account_state(balances, vec![], true, self.clock.get_time_ns())
+                .generate_account_state(balances, vec![], true, self.clock.borrow().timestamp_ns())
                 .unwrap();
         }
 
@@ -766,7 +766,7 @@ mod tests {
         cache: Option<Rc<RefCell<Cache>>>,
     ) -> Rc<RefCell<SimulatedExchange>> {
         let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
-
+        let clock = Rc::new(RefCell::new(TestClock::new()));
         let exchange = Rc::new(RefCell::new(
             SimulatedExchange::new(
                 venue,
@@ -778,7 +778,7 @@ mod tests {
                 HashMap::new(),
                 vec![],
                 cache.clone(),
-                &ATOMIC_TIME,
+                clock,
                 FillModel::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
                 book_type,
