@@ -18,7 +18,7 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_common::{cache::Cache, msgbus::MessageBus};
+use nautilus_common::cache::Cache;
 use nautilus_core::AtomicTime;
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -50,7 +50,6 @@ impl OrderEngineAdapter {
         oms_type: OmsType,
         account_type: AccountType,
         clock: &'static AtomicTime,
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
@@ -63,7 +62,6 @@ impl OrderEngineAdapter {
             oms_type,
             account_type,
             clock,
-            msgbus,
             cache,
             config,
         )));

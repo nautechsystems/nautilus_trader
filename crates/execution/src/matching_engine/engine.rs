@@ -29,7 +29,7 @@ use std::{
 use chrono::TimeDelta;
 use nautilus_common::{
     cache::Cache,
-    msgbus::{MessageBus, send},
+    msgbus::{self},
 };
 use nautilus_core::{AtomicTime, UUID4, UnixNanos};
 use nautilus_model::{
@@ -85,7 +85,6 @@ pub struct OrderMatchingEngine {
     /// The config for the matching engine.
     pub config: OrderMatchingEngineConfig,
     clock: &'static AtomicTime,
-    msgbus: Rc<RefCell<MessageBus>>,
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
     pub core: OrderMatchingCore,
@@ -114,7 +113,6 @@ impl OrderMatchingEngine {
         oms_type: OmsType,
         account_type: AccountType,
         clock: &'static AtomicTime,
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
@@ -145,7 +143,6 @@ impl OrderMatchingEngine {
             oms_type,
             account_type,
             clock,
-            msgbus,
             cache,
             book,
             core,
@@ -2124,8 +2121,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
     }
 
     fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
@@ -2145,8 +2141,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2177,8 +2172,7 @@ impl OrderMatchingEngine {
             venue_order_id,
             account_id,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2206,8 +2200,7 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             Some(account_id),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     fn generate_order_updated(
@@ -2233,8 +2226,7 @@ impl OrderMatchingEngine {
             price,
             trigger_price,
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2254,8 +2246,7 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             order.account_id(),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
@@ -2272,8 +2263,7 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
@@ -2290,8 +2280,7 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2331,8 +2320,7 @@ impl OrderMatchingEngine {
             venue_position_id,
             Some(commission),
         ));
-        let msgbus = self.msgbus.as_ref().borrow();
-        send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
