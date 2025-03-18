@@ -13,9 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 
+import pandas as pd
+
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Document
 from nautilus_trader.core.uuid import UUID4
@@ -37,6 +42,13 @@ from nautilus_trader.model.enums import position_side_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
+from nautilus_trader.model.functions import contingency_type_from_pyo3
+from nautilus_trader.model.functions import liquidity_side_from_pyo3
+from nautilus_trader.model.functions import order_side_from_pyo3
+from nautilus_trader.model.functions import order_status_from_pyo3
+from nautilus_trader.model.functions import order_type_from_pyo3
+from nautilus_trader.model.functions import position_side_from_pyo3
+from nautilus_trader.model.functions import time_in_force_from_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -300,6 +312,53 @@ class OrderStatusReport(ExecutionReport):
             f"ts_init={self.ts_init})"
         )
 
+    @staticmethod
+    def from_pyo3(pyo3_report: nautilus_pyo3.OrderStatusReport) -> OrderStatusReport:
+        return OrderStatusReport(
+            account_id=AccountId(pyo3_report.account_id.value),
+            instrument_id=InstrumentId.from_str(pyo3_report.instrument_id.value),
+            venue_order_id=VenueOrderId(pyo3_report.venue_order_id.value),
+            order_side=order_side_from_pyo3(pyo3_report.order_side),
+            order_type=order_type_from_pyo3(pyo3_report.order_type),
+            time_in_force=time_in_force_from_pyo3(pyo3_report.time_in_force),
+            order_status=order_status_from_pyo3(pyo3_report.order_status),
+            quantity=Quantity.from_str(str(pyo3_report.quantity)),
+            filled_qty=Quantity.from_str(str(pyo3_report.filled_qty)),
+            ts_accepted=pyo3_report.ts_accepted,
+            ts_last=pyo3_report.ts_last,
+            ts_init=pyo3_report.ts_init,
+            client_order_id=(
+                ClientOrderId(pyo3_report.client_order_id.value)
+                if pyo3_report.client_order_id
+                else None
+            ),
+            report_id=UUID4.from_str(pyo3_report.report_id.value),
+            order_list_id=(
+                OrderListId(pyo3_report.order_list_id.value) if pyo3_report.order_list_id else None
+            ),
+            venue_position_id=(
+                PositionId(pyo3_report.venue_position_id.value)
+                if pyo3_report.venue_position_id
+                else None
+            ),
+            contingency_type=contingency_type_from_pyo3(pyo3_report.contingency_type),
+            expire_time=pd.Timestamp(pyo3_report.expire_time) if pyo3_report.expire_time else None,
+            price=Price.from_str(str(pyo3_report.price)) if pyo3_report.price else None,
+            trigger_price=(
+                Price.from_str(str(pyo3_report.trigger_price))
+                if pyo3_report.trigger_price
+                else None
+            ),
+            avg_px=pyo3_report.avg_px,
+            display_qty=(
+                Quantity.from_str(str(pyo3_report.display_qty)) if pyo3_report.display_qty else None
+            ),
+            post_only=pyo3_report.post_only,
+            reduce_only=pyo3_report.reduce_only,
+            cancel_reason=pyo3_report.cancel_reason,
+            ts_triggered=pyo3_report.ts_triggered,
+        )
+
 
 class FillReport(ExecutionReport):
     """
@@ -413,6 +472,31 @@ class FillReport(ExecutionReport):
             f"ts_init={self.ts_init})"
         )
 
+    @staticmethod
+    def from_pyo3(pyo3_report: nautilus_pyo3.FillReport) -> FillReport:
+        return FillReport(
+            account_id=AccountId(pyo3_report.account_id.value),
+            instrument_id=InstrumentId.from_str(pyo3_report.instrument_id.value),
+            venue_order_id=VenueOrderId(pyo3_report.venue_order_id.value),
+            trade_id=TradeId(pyo3_report.trade_id.value),
+            order_side=order_side_from_pyo3(pyo3_report.order_side),
+            last_qty=Quantity.from_str(str(pyo3_report.last_qty)),
+            last_px=Price.from_str(str(pyo3_report.last_px)),
+            commission=Money.from_str(str(pyo3_report.commission)),
+            liquidity_side=liquidity_side_from_pyo3(pyo3_report.liquidity_side),
+            report_id=UUID4.from_str(pyo3_report.report_id.value),
+            ts_event=pyo3_report.ts_event,
+            ts_init=pyo3_report.ts_init,
+            client_order_id=(
+                ClientOrderId(pyo3_report.client_order_id.value)
+                if pyo3_report.client_order_id
+                else None
+            ),
+            venue_position_id=(
+                PositionId(pyo3_report.venue_position_id) if pyo3_report.venue_position_id else None
+            ),
+        )
+
 
 class PositionStatusReport(ExecutionReport):
     """
@@ -481,6 +565,23 @@ class PositionStatusReport(ExecutionReport):
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
             f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    def from_pyo3(pyo3_report: nautilus_pyo3.PositionStatusReport) -> PositionStatusReport:
+        return PositionStatusReport(
+            account_id=AccountId(pyo3_report.account_id.value),
+            instrument_id=InstrumentId.from_str(pyo3_report.instrument_id.value),
+            position_side=position_side_from_pyo3(pyo3_report.position_side),
+            quantity=Quantity.from_str(str(pyo3_report.quantity)),
+            report_id=UUID4.from_str(pyo3_report.report_id.value),
+            ts_last=pyo3_report.ts_last,
+            ts_init=pyo3_report.ts_init,
+            venue_position_id=(
+                PositionId(pyo3_report.venue_position_id.value)
+                if pyo3_report.venue_position_id
+                else None
+            ),
         )
 
 
