@@ -24,7 +24,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{MessageBus, send},
+    msgbus::{self},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -59,7 +59,6 @@ pub struct BaseExecutionClient {
     pub is_connected: bool,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
 }
 
 impl BaseExecutionClient {
@@ -74,7 +73,6 @@ impl BaseExecutionClient {
         base_currency: Option<Currency>,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
     ) -> Self {
         Self {
             trader_id,
@@ -87,7 +85,6 @@ impl BaseExecutionClient {
             is_connected: false,
             clock,
             cache,
-            msgbus,
         }
     }
 
@@ -406,31 +403,31 @@ impl BaseExecutionClient {
 
     fn send_account_state(&self, account_state: AccountState) {
         let endpoint = Ustr::from("Portfolio.update_account");
-        send(&endpoint, &account_state as &dyn Any);
+        msgbus::send(&endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
         let endpoint = Ustr::from("ExecEngine.process");
-        send(&endpoint, &event as &dyn Any);
+        msgbus::send(&endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
         let endpoint = Ustr::from("ExecEngine.reconcile_mass_status");
-        send(&endpoint, &report as &dyn Any);
+        msgbus::send(&endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
         let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        send(&endpoint, &report as &dyn Any);
+        msgbus::send(&endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
         let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        send(&endpoint, &report as &dyn Any);
+        msgbus::send(&endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
         let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        send(&endpoint, &report as &dyn Any);
+        msgbus::send(&endpoint, &report as &dyn Any);
     }
 }
