@@ -120,21 +120,21 @@ pub trait CacheDatabaseAdapter {
 
     fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
 
-    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()>;
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()>;
 
-    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()>;
+    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()>;
 
-    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()>;
+    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()>;
 
     fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()>;
 
-    fn add_account(&self, account: &AccountAny) -> anyhow::Result<()>;
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
-    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()>;
+    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()>;
 
     fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()>;
 
-    fn add_position(&self, position: &Position) -> anyhow::Result<()>;
+    fn add_position(&mut self, position: &Position) -> anyhow::Result<()>;
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()>;
 
@@ -170,11 +170,11 @@ pub trait CacheDatabaseAdapter {
 
     fn update_strategy(&self) -> anyhow::Result<()>;
 
-    fn update_account(&self, account: &AccountAny) -> anyhow::Result<()>;
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
-    fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()>;
+    fn update_order(&mut self, order_event: &OrderEventAny) -> anyhow::Result<()>;
 
-    fn update_position(&self, position: &Position) -> anyhow::Result<()>;
+    fn update_position(&mut self, position: &Position) -> anyhow::Result<()>;
 
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()>;
 

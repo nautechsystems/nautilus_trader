@@ -666,13 +666,13 @@ cdef class ExecutionEngine(Component):
 
         self._cache.clear_index()
 
-        self._cache.cache_general()
-        self._cache.cache_currencies()
-        self._cache.cache_instruments()
-        self._cache.cache_accounts()
-        self._cache.cache_orders()
-        self._cache.cache_order_lists()
-        self._cache.cache_positions()
+        # self._cache.cache_general()
+        # self._cache.cache_currencies()
+        # self._cache.cache_instruments()
+        # self._cache.cache_accounts()
+        # self._cache.cache_orders()
+        # self._cache.cache_order_lists()
+        # self._cache.cache_positions()
 
         # TODO: Uncomment and replace above individual caching methods once implemented
         self._cache.cache_all()
