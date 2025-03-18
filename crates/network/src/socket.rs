@@ -43,7 +43,6 @@ use pyo3::prelude::*;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
-    sync::Mutex,
 };
 use tokio_tungstenite::{
     MaybeTlsStream,
@@ -91,13 +90,12 @@ pub struct SocketConfig {
 }
 
 /// Represents a command for the writer task.
+#[derive(Debug)]
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
     Update(TcpWriter),
     /// Send data to the server.
     Send(Bytes),
-    /// Shutdown the writer task.
-    Shutdown,
 }
 
 /// Creates a TcpStream with the server.
@@ -160,7 +158,12 @@ impl SocketClientInner {
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
         let handler = Python::with_gil(|py| handler.clone_ref(py));
-        let read_task = Arc::new(Self::spawn_read_task(reader, handler, suffix.clone()));
+        let read_task = Arc::new(Self::spawn_read_task(
+            connection_mode.clone(),
+            reader,
+            handler,
+            suffix.clone(),
+        ));
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
 
@@ -241,21 +244,25 @@ impl SocketClientInner {
                 tracing::error!("{e}");
             }
 
+            // Delay before closing connection
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
             if !self.read_task.is_finished() {
                 self.read_task.abort();
                 tracing::debug!("Aborted task 'read'");
             }
 
+            self.connection_mode
+                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+
             // Spawn new read task
             let handler_for_read = Python::with_gil(|py| handler.clone_ref(py));
             self.read_task = Arc::new(Self::spawn_read_task(
+                self.connection_mode.clone(),
                 reader,
                 handler_for_read,
                 suffix.clone(),
             ));
-
-            self.connection_mode
-                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
             tracing::debug!("Reconnect succeeded");
             Ok(())
@@ -286,28 +293,36 @@ impl SocketClientInner {
 
     #[must_use]
     fn spawn_read_task(
+        connection_state: Arc<AtomicU8>,
         mut reader: TcpReader,
         handler: PyObject,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
 
+        // Interval between checking the connection mode
+        let check_interval = Duration::from_millis(10);
+
         tokio::task::spawn(async move {
             let mut buf = Vec::new();
 
             loop {
-                match reader.read_buf(&mut buf).await {
+                if !ConnectionMode::from_atomic(&connection_state).is_active() {
+                    break;
+                }
+
+                match tokio::time::timeout(check_interval, reader.read_buf(&mut buf)).await {
                     // Connection has been terminated or vector buffer is complete
-                    Ok(0) => {
+                    Ok(Ok(0)) => {
                         tracing::debug!("Connection closed by server");
                         break;
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         tracing::debug!("Connection ended: {e}");
                         break;
                     }
                     // Received bytes of data
-                    Ok(bytes) => {
+                    Ok(Ok(bytes)) => {
                         tracing::trace!("Received <binary> {bytes} bytes");
 
                         // While received data has a line break
@@ -327,6 +342,10 @@ impl SocketClientInner {
                                 break;
                             }
                         }
+                    }
+                    Err(_) => {
+                        // Timeout - continue loop and check connection mode
+                        continue;
                     }
                 };
             }
@@ -350,13 +369,25 @@ impl SocketClientInner {
             let mut active_writer = writer;
 
             loop {
+                match ConnectionMode::from_atomic(&connection_state) {
+                    ConnectionMode::Disconnect => {
+                        if let Err(e) = active_writer.shutdown().await {
+                            tracing::error!("Failed to shutdown writer: {e}");
+                        } else {
+                            tracing::debug!("Sent close message");
+                        }
+                        break;
+                    }
+                    ConnectionMode::Closed => break,
+                    _ => {}
+                }
+
                 match tokio::time::timeout(check_interval, writer_rx.recv()).await {
                     Ok(Some(msg)) => {
+                        // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
-
-                        match msg {
-                            WriterCommand::Shutdown => {
-                                tracing::debug!("Received shutdown message");
+                        match mode {
+                            ConnectionMode::Disconnect => {
                                 if let Err(e) = active_writer.shutdown().await {
                                     tracing::error!("Failed to shutdown writer: {e}");
                                 } else {
@@ -364,8 +395,13 @@ impl SocketClientInner {
                                 }
                                 break;
                             }
+                            ConnectionMode::Closed => break,
+                            _ => {}
+                        }
+
+                        match msg {
                             WriterCommand::Update(new_writer) => {
-                                tracing::debug!("Received update message");
+                                tracing::debug!("Received new writer");
 
                                 // Delay before closing connection
                                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -379,18 +415,18 @@ impl SocketClientInner {
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
                             }
-                            // For all other messages, check connection state first
                             _ if mode.is_reconnect() => {
-                                tracing::warn!("Skipping message while reconnecting");
+                                tracing::warn!("Skipping message while reconnecting, {msg:?}");
                                 continue;
-                            }
-                            _ if mode.is_disconnect() || mode.is_closed() => {
-                                // Exit if disconnected or closed
-                                break;
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.write_all(&msg).await {
                                     tracing::error!("Failed to send message: {e}");
+                                    // Mode is active so trigger reconnection
+                                    tracing::warn!("Writer triggering reconnect");
+                                    connection_state
+                                        .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                                    continue;
                                 }
                                 if let Err(e) = active_writer.write_all(&suffix).await {
                                     tracing::error!("Failed to send message: {e}");
@@ -410,10 +446,9 @@ impl SocketClientInner {
                 }
             }
 
-            // Attempt to close the writer gracefully before exiting
-            if let Err(e) = active_writer.shutdown().await {
-                tracing::warn!("Failed to close writer stream: {e}");
-            }
+            // Attempt to shutdown the writer gracefully before exiting,
+            // we ignore any error as the writer may already be closed.
+            _ = active_writer.shutdown().await;
 
             tracing::debug!("Completed task 'write'");
         })
@@ -460,7 +495,9 @@ impl Drop for SocketClientInner {
             self.read_task.abort();
         }
 
-        self.write_task.abort(); // TODO: Improve this
+        if !self.write_task.is_finished() {
+            self.write_task.abort();
+        }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
@@ -661,11 +698,6 @@ impl SocketClient {
             tracing::debug!("Started task 'controller'");
 
             let check_interval = Duration::from_millis(10);
-            let reconnect_mutex = Arc::new(Mutex::new(()));
-
-            fn should_reconnect(mode: ConnectionMode, is_alive: bool) -> bool {
-                mode.is_reconnect() || (mode.is_active() && !is_alive)
-            }
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -676,13 +708,9 @@ impl SocketClient {
 
                     let timeout = Duration::from_secs(5);
                     if tokio::time::timeout(timeout, async {
-                        if let Err(e) = inner.writer_tx.send(WriterCommand::Shutdown) {
-                            tracing::error!("{e}");
-                        }
-
+                        // Delay awaiting graceful shutdown
                         tokio::time::sleep(Duration::from_millis(100)).await;
 
-                        // Abort tasks
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
                             tracing::debug!("Aborted task 'read'");
@@ -714,40 +742,30 @@ impl SocketClient {
                     break; // Controller finished
                 }
 
-                if should_reconnect(mode, inner.is_alive()) {
-                    // Acquire the mutex to ensure only one reconnection happens at a time
-                    let _lock = reconnect_mutex.lock().await;
+                if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
+                    match inner.reconnect().await {
+                        Ok(()) => {
+                            tracing::debug!("Reconnected successfully");
+                            inner.backoff.reset();
 
-                    // Check if still need to reconnect
-                    let mode = ConnectionMode::from_atomic(&connection_mode);
-                    if should_reconnect(mode, inner.is_alive()) {
-                        match inner.reconnect().await {
-                            Ok(()) => {
-                                tracing::debug!("Reconnected successfully");
-                                inner.backoff.reset();
-
-                                if let Some(ref handler) = post_reconnection {
-                                    Python::with_gil(|py| match handler.call0(py) {
-                                        Ok(_) => {
-                                            tracing::debug!("Called `post_reconnection` handler")
-                                        }
-                                        Err(e) => tracing::error!(
-                                            "Error calling `post_reconnection` handler: {e}"
-                                        ),
-                                    });
-                                }
+                            if let Some(ref handler) = post_reconnection {
+                                Python::with_gil(|py| match handler.call0(py) {
+                                    Ok(_) => {
+                                        tracing::debug!("Called `post_reconnection` handler")
+                                    }
+                                    Err(e) => tracing::error!(
+                                        "Error calling `post_reconnection` handler: {e}"
+                                    ),
+                                });
                             }
-                            Err(e) => {
-                                let duration = inner.backoff.next_duration();
-                                tracing::warn!("Reconnect attempt failed: {e}",);
-                                if !duration.is_zero() {
-                                    tracing::warn!(
-                                        "Backing off for {}s...",
-                                        duration.as_secs_f64()
-                                    );
-                                }
-                                tokio::time::sleep(duration).await;
+                        }
+                        Err(e) => {
+                            let duration = inner.backoff.next_duration();
+                            tracing::warn!("Reconnect attempt failed: {e}");
+                            if !duration.is_zero() {
+                                tracing::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
+                            tokio::time::sleep(duration).await;
                         }
                     }
                 }
@@ -755,6 +773,8 @@ impl SocketClient {
             inner
                 .connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+
+            tracing::debug!("Completed task 'controller'");
         })
     }
 }
@@ -773,6 +793,7 @@ mod tests {
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
+        sync::Mutex,
         task,
         time::{Duration, sleep},
     };

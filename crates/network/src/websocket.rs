@@ -88,13 +88,12 @@ pub struct WebSocketConfig {
 }
 
 /// Represents a command for the writer task.
+#[derive(Debug)]
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
     Update(MessageWriter),
     /// Send message to the server.
     Send(Message),
-    /// Shutdown the writer task.
-    Shutdown,
 }
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
@@ -147,12 +146,16 @@ impl WebSocketClientInner {
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
         // Only spawn read task if handler is provided
-        let read_task = handler
-            .as_ref()
-            .map(|handler| Self::spawn_read_task(reader, handler.clone(), ping_handler.clone()));
+        let read_task = handler.as_ref().map(|handler| {
+            Self::spawn_read_task(
+                connection_mode.clone(),
+                reader,
+                handler.clone(),
+                ping_handler.clone(),
+            )
+        });
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
-
         let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
 
         // Optionally spawn a heartbeat task to periodically ping server
@@ -221,6 +224,9 @@ impl WebSocketClientInner {
                 tracing::error!("{e}");
             }
 
+            // Delay before closing connection
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
             if let Some(ref read_task) = self.read_task.take() {
                 if !read_task.is_finished() {
                     read_task.abort();
@@ -228,17 +234,18 @@ impl WebSocketClientInner {
                 }
             }
 
+            self.connection_mode
+                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+
             // Spawn new read task
             if let Some(ref handler) = self.config.handler {
                 self.read_task = Some(Self::spawn_read_task(
+                    self.connection_mode.clone(),
                     reader,
                     handler.clone(),
                     self.config.ping_handler.clone(),
                 ));
             }
-
-            self.connection_mode
-                .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
             tracing::debug!("Reconnect succeeded");
             Ok(())
@@ -272,16 +279,24 @@ impl WebSocketClientInner {
     }
 
     fn spawn_read_task(
+        connection_state: Arc<AtomicU8>,
         mut reader: MessageReader,
         handler: Arc<PyObject>,
         ping_handler: Option<Arc<PyObject>>,
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
 
+        // Interval between checking the connection mode
+        let check_interval = Duration::from_millis(10);
+
         tokio::task::spawn(async move {
             loop {
-                match reader.next().await {
-                    Some(Ok(Message::Binary(data))) => {
+                if !ConnectionMode::from_atomic(&connection_state).is_active() {
+                    break;
+                }
+
+                match tokio::time::timeout(check_interval, reader.next()).await {
+                    Ok(Some(Ok(Message::Binary(data)))) => {
                         tracing::trace!("Received message <binary> {} bytes", data.len());
                         if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
@@ -291,7 +306,7 @@ impl WebSocketClientInner {
                         }
                         continue;
                     }
-                    Some(Ok(Message::Text(data))) => {
+                    Ok(Some(Ok(Message::Text(data)))) => {
                         tracing::trace!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
                             handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
@@ -301,7 +316,7 @@ impl WebSocketClientInner {
                         }
                         continue;
                     }
-                    Some(Ok(Message::Ping(ping))) => {
+                    Ok(Some(Ok(Message::Ping(ping)))) => {
                         tracing::trace!("Received ping: {ping:?}",);
                         if let Some(ref handler) = ping_handler {
                             if let Err(e) =
@@ -313,23 +328,27 @@ impl WebSocketClientInner {
                         }
                         continue;
                     }
-                    Some(Ok(Message::Pong(_))) => {
+                    Ok(Some(Ok(Message::Pong(_)))) => {
                         tracing::trace!("Received pong");
                     }
-                    Some(Ok(Message::Close(_))) => {
+                    Ok(Some(Ok(Message::Close(_)))) => {
                         tracing::debug!("Received close message - terminating");
                         break;
                     }
-                    Some(Ok(_)) => (),
-                    Some(Err(e)) => {
+                    Ok(Some(Ok(_))) => (),
+                    Ok(Some(Err(e))) => {
                         tracing::error!("Received error message - terminating: {e}");
                         break;
                     }
                     // Internally tungstenite considers the connection closed when polling
                     // for the next message in the stream returns None.
-                    None => {
+                    Ok(None) => {
                         tracing::debug!("No message received - terminating");
                         break;
+                    }
+                    Err(_) => {
+                        // Timeout - continue loop and check connection mode
+                        continue;
                     }
                 }
             }
@@ -350,28 +369,45 @@ impl WebSocketClientInner {
             let mut active_writer = writer;
 
             loop {
+                match ConnectionMode::from_atomic(&connection_state) {
+                    ConnectionMode::Disconnect => {
+                        if let Err(e) = active_writer.close().await {
+                            tracing::error!("Failed to send close message: {e}");
+                        } else {
+                            tracing::debug!("Sent close message");
+                        }
+                        break;
+                    }
+                    ConnectionMode::Closed => break,
+                    _ => {}
+                }
+
                 match tokio::time::timeout(check_interval, writer_rx.recv()).await {
                     Ok(Some(msg)) => {
+                        // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
-
-                        match msg {
-                            WriterCommand::Shutdown => {
-                                tracing::debug!("Received shutdown message");
+                        match mode {
+                            ConnectionMode::Disconnect => {
                                 if let Err(e) = active_writer.close().await {
-                                    tracing::error!("Failed to send close message: {e}");
+                                    tracing::error!("Failed to close on disconnect: {e}");
                                 } else {
                                     tracing::debug!("Sent close message");
                                 }
                                 break;
                             }
+                            ConnectionMode::Closed => break,
+                            _ => {}
+                        }
+
+                        match msg {
                             WriterCommand::Update(new_writer) => {
-                                tracing::debug!("Received update message");
+                                tracing::debug!("Received new writer");
 
                                 // Delay before closing connection
                                 tokio::time::sleep(Duration::from_millis(100)).await;
 
                                 if let Err(e) = active_writer.close().await {
-                                    tracing::error!("Failed to send close message: {e}");
+                                    tracing::error!("Failed to close on writer update: {e}");
                                 } else {
                                     tracing::debug!("Sent close message");
                                 }
@@ -379,18 +415,17 @@ impl WebSocketClientInner {
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
                             }
-                            // For all other messages, check connection state first
                             _ if mode.is_reconnect() => {
-                                tracing::warn!("Skipping message while reconnecting");
+                                tracing::warn!("Skipping message while reconnecting, {msg:?}");
                                 continue;
-                            }
-                            _ if mode.is_disconnect() || mode.is_closed() => {
-                                // Exit if disconnected or closed
-                                break;
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.send(msg).await {
                                     tracing::error!("Failed to send message: {e}");
+                                    // Mode is active so trigger reconnection
+                                    tracing::warn!("Writer triggering reconnect");
+                                    connection_state
+                                        .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
                                 }
                             }
                         }
@@ -407,10 +442,9 @@ impl WebSocketClientInner {
                 }
             }
 
-            // Attempt to close the writer gracefully before exiting
-            if let Err(e) = active_writer.close().await {
-                tracing::warn!("Failed to close writer stream: {e}");
-            }
+            // Attempt to close the writer gracefully before exiting,
+            // we ignore any error as the writer may already be closed.
+            _ = active_writer.close().await;
 
             tracing::debug!("Completed task 'write'");
         })
@@ -462,7 +496,9 @@ impl Drop for WebSocketClientInner {
             }
         }
 
-        self.write_task.abort(); // TODO: Improve this
+        if !self.write_task.is_finished() {
+            self.write_task.abort();
+        }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
@@ -723,13 +759,9 @@ impl WebSocketClient {
 
                     let timeout = Duration::from_secs(5);
                     if tokio::time::timeout(timeout, async {
-                        if let Err(e) = inner.writer_tx.send(WriterCommand::Shutdown) {
-                            tracing::error!("{e}");
-                        }
-
+                        // Delay awaiting graceful shutdown
                         tokio::time::sleep(Duration::from_millis(100)).await;
 
-                        // Abort tasks
                         if let Some(task) = &inner.read_task {
                             if !task.is_finished() {
                                 task.abort();
@@ -794,6 +826,8 @@ impl WebSocketClient {
             inner
                 .connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+
+            tracing::debug!("Completed task 'controller'");
         })
     }
 }
