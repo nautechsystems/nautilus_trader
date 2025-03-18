@@ -499,12 +499,18 @@ impl WebSocketClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<(MessageReader, Self), Error> {
+        install_cryptographic_provider();
         let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
-        let (_, reader) = ws_stream.split();
+        let (writer, reader) = ws_stream.split();
+
         let inner = WebSocketClientInner::connect_url(config).await?;
+
         let connection_mode = inner.connection_mode.clone();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
         let writer_tx = inner.writer_tx.clone();
+        if let Err(e) = writer_tx.send(WriterCommand::Update(writer)) {
+            tracing::error!("{e}");
+        }
 
         let controller_task = Self::spawn_controller_task(
             inner,
