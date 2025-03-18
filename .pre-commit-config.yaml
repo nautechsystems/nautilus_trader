@@ -46,7 +46,7 @@ repos:
         description: Format files with cargo fmt.
         entry: cargo fmt
         language: system
-        args: ["--all", "--", "--check"]
+        args: ["--all"]
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
