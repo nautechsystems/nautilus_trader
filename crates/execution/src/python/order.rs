@@ -158,7 +158,7 @@ impl OrderStatusReport {
             report = report.with_reduce_only(reduce_only);
         }
         if let Some(cancel_reason) = cancel_reason {
-            report = report.with_cancel_reason(&cancel_reason);
+            report = report.with_cancel_reason(cancel_reason);
         }
         if let Some(ts_triggered) = ts_triggered {
             report = report.with_ts_triggered(ts_triggered.into());

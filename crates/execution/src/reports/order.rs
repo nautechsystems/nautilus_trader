@@ -254,8 +254,8 @@ impl OrderStatusReport {
 
     /// Sets cancel reason.
     #[must_use]
-    pub fn with_cancel_reason(mut self, cancel_reason: &str) -> Self {
-        self.cancel_reason = Some(cancel_reason.to_string());
+    pub fn with_cancel_reason(mut self, cancel_reason: String) -> Self {
+        self.cancel_reason = Some(cancel_reason);
         self
     }
 
