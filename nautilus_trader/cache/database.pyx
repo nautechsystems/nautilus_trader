@@ -661,10 +661,37 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(position_id, "position_id")
 
-        position_pyo3 = self._backing.load_position(position_id)
-        if position_pyo3:
-            return transform_position_from_pyo3(position_pyo3)
-        return None
+        cdef str key = f"{_POSITIONS}:{position_id.to_str()}"
+        cdef list result = self._backing.read(key)
+
+        # Check there is at least one event to pop
+        if not result:
+            return None
+
+        cdef OrderFilled initial_fill = self._serializer.deserialize(result.pop(0))
+        cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot load position: "
+                f"no instrument found for {initial_fill.instrument_id}",
+            )
+            return
+
+        cdef Position position = Position(instrument, initial_fill)
+
+        cdef:
+            bytes event_bytes
+            OrderFilled fill
+        for event_bytes in result:
+            event = self._serializer.deserialize(event_bytes)
+
+            # Check event integrity
+            if event in position._events:
+                raise RuntimeError(f"Corrupt cache with duplicate event for position {event}")
+
+            position.apply(event)
+
+        return position
 
     cpdef dict load_actor(self, ComponentId component_id):
         """
@@ -867,8 +894,14 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(position, "position")
 
-        cdef position_pyo3 = transform_position_to_pyo3(position)
-        self._backing.add_position(position_pyo3)
+        cdef str position_id_str = position.id.to_str()
+        cdef str key = f"{_POSITIONS}:{position_id_str}"
+        cdef list payload = [self._serializer.serialize(position.last_event_c())]
+        self._backing.insert(key, payload)
+
+        cdef bytes position_id_bytes = position_id_str.encode()
+        self._backing.insert(_INDEX_POSITIONS, [position_id_bytes])
+        self._backing.insert(_INDEX_POSITIONS_OPEN, [position_id_bytes])
 
         self._log.debug(f"Added {position}")
 
@@ -946,7 +979,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef dict state = strategy.save()  # Extract state dictionary from strategy
 
-        cdef key = f"{_STRATEGIES}:{strategy.id.value}:state"
+        cdef key = f"{_STRATEGIES}:{strategy.id.to_str()}:state"
         cdef list payload = [self._serializer.serialize(state)]
         self._backing.insert(key, payload)
 

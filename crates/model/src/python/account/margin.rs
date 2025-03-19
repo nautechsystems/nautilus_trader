@@ -18,6 +18,7 @@ use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     accounts::MarginAccount,
+    enums::AccountType,
     events::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
@@ -43,6 +44,12 @@ impl MarginAccount {
     #[getter]
     fn id(&self) -> AccountId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_type")]
+    fn py_account_type(&self) -> AccountType {
+        self.account_type
     }
 
     #[getter]

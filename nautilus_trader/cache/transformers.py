@@ -202,6 +202,14 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
         return nautilus_pyo3.StopMarketOrder.create(order_event_pyo3)
     elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_LIMIT:
         return nautilus_pyo3.StopLimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.MARKET_IF_TOUCHED:
+        return nautilus_pyo3.MarketIfTouchedOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.LIMIT_IF_TOUCHED:
+        return nautilus_pyo3.LimitIfTouchedOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_MARKET:
+        return nautilus_pyo3.TrailingStopMarketOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_LIMIT:
+        return nautilus_pyo3.TrailingStopLimitOrder.create(order_event_pyo3)
     else:
         raise ValueError(f"Unknown order type: {order_event_pyo3.order_type}")
 
