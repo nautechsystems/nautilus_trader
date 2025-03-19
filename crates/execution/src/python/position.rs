@@ -123,6 +123,24 @@ impl PositionStatusReport {
         self.ts_init.as_u64()
     }
 
+    #[getter]
+    #[pyo3(name = "is_flat")]
+    const fn py_is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_long")]
+    fn py_is_long(&self) -> bool {
+        self.is_long()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_short")]
+    fn py_is_short(&self) -> bool {
+        self.is_short()
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
