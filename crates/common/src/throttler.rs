@@ -387,7 +387,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::{RateLimit, Throttler};
-    use crate::{clock::TestClock, msgbus::tests::stub_msgbus};
+    use crate::clock::TestClock;
     type SharedThrottler = Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>;
 
     /// Test throttler with default values for testing
@@ -410,7 +410,6 @@ mod tests {
 
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
-        stub_msgbus();
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {msg}");
         });
@@ -438,7 +437,6 @@ mod tests {
 
     #[fixture]
     pub fn test_throttler_unbuffered() -> TestThrottler {
-        stub_msgbus();
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {msg}");
         });

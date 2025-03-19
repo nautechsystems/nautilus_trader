@@ -27,9 +27,10 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{Action, SubscriptionCommand},
     msgbus::{
-        self, MessageBus, get_message_bus,
+        self, MessageBus,
         handler::ShareableMessageHandler,
         stubs::{get_message_saving_handler, get_saved_messages},
+        switchboard::{self, MessagingSwitchboard},
     },
     testing::init_logger_for_testing,
 };
@@ -86,8 +87,7 @@ fn data_engine(
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
 ) -> Rc<RefCell<DataEngine>> {
-    let msgbus = stub_msgbus();
-    let data_engine = DataEngine::new(clock, cache, msgbus, None);
+    let data_engine = DataEngine::new(clock, cache, None);
     Rc::new(RefCell::new(data_engine))
 }
 
@@ -98,8 +98,7 @@ fn data_client(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
-    let msgbus = get_message_bus();
-    let client = Box::new(MockDataClient::new(cache, msgbus, client_id, venue));
+    let client = Box::new(MockDataClient::new(cache, client_id, venue));
     DataClientAdapter::new(client_id, venue, true, true, client, clock)
 }
 
@@ -108,13 +107,11 @@ fn test_execute_subscribe_custom_data(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -167,13 +164,11 @@ fn test_execute_subscribe_order_book_deltas(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -231,13 +226,11 @@ fn test_execute_subscribe_order_book_snapshots(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -295,13 +288,11 @@ fn test_execute_subscribe_instrument(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -357,13 +348,11 @@ fn test_execute_subscribe_quote_ticks(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -419,13 +408,11 @@ fn test_execute_subscribe_trade_ticks(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -481,11 +468,9 @@ fn test_execute_subscribe_bars(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     init_logger_for_testing(None).unwrap(); // TODO: Remove once initial development completed
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -540,8 +525,6 @@ fn test_process_instrument(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -550,7 +533,7 @@ fn test_process_instrument(
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id().to_string(),
     };
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -570,10 +553,7 @@ fn test_process_instrument(
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<InstrumentAny>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_instrument_topic(audusd_sim.id())
-    };
+    let topic = switchboard::get_instrument_topic(audusd_sim.id());
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -595,8 +575,6 @@ fn test_process_order_book_delta(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -617,7 +595,7 @@ fn test_process_order_book_delta(
         None,
     );
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -627,10 +605,7 @@ fn test_process_order_book_delta(
 
     let delta = stub_delta();
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_deltas_topic(delta.instrument_id)
-    };
+    let topic = switchboard::get_deltas_topic(delta.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -647,8 +622,6 @@ fn test_process_order_book_deltas(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -669,7 +642,7 @@ fn test_process_order_book_deltas(
         None,
     );
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -680,10 +653,7 @@ fn test_process_order_book_deltas(
     // TODO: Using FFI API wrapper temporarily until Cython gone
     let deltas = OrderBookDeltas_API::new(stub_deltas());
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
-    };
+    let topic = switchboard::get_deltas_topic(deltas.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -701,8 +671,6 @@ fn test_process_order_book_depth10(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -723,7 +691,7 @@ fn test_process_order_book_depth10(
         None,
     );
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -733,10 +701,7 @@ fn test_process_order_book_depth10(
 
     let depth = stub_depth10();
     let handler = get_message_saving_handler::<OrderBookDepth10>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_depth_topic(depth.instrument_id)
-    };
+    let topic = switchboard::get_depth_topic(depth.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -754,8 +719,6 @@ fn test_process_quote_tick(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -774,7 +737,7 @@ fn test_process_quote_tick(
         None,
     );
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -784,10 +747,7 @@ fn test_process_quote_tick(
 
     let quote = QuoteTick::default();
     let handler = get_message_saving_handler::<QuoteTick>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_quotes_topic(quote.instrument_id)
-    };
+    let topic = switchboard::get_quotes_topic(quote.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -806,8 +766,6 @@ fn test_process_trade_tick(
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -826,7 +784,7 @@ fn test_process_trade_tick(
         None,
     );
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -836,10 +794,7 @@ fn test_process_trade_tick(
 
     let trade = TradeTick::default();
     let handler = get_message_saving_handler::<TradeTick>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_trades_topic(trade.instrument_id)
-    };
+    let topic = switchboard::get_trades_topic(trade.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -854,8 +809,6 @@ fn test_process_trade_tick(
 
 #[rstest]
 fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClientAdapter) {
-    let msgbus = data_engine.borrow().msgbus.clone();
-    let switchboard = msgbus.borrow().switchboard.clone();
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -875,7 +828,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
         None,
     );
 
-    let endpoint = switchboard.data_engine_execute;
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
         id: endpoint,
         engine_ref: data_engine.clone(),
@@ -884,10 +837,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<Bar>(None);
-    let topic = {
-        let mut msgbus = msgbus.borrow_mut();
-        msgbus.switchboard.get_bars_topic(bar.bar_type)
-    };
+    let topic = switchboard::get_bars_topic(bar.bar_type);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();

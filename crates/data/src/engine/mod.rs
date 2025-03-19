@@ -57,8 +57,9 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{Action, DataRequest, DataResponse, SubscriptionCommand},
     msgbus::{
-        self, MessageBus,
+        self, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler},
+        switchboard::{self},
     },
     timer::TimeEventCallback,
 };
@@ -90,7 +91,6 @@ use crate::{
 pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
     external_clients: HashSet<ClientId>,
@@ -113,13 +113,11 @@ impl DataEngine {
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         config: Option<DataEngineConfig>,
     ) -> Self {
         Self {
             clock,
             cache,
-            msgbus,
             clients: IndexMap::new(),
             default_client: None,
             external_clients: HashSet::new(),
@@ -429,7 +427,7 @@ impl DataEngine {
             type_name => log::error!("Cannot handle request, type {type_name} is unrecognized"),
         }
 
-        self.msgbus.as_ref().borrow().send_response(resp);
+        get_message_bus().borrow().send_response(resp);
     }
 
     // -- DATA HANDLERS ---------------------------------------------------------------------------
@@ -444,10 +442,7 @@ impl DataEngine {
             log::error!("Error on cache insert: {e}");
         }
 
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_instrument_topic(instrument.id())
-        };
+        let topic = switchboard::get_instrument_topic(instrument.id());
         msgbus::publish(&topic, &instrument as &dyn Any); // TODO: Optimize
     }
 
@@ -473,10 +468,7 @@ impl DataEngine {
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
 
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
-        };
+        let topic = switchboard::get_deltas_topic(deltas.instrument_id);
         msgbus::publish(&topic, &deltas as &dyn Any);
     }
 
@@ -509,18 +501,12 @@ impl DataEngine {
             deltas
         };
 
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_deltas_topic(deltas.instrument_id)
-        };
+        let topic = switchboard::get_deltas_topic(deltas.instrument_id);
         msgbus::publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_depth_topic(depth.instrument_id)
-        };
+        let topic = switchboard::get_depth_topic(depth.instrument_id);
         msgbus::publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
@@ -531,10 +517,7 @@ impl DataEngine {
 
         // TODO: Handle synthetics
 
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_quotes_topic(quote.instrument_id)
-        };
+        let topic = switchboard::get_quotes_topic(quote.instrument_id);
         msgbus::publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
@@ -545,10 +528,7 @@ impl DataEngine {
 
         // TODO: Handle synthetics
 
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_trades_topic(trade.instrument_id)
-        };
+        let topic = switchboard::get_trades_topic(trade.instrument_id);
         msgbus::publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
@@ -578,10 +558,7 @@ impl DataEngine {
             log::error!("Error on cache insert: {e}");
         }
 
-        let topic = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            msgbus.switchboard.get_bars_topic(bar.bar_type)
-        };
+        let topic = switchboard::get_bars_topic(bar.bar_type);
         msgbus::publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
@@ -644,8 +621,7 @@ impl DataEngine {
         {
             if !self.book_intervals.contains_key(&interval_ms) {
                 let interval_ns = millis_to_nanos(interval_ms.get() as f64);
-                let mut msgbus = self.msgbus.borrow_mut();
-                let topic = msgbus.switchboard.get_book_snapshots_topic(instrument_id);
+                let topic = switchboard::get_book_snapshots_topic(instrument_id);
 
                 let snap_info = BookSnapshotInfo {
                     instrument_id,
@@ -663,11 +639,7 @@ impl DataEngine {
                     start_time_ns += NANOSECONDS_IN_SECOND; // Add one second
                 }
 
-                let snapshotter = Rc::new(BookSnapshotter::new(
-                    snap_info,
-                    self.cache.clone(),
-                    self.msgbus.clone(),
-                ));
+                let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
                 self.book_snapshotters
                     .insert(instrument_id, snapshotter.clone());
                 let timer_name = snapshotter.timer_name;
@@ -730,14 +702,11 @@ impl DataEngine {
             return Ok(());
         }
 
-        let topics = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            vec![
-                msgbus.switchboard.get_deltas_topic(instrument_id),
-                msgbus.switchboard.get_depth_topic(instrument_id),
-                msgbus.switchboard.get_book_snapshots_topic(instrument_id),
-            ]
-        };
+        let topics = vec![
+            switchboard::get_deltas_topic(instrument_id),
+            switchboard::get_depth_topic(instrument_id),
+            switchboard::get_book_snapshots_topic(instrument_id),
+        ];
 
         self.maintain_book_updater(&instrument_id, &topics);
         self.maintain_book_snapshotter(&instrument_id);
@@ -761,14 +730,11 @@ impl DataEngine {
             return Ok(());
         }
 
-        let topics = {
-            let mut msgbus = self.msgbus.borrow_mut();
-            vec![
-                msgbus.switchboard.get_deltas_topic(instrument_id),
-                msgbus.switchboard.get_depth_topic(instrument_id),
-                msgbus.switchboard.get_book_snapshots_topic(instrument_id),
-            ]
-        };
+        let topics = vec![
+            switchboard::get_deltas_topic(instrument_id),
+            switchboard::get_depth_topic(instrument_id),
+            switchboard::get_book_snapshots_topic(instrument_id),
+        ];
 
         self.maintain_book_updater(&instrument_id, &topics);
         self.maintain_book_snapshotter(&instrument_id);
@@ -787,12 +753,11 @@ impl DataEngine {
     fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, topics: &[Ustr]) {
         if let Some(updater) = self.book_updaters.get(instrument_id) {
             let handler = ShareableMessageHandler(updater.clone());
-            let msgbus = self.msgbus.borrow_mut();
 
             // Unsubscribe handler if it is the last subscriber
             for topic in topics {
-                if msgbus.subscriptions_count(*topic) == 1
-                    && msgbus.is_subscribed(*topic, handler.clone())
+                if msgbus::subscriptions_count(*topic) == 1
+                    && msgbus::is_subscribed(*topic, handler.clone())
                 {
                     log::debug!("Unsubscribing BookUpdater from {topic}");
                     msgbus::unsubscribe(*topic, handler.clone());
@@ -802,7 +767,7 @@ impl DataEngine {
             // Check remaining subscriptions, if none then remove updater
             let still_subscribed = topics
                 .iter()
-                .any(|topic| msgbus.is_subscribed(*topic, handler.clone()));
+                .any(|topic| msgbus::is_subscribed(*topic, handler.clone()));
             if !still_subscribed {
                 self.book_updaters.remove(instrument_id);
                 log::debug!("Removed BookUpdater for instrument ID {instrument_id}");
@@ -812,12 +777,10 @@ impl DataEngine {
 
     fn maintain_book_snapshotter(&mut self, instrument_id: &InstrumentId) {
         if let Some(snapshotter) = self.book_snapshotters.get(instrument_id) {
-            let mut msgbus = self.msgbus.borrow_mut();
-
-            let topic = msgbus.switchboard.get_book_snapshots_topic(*instrument_id);
+            let topic = switchboard::get_book_snapshots_topic(*instrument_id);
 
             // Check remaining snapshot subscriptions, if none then remove snapshotter
-            if msgbus.subscriptions_count(topic) == 0 {
+            if msgbus::subscriptions_count(topic) == 0 {
                 let timer_name = snapshotter.timer_name;
                 self.book_snapshotters.remove(instrument_id);
                 let mut clock = self.clock.borrow_mut();
@@ -877,21 +840,19 @@ impl DataEngine {
             cache.add_order_book(book)?;
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-
         // Set up subscriptions
         let updater = Rc::new(BookUpdater::new(instrument_id, self.cache.clone()));
         self.book_updaters.insert(*instrument_id, updater.clone());
 
         let handler = ShareableMessageHandler(updater);
 
-        let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
-        if !msgbus.is_subscribed(topic, handler.clone()) {
+        let topic = switchboard::get_deltas_topic(*instrument_id);
+        if !msgbus::is_subscribed(topic, handler.clone()) {
             msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
         }
 
-        let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
-        if !only_deltas && !msgbus.is_subscribed(topic, handler.clone()) {
+        let topic = switchboard::get_depth_topic(*instrument_id);
+        if !only_deltas && !msgbus::is_subscribed(topic, handler.clone()) {
             msgbus::subscribe(topic, handler, Some(self.msgbus_priority));
         }
 
@@ -904,15 +865,13 @@ impl DataEngine {
         bar_type: BarType,
     ) -> Box<dyn BarAggregator> {
         let cache = self.cache.clone();
-        let msgbus = self.msgbus.clone();
 
         let handler = move |bar: Bar| {
             if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
                 log::error!("Error on cache insert: {e}");
             }
 
-            let mut msgbus = msgbus.borrow_mut();
-            let topic = msgbus.switchboard.get_bars_topic(bar.bar_type);
+            let topic = switchboard::get_bars_topic(bar.bar_type);
             msgbus::publish(&topic, &bar as &dyn Any);
         };
 

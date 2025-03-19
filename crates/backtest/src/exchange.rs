@@ -716,7 +716,7 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         msgbus::{
-            MessageBus, register,
+            self,
             stubs::{get_message_saving_handler, get_saved_messages},
         },
     };
@@ -1197,10 +1197,9 @@ mod tests {
     #[rstest]
     fn test_accounting() {
         let account_type = AccountType::Margin;
-        let msgbus = MessageBus::default().register_message_bus();
         let mut cache = Cache::default();
         let handler = get_message_saving_handler::<AccountState>(None);
-        register(Ustr::from("Portfolio.update_account"), handler.clone());
+        msgbus::register(Ustr::from("Portfolio.update_account"), handler.clone());
         let margin_account = MarginAccount::new(
             AccountState::new(
                 AccountId::from("SIM-001"),
@@ -1296,7 +1295,6 @@ mod tests {
 
     #[rstest]
     fn test_process_without_latency_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let msgbus = MessageBus::default().register_message_bus();
         let exchange = get_exchange(
             Venue::new("BINANCE"),
             AccountType::Margin,
@@ -1332,7 +1330,6 @@ mod tests {
             UnixNanos::from(300),
             UnixNanos::from(100),
         );
-        let msgbus = MessageBus::default().register_message_bus();
         let exchange = get_exchange(
             Venue::new("BINANCE"),
             AccountType::Margin,
