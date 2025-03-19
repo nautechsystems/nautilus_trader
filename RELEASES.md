@@ -11,8 +11,11 @@ None
 
 ### Internal Improvements
 - Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
+- Completed global message bus design in Rust (#2460), thanks @filipmacek
 - Implemented `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
+- Refactored enum dispatch (#2461), thanks @filipmacek
 - Refined catalog file operations in Rust (#2454), thanks @faysou
+- Standardized use of `anyhow::bail` (#2459), thanks @faysou
 
 ### Fixes
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
