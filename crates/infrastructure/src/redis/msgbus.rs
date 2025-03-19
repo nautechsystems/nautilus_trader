@@ -403,7 +403,7 @@ pub async fn stream_messages(
                 }
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("Error reading from stream: {e:?}"));
+                anyhow::bail!("Error reading from stream: {e:?}");
             }
         }
     }

@@ -30,7 +30,7 @@ pub fn hmac_signature(secret: &str, data: &str) -> String {
 
 pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String> {
     if data.is_empty() {
-        return Err(anyhow::anyhow!("Query string cannot be empty"));
+        anyhow::bail!("Query string cannot be empty");
     }
 
     let pem = pem::parse(private_key_pem)?;

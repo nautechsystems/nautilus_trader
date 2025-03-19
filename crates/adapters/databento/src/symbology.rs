@@ -161,13 +161,13 @@ pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
     for symbol in symbols {
         let next_stype = infer_symbology_type(symbol);
         if next_stype != first_stype {
-            return Err(anyhow::anyhow!(
+            anyhow::bail!(
                 "Inconsistent symbology types: '{}' for {} vs '{}' for {}",
                 first_stype,
                 first_symbol,
                 next_stype,
                 symbol
-            ));
+            );
         }
     }
 

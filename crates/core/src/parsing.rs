@@ -72,7 +72,7 @@ pub fn bytes_to_usize(bytes: &[u8]) -> anyhow::Result<usize> {
 
         Ok(usize::from_le_bytes(buffer))
     } else {
-        Err(anyhow::anyhow!("Not enough bytes to represent a `usize`"))
+        anyhow::bail!("Not enough bytes to represent a `usize`");
     }
 }
 
