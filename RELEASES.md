@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `time_in_force` parameter for `Strategy.close_position(...)`
+- Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
 
 ### Breaking Changes
 None
