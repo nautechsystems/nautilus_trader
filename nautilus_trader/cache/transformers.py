@@ -284,8 +284,12 @@ def transform_order_to_pyo3(order: Order):
         raise KeyError("init event should be of type OrderInitialized")
     order_py3 = from_order_initialized_cython_to_order_pyo3(init_event)
     for event_cython in events:
-        event_pyo3 = transform_order_event_to_pyo3(event_cython)
-        order_py3.apply(event_pyo3)
+        if isinstance(event_cython, OrderInitialized):
+            order_py3 = from_order_initialized_cython_to_order_pyo3(event_cython)
+        else:
+            event_pyo3 = transform_order_event_to_pyo3(event_cython)
+            order_py3.apply(event_pyo3)
+
     return order_py3
 
 
