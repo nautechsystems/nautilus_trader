@@ -13,28 +13,42 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from [PyO3](https://pyo3.rs).
+use std::fmt::Debug;
 
-pub mod backend;
-pub mod catalog;
-pub mod wranglers;
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter, EnumString, FromRepr};
 
-use pyo3::prelude::*;
-
-/// Loaded as nautilus_pyo3.persistence
-///
-/// # Errors
-///
-/// Returns a `PyErr` if registering any module components fails.
-#[pymodule]
-pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::backend::session::DataBackendSession>()?;
-    m.add_class::<crate::backend::session::DataQueryResult>()?;
-    m.add_class::<backend::session::NautilusDataType>()?;
-    m.add_class::<catalog::ParquetDataCatalogV2>()?;
-    m.add_class::<wranglers::bar::BarDataWrangler>()?;
-    m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
-    m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
-    m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
-    Ok(())
+/// The parquet write mode.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.serialization.enums"
+    )
+)]
+pub enum ParquetWriteMode {
+    Append = 0,
+    Prepend = 1,
+    Overwrite = 2,
+    NewFile = 3,
 }

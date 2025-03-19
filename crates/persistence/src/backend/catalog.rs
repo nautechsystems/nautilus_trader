@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use datafusion::arrow::record_batch::RecordBatch;
 use heck::ToSnakeCase;
 use itertools::Itertools;
@@ -26,10 +26,8 @@ use nautilus_model::data::{
 };
 use nautilus_serialization::{
     arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch},
-    parquet::{
-        ParquetWriteMode, combine_data_files, min_max_from_parquet_metadata,
-        write_batches_to_parquet,
-    },
+    enums::ParquetWriteMode,
+    parquet::{combine_data_files, min_max_from_parquet_metadata, write_batches_to_parquet},
 };
 use serde::Serialize;
 
@@ -87,7 +85,6 @@ impl ParquetDataCatalog {
         let _ = self.write_to_parquet(bar, None, None, None, write_mode);
     }
 
-    #[must_use]
     pub fn write_to_parquet<T>(
         &self,
         data: Vec<T>,
@@ -95,19 +92,17 @@ impl ParquetDataCatalog {
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
         write_mode: Option<ParquetWriteMode>,
-    ) -> PathBuf
+    ) -> Result<PathBuf>
     where
         T: GetTsInit + EncodeToRecordBatch + CatalogPathPrefix,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
         Self::check_ascending_timestamps(&data, &type_name);
-
-        let batches = self.data_to_record_batches(data);
-        let batch = batches.first().expect("Expected at least one batch");
-        let schema = batch.schema();
-        let instrument_id = schema.metadata.get("instrument_id");
-        let path =
-            path.unwrap_or_else(|| self.make_path(T::path_prefix(), instrument_id, write_mode));
+        let batches = self.data_to_record_batches(data)?;
+        let schema = batches.first().expect("Batches are empty.").schema();
+        let instrument_id = schema.metadata.get("instrument_id").cloned();
+        let new_path = self.make_path(T::path_prefix(), instrument_id, write_mode)?;
+        let path = path.unwrap_or(new_path);
 
         // Write all batches to parquet file
         info!(
@@ -115,10 +110,9 @@ impl ParquetDataCatalog {
             batches.len()
         );
 
-        write_batches_to_parquet(&batches, &path, compression, max_row_group_size, write_mode)
-            .unwrap_or_else(|_| panic!("Failed to write {type_name} to parquet"));
+        write_batches_to_parquet(&batches, &path, compression, max_row_group_size, write_mode)?;
 
-        path
+        Ok(path)
     }
 
     fn check_ascending_timestamps<T: GetTsInit>(data: &[T], type_name: &str) {
@@ -128,71 +122,77 @@ impl ParquetDataCatalog {
         );
     }
 
-    #[must_use]
-    pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Vec<RecordBatch>
+    pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Result<Vec<RecordBatch>>
     where
         T: GetTsInit + EncodeToRecordBatch,
     {
-        data.into_iter()
-            .chunks(self.batch_size)
-            .into_iter()
-            .map(|chunk| {
-                // Take first element and extract metadata
-                // SAFETY: Unwrap safe as already checked that `data` not empty
-                let data = chunk.collect_vec();
-                let metadata = EncodeToRecordBatch::chunk_metadata(&data);
-                T::encode_batch(&metadata, &data).expect("Expected to encode batch")
-            })
-            .collect()
+        let mut batches = Vec::new();
+
+        for chunk in &data.into_iter().chunks(self.batch_size) {
+            let data = chunk.collect_vec();
+            let metadata = EncodeToRecordBatch::chunk_metadata(&data);
+            let record_batch = T::encode_batch(&metadata, &data)?;
+            batches.push(record_batch);
+        }
+
+        Ok(batches)
     }
 
     fn make_path(
         &self,
         type_name: &str,
-        instrument_id: Option<&String>,
+        instrument_id: Option<String>,
         write_mode: Option<ParquetWriteMode>,
-    ) -> PathBuf {
+    ) -> Result<PathBuf> {
+        let path = self.make_directory_path(type_name, instrument_id);
+        std::fs::create_dir_all(&path)?;
         let used_write_mode = write_mode.unwrap_or(ParquetWriteMode::Overwrite);
-        let mut path = self.base_path.join("data").join(type_name);
+        let mut file_path = path.join("data-0.parquet");
+        let mut empty_path = file_path.clone();
+        let mut i = 0;
 
-        if let Some(id) = instrument_id {
-            path = path.join(id);
+        while empty_path.exists() {
+            i += 1;
+            let name = format!("data-{i}.parquet");
+            empty_path = path.join(name);
         }
 
-        std::fs::create_dir_all(&path).expect("Failed to create directory");
-        let mut file_path = path.join("data-0.parquet");
-
-        if used_write_mode == ParquetWriteMode::NewFile {
-            let mut i = 0;
-
-            while file_path.exists() {
-                i += 1;
-                let name = format!("data-{i}.parquet");
-                file_path = path.join(name);
-            }
+        if i > 1 && used_write_mode != ParquetWriteMode::NewFile {
+            return Err(anyhow!(
+                "Only ParquetWriteMode::NewFile is allowed for a directory containing several parquet files."
+            ));
+        } else if used_write_mode == ParquetWriteMode::NewFile {
+            file_path = empty_path;
         }
 
         info!("Created directory path: {file_path:?}");
-        file_path
+
+        Ok(file_path)
     }
 
-    #[must_use]
+    fn make_directory_path(&self, type_name: &str, instrument_id: Option<String>) -> PathBuf {
+        let mut path = self.base_path.join("data").join(type_name);
+
+        if let Some(id) = instrument_id {
+            path = path.join(id.replace('/', "")); // for FX symbols like EUR/USD
+        }
+
+        path
+    }
+
     pub fn write_to_json<T>(
         &self,
         data: Vec<T>,
         path: Option<PathBuf>,
         write_metadata: bool,
-    ) -> PathBuf
+    ) -> Result<PathBuf>
     where
         T: GetTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
     {
         let type_name = std::any::type_name::<T>().to_snake_case();
         Self::check_ascending_timestamps(&data, &type_name);
-
-        let json_path = path.unwrap_or_else(|| {
-            let path = self.make_path(T::path_prefix(), None, None);
-            path.with_extension("json")
-        });
+        let new_path = self.make_path(T::path_prefix(), None, None)?;
+        let json_path = path.unwrap_or(new_path.with_extension("json"));
 
         info!(
             "Writing {} records of {type_name} data to {json_path:?}",
@@ -203,22 +203,17 @@ impl ParquetDataCatalog {
             let metadata = T::chunk_metadata(&data);
             let metadata_path = json_path.with_extension("metadata.json");
             info!("Writing metadata to {metadata_path:?}");
-            let metadata_file = std::fs::File::create(&metadata_path)
-                .unwrap_or_else(|_| panic!("Failed to create metadata file at {metadata_path:?}"));
-            serde_json::to_writer_pretty(metadata_file, &metadata)
-                .unwrap_or_else(|_| panic!("Failed to write metadata to JSON"));
+            let metadata_file = std::fs::File::create(&metadata_path)?;
+            serde_json::to_writer_pretty(metadata_file, &metadata)?;
         }
 
-        let file = std::fs::File::create(&json_path)
-            .unwrap_or_else(|_| panic!("Failed to create JSON file at {json_path:?}"));
+        let file = std::fs::File::create(&json_path)?;
+        serde_json::to_writer_pretty(file, &serde_json::to_value(data)?)?;
 
-        serde_json::to_writer_pretty(file, &serde_json::to_value(data).unwrap())
-            .unwrap_or_else(|_| panic!("Failed to write {type_name} to JSON"));
-
-        json_path
+        Ok(json_path)
     }
 
-    pub fn consolidate_data(&self, type_name: &str, instrument_id: Option<&String>) -> Result<()> {
+    pub fn consolidate_data(&self, type_name: &str, instrument_id: Option<String>) -> Result<()> {
         let parquet_files = self.query_parquet_files(type_name, instrument_id)?;
 
         if !parquet_files.is_empty() {
@@ -273,7 +268,6 @@ impl ParquetDataCatalog {
                 let entry = entry.unwrap();
                 entry.path().is_dir()
             });
-
             let has_files = std::fs::read_dir(&directory)?.any(|entry| {
                 let entry = entry.unwrap();
                 entry.path().is_file()
@@ -294,42 +288,47 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
-    ) -> datafusion::error::Result<QueryResult>
+    ) -> Result<QueryResult>
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
-        let path_str = path.to_str().unwrap();
-        let table_name = path.file_stem().unwrap().to_str().unwrap();
+        let path_str = path.to_str().expect("Failed to convert path to string");
+        let table_name = path
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .expect("Failed to convert path to string");
         let query = build_query(table_name, start, end, where_clause);
         self.session
             .add_file::<T>(table_name, path_str, Some(&query))?;
+
         Ok(self.session.get_query_result())
     }
 
     /// Query data loaded in the catalog
     pub fn query_directory<T>(
         &mut self,
-        // use instrument_ids or bar_types to query specific subset of the data
         instrument_ids: Vec<String>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
-    ) -> datafusion::error::Result<QueryResult>
+    ) -> Result<QueryResult>
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
         let mut paths = Vec::new();
-        for instrument_id in &instrument_ids {
-            paths.push(self.make_path(T::path_prefix(), Some(instrument_id), None));
+
+        for instrument_id in instrument_ids {
+            paths.extend(self.query_parquet_files(T::path_prefix(), Some(instrument_id))?);
         }
 
         // If no specific instrument_id is selected query all files for the data type
         if paths.is_empty() {
-            paths.push(self.make_path(T::path_prefix(), None, None));
+            paths.push(self.make_path(T::path_prefix(), None, None)?);
         }
 
         for path in &paths {
-            let path = path.to_str().unwrap();
+            let path = path.to_str().expect("Failed to convert path to string");
             let query = build_query(path, start, end, where_clause);
             self.session.add_file::<T>(path, path, Some(&query))?;
         }
@@ -338,12 +337,13 @@ impl ParquetDataCatalog {
     }
 
     #[allow(dead_code)]
-    fn query_timestamp_bound(
+    pub fn query_timestamp_bound(
         &self,
         data_cls: &str,
-        instrument_id: Option<&String>,
-        is_last: bool,
+        instrument_id: Option<String>,
+        is_last: Option<bool>,
     ) -> Result<Option<i64>> {
+        let is_last = is_last.unwrap_or(true);
         let parquet_files = self.query_parquet_files(data_cls, instrument_id)?;
 
         if parquet_files.is_empty() {
@@ -354,8 +354,8 @@ impl ParquetDataCatalog {
             .iter()
             .map(|file| min_max_from_parquet_metadata(file, "ts_init"))
             .collect::<Result<Vec<_>, _>>()?;
-
         let mut timestamps: Vec<i64> = Vec::new();
+
         for min_max in min_max_per_file {
             let (min, max) = min_max;
 
@@ -377,17 +377,12 @@ impl ParquetDataCatalog {
         }
     }
 
-    fn query_parquet_files(
+    pub fn query_parquet_files(
         &self,
         type_name: &str,
-        instrument_id: Option<&String>,
+        instrument_id: Option<String>,
     ) -> Result<Vec<PathBuf>> {
-        let mut path = self.base_path.join("data").join(type_name);
-
-        if let Some(id) = instrument_id {
-            path = path.join(id);
-        }
-
+        let path = self.make_directory_path(type_name, instrument_id);
         let mut files = Vec::new();
 
         if path.exists() {

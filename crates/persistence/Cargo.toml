@@ -46,7 +46,6 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
-thiserror = { workspace = true }
 parquet = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"

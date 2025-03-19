@@ -122,6 +122,7 @@ def setup_catalog(
 ) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
+
     if isinstance(path, str):
         path = Path(path)
 
