@@ -132,6 +132,36 @@ pub enum ComponentTrigger {
     FaultCompleted = 15,
 }
 
+/// Represents the environment context for a Nautilus system.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
+pub enum Environment {
+    Backtest,
+    Sandbox,
+    Live,
+}
+
 /// The log level for log messages.
 #[repr(C)]
 #[derive(
