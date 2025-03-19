@@ -27,7 +27,7 @@ use super::{
 use crate::{events::OrderEventAny, types::Price};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[enum_dispatch]
+#[enum_dispatch(Order)]
 pub enum OrderAny {
     Limit(LimitOrder),
     LimitIfTouched(LimitIfTouchedOrder),
@@ -171,7 +171,7 @@ impl From<LimitOrderAny> for OrderAny {
 }
 
 #[derive(Clone, Debug)]
-#[enum_dispatch]
+#[enum_dispatch(Order)]
 pub enum PassiveOrderAny {
     Limit(LimitOrderAny),
     Stop(StopOrderAny),
@@ -198,7 +198,7 @@ impl PartialEq for PassiveOrderAny {
 }
 
 #[derive(Clone, Debug)]
-#[enum_dispatch]
+#[enum_dispatch(Order)]
 pub enum LimitOrderAny {
     Limit(LimitOrder),
     MarketToLimit(MarketToLimitOrder),
@@ -230,7 +230,7 @@ impl PartialEq for LimitOrderAny {
 }
 
 #[derive(Clone, Debug)]
-#[enum_dispatch]
+#[enum_dispatch(Order)]
 pub enum StopOrderAny {
     LimitIfTouched(LimitIfTouchedOrder),
     MarketIfTouched(MarketIfTouchedOrder),

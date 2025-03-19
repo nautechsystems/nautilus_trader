@@ -199,10 +199,7 @@ impl OrderStatus {
     }
 }
 
-#[enum_dispatch(OrderAny)]
-#[enum_dispatch(PassiveOrderAny)]
-#[enum_dispatch(LimitOrderAny)]
-#[enum_dispatch(StopOrderAny)]
+#[enum_dispatch]
 pub trait Order: 'static + Send {
     fn into_any(self) -> OrderAny;
     fn status(&self) -> OrderStatus;

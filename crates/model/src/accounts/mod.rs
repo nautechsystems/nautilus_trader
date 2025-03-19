@@ -40,7 +40,7 @@ use crate::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
-#[enum_dispatch(AccountAny)]
+#[enum_dispatch]
 pub trait Account: 'static + Send {
     fn id(&self) -> AccountId;
     fn account_type(&self) -> AccountType;
