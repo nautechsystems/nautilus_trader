@@ -22,7 +22,6 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     messages::data::{DataRequest, Payload},
-    msgbus::MessageBus,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -36,22 +35,15 @@ use crate::client::DataClient;
 
 pub struct MockDataClient {
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     pub client_id: ClientId,
     pub venue: Venue,
 }
 
 impl MockDataClient {
     /// Creates a new [`MockDataClient`] instance.
-    pub const fn new(
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) -> Self {
+    pub const fn new(cache: Rc<RefCell<Cache>>, client_id: ClientId, venue: Venue) -> Self {
         Self {
             cache,
-            msgbus,
             client_id,
             venue,
         }

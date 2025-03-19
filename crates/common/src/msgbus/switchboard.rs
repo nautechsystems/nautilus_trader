@@ -21,13 +21,99 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+use crate::msgbus::get_message_bus;
+
+#[must_use]
+pub fn get_instrument_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_instrument_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_deltas_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_deltas_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_depth_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_depth_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_trades_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_trades_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_bars_topic(bar_type: BarType) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_bars_topic(bar_type)
+}
+
+#[must_use]
+pub fn get_book_snapshots_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_book_snapshots_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_quotes_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_quotes_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_order_snapshots_topic(client_order_id: ClientOrderId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_order_snapshots_topic(client_order_id)
+}
+
+#[must_use]
+pub fn get_positions_snapshots_topic(position_id: PositionId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_positions_snapshots_topic(position_id)
+}
+
+#[must_use]
+pub fn get_event_orders_topic(strategy_id: StrategyId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_event_orders_topic(strategy_id)
+}
+
+#[must_use]
+pub fn get_event_positions_topic(strategy_id: StrategyId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_event_positions_topic(strategy_id)
+}
+
 /// Represents a switchboard of built-in messaging endpoint names.
 #[derive(Clone, Debug)]
 pub struct MessagingSwitchboard {
-    pub data_engine_execute: Ustr,
-    pub data_engine_process: Ustr,
-    pub exec_engine_execute: Ustr,
-    pub exec_engine_process: Ustr,
     custom_topics: HashMap<DataType, Ustr>,
     instrument_topics: HashMap<InstrumentId, Ustr>,
     deltas_topics: HashMap<InstrumentId, Ustr>,
@@ -46,10 +132,6 @@ impl Default for MessagingSwitchboard {
     /// Creates a new default [`MessagingSwitchboard`] instance.
     fn default() -> Self {
         Self {
-            data_engine_execute: Ustr::from("DataEngine.execute"),
-            data_engine_process: Ustr::from("DataEngine.process"),
-            exec_engine_execute: Ustr::from("ExecEngine.execute"),
-            exec_engine_process: Ustr::from("ExecEngine.process"),
             custom_topics: HashMap::new(),
             instrument_topics: HashMap::new(),
             deltas_topics: HashMap::new(),
@@ -67,6 +149,26 @@ impl Default for MessagingSwitchboard {
 }
 
 impl MessagingSwitchboard {
+    #[must_use]
+    pub fn data_engine_execute() -> Ustr {
+        Ustr::from("DataEngine.execute")
+    }
+
+    #[must_use]
+    pub fn data_engine_process() -> Ustr {
+        Ustr::from("DataEngine.process")
+    }
+
+    #[must_use]
+    pub fn exec_engine_execute() -> Ustr {
+        Ustr::from("ExecEngine.execute")
+    }
+
+    #[must_use]
+    pub fn exec_engine_process() -> Ustr {
+        Ustr::from("ExecEngine.process")
+    }
+
     #[must_use]
     pub fn get_custom_topic(&mut self, data_type: &DataType) -> Ustr {
         *self

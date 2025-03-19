@@ -20,7 +20,7 @@ use nautilus_common::{
     cache::Cache,
     clock::TestClock,
     msgbus::{
-        self, MessageBus,
+        self,
         handler::ShareableMessageHandler,
         stubs::{get_message_saving_handler, get_saved_messages},
         switchboard::MessagingSwitchboard,
@@ -226,10 +226,10 @@ fn test_process_order_when_instrument_already_expired(
     // so this is not the final or standard pattern but avoids shadowing the `msgbus` module while
     // the clearer calling convention for global message bus functions is established.
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
-
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
@@ -271,10 +271,10 @@ fn test_process_order_when_instrument_not_active(
     );
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)));
-
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create engine and process order
     let mut engine = get_order_matching_engine(instrument, None, None, None, None);
@@ -298,9 +298,10 @@ fn test_process_order_when_invalid_quantity_precision(
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create market order with invalid quantity precision 0 for eth/usdt precision of 3
     let mut market_order_invalid_precision = OrderTestBuilder::new(OrderType::Market)
@@ -335,9 +336,10 @@ fn test_process_order_when_invalid_price_precision(
     instrument_es: InstrumentAny,
     test_clock: Rc<RefCell<TestClock>>,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create engine and process order
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
@@ -377,9 +379,10 @@ fn test_process_order_when_invalid_trigger_price_precision(
     instrument_es: InstrumentAny,
     test_clock: Rc<RefCell<TestClock>>,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create engine and process order
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
@@ -417,9 +420,10 @@ fn test_process_order_when_shorting_equity_without_margin_account(
     account_id: AccountId,
     equity_aapl: Equity,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let instrument = InstrumentAny::Equity(equity_aapl);
 
@@ -458,9 +462,10 @@ fn test_process_order_when_invalid_reduce_only(
     instrument_eth_usdt: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine = get_order_matching_engine(
         instrument_eth_usdt.clone(),
@@ -500,8 +505,7 @@ fn test_process_order_when_invalid_contingent_orders(
     engine_config: OrderMatchingEngineConfig,
     test_clock: Rc<RefCell<TestClock>>,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
+    let endpoint = MessagingSwitchboard::exec_engine_process();
     msgbus::register(endpoint, order_event_handler.clone());
 
     let cache = Rc::new(RefCell::new(Cache::default()));
@@ -577,9 +581,10 @@ fn test_process_order_when_closed_linked_order(
     engine_config: OrderMatchingEngineConfig,
     test_clock: Rc<RefCell<TestClock>>,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
@@ -660,9 +665,10 @@ fn test_process_market_order_no_market_rejected(
     mut market_order_buy: OrderAny,
     mut market_order_sell: OrderAny,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create engine and process order
     let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, None, None);
@@ -723,9 +729,10 @@ fn test_not_enough_quantity_filled_fok_order(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -774,9 +781,10 @@ fn test_valid_market_buy(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -842,9 +850,10 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -897,9 +906,10 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -952,9 +962,10 @@ fn test_process_limit_order_matched_immediate_fill(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -1006,9 +1017,10 @@ fn test_process_stop_market_order_triggered_rejected(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create order matching engine which rejects stop orders
     let mut engine_config = OrderMatchingEngineConfig::default();
@@ -1067,9 +1079,10 @@ fn test_process_stop_market_order_valid_trigger_filled(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 =
@@ -1117,9 +1130,10 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -1164,9 +1178,10 @@ fn test_process_stop_limit_order_triggered_not_filled(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -1219,9 +1234,10 @@ fn test_process_stop_limit_order_triggered_filled(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 =
@@ -1283,9 +1299,10 @@ fn test_process_cancel_command_valid(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 =
@@ -1349,9 +1366,10 @@ fn test_process_cancel_command_order_not_found(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: ShareableMessageHandler,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create normal l2 engine without reject_stop_orders config param
     let mut engine_l2 =
@@ -1395,9 +1413,10 @@ fn test_process_cancel_all_command(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine_l2 = get_order_matching_engine_l2(
@@ -1532,9 +1551,10 @@ fn test_process_batch_cancel_command(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine_l2 =
@@ -1644,9 +1664,10 @@ fn test_expire_order(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     // Create order matching engine with gtd support
     let mut engine_config = OrderMatchingEngineConfig::default();
@@ -1729,9 +1750,10 @@ fn test_process_modify_order_rejected_not_found(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -1771,9 +1793,10 @@ fn test_update_limit_order_post_only_matched(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -1849,9 +1872,10 @@ fn test_update_limit_order_valid(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -1931,9 +1955,10 @@ fn test_update_stop_market_order_valid(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2004,9 +2029,10 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2066,9 +2092,10 @@ fn test_process_market_if_touched_order_already_triggered(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2116,9 +2143,10 @@ fn test_update_market_if_touched_order_valid(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2177,9 +2205,10 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2243,9 +2272,10 @@ fn test_update_limit_if_touched_order_valid(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2317,9 +2347,10 @@ fn test_process_market_to_limit_orders_not_fully_filled(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2391,9 +2422,10 @@ fn test_process_trailing_stop_orders_rejeceted_and_valid(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2470,9 +2502,10 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
@@ -2540,9 +2573,10 @@ fn test_updating_of_contingent_orders(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
 ) {
-    MessageBus::default().register_message_bus();
-    let endpoint = MessagingSwitchboard::default().exec_engine_process;
-    msgbus::register(endpoint, order_event_handler.clone());
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     // Create order matching engine which supports contingent orders
