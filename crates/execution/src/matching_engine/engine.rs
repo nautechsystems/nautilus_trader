@@ -2122,7 +2122,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
@@ -2247,7 +2247,7 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             order.account_id(),
         ));
-        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
@@ -2264,7 +2264,7 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any)
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event as &dyn Any);
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
