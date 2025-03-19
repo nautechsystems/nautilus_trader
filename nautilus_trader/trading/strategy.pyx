@@ -1228,6 +1228,7 @@ cdef class Strategy(Actor):
         Position position,
         ClientId client_id = None,
         list[str] tags = None,
+        TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = True,
         dict[str, object] params = None,
     ):
@@ -1246,6 +1247,8 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
         tags : list[str], optional
             The tags for the market order closing the position.
+        time_in_force : TimeInForce, default ``GTC``
+            The time in force for the market order closing the position.
         reduce_only : bool, default True
             If the market order to close the position should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
@@ -1270,7 +1273,7 @@ cdef class Strategy(Actor):
             instrument_id=position.instrument_id,
             order_side=Order.closing_side_c(position.side),
             quantity=position.quantity,
-            time_in_force=TimeInForce.GTC,
+            time_in_force=time_in_force,
             reduce_only=reduce_only,
             quote_quantity=False,
             exec_algorithm_id=None,
@@ -1286,6 +1289,7 @@ cdef class Strategy(Actor):
         PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         ClientId client_id = None,
         list[str] tags = None,
+        TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = True,
         dict[str, object] params = None,
     ):
@@ -1303,6 +1307,8 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
         tags : list[str], optional
             The tags for the market orders closing the positions.
+        time_in_force : TimeInForce, default ``GTC``
+            The time in force for the market orders closing the positions.
         reduce_only : bool, default True
             If the market orders to close positions should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
@@ -1334,7 +1340,7 @@ cdef class Strategy(Actor):
 
         cdef Position position
         for position in positions_open:
-            self.close_position(position, client_id, tags, reduce_only, params)
+            self.close_position(position, client_id, tags, time_in_force, reduce_only, params)
 
     cpdef void query_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """
