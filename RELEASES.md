@@ -12,6 +12,7 @@ None
 ### Internal Improvements
 - Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
 - Implemented `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
+- Refined catalog file operations in Rust (#2454), thanks @faysou
 
 ### Fixes
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`

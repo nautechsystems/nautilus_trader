@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 // TODO: We'll use anyhow for now, but would be best to implement some specific Error(s)
-use anyhow;
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
     orders::{Order, OrderAny, OrderError},
