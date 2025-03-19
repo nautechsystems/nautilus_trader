@@ -136,6 +136,7 @@ impl OrderStatus {
     #[rustfmt::skip]
     pub fn transition(&mut self, event: &OrderEventAny) -> Result<Self, OrderError> {
         let new_state = match (self, event) {
+            (Self::Initialized, OrderEventAny::Initialized(_)) => Self::Initialized,
             (Self::Initialized, OrderEventAny::Denied(_)) => Self::Denied,
             (Self::Initialized, OrderEventAny::Emulated(_)) => Self::Emulated,  // Emulated orders
             (Self::Initialized, OrderEventAny::Released(_)) => Self::Released,  // Emulated orders

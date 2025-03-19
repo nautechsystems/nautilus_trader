@@ -744,7 +744,6 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         self.insert(key, Some(vec![Bytes::from(value)]))
     }
 
-    //
     fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id().to_string();
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
