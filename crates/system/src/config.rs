@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
-    Environment, cache::CacheConfig, logging::logger::LoggerConfig,
+    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
 };
 use nautilus_core::UUID4;

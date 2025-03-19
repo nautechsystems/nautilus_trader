@@ -857,6 +857,13 @@ class CurrencyType(Enum):
     @classmethod
     def from_str(cls, value: str) -> CurrencyType: ...
 
+class Environment(Enum):
+    BACKTEST = "BACKTEST"
+    SANDBOX = "SANDBOX"
+    LIVE = "LIVE"
+    @classmethod
+    def from_str(cls, value: str) -> Environment: ...
+
 class InstrumentCloseType(Enum):
     END_OF_SESSION = "END_OF_SESSION"
     CONTRACT_EXPIRED = "CONTRACT_EXPIRED"
