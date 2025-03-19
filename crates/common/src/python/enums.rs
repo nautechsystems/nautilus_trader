@@ -73,19 +73,19 @@ impl Environment {
 
     #[classattr]
     #[pyo3(name = "BACKTEST")]
-    const fn py_off() -> Self {
+    const fn py_backtest() -> Self {
         Self::Backtest
     }
 
     #[classattr]
     #[pyo3(name = "SANDBOX")]
-    const fn py_debug() -> Self {
+    const fn py_sandbox() -> Self {
         Self::Sandbox
     }
 
     #[classattr]
     #[pyo3(name = "LIVE")]
-    const fn py_info() -> Self {
+    const fn py_live() -> Self {
         Self::Live
     }
 }
