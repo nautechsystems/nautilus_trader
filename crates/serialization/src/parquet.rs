@@ -15,7 +15,6 @@
 
 use std::{fs, fs::File, path::PathBuf};
 
-use anyhow::{Result, anyhow};
 use arrow::record_batch::RecordBatch;
 use parquet::{
     arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
@@ -35,7 +34,7 @@ pub fn write_batch_to_parquet(
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
     write_mode: Option<ParquetWriteMode>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     write_batches_to_parquet(
         &[batch],
         filepath,
@@ -51,7 +50,7 @@ pub fn write_batches_to_parquet(
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
     write_mode: Option<ParquetWriteMode>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let used_write_mode = write_mode.unwrap_or(ParquetWriteMode::Overwrite);
 
     // Ensure the parent directory exists
@@ -101,7 +100,7 @@ pub fn combine_data_files(
     column_name: &str,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let n_files = parquet_files.len();
 
     if n_files <= 1 {
@@ -121,9 +120,9 @@ pub fn combine_data_files(
     // Check for timestamp intersection
     for i in 1..n_files {
         if min_max_per_file[ordering[i - 1]].1 >= min_max_per_file[ordering[i]].0 {
-            return Err(anyhow!(
+            anyhow::bail!(
                 "Merging not safe due to intersection of timestamps between files. Aborting."
-            ));
+            );
         }
     }
 
@@ -141,7 +140,7 @@ pub fn combine_parquet_files(
     file_list: Vec<PathBuf>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     if file_list.len() <= 1 {
         return Ok(());
     }
@@ -178,7 +177,7 @@ fn write_batches_to_file(
     filepath: &PathBuf,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let file = File::create(filepath)?;
     let writer_props = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
@@ -194,7 +193,10 @@ fn write_batches_to_file(
     Ok(())
 }
 
-pub fn min_max_from_parquet_metadata(file_path: &PathBuf, column_name: &str) -> Result<(i64, i64)> {
+pub fn min_max_from_parquet_metadata(
+    file_path: &PathBuf,
+    column_name: &str,
+) -> anyhow::Result<(i64, i64)> {
     // Open the parquet file
     let file = File::open(file_path)?;
     let reader = SerializedFileReader::new(file)?;
@@ -231,14 +233,12 @@ pub fn min_max_from_parquet_metadata(file_path: &PathBuf, column_name: &str) -> 
                             }
                         }
                     } else {
-                        return Err(anyhow!(
-                            "Warning: Column name '{column_name}' is not of type i64."
-                        ));
+                        anyhow::bail!("Warning: Column name '{column_name}' is not of type i64.");
                     }
                 } else {
-                    return Err(anyhow!(
+                    anyhow::bail!(
                         "Warning: Statistics not available for column '{column_name}' in row group {i}."
-                    ));
+                    );
                 }
             }
         }
@@ -248,8 +248,8 @@ pub fn min_max_from_parquet_metadata(file_path: &PathBuf, column_name: &str) -> 
     if let (Some(min), Some(max)) = (overall_min_value, overall_max_value) {
         Ok((min, max))
     } else {
-        Err(anyhow!(
+        anyhow::bail!(
             "Column '{column_name}' not found or has no Int64 statistics in any row group."
-        ))
+        )
     }
 }

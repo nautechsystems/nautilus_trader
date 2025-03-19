@@ -15,7 +15,6 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
 use datafusion::arrow::record_batch::RecordBatch;
 use heck::ToSnakeCase;
 use itertools::Itertools;
@@ -92,7 +91,7 @@ impl ParquetDataCatalog {
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
         write_mode: Option<ParquetWriteMode>,
-    ) -> Result<PathBuf>
+    ) -> anyhow::Result<PathBuf>
     where
         T: GetTsInit + EncodeToRecordBatch + CatalogPathPrefix,
     {
@@ -122,7 +121,7 @@ impl ParquetDataCatalog {
         );
     }
 
-    pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Result<Vec<RecordBatch>>
+    pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> anyhow::Result<Vec<RecordBatch>>
     where
         T: GetTsInit + EncodeToRecordBatch,
     {
@@ -143,7 +142,7 @@ impl ParquetDataCatalog {
         type_name: &str,
         instrument_id: Option<String>,
         write_mode: Option<ParquetWriteMode>,
-    ) -> Result<PathBuf> {
+    ) -> anyhow::Result<PathBuf> {
         let path = self.make_directory_path(type_name, instrument_id);
         std::fs::create_dir_all(&path)?;
         let used_write_mode = write_mode.unwrap_or(ParquetWriteMode::Overwrite);
@@ -158,9 +157,9 @@ impl ParquetDataCatalog {
         }
 
         if i > 1 && used_write_mode != ParquetWriteMode::NewFile {
-            return Err(anyhow!(
+            anyhow::bail!(
                 "Only ParquetWriteMode::NewFile is allowed for a directory containing several parquet files."
-            ));
+            );
         } else if used_write_mode == ParquetWriteMode::NewFile {
             file_path = empty_path;
         }
@@ -185,7 +184,7 @@ impl ParquetDataCatalog {
         data: Vec<T>,
         path: Option<PathBuf>,
         write_metadata: bool,
-    ) -> Result<PathBuf>
+    ) -> anyhow::Result<PathBuf>
     where
         T: GetTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
     {
@@ -213,7 +212,11 @@ impl ParquetDataCatalog {
         Ok(json_path)
     }
 
-    pub fn consolidate_data(&self, type_name: &str, instrument_id: Option<String>) -> Result<()> {
+    pub fn consolidate_data(
+        &self,
+        type_name: &str,
+        instrument_id: Option<String>,
+    ) -> anyhow::Result<()> {
         let parquet_files = self.query_parquet_files(type_name, instrument_id)?;
 
         if !parquet_files.is_empty() {
@@ -223,7 +226,7 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    pub fn consolidate_catalog(&self) -> Result<()> {
+    pub fn consolidate_catalog(&self) -> anyhow::Result<()> {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
@@ -247,7 +250,7 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    pub fn find_leaf_data_directories(&self) -> Result<Vec<PathBuf>> {
+    pub fn find_leaf_data_directories(&self) -> anyhow::Result<Vec<PathBuf>> {
         let mut all_paths: Vec<PathBuf> = Vec::new();
         let data_dir = self.base_path.join("data");
 
@@ -288,7 +291,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
-    ) -> Result<QueryResult>
+    ) -> anyhow::Result<QueryResult>
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
@@ -312,7 +315,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
-    ) -> Result<QueryResult>
+    ) -> anyhow::Result<QueryResult>
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
@@ -342,7 +345,7 @@ impl ParquetDataCatalog {
         data_cls: &str,
         instrument_id: Option<String>,
         is_last: Option<bool>,
-    ) -> Result<Option<i64>> {
+    ) -> anyhow::Result<Option<i64>> {
         let is_last = is_last.unwrap_or(true);
         let parquet_files = self.query_parquet_files(data_cls, instrument_id)?;
 
@@ -381,7 +384,7 @@ impl ParquetDataCatalog {
         &self,
         type_name: &str,
         instrument_id: Option<String>,
-    ) -> Result<Vec<PathBuf>> {
+    ) -> anyhow::Result<Vec<PathBuf>> {
         let path = self.make_directory_path(type_name, instrument_id);
         let mut files = Vec::new();
 
