@@ -493,15 +493,18 @@ impl Drop for SocketClientInner {
     fn drop(&mut self) {
         if !self.read_task.is_finished() {
             self.read_task.abort();
+            tracing::debug!("Aborted task 'read'");
         }
 
         if !self.write_task.is_finished() {
             self.write_task.abort();
+            tracing::debug!("Aborted task 'write'");
         }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
+                tracing::debug!("Aborted task 'heartbeat'");
             }
         }
     }
