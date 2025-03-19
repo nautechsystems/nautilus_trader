@@ -382,14 +382,21 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs.mkdirs(path, exist_ok=True)
         name = basename_template.format(i=0)
         parquet_file = f"{path}/{name}.parquet"
+        empty_file = parquet_file
+        i = 0
 
-        if mode == CatalogWriteMode.NEWFILE:
-            i = 0
+        while Path(empty_file).exists():
+            i += 1
+            name = basename_template.format(i=i)
+            empty_file = f"{path}/{name}.parquet"
 
-            while Path(parquet_file).exists():
-                i += 1
-                name = basename_template.format(i=i)
-                parquet_file = f"{path}/{name}.parquet"
+        if i > 1 and mode != CatalogWriteMode.NEWFILE:
+            print(
+                "Warning, Only CatalogWriteMode::NEWFILE is allowed for a directory containing several parquet files. Aborting write_data.",
+            )
+            return
+        elif mode == CatalogWriteMode.NEWFILE:
+            parquet_file = empty_file
 
         # following solution from https://stackoverflow.com/a/70817689
         if (
