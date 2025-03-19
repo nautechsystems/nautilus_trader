@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import sys
 import time
+from decimal import Decimal
 
 import msgspec
 import pytest
@@ -29,16 +31,21 @@ from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -213,39 +220,39 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    # @pytest.mark.asyncio
-    # async def test_add_position(self):
-    #     # Arrange
-    #     order = self.strategy.order_factory.market(
-    #         _AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100_000),
-    #     )
+    @pytest.mark.asyncio
+    async def test_add_position(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
 
-    #     self.database.add_instrument(_AUDUSD_SIM)
-    #     self.database.add_order(order)
+        self.database.add_instrument(_AUDUSD_SIM)
+        self.database.add_order(order)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_order(order.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
-    #     position_id = PositionId("P-1")
-    #     fill = TestEventStubs.order_filled(
-    #         order,
-    #         instrument=_AUDUSD_SIM,
-    #         position_id=position_id,
-    #         last_px=Price.from_str("1.00000"),
-    #     )
+        position_id = PositionId("P-1")
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
 
-    #     position = Position(instrument=_AUDUSD_SIM, fill=fill)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
-    #     # Act
-    #     self.database.add_position(position)
+        # Act
+        self.database.add_position(position)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_position(position.id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_position(position.id))
 
-    #     # Assert
-    #     assert self.database.load_position(position.id) == position
+        # Assert
+        assert self.database.load_position(position.id) == position
 
     @pytest.mark.asyncio
     async def test_update_account(self):
@@ -341,121 +348,121 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    # @pytest.mark.asyncio
-    # async def test_update_position_for_closed_position(self):
-    #     # Arrange
-    #     self.database.add_instrument(_AUDUSD_SIM)
+    @pytest.mark.asyncio
+    async def test_update_position_for_closed_position(self):
+        # Arrange
+        self.database.add_instrument(_AUDUSD_SIM)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
-    #     order1 = self.strategy.order_factory.market(
-    #         _AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100_000),
-    #     )
+        order1 = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
 
-    #     position_id = PositionId("P-1")
-    #     self.database.add_order(order1)
+        position_id = PositionId("P-1")
+        self.database.add_order(order1)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_order(order1.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order1.client_order_id))
 
-    #     order1.apply(TestEventStubs.order_submitted(order1))
-    #     self.database.update_order(order1)
+        order1.apply(TestEventStubs.order_submitted(order1))
+        self.database.update_order(order1)
 
-    #     order1.apply(TestEventStubs.order_accepted(order1))
-    #     self.database.update_order(order1)
+        order1.apply(TestEventStubs.order_accepted(order1))
+        self.database.update_order(order1)
 
-    #     order1.apply(
-    #         TestEventStubs.order_filled(
-    #             order1,
-    #             instrument=_AUDUSD_SIM,
-    #             position_id=position_id,
-    #             last_px=Price.from_str("1.00001"),
-    #             trade_id=TradeId("1"),
-    #         ),
-    #     )
-    #     self.database.update_order(order1)
+        order1.apply(
+            TestEventStubs.order_filled(
+                order1,
+                instrument=_AUDUSD_SIM,
+                position_id=position_id,
+                last_px=Price.from_str("1.00001"),
+                trade_id=TradeId("1"),
+            ),
+        )
+        self.database.update_order(order1)
 
-    #     # Allow MPSC thread to update
-    #     await eventually(lambda: self.database.load_order(order1.client_order_id))
+        # Allow MPSC thread to update
+        await eventually(lambda: self.database.load_order(order1.client_order_id))
 
-    #     # Act
-    #     position = Position(instrument=_AUDUSD_SIM, fill=order1.last_event)
-    #     self.database.add_position(position)
+        # Act
+        position = Position(instrument=_AUDUSD_SIM, fill=order1.last_event)
+        self.database.add_position(position)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_position(position.id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_position(position.id))
 
-    #     order2 = self.strategy.order_factory.market(
-    #         _AUDUSD_SIM.id,
-    #         OrderSide.SELL,
-    #         Quantity.from_int(100_000),
-    #     )
+        order2 = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
 
-    #     self.database.add_order(order2)
+        self.database.add_order(order2)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_order(order2.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order2.client_order_id))
 
-    #     order2.apply(TestEventStubs.order_submitted(order2))
-    #     self.database.update_order(order2)
+        order2.apply(TestEventStubs.order_submitted(order2))
+        self.database.update_order(order2)
 
-    #     order2.apply(TestEventStubs.order_accepted(order2))
-    #     self.database.update_order(order2)
+        order2.apply(TestEventStubs.order_accepted(order2))
+        self.database.update_order(order2)
 
-    #     filled = TestEventStubs.order_filled(
-    #         order2,
-    #         instrument=_AUDUSD_SIM,
-    #         position_id=position_id,
-    #         last_px=Price.from_str("1.00001"),
-    #         trade_id=TradeId("2"),
-    #     )
+        filled = TestEventStubs.order_filled(
+            order2,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+            trade_id=TradeId("2"),
+        )
 
-    #     order2.apply(filled)
-    #     self.database.update_order(order2)
+        order2.apply(filled)
+        self.database.update_order(order2)
 
-    #     position.apply(filled)
+        position.apply(filled)
 
-    #     # Act
-    #     self.database.update_position(position)
+        # Act
+        self.database.update_position(position)
 
-    #     # Allow MPSC thread to update
-    #     await eventually(lambda: self.database.load_position(position.id))
+        # Allow MPSC thread to update
+        await eventually(lambda: self.database.load_position(position.id))
 
-    #     # Assert
-    #     assert self.database.load_position(position.id) == position
+        # Assert
+        assert self.database.load_position(position.id) == position
 
-    #     @pytest.mark.asyncio
-    #     async def test_update_position_when_not_already_exists_logs(self):
-    #         # Arrange
-    #         order = self.strategy.order_factory.market(
-    #             _AUDUSD_SIM.id,
-    #             OrderSide.BUY,
-    #             Quantity.from_int(100_000),
-    #         )
+    @pytest.mark.asyncio
+    async def test_update_position_when_not_already_exists_logs(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
 
-    #         self.database.add_order(order)
+        self.database.add_order(order)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_order(order.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
-    #         position_id = PositionId("P-1")
-    #         fill = TestEventStubs.order_filled(
-    #             order,
-    #             instrument=_AUDUSD_SIM,
-    #             position_id=position_id,
-    #             last_px=Price.from_str("1.00000"),
-    #         )
+        position_id = PositionId("P-1")
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
 
-    #         position = Position(instrument=_AUDUSD_SIM, fill=fill)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
-    #         # Act
-    #         self.database.update_position(position)
+        # Act
+        self.database.update_position(position)
 
-    #         # Assert
-    #         assert True  # No exception raised
+        # Assert
+        assert True  # No exception raised
 
     @pytest.mark.asyncio
     async def test_update_actor(self):
@@ -479,28 +486,28 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert result == {"A": 1}
 
-    # @pytest.mark.asyncio
-    # async def test_update_strategy(self):
-    #     # Arrange
-    #     strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
-    #     strategy.register(
-    #         trader_id=self.trader_id,
-    #         portfolio=self.portfolio,
-    #         msgbus=self.msgbus,
-    #         cache=self.cache,
-    #         clock=self.clock,
-    #     )
+    @pytest.mark.asyncio
+    async def test_update_strategy(self):
+        # Arrange
+        strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
 
-    #     # Act
-    #     self.database.update_strategy(strategy)
+        # Act
+        self.database.update_strategy(strategy)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_strategy(strategy.id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_strategy(strategy.id))
 
-    #     result = self.database.load_strategy(strategy.id)
+        result = self.database.load_strategy(strategy.id)
 
-    #     # Assert
-    #     assert result == {"UserState": b"1"}
+        # Assert
+        assert result == {"UserState": "MQ=="}
 
     #     @pytest.mark.asyncio
     #     async def test_load_currency_when_no_currencies_in_database_returns_none(self):
@@ -744,9 +751,10 @@ class TestCacheDatabaseAdapter:
     #         Price.from_str("1.00000"),
     #         Price.from_str("1.00000"),
     #     )
+    #     print("order: ", order.events)
 
     #     order = LimitOrder.transform_py(order, 0)
-
+    #     print("modified order: ", order.events)
     #     self.database.add_order(order)
 
     #     # Allow MPSC thread to insert
@@ -805,88 +813,88 @@ class TestCacheDatabaseAdapter:
         assert result.price == order.price
         assert result.trigger_price == order.trigger_price
 
-    # @pytest.mark.asyncio
-    # async def test_load_position_when_no_position_in_database_returns_none(self):
-    #     # Arrange
-    #     position_id = PositionId("P-1")
+    @pytest.mark.asyncio
+    async def test_load_position_when_no_position_in_database_returns_none(self):
+        # Arrange
+        position_id = PositionId("P-1")
 
-    #     # Act
-    #     result = self.database.load_position(position_id)
+        # Act
+        result = self.database.load_position(position_id)
 
-    #     # Assert
-    #     assert result is None
+        # Assert
+        assert result is None
 
-    # @pytest.mark.asyncio
-    # async def test_load_position_when_no_instrument_in_database_returns_none(self):
-    #     # Arrange
-    #     order = self.strategy.order_factory.market(
-    #         _AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100_000),
-    #     )
+    @pytest.mark.asyncio
+    async def test_load_position_when_no_instrument_in_database_returns_none(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
 
-    #     self.database.add_order(order)
+        self.database.add_order(order)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_order(order.client_order_id))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
-    #     position_id = PositionId("P-1")
-    #     fill = TestEventStubs.order_filled(
-    #         order,
-    #         instrument=_AUDUSD_SIM,
-    #         position_id=position_id,
-    #         last_px=Price.from_str("1.00000"),
-    #     )
+        position_id = PositionId("P-1")
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
 
-    #     position = Position(instrument=_AUDUSD_SIM, fill=fill)
-    #     self.database.add_position(position)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
+        self.database.add_position(position)
 
-    #     # Act
-    #     result = self.database.load_position(position.id)
+        # Act
+        result = self.database.load_position(position.id)
 
-    #     # Assert
-    #     assert result is None
+        # Assert
+        assert result is None
 
-    #     @pytest.mark.asyncio
-    #     async def test_load_position_when_position_in_database_returns_position(self):
-    #         # Arrange
-    #         self.database.add_instrument(_AUDUSD_SIM)
+        @pytest.mark.asyncio
+        async def test_load_position_when_position_in_database_returns_position(self):
+            # Arrange
+            self.database.add_instrument(_AUDUSD_SIM)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
+            # Allow MPSC thread to insert
+            await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
-    #         order = self.strategy.order_factory.market(
-    #             _AUDUSD_SIM.id,
-    #             OrderSide.BUY,
-    #             Quantity.from_int(100_000),
-    #         )
+            order = self.strategy.order_factory.market(
+                _AUDUSD_SIM.id,
+                OrderSide.BUY,
+                Quantity.from_int(100_000),
+            )
 
-    #         self.database.add_order(order)
+            self.database.add_order(order)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_order(order.client_order_id))
+            # Allow MPSC thread to insert
+            await eventually(lambda: self.database.load_order(order.client_order_id))
 
-    #         position_id = PositionId("P-1")
-    #         fill = TestEventStubs.order_filled(
-    #             order,
-    #             instrument=_AUDUSD_SIM,
-    #             position_id=position_id,
-    #             last_px=Price.from_str("1.00000"),
-    #         )
+            position_id = PositionId("P-1")
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=_AUDUSD_SIM,
+                position_id=position_id,
+                last_px=Price.from_str("1.00000"),
+            )
 
-    #         position = Position(instrument=_AUDUSD_SIM, fill=fill)
+            position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
-    #         self.database.add_position(position)
+            self.database.add_position(position)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_position(position.id))
+            # Allow MPSC thread to insert
+            await eventually(lambda: self.database.load_position(position.id))
 
-    #         # Act
-    #         result = self.database.load_position(position_id)
+            # Act
+            result = self.database.load_position(position_id)
 
-    #         # Assert
-    #         assert result == position
-    #         assert position.id == position_id
+            # Assert
+            assert result == position
+            assert position.id == position_id
 
     @pytest.mark.asyncio
     async def test_load_accounts_when_no_accounts_returns_empty_dict(self):
@@ -938,57 +946,57 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert result == {order.client_order_id: order}
 
-    #     @pytest.mark.asyncio
-    #     async def test_load_positions_cache_when_no_positions(self):
-    #         # Arrange, Act
-    #         self.database.load_positions()
+        @pytest.mark.asyncio
+        async def test_load_positions_cache_when_no_positions(self):
+            # Arrange, Act
+            self.database.load_positions()
 
-    #         # Assert
-    #         assert self.database.load_positions() == {}
+            # Assert
+            assert self.database.load_positions() == {}
 
-    #     @pytest.mark.asyncio
-    #     async def test_load_positions_cache_when_one_position_in_database(self):
-    #         # Arrange
-    #         self.database.add_instrument(_AUDUSD_SIM)
+        @pytest.mark.asyncio
+        async def test_load_positions_cache_when_one_position_in_database(self):
+            # Arrange
+            self.database.add_instrument(_AUDUSD_SIM)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
+            # Allow MPSC thread to insert
+            await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
-    #         order1 = self.strategy.order_factory.stop_market(
-    #             _AUDUSD_SIM.id,
-    #             OrderSide.BUY,
-    #             Quantity.from_int(100_000),
-    #             Price.from_str("1.00000"),
-    #         )
+            order1 = self.strategy.order_factory.stop_market(
+                _AUDUSD_SIM.id,
+                OrderSide.BUY,
+                Quantity.from_int(100_000),
+                Price.from_str("1.00000"),
+            )
 
-    #         self.database.add_order(order1)
+            self.database.add_order(order1)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_orders())
+            # Allow MPSC thread to insert
+            await eventually(lambda: self.database.load_orders())
 
-    #         position_id = PositionId("P-1")
-    #         order1.apply(TestEventStubs.order_submitted(order1))
-    #         order1.apply(TestEventStubs.order_accepted(order1))
-    #         order1.apply(
-    #             TestEventStubs.order_filled(
-    #                 order1,
-    #                 instrument=_AUDUSD_SIM,
-    #                 position_id=position_id,
-    #                 last_px=Price.from_str("1.00001"),
-    #             ),
-    #         )
+            position_id = PositionId("P-1")
+            order1.apply(TestEventStubs.order_submitted(order1))
+            order1.apply(TestEventStubs.order_accepted(order1))
+            order1.apply(
+                TestEventStubs.order_filled(
+                    order1,
+                    instrument=_AUDUSD_SIM,
+                    position_id=position_id,
+                    last_px=Price.from_str("1.00001"),
+                ),
+            )
 
-    #         position = Position(instrument=_AUDUSD_SIM, fill=order1.last_event)
-    #         self.database.add_position(position)
+            position = Position(instrument=_AUDUSD_SIM, fill=order1.last_event)
+            self.database.add_position(position)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_positions())
+            # Allow MPSC thread to insert
+            await eventually(lambda: self.database.load_positions())
 
-    #         # Act
-    #         result = self.database.load_positions()
+            # Act
+            result = self.database.load_positions()
 
-    #         # Assert
-    #         assert result == {position.id: position}
+            # Assert
+            assert result == {position.id: position}
 
     @pytest.mark.asyncio
     async def test_delete_actor(self):
@@ -1090,35 +1098,33 @@ class TestRedisCacheDatabaseIntegrity:
         # Tests will start failing if redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests
 
+    @pytest.mark.asyncio
+    async def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
+        # Arrange
+        config = EMACrossConfig(
+            instrument_id=self.usdjpy.id,
+            bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
+            trade_size=Decimal(1_000_000),
+            fast_ema_period=10,
+            slow_ema_period=20,
+        )
+        strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
-# nautilus_trader.core.nautilus_pyo3.model.MarginAccount' object has no attribute 'account_type: TODO
-# @pytest.mark.asyncio
-# async def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
-#     # Arrange
-#     config = EMACrossConfig(
-#         instrument_id=self.usdjpy.id,
-#         bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
-#         trade_size=Decimal(1_000_000),
-#         fast_ema_period=10,
-#         slow_ema_period=20,
-#     )
-#     strategy = EMACross(config=config)
-#     self.engine.add_strategy(strategy)
+        await asyncio.sleep(0.5)
 
-#     await asyncio.sleep(0.5)
+        # Generate a lot of data
+        self.engine.run()
 
-#     # Generate a lot of data
-#     self.engine.run()
+        await asyncio.sleep(0.5)
 
-#     await asyncio.sleep(0.5)
+        # Reset engine
+        self.engine.reset()
 
-#     # Reset engine
-#     self.engine.reset()
+        # Act
+        self.engine.run()
 
-#     # Act
-#     self.engine.run()
+        await asyncio.sleep(0.5)
 
-#     await asyncio.sleep(0.5)
-
-#     # Assert
-#     await eventually(lambda: self.engine.cache.check_integrity())
+        # Assert
+        await eventually(lambda: self.engine.cache.check_integrity())
