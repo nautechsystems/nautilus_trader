@@ -24,7 +24,6 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     messages::data::{DataRequest, Payload},
-    msgbus::MessageBus,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClient;
@@ -37,7 +36,6 @@ use nautilus_model::{
 
 pub struct BacktestDataClient {
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     pub client_id: ClientId,
     pub venue: Venue,
 }

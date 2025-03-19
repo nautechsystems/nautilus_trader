@@ -27,7 +27,7 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{self, MessageBus, handler::ShareableMessageHandler},
+    msgbus::{self, handler::ShareableMessageHandler},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -92,14 +92,12 @@ impl PortfolioState {
 pub struct Portfolio {
     pub(crate) clock: Rc<RefCell<dyn Clock>>,
     pub(crate) cache: Rc<RefCell<Cache>>,
-    pub(crate) msgbus: Rc<RefCell<MessageBus>>,
     inner: Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
 }
 
 impl Portfolio {
     pub fn new(
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         config: Option<PortfolioConfig>,
@@ -111,7 +109,6 @@ impl Portfolio {
         let config = config.unwrap_or_default();
 
         Self::register_message_handlers(
-            msgbus.clone(),
             cache.clone(),
             clock.clone(),
             inner.clone(),
@@ -121,14 +118,12 @@ impl Portfolio {
         Self {
             clock,
             cache,
-            msgbus,
             inner,
             config,
         }
     }
 
     fn register_message_handlers(
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         inner: Rc<RefCell<PortfolioState>>,
@@ -146,76 +141,48 @@ impl Portfolio {
 
         let update_position_handler = {
             let cache = cache.clone();
-            let msgbus = msgbus.clone();
             let clock = clock.clone();
             let inner = inner.clone();
             ShareableMessageHandler(Rc::new(UpdatePositionHandler {
                 id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |event: &PositionEvent| {
-                    update_position(
-                        cache.clone(),
-                        msgbus.clone(),
-                        clock.clone(),
-                        inner.clone(),
-                        event,
-                    );
+                    update_position(cache.clone(), clock.clone(), inner.clone(), event);
                 }),
             }))
         };
 
         let update_quote_handler = {
             let cache = cache.clone();
-            let msgbus = msgbus.clone();
             let clock = clock.clone();
             let inner = inner.clone();
             ShareableMessageHandler(Rc::new(UpdateQuoteTickHandler {
                 id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |quote: &QuoteTick| {
-                    update_quote_tick(
-                        cache.clone(),
-                        msgbus.clone(),
-                        clock.clone(),
-                        inner.clone(),
-                        quote,
-                    );
+                    update_quote_tick(cache.clone(), clock.clone(), inner.clone(), quote);
                 }),
             }))
         };
 
         let update_bar_handler = {
             let cache = cache.clone();
-            let msgbus = msgbus.clone();
             let clock = clock.clone();
             let inner = inner.clone();
             ShareableMessageHandler(Rc::new(UpdateBarHandler {
                 id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |bar: &Bar| {
-                    update_bar(
-                        cache.clone(),
-                        msgbus.clone(),
-                        clock.clone(),
-                        inner.clone(),
-                        bar,
-                    );
+                    update_bar(cache.clone(), clock.clone(), inner.clone(), bar);
                 }),
             }))
         };
 
         let update_order_handler = {
             let cache = cache;
-            let msgbus = msgbus;
             let clock = clock.clone();
             let inner = inner;
             ShareableMessageHandler(Rc::new(UpdateOrderHandler {
                 id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |event: &OrderEventAny| {
-                    update_order(
-                        cache.clone(),
-                        msgbus.clone(),
-                        clock.clone(),
-                        inner.clone(),
-                        event,
-                    );
+                    update_order(cache.clone(), clock.clone(), inner.clone(), event);
                 }),
             }))
         };
@@ -794,7 +761,6 @@ impl Portfolio {
     pub fn update_quote_tick(&mut self, quote: &QuoteTick) {
         update_quote_tick(
             self.cache.clone(),
-            self.msgbus.clone(),
             self.clock.clone(),
             self.inner.clone(),
             quote,
@@ -804,7 +770,6 @@ impl Portfolio {
     pub fn update_bar(&mut self, bar: &Bar) {
         update_bar(
             self.cache.clone(),
-            self.msgbus.clone(),
             self.clock.clone(),
             self.inner.clone(),
             bar,
@@ -818,7 +783,6 @@ impl Portfolio {
     pub fn update_order(&mut self, event: &OrderEventAny) {
         update_order(
             self.cache.clone(),
-            self.msgbus.clone(),
             self.clock.clone(),
             self.inner.clone(),
             event,
@@ -828,7 +792,6 @@ impl Portfolio {
     pub fn update_position(&mut self, event: &PositionEvent) {
         update_position(
             self.cache.clone(),
-            self.msgbus.clone(),
             self.clock.clone(),
             self.inner.clone(),
             event,
@@ -1079,17 +1042,15 @@ impl Portfolio {
 // Helper functions
 fn update_quote_tick(
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
     quote: &QuoteTick,
 ) {
-    update_instrument_id(cache, msgbus, clock.clone(), inner, &quote.instrument_id);
+    update_instrument_id(cache, clock.clone(), inner, &quote.instrument_id);
 }
 
 fn update_bar(
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
     bar: &Bar,
@@ -1099,12 +1060,11 @@ fn update_bar(
         .borrow_mut()
         .bar_close_prices
         .insert(instrument_id, bar.close);
-    update_instrument_id(cache, msgbus, clock.clone(), inner, &instrument_id);
+    update_instrument_id(cache, clock.clone(), inner, &instrument_id);
 }
 
 fn update_instrument_id(
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
     instrument_id: &InstrumentId,
@@ -1180,7 +1140,6 @@ fn update_instrument_id(
     let mut portfolio_clone = Portfolio {
         clock: clock.clone(),
         cache,
-        msgbus,
         inner: inner.clone(),
         config: PortfolioConfig::default(), // TODO: TBD
     };
@@ -1201,7 +1160,6 @@ fn update_instrument_id(
 
 fn update_order(
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
     event: &OrderEventAny,
@@ -1284,7 +1242,6 @@ fn update_order(
         let mut portfolio_clone = Portfolio {
             clock: clock.clone(),
             cache: cache.clone(),
-            msgbus,
             inner: inner.clone(),
             config: PortfolioConfig::default(), // TODO: TBD
         };
@@ -1332,7 +1289,6 @@ fn update_order(
 
 fn update_position(
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
     event: &PositionEvent,
@@ -1354,7 +1310,6 @@ fn update_position(
     let mut portfolio_clone = Portfolio {
         clock: clock.clone(),
         cache: cache.clone(),
-        msgbus,
         inner: inner.clone(),
         config: PortfolioConfig::default(), // TODO: TBD
     };
