@@ -55,7 +55,7 @@ use crate::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
-type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -493,16 +493,19 @@ impl Drop for WebSocketClientInner {
         if let Some(ref read_task) = self.read_task.take() {
             if !read_task.is_finished() {
                 read_task.abort();
+                tracing::debug!("Aborted task 'read'");
             }
         }
 
         if !self.write_task.is_finished() {
             self.write_task.abort();
+            tracing::debug!("Aborted task 'write'");
         }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
+                tracing::debug!("Aborted task 'heartbeat'");
             }
         }
     }
@@ -538,7 +541,6 @@ impl WebSocketClient {
         install_cryptographic_provider();
         let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
         let (writer, reader) = ws_stream.split();
-
         let inner = WebSocketClientInner::connect_url(config).await?;
 
         let connection_mode = inner.connection_mode.clone();
