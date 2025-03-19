@@ -29,7 +29,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[enum_dispatch]
+#[enum_dispatch(Account)]
 pub enum AccountAny {
     Margin(MarginAccount),
     Cash(CashAccount),
