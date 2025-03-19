@@ -210,7 +210,7 @@ impl SyntheticInstrument {
     /// provided as an array of `f64` values.
     pub fn calculate(&mut self, inputs: &[f64]) -> anyhow::Result<Price> {
         if inputs.len() != self.variables.len() {
-            return Err(anyhow::anyhow!("Invalid number of input values"));
+            anyhow::bail!("Invalid number of input values");
         }
 
         for (variable, input) in self.variables.iter().zip(inputs) {
@@ -222,9 +222,7 @@ impl SyntheticInstrument {
 
         match result {
             Value::Float(price) => Ok(Price::new(price, self.price_precision)),
-            _ => Err(anyhow::anyhow!(
-                "Failed to evaluate formula to a floating point number"
-            )),
+            _ => anyhow::bail!("Failed to evaluate formula to a floating point number"),
         }
     }
 }
