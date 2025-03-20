@@ -318,7 +318,7 @@ Use the `encoding` config option to control the message writing encoding.
 
 :::tip
 The `msgpack` encoding is used by default as it offers the most optimal serialization and memory performance.
-It's recommended to use `json` encoding for human readability when performance is not a primary concern.
+We recommend using `json` encoding for human readability when performance is not a primary concern.
 :::
 
 ### Timestamp formatting

@@ -65,6 +65,7 @@ Best practice is to manage your credentials using environment variables.
 ## Overview
 
 The following adapter classes are available:
+
 - `BetfairInstrumentProvider` which enables querying the Betfair market catalogue for betting markets, which are then converted into Nautilus "instruments".
 - `BetfairDataClient` which connects to the Exchange Stream API and streams market data.
 - `BetfairExecutionClient` which enables the retrieval of account information and execution and updates for orders (or bets).

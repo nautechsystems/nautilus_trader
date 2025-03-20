@@ -1,16 +1,16 @@
 # Coinbase International
 
 [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
-This exchange is particularly valuable for European and other international traders seeking access to leveraged crypto derivatives products, which are often restricted or unavailable in these jurisdictions.
+The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
 
-**Coinbase International** brings a high standard of customer protection, a robust risk management framework and high performance trading technology, including:
+Coinbase International brings a high standard of customer protection, a robust risk management framework and high-performance trading technology, including:
 
-- Real-time 24/7 - 365 risk management
-- Liquidity provided by external market makers (no proprietary trading)
+- Real-time 24/7/365 risk management
+- Liquidity from external market makers (no proprietary trading)
 - Dynamic margin requirements and collateral assessments
 - Liquidation framework that meets rigorous compliance standards
 - Well-capitalized exchange to support tail market events
-- Working with top-tier global regulators
+- Collaboration with top-tier global regulators
 
 See the [Introducing Coinbase International Exchange](https://www.coinbase.com/en-au/blog/introducing-coinbase-international-exchange) blog article for more details.
 
@@ -19,7 +19,7 @@ We are currently working on this integration guide.
 :::
 
 :::warning
-The **Coinbase International** integration is currently in a beta testing phase.
+The Coinbase International integration is currently in a beta testing phase.
 Exercise caution and report any issues on GitHub.
 :::
 
@@ -29,22 +29,26 @@ You can find working live example scripts [here](https://github.com/nautechsyste
 
 ## Overview
 
+The following products are supported on the Coinbase International exchange:
+
+- Perpetual Futures contracts
+- Spot cryptocurrencies
+
 :::info
-There is **no** need for an optional extra installation of `coinbase_intx`, as the core components of the
-adapter are written in Rust and compiled and linked automatically during the build process.
+No additional `coinbase_intx` installation is required; the adapter’s core components, written in Rust, are automatically compiled and linked during the build.
 :::
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full **Coinbase International** integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The Coinbase International adapter includes multiple components, which can be used together or
+separately depending on the use case.
 
 - `CoinbaseIntxHttpClient`: REST API connectivity.
 - `CoinbaseIntxWebSocketClient`: WebSocket API connectivity.
 - `CoinbaseIntxInstrumentProvider`: Instrument parsing and loading functionality.
 - `CoinbaseIntxDataClient`: A market data feed manager.
 - `CoinbaseIntxExecutionClient`: An account management and trade execution gateway.
-- `CoinbaseIntxLiveDataClientFactory`: Factory for **Coinbase International** data clients (used by the trading node builder).
-- `CoinbaseIntxLiveExecClientFactory`: Factory for **Coinbase International** execution clients (used by the trading node builder).
+- `CoinbaseIntxLiveDataClientFactory`: Factory for Coinbase International data clients (used by the trading node builder).
+- `CoinbaseIntxLiveExecClientFactory`: Factory for Coinbase International execution clients (used by the trading node builder).
 
 :::note
 Most users will simply define a configuration for a live trading node (described below),
@@ -53,17 +57,13 @@ and won't necessarily need to work with the above components directly.
 
 ## Coinbase International documentation
 
-**Coinbase International** provides extensive API documentation for users which can be found in the [Coinbase Developer Docs](https://docs.cdp.coinbase.com/intx/docs/welcome).
-It’s recommended you also refer to the **Coinbase International** documentation in conjunction with this NautilusTrader integration guide.
+Coinbase International provides extensive API documentation for users which can be found in the [Coinbase Developer Docs](https://docs.cdp.coinbase.com/intx/docs/welcome).
+We recommend also referring to the Coinbase International documentation in conjunction with this NautilusTrader integration guide.
 
-The following products are supported on the **Coinbase International** exchange:
-
-- Perpetual Futures contracts
-- Spot cryptocurrencies
 
 ## Order types
 
-**Coinbase International** offers market, limit and stop order types - enabling a broad range of strategies.
+Coinbase International offers market, limit, and stop order types, enabling a broad range of strategies.
 
 |                        | Derivatives          | Spot                     |
 |------------------------|----------------------|--------------------------|
@@ -78,22 +78,28 @@ The following products are supported on the **Coinbase International** exchange:
 
 ## Execution
 
+The adapter is built to trade one Coinbase International portfolio per execution client.
+
+To specify the portfolio, set the `COINBASE_INTX_PORTFOLIO_ID` environment variable to the desired
+portfolio ID. Alternatively, if using multiple execution clients, define the `portfolio_id` in the
+execution configuration for each client.
+
 **Coinbase International** does not currently provide a `USER` websocket channel that would provide
 execution and account messages. As a temporary workaround, we must poll the REST API to retrieve
 new order fills. This polling is configured to operate within API rate limits and optimize for
 minimum HTTP request round-trip latency.
 
-For users with strict latency requirements, additional/alternative solutions can be explored.
-If you're interested - please open an issue on GitHub or start a discussion thread in our Discord community.
+For users who are latency sensitive, additional/alternative solutions can be explored.
+If you're interested, please open an issue on GitHub or start a discussion thread in our Discord community.
 
 ## Configuration
 
 ### Strategies
 
 :::warning
-**Coinbase International** has a strict specification for client order IDs.
+Coinbase International has a strict specification for client order IDs.
 Nautilus can meet the spec by using UUID4 values for client order IDs.
-As such, the `use_uuid_client_order_ids=True` config option **must** be set for your strategy configurations (otherwise you'll see an API error on order submit).
+To comply, set the `use_uuid_client_order_ids=True` config option in your strategy configuration (otherwise, order submission will trigger an API error).
 
 See the Coinbase International [Create order](https://docs.cdp.coinbase.com/intx/reference/createorder) REST API documentation for further details.
 :::
@@ -149,7 +155,7 @@ node.build()
 
 ### API credentials
 
-There are two options for providing your credentials to the **Coinbase International** clients.
+Provide credentials to the clients using one of the following methods.
 
 Either pass values for the following configuration options:
 
