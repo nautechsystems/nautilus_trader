@@ -127,7 +127,7 @@ the execution engine will perform the execution reconciliation procedure for eac
 Additionally, you can specify the lookback window for reconciliation by setting the `reconciliation_lookback_mins` configuration parameter.
 
 :::tip
-It's recommended not to set a specific `reconciliation_lookback_mins`. This allows the requests made
+We recommend not setting a specific `reconciliation_lookback_mins`. This allows the requests made
 to the venues to utilize the maximum execution history available for reconciliation.
 :::
 

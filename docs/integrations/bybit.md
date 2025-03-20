@@ -29,9 +29,9 @@ You can find working live example scripts [here](https://github.com/nautechsyste
 
 ## Overview
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full Bybit integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The Bybit adapter includes multiple components, which can be used together or separately depending
+on the use case.
 
 - `BybitHttpClient`: Low-level HTTP API connectivity.
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity.
