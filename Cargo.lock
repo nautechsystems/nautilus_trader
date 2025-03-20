@@ -3060,6 +3060,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-coinbase-intx"
+version = "0.44.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "base64",
+ "chrono",
+ "criterion",
+ "derive_builder",
+ "futures-util",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-execution",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-test-kit",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "reqwest",
+ "ring",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "strum",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
+ "ustr",
+ "uuid",
+]
+
+[[package]]
 name = "nautilus-common"
 version = "0.44.0"
 dependencies = [
@@ -3399,6 +3437,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.44.0"
 dependencies = [
+ "nautilus-coinbase-intx",
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",

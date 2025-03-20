@@ -1,0 +1,19 @@
+{
+  "channel": "LEVEL2",
+  "type": "UPDATE",
+  "product_id": "BTC-PERP",
+  "sequence": 1,
+  "time": "2025-03-14T23:09:44.095Z",
+  "changes": [
+    [
+      "BUY",
+      "84296.2",
+      "0"
+    ],
+    [
+      "BUY",
+      "84296.3",
+      "0.1779"
+    ]
+  ]
+}

@@ -77,7 +77,7 @@ E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would 
 
 ### Trailing stops
 
-Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292).
+Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
 This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price can optionally be set using the `trigger_price` value.
 
 Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
