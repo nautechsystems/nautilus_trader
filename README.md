@@ -15,9 +15,9 @@
 
 | Platform           | Rust    | Python      |
 | :----------------- | :------ | :---------- |
-| `Linux (x86_64)`   | 1.85.0+ | 3.11, 3.12  |
-| `macOS (arm64)`    | 1.85.0+ | 3.11, 3.12  |
-| `Windows (x86_64)` | 1.85.0+ | 3.11, 3.12  |
+| `Linux (x86_64)`   | 1.85.1+ | 3.11, 3.12  |
+| `macOS (arm64)`    | 1.85.1+ | 3.11, 3.12  |
+| `Windows (x86_64)` | 1.85.1+ | 3.11, 3.12  |
 
 [Package Index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)
 
