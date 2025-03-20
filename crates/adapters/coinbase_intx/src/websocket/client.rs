@@ -143,7 +143,7 @@ impl CoinbaseIntxWebSocketClient {
         let signal = self.signal.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            CoinbaseWsMessageHandler::new(instruments, reader, signal, tx)
+            CoinbaseIntxWsMessageHandler::new(instruments, reader, signal, tx)
                 .run()
                 .await;
         });
@@ -414,12 +414,12 @@ fn instrument_ids_to_product_ids(instrument_ids: &[InstrumentId]) -> Vec<String>
 }
 
 /// Provides a raw message handler for Coinbase International WebSocket feed.
-struct CoinbaseFeedHandler {
+struct CoinbaseIntxFeedHandler {
     reader: MessageReader,
     signal: Arc<AtomicBool>,
 }
 
-impl CoinbaseFeedHandler {
+impl CoinbaseIntxFeedHandler {
     /// Creates a new [`CoinbaseFeedHandler`] instance.
     pub const fn new(reader: MessageReader, signal: Arc<AtomicBool>) -> Self {
         Self { reader, signal }
@@ -499,13 +499,13 @@ impl CoinbaseFeedHandler {
 }
 
 /// Provides a Nautilus parser for the Coinbase International WebSocket feed.
-struct CoinbaseWsMessageHandler {
+struct CoinbaseIntxWsMessageHandler {
     instruments: HashMap<Ustr, InstrumentAny>,
-    handler: CoinbaseFeedHandler,
+    handler: CoinbaseIntxFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
 }
 
-impl CoinbaseWsMessageHandler {
+impl CoinbaseIntxWsMessageHandler {
     /// Creates a new [`CoinbaseWsMessageHandler`] instance.
     pub const fn new(
         instruments: HashMap<Ustr, InstrumentAny>,
@@ -513,7 +513,7 @@ impl CoinbaseWsMessageHandler {
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     ) -> Self {
-        let handler = CoinbaseFeedHandler::new(reader, signal);
+        let handler = CoinbaseIntxFeedHandler::new(reader, signal);
         Self {
             instruments,
             handler,
