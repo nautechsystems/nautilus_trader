@@ -5019,6 +5019,119 @@ class TardisMachineClient:
 
 async def run_tardis_machine_replay(config_filepath: str, output_path: str | None = None) -> None: ...
 
+# Coinbase International
+
+class CoinbaseIntxHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        base_url: str | None = None,
+        timeout_secs: int | None = None,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    def is_initialized(self) -> bool: ...
+    def get_cached_symbols(self) -> list[str]: ...
+    def add_instrument(self, instrument: Instrument) -> None: ...
+    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+    async def request_instruments(self) -> list[Instrument]: ...
+    async def request_instrument(self, symbol: Symbol) -> Instrument: ...
+    async def request_order_status_report(
+        self,
+        account_id: AccountId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderStatusReport: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        symbol: Symbol,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        client_order_id: ClientOrderId | None = None,
+        start: dt.datetime | None = None,
+    ) -> list[FillReport]:...
+    async def request_position_status_report(
+        self,
+        account_id: AccountId,
+        symbol: Symbol,
+    ) -> PositionStatusReport: ...
+    async def request_position_status_reports(
+        self,
+        account_id: AccountId,
+    ) -> list[PositionStatusReport]: ...
+    async def submit_order(
+        self,
+        account_id: AccountId,
+        symbol: Symbol,
+        client_order_id: ClientOrderId,
+        order_type: OrderType,
+        order_side: OrderSide,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        expire_time: dt.datetime | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+    ) -> OrderStatusReport: ...
+    async def cancel_order(
+        self,
+        account_id: AccountId,
+        client_order_id: ClientOrderId,
+    ) -> OrderStatusReport: ...
+    async def cancel_orders(
+        self,
+        account_id: AccountId,
+        symbol: Symbol,
+        order_side: OrderSide | None = None,
+    ) -> list[OrderStatusReport]: ...
+    async def modify_order(
+        self,
+        account_id: AccountId,
+        client_order_id: ClientOrderId,
+        new_client_order_id: ClientOrderId,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        quantity: Quantity | None = None,
+    ) -> OrderStatusReport: ...
+
+class CoinbaseIntxWebSocketClient:
+    def __init__(
+        self,
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        heartbeat: int | None = None,
+    ) -> None: ...
+    @property
+    def url(self) -> str: ...
+    @property
+    def api_key(self) -> str: ...
+    def is_closed(self) -> bool: ...
+    async def connect(
+        self,
+        instruments: list[Instrument],
+        callback: Callable,
+    ) -> None: ...
+    async def close(self) -> None: ...
+    async def subscribe_instruments(self) -> None: ...
+    async def subscribe_order_book(self, instrument_ids: list[InstrumentId]) -> None: ...
+    async def subscribe_quotes(self, instrument_ids: list[InstrumentId]) -> None: ...
+    async def subscribe_trades(self, instrument_ids: list[InstrumentId]) -> None: ...
+    async def subscribe_bars(self, bar_type: BarType) -> None: ...
+    async def unsubscribe_instruments(self) -> None: ...
+    async def unsubscribe_order_book(self, instrument_ids: list[InstrumentId]) -> None: ...
+    async def unsubscribe_quotes(self, instrument_ids: list[InstrumentId]) -> None: ...
+    async def unsubscribe_trades(self, instrument_ids: list[InstrumentId]) -> None: ...
+    async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
+
 # Greeks
 
 class BlackScholesGreeksResult:

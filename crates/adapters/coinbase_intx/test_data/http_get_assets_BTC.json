@@ -1,0 +1,13 @@
+{
+  "asset_id": "118059611751202816",
+  "asset_uuid": "5b71fc48-3dd3-540c-809b-f8c94d0e68b5",
+  "asset_name": "BTC",
+  "status": "ACTIVE",
+  "collateral_weight": 0.9,
+  "supported_networks_enabled": true,
+  "min_borrow_qty": "0",
+  "max_borrow_qty": "0",
+  "loan_collateral_requirement_multiplier": 0.0,
+  "account_collateral_limit": "0",
+  "ecosystem_collateral_limit_breached": false
+}

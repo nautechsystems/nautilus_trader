@@ -1,0 +1,19 @@
+[
+  {
+    "asset_id": "0-0-1",
+    "asset_name": "USDC",
+    "asset_uuid": "2b92315d-eab7-5bef-84fa-089a131333f5",
+    "quantity": "997.5000000000000",
+    "hold": "0",
+    "hold_available_for_collateral": "0",
+    "transfer_hold": "0",
+    "collateral_value": "997.5",
+    "max_withdraw_amount": "997.5000000000000",
+    "loan": "0",
+    "loan_collateral_requirement": "0.0",
+    "pledged_collateral_quantity": "997.5000000000000",
+    "loan_initial_margin_contribution": "0.0",
+    "collateral_backed_overdraft_loan": "0",
+    "user_requested_loan": "0"
+  }
+]

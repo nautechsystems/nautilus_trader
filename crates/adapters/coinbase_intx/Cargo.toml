@@ -1,0 +1,79 @@
+[package]
+name = "nautilus-coinbase-intx"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_coinbase_intx"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["python"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-execution/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+]
+python = [
+  "pyo3",
+  "pyo3-async-runtimes",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-execution/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+]
+
+[dependencies]
+nautilus-common = { path = "../../common" }
+nautilus-core = { path = "../../core" }
+nautilus-execution = { path = "../../execution" }
+nautilus-model = { path = "../../model" }
+nautilus-network = { path = "../../network" }
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+derive_builder = { workspace = true }
+futures-util = { workspace = true }
+log = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+reqwest = { workspace = true }
+ring = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ustr = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+nautilus-test-kit = { path = "../../test_kit" }
+criterion = { workspace = true }
+rstest = { workspace = true }
+tracing-test = { workspace = true }
+
+# [[bin]]
+# name = "coinbase-intx-http-private"
+# path = "bin/http-private.rs"
+
+# [[bin]]
+# name = "coinbase-intx-http-public"
+# path = "bin/http-public.rs"
+
+# [[bin]]
+# name = "coinbase-intx-ws"
+# path = "bin/websocket.rs"

@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
 - Added `time_in_force` parameter for `Strategy.close_position(...)`
 - Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
 
