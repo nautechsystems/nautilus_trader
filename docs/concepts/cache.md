@@ -112,6 +112,8 @@ cache_config = CacheConfig(
     use_instance_id: bool = False,           # Include instance ID in keys
     flush_on_start: bool = False,            # Clear database on startup
     drop_instruments_on_reset: bool = True,  # Clear instruments on reset
+    drop_accounts_on_reset: bool = True,     # Clear accounts on reset
+    drop_positions_on_reset: bool = True,    # Clear positions on reset
     tick_capacity: int = 10_000,             # Maximum ticks stored per instrument
     bar_capacity: int = 10_000,              # Maximum bars stored per each bar-type
 )

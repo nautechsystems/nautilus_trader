@@ -106,6 +106,8 @@ cdef class Cache(CacheFacade):
 
         # Configuration
         self._drop_instruments_on_reset = config.drop_instruments_on_reset
+        self._drop_accounts_on_reset = config.drop_accounts_on_reset
+        self._drop_positions_on_reset = config.drop_positions_on_reset
         self.has_backing = database is not None
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
@@ -813,15 +815,20 @@ cdef class Cache(CacheFacade):
         self._bars_ask.clear()
         self._currencies.clear()
         self._synthetics.clear()
-        self._accounts.clear()
         self._orders.clear()
         self._order_lists.clear()
-        self._positions.clear()
-        self._position_snapshots.clear()
-        self.clear_index()
 
         if self._drop_instruments_on_reset:
             self._instruments.clear()
+
+        if self._drop_accounts_on_reset:
+            self._accounts.clear()
+
+        if self._drop_positions_on_reset:
+            self._positions.clear()
+            self._position_snapshots.clear()
+
+        self.clear_index()
 
         self._log.info(f"Reset")
 
