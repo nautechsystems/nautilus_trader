@@ -40,7 +40,7 @@ pub enum NautilusWsMessage {
 pub struct CoinbaseIntxSubscription {
     #[serde(rename = "type")]
     pub op: WsOperation,
-    pub product_ids: Vec<String>,
+    pub product_ids: Vec<Ustr>,
     pub channels: Vec<CoinbaseIntxWsChannel>,
     pub time: String,
     pub key: Ustr,

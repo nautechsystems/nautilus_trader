@@ -537,6 +537,7 @@ impl WebSocketClient {
         config: WebSocketConfig,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
+        post_reconnect: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<(MessageReader, Self), Error> {
         install_cryptographic_provider();
         let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
@@ -553,6 +554,7 @@ impl WebSocketClient {
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
+            post_reconnect,
             None, // no post_reconnection
             None, // no post_disconnection
         );
@@ -592,8 +594,9 @@ impl WebSocketClient {
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
-            post_reconnection,
-            post_disconnection,
+            None,               // Rust handler
+            post_reconnection,  // TODO: Deprecated
+            post_disconnection, // TODO: Deprecated
         );
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
@@ -744,8 +747,9 @@ impl WebSocketClient {
     fn spawn_controller_task(
         mut inner: WebSocketClientInner,
         connection_mode: Arc<AtomicU8>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        py_post_reconnection: Option<PyObject>, // TODO: Deprecated
+        py_post_disconnection: Option<PyObject>, // TODO: Deprecated
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
             tracing::debug!("Started task 'controller'");
@@ -786,7 +790,7 @@ impl WebSocketClient {
 
                     tracing::debug!("Closed");
 
-                    if let Some(ref handler) = post_disconnection {
+                    if let Some(ref handler) = py_post_disconnection {
                         Python::with_gil(|py| match handler.call0(py) {
                             Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
                             Err(e) => {
@@ -803,7 +807,12 @@ impl WebSocketClient {
                             tracing::debug!("Reconnected successfully");
                             inner.backoff.reset();
 
-                            if let Some(ref handler) = post_reconnection {
+                            if let Some(ref callback) = post_reconnection {
+                                callback();
+                            }
+
+                            // TODO: Python based websocket handlers deprecated (will be removed)
+                            if let Some(ref handler) = py_post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => {
                                         tracing::debug!("Called `post_reconnection` handler")

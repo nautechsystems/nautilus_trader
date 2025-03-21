@@ -18,7 +18,17 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 /// Error types that can be returned by the WebSocket API.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
 pub enum WsErrorType {
@@ -36,7 +46,17 @@ pub enum WsErrorType {
 
 /// Operation type for WebSocket commands.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "UPPERCASE")]
 pub enum WsOperation {
@@ -48,7 +68,17 @@ pub enum WsOperation {
 
 /// Operation type for WebSocket commands.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "UPPERCASE")]
 pub enum WsMessageType {
@@ -60,7 +90,18 @@ pub enum WsMessageType {
 
 /// Coinbase International WebSocket feed channel.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CoinbaseIntxWsChannel {

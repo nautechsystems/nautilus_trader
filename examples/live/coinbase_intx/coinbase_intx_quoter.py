@@ -325,7 +325,7 @@ class TOBQuoter(Strategy):
         if self.config.dry_run:
             return
 
-        # TODO: Development - test individual cancels
+        # Tests individual cancels:
         # for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
         #     self.cancel_order(order)
 
@@ -335,6 +335,10 @@ class TOBQuoter(Strategy):
             time_in_force=TimeInForce.IOC,  # <-- Required for Coinbase Intx
             reduce_only=False,
         )
+
+        # Tests unsubscribe:
+        self.unsubscribe_quote_ticks(self.config.instrument_id)
+        self.unsubscribe_trade_ticks(self.config.instrument_id)
 
     def on_reset(self) -> None:
         """
