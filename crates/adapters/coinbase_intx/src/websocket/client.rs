@@ -477,7 +477,7 @@ struct CoinbaseIntxFeedHandler {
 }
 
 impl CoinbaseIntxFeedHandler {
-    /// Creates a new [`CoinbaseFeedHandler`] instance.
+    /// Creates a new [`CoinbaseIntxFeedHandler`] instance.
     pub const fn new(reader: MessageReader, signal: Arc<AtomicBool>) -> Self {
         Self { reader, signal }
     }
@@ -563,7 +563,7 @@ struct CoinbaseIntxWsMessageHandler {
 }
 
 impl CoinbaseIntxWsMessageHandler {
-    /// Creates a new [`CoinbaseWsMessageHandler`] instance.
+    /// Creates a new [`CoinbaseIntxWsMessageHandler`] instance.
     pub const fn new(
         instruments: HashMap<Ustr, InstrumentAny>,
         reader: MessageReader,
