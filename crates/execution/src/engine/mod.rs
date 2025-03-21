@@ -688,7 +688,7 @@ impl ExecutionEngine {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
-            log::error!("Cannot handle order fill: no position ID found for fill {fill}",);
+            log::error!("Cannot handle order fill: no position ID found for fill {fill}");
             return;
         };
 

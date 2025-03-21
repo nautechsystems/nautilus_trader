@@ -317,7 +317,7 @@ impl WebSocketClientInner {
                         continue;
                     }
                     Ok(Some(Ok(Message::Ping(ping)))) => {
-                        tracing::trace!("Received ping: {ping:?}",);
+                        tracing::trace!("Received ping: {ping:?}");
                         if let Some(ref handler) = ping_handler {
                             if let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
