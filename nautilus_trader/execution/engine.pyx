@@ -1370,12 +1370,14 @@ cdef class ExecutionEngine(Component):
         if self.debug:
             self._log.debug(f"Creating position state snapshot for {position}", LogColor.MAGENTA)
 
+        cdef uint64_t ts_snapshot = self._clock.timestamp_ns()
+
         cdef Money unrealized_pnl = self._cache.calculate_unrealized_pnl(position)
         cdef dict[str, object] position_state = position.to_dict()
         if unrealized_pnl is not None:
             position_state["unrealized_pnl"] = str(unrealized_pnl)
+            position_state["ts_snapshot"] = ts_snapshot
 
-        # TODO: Experimental internal message bus publishing
         self._msgbus.publish_c(
             topic=f"snapshots.positions.{position.id}",
             msg=position_state,
@@ -1385,7 +1387,7 @@ cdef class ExecutionEngine(Component):
         if self._cache.has_backing:
             self._cache.snapshot_position_state(
                 position,
-                position.ts_last,
+                ts_snapshot,
                 unrealized_pnl,
             )
 

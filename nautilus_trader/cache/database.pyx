@@ -1127,7 +1127,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._log.debug(f"Added state snapshot {order}")
 
-    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl = None):
+    cpdef void snapshot_position_state(
+        self,
+        Position position,
+        uint64_t ts_snapshot,
+        Money unrealized_pnl = None,
+    ):
         """
         Snapshot the state of the given `position`.
 
