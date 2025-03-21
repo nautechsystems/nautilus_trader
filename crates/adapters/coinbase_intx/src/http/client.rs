@@ -581,7 +581,7 @@ impl CoinbaseIntxHttpClient {
         self.inner.base_url.as_str()
     }
 
-    /// Returns the API key being used by the client.
+    /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.clone().map(|c| c.api_key.as_str())
     }

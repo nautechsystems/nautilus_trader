@@ -33,6 +33,7 @@ use nautilus_model::{
 };
 use nautilus_network::websocket::{MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
+use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use ustr::Ustr;
 
@@ -67,6 +68,7 @@ pub struct CoinbaseIntxWebSocketClient {
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    subscriptions: Arc<Mutex<HashMap<CoinbaseIntxWsChannel, Vec<Ustr>>>>,
 }
 
 impl Default for CoinbaseIntxWebSocketClient {
@@ -90,6 +92,8 @@ impl CoinbaseIntxWebSocketClient {
         let api_passphrase = api_passphrase.unwrap_or(get_env_var("COINBASE_INTX_API_PASSPHRASE")?);
 
         let credential = Credential::new(api_key, api_secret, api_passphrase);
+        let signal = Arc::new(AtomicBool::new(false));
+        let subscriptions = Arc::new(Mutex::new(HashMap::new()));
 
         Ok(Self {
             url,
@@ -97,19 +101,23 @@ impl CoinbaseIntxWebSocketClient {
             heartbeat,
             inner: None,
             rx: None,
-            signal: Arc::new(AtomicBool::new(false)),
+            signal,
             task_handle: None,
+            subscriptions,
         })
     }
 
+    /// Returns the websocket url being used by the client.
     pub fn url(&self) -> &str {
         self.url.as_str()
     }
 
+    /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> &str {
         self.credential.api_key.as_str()
     }
 
+    /// Returns a value indicating whether the client is closed.
     pub fn is_closed(&self) -> bool {
         match &self.inner {
             Some(inner) => inner.is_closed(),
@@ -117,10 +125,17 @@ impl CoinbaseIntxWebSocketClient {
         }
     }
 
+    /// Connects the client to the server and caches the given instruments.
     pub async fn connect(
         &mut self,
         instruments: HashMap<Ustr, InstrumentAny>,
     ) -> anyhow::Result<()> {
+        let client = self.clone();
+        let post_reconnect = Arc::new(move || {
+            let client = client.clone();
+            tokio::spawn(async move { client.resubscribe_all().await });
+        });
+
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
@@ -134,7 +149,8 @@ impl CoinbaseIntxWebSocketClient {
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
         };
-        let (reader, client) = WebSocketClient::connect_stream(config, vec![], None).await?;
+        let (reader, client) =
+            WebSocketClient::connect_stream(config, vec![], None, Some(post_reconnect)).await?;
 
         self.inner = Some(Arc::new(client));
 
@@ -204,12 +220,23 @@ impl CoinbaseIntxWebSocketClient {
     async fn subscribe(
         &self,
         channels: Vec<CoinbaseIntxWsChannel>,
-        product_ids: Vec<String>,
+        product_ids: Vec<Ustr>,
     ) -> Result<(), CoinbaseIntxWsError> {
+        // Update active subscriptions
+        let mut active_subs = self.subscriptions.lock().await;
+        for channel in &channels {
+            active_subs
+                .entry(*channel)
+                .or_insert_with(Vec::new)
+                .extend(product_ids.clone());
+        }
+        tracing::debug!(
+            "Added active subscription(s): channels={channels:?}, product_ids={product_ids:?}"
+        );
+
         let time = chrono::DateTime::<Utc>::from(SystemTime::now())
             .timestamp()
             .to_string();
-        // let credential = self.credential.clone();
         let signature = self.credential.sign_ws(&time);
         let message = CoinbaseIntxSubscription {
             op: WsOperation::Subscribe,
@@ -239,8 +266,24 @@ impl CoinbaseIntxWebSocketClient {
     async fn unsubscribe(
         &self,
         channels: Vec<CoinbaseIntxWsChannel>,
-        product_ids: Vec<String>,
+        product_ids: Vec<Ustr>,
     ) -> Result<(), CoinbaseIntxWsError> {
+        // Update active subscriptions
+        let mut active_subs = self.subscriptions.lock().await;
+        for channel in &channels {
+            if let Some(subs) = active_subs.get_mut(channel) {
+                for product_id in &product_ids {
+                    subs.retain(|pid| pid != product_id);
+                }
+                if subs.is_empty() {
+                    active_subs.remove(channel);
+                }
+            }
+        }
+        tracing::debug!(
+            "Removed active subscription(s): channels={channels:?}, product_ids={product_ids:?}"
+        );
+
         let time = chrono::DateTime::<Utc>::from(SystemTime::now())
             .timestamp()
             .to_string();
@@ -267,6 +310,23 @@ impl CoinbaseIntxWebSocketClient {
         }
 
         Ok(())
+    }
+
+    /// Resubscribes for all active subscriptions.
+    async fn resubscribe_all(&self) {
+        let subs = self.subscriptions.lock().await.clone();
+
+        for (channel, product_ids) in subs {
+            if product_ids.is_empty() {
+                continue;
+            }
+
+            tracing::debug!("Resubscribing: channel={channel}, product_ids={product_ids:?}");
+
+            if let Err(e) = self.subscribe(vec![channel], product_ids).await {
+                tracing::error!("Failed to resubscribe to channel {channel}: {e}");
+            }
+        }
     }
 
     /// Subscribes to instrument definition updates for the given instrument IDs.
@@ -333,7 +393,7 @@ impl CoinbaseIntxWebSocketClient {
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), CoinbaseIntxWsError> {
         let channel = bar_spec_as_coinbase_channel(bar_type.spec())
             .map_err(|e| CoinbaseIntxWsError::ClientError(e.to_string()))?;
-        let product_ids = vec![bar_type.standard().instrument_id().symbol.to_string()];
+        let product_ids = vec![bar_type.standard().instrument_id().symbol.inner()];
         self.subscribe(vec![channel], product_ids).await
     }
 
@@ -401,16 +461,13 @@ impl CoinbaseIntxWebSocketClient {
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), CoinbaseIntxWsError> {
         let channel = bar_spec_as_coinbase_channel(bar_type.spec())
             .map_err(|e| CoinbaseIntxWsError::ClientError(e.to_string()))?;
-        let product_id = bar_type.standard().instrument_id().symbol.to_string();
+        let product_id = bar_type.standard().instrument_id().symbol.inner();
         self.unsubscribe(vec![channel], vec![product_id]).await
     }
 }
 
-fn instrument_ids_to_product_ids(instrument_ids: &[InstrumentId]) -> Vec<String> {
-    instrument_ids
-        .iter()
-        .map(|x| x.symbol.to_string())
-        .collect()
+fn instrument_ids_to_product_ids(instrument_ids: &[InstrumentId]) -> Vec<Ustr> {
+    instrument_ids.iter().map(|x| x.symbol.inner()).collect()
 }
 
 /// Provides a raw message handler for Coinbase International WebSocket feed.
