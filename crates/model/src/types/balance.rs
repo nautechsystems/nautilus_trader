@@ -101,7 +101,7 @@ impl Debug for AccountBalance {
 
 impl Display for AccountBalance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}",)
+        write!(f, "{self:?}")
     }
 }
 
@@ -152,7 +152,7 @@ impl Debug for MarginBalance {
 
 impl Display for MarginBalance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}",)
+        write!(f, "{self:?}")
     }
 }
 

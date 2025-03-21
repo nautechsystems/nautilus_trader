@@ -355,7 +355,7 @@ fn batch_and_write_deltas(
     match order_book_deltas_to_arrow_record_batch_bytes(deltas) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
+            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
@@ -370,7 +370,7 @@ fn batch_and_write_depths(
     match order_book_depth10_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
+            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
@@ -385,7 +385,7 @@ fn batch_and_write_quotes(
     match quote_ticks_to_arrow_record_batch_bytes(quotes) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
+            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
@@ -400,7 +400,7 @@ fn batch_and_write_trades(
     match trade_ticks_to_arrow_record_batch_bytes(trades) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
+            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
