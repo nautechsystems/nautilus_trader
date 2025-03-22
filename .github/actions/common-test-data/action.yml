@@ -6,7 +6,8 @@ runs:
   steps:
       - name: Cached test data
         id: cached-testdata-large
-        uses: actions/cache@v4
+        # https://github.com/actions/cache/releases/tag/v4.2.3
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: tests/test_data/large
           key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}

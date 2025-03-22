@@ -18,8 +18,14 @@ jobs:
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 2
 
@@ -33,7 +39,8 @@ jobs:
         run: chmod +x scripts/package-version.sh
 
       - name: Create git tag
-        uses: salsify/action-detect-and-tag-new-version@v2
+        # https://github.com/salsify/action-detect-and-tag-new-version/releases/tag/v2.0.3
+        uses: salsify/action-detect-and-tag-new-version@b1778166f13188a9d478e2d1198f993011ba9864 # v2.0.3
         with:
           version-command: ./scripts/package-version.sh
 
@@ -64,8 +71,14 @@ jobs:
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -97,7 +110,8 @@ jobs:
 
       - name: Upload release asset
         id: upload-release-asset
-        uses: actions/upload-release-asset@v1
+        # https://github.com/actions/upload-release-asset
+        uses: actions/upload-release-asset@ef2adfe8cb8ebfa540930c452c576b3819990faa # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -128,8 +142,14 @@ jobs:
     env:
       BUILD_MODE: release
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -162,7 +182,8 @@ jobs:
 
       - name: Upload release asset
         id: upload-release-asset-unix
-        uses: actions/upload-release-asset@v1
+        # https://github.com/actions/upload-release-asset
+        uses: actions/upload-release-asset@ef2adfe8cb8ebfa540930c452c576b3819990faa # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
