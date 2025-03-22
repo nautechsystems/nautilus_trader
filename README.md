@@ -6,22 +6,19 @@
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-| Branch    | Version                                                                                                                                             | Status                                                                                                                                                                                            |
-| :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
-| `nightly` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
-| `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| Branch    | Version                                                                                                                                                                                                                     | Status                                                                                                                                                                                            |
+| :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
+| `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
 | Platform           | Rust    | Python      |
 | :----------------- | :------ | :---------- |
 | `Linux (x86_64)`   | 1.85.1+ | 3.11, 3.12  |
 | `macOS (arm64)`    | 1.85.1+ | 3.11, 3.12  |
 | `Windows (x86_64)` | 1.85.1+ | 3.11, 3.12  |
-
-[Package Index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)
-
-[![](https://dcbadge.limes.pink/api/server/nautilustrader)](https://discord.gg/NautilusTrader)
 
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
@@ -37,7 +34,7 @@ The platform is *AI-first*, designed to develop and deploy algorithmic trading s
 and robust Python-native environment. This helps to address the parity challenge of keeping the Python research/backtest
 environment consistent with the production live trading environment.
 
-NautilusTrader's design, architecture, and implementation philosophy holds software correctness and safety at the
+NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
@@ -87,20 +84,20 @@ with CPython C extension modules then able to offer a Python-native environment,
 
 ## Why Python?
 
-Python was originally created decades ago as a simple scripting language with a clean straight
-forward syntax. It has since evolved into a fully fledged general purpose object-oriented
-programming language. Based on the TIOBE index, Python is currently the most popular programming language in the world.
+Python was originally created decades ago as a simple scripting language with a clean straightforward syntax.
+It has since evolved into a fully fledged general purpose object-oriented programming language.
+Based on the TIOBE index, Python is currently the most popular programming language in the world.
 Not only that, Python has become the _de facto lingua franca_ of data science, machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of
 implementing large performance-critical systems. Cython has addressed a lot of these issues, offering all the advantages
-of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
+of a statically typed language, embedded into Python's rich ecosystem of software libraries and
 developer/user communities.
 
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no garbage collector.
+concurrency. Rust is "blazingly fast" and memory-efficient (comparable to C and C++) with no garbage collector.
 It can power mission-critical systems, run on embedded devices, and easily integrates with other languages.
 
 Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
@@ -158,7 +155,7 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.
 the API is becoming more stable, breaking changes can occur between releases.
 We strive to document these changes in the release notes on a **best-effort basis**.
 
-We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+We aim to follow a **bi-weekly release schedule**, though experimental or larger features may cause delays.
 
 ### Branches
 
@@ -196,7 +193,7 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies.
 
-To install the latest binary wheel (or sdist package) from PyPI using Pythons pip package manager:
+To install the latest binary wheel (or sdist package) from PyPI using Python's pip package manager:
 
     pip install -U nautilus_trader
 
@@ -301,7 +298,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
        curl -LsSf https://astral.sh/uv/install.sh | sh
 
-5. Clone the source with `git`, and install from the projects root directory:
+5. Clone the source with `git`, and install from the project's root directory:
 
        git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
@@ -362,7 +359,7 @@ Docker containers are built using the base image `python:3.12-slim` with the fol
 - `jupyterlab:nightly` has the head of the `nightly` branch installed along with `jupyterlab` and an
   example backtest notebook with accompanying data.
 
-The container images can be pulled as follows:
+You can pull the container images as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag> --platform linux/amd64
 
@@ -425,7 +422,7 @@ Thank you again for your interest in NautilusTrader! We look forward to reviewin
 
 Join our community of users and contributors on [Discord](https://discord.gg/NautilusTrader) to chat
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
-developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
+developer looking to contribute or just want to learn more about the platform, all are welcome on our Discord server.
 
 > [!WARNING]
 >

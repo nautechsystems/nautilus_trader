@@ -137,7 +137,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
        curl -LsSf https://astral.sh/uv/install.sh | sh
 
-5. Clone the source with `git`, and install from the projects root directory:
+5. Clone the source with `git`, and install from the project's root directory:
 
        git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
