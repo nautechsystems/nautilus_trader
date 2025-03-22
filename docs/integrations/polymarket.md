@@ -187,9 +187,9 @@ The following order types are supported on Polymarket:
 - `LIMIT`
 
 The following time in force options are available:
-- `GTC`: Good-Till-Canceled
-- `GTD`: Good-Till-Date (second granularity based on UNIX time)
-- `FOK`: Fill-Or-Kill
+- `GTC`: Good Till Cancel
+- `GTD`: Good Till Date (second granularity based on UNIX time)
+- `FOK`: Fill or Kill
 
 ## Trades
 

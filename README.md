@@ -41,7 +41,7 @@ NautilusTrader's design, architecture, and implementation philosophy holds softw
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset-class-agnostic —  with any REST API or WebSocket feed able to be integrated via modular
+The platform is also universal, and asset-class-agnostic —  with any REST API or WebSocket feed able to be integrated via modular
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
@@ -53,7 +53,7 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 - **Reliable**: Type safety and thread safety through Rust. [Redis](https://redis.io)-backed performant state persistence (optional).
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters mean any REST API or WebSocket feed can be integrated.
-- **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
+- **Advanced**: Time in force `IOC`, `FOK`, `GTC`, `GTD`, `DAY`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency orders including `OCO`, `OUO`, `OTO`.
 - **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus.
 - **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Live**: Use identical strategy implementations between backtesting and live deployments.
